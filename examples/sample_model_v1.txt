@@ -1,0 +1,36 @@
+Sample Model File for ModelServe Testing
+=========================================
+
+Model Information:
+- Model ID: sample_classification_model
+- Version: v1
+- Framework: mock
+- Type: classification
+
+Purpose:
+This is a sample model file used for testing the ModelServe platform.
+In a real production environment, this would be:
+- TensorFlow: .pb, .h5, or SavedModel directory
+- PyTorch: .pt, .pth
+- ONNX: .onnx
+- scikit-learn: .pkl, .joblib
+
+Model Metadata:
+- Input Shape: (1, 3, 224, 224) - Batch of 1 RGB images
+- Output Shape: (1, 6) - 6 classification categories
+- Categories: ["cat", "dog", "bird", "fish", "car", "flower"]
+
+Training Parameters:
+- Epochs: 100
+- Learning Rate: 0.001
+- Batch Size: 32
+- Optimizer: Adam
+- Loss Function: CategoricalCrossentropy
+
+Performance Metrics (Mock):
+- Accuracy: 0.95
+- Precision: 0.94
+- Recall: 0.93
+- F1 Score: 0.935
+
+Created: 2026-05-05
