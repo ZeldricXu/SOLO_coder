@@ -1,0 +1,122 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5000,
+    "debug": false
+  },
+  "influxdb": {
+    "url": "http://localhost:8086",
+    "token": "root-token",
+    "org": "metric_monitor",
+    "bucket": "metrics"
+  },
+  "redis": {
+    "host": "localhost",
+    "port": 6379,
+    "db": 0,
+    "password": null,
+    "notification_queue_key": "metric_monitor:notifications",
+    "failed_notifications_key": "metric_monitor:failed_notifications",
+    "notification_lock_prefix": "metric_monitor:lock:",
+    "connection_pool_size": 10,
+    "socket_timeout": 5,
+    "socket_connect_timeout": 5
+  },
+  "collector": {
+    "interval_seconds": 60,
+    "server_id": "server_01",
+    "enabled_metrics": ["cpu_usage", "memory_usage", "disk_usage", "network_io"],
+    "collect_mode": "local",
+    "remote_servers": [
+      {
+        "server_id": "server_01",
+        "host": "192.168.1.101",
+        "port": 22,
+        "username": "root",
+        "password": "your_password",
+        "private_key_path": null,
+        "private_key_passphrase": null,
+        "timeout": 10
+      }
+    ]
+  },
+  "ssh_pool": {
+    "max_connections_per_server": 3,
+    "max_total_connections": 10,
+    "idle_timeout_seconds": 300,
+    "cleanup_interval_seconds": 60,
+    "health_check_interval_seconds": 30,
+    "health_check_command": "echo 1",
+    "connection_retry_count": 3,
+    "connection_retry_delay_seconds": 2
+  },
+  "notification": {
+    "async_enabled": true,
+    "worker_count": 2,
+    "max_queue_size": 1000,
+    "max_retries": 3,
+    "use_redis_persistence": true,
+    "redis_poll_interval_seconds": 2,
+    "email": {
+      "smtp_server": "smtp.example.com",
+      "smtp_port": 587,
+      "sender": "alerts@example.com",
+      "password": "your-email-password",
+      "recipients": ["admin@example.com"]
+    },
+    "dingtalk": {
+      "webhook_url": "https://oapi.dingtalk.com/robot/send?access_token=your-dingtalk-token",
+      "secret": "your-dingtalk-secret"
+    }
+  },
+  "alert": {
+    "silence_default_seconds": 300,
+    "silence_by_severity": {
+      "critical": 60,
+      "warning": 600,
+      "info": 1800
+    }
+  },
+  "alert_rules": [
+    {
+      "rule_id": "rule_cpu_high",
+      "metric_type": "cpu_usage",
+      "threshold": 80.0,
+      "operator": "greater_than",
+      "duration": 60,
+      "severity": "warning",
+      "notify_channels": ["email", "dingtalk"],
+      "enabled": true
+    },
+    {
+      "rule_id": "rule_cpu_critical",
+      "metric_type": "cpu_usage",
+      "threshold": 95.0,
+      "operator": "greater_than",
+      "duration": 60,
+      "severity": "critical",
+      "notify_channels": ["email", "dingtalk"],
+      "enabled": true
+    },
+    {
+      "rule_id": "rule_memory_high",
+      "metric_type": "memory_usage",
+      "threshold": 85.0,
+      "operator": "greater_than",
+      "duration": 60,
+      "severity": "warning",
+      "notify_channels": ["email", "dingtalk"],
+      "enabled": true
+    },
+    {
+      "rule_id": "rule_disk_high",
+      "metric_type": "disk_usage",
+      "threshold": 90.0,
+      "operator": "greater_than",
+      "duration": 60,
+      "severity": "warning",
+      "notify_channels": ["email", "dingtalk"],
+      "enabled": true
+    }
+  ]
+}
