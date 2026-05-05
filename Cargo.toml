@@ -1,0 +1,26 @@
+[package]
+name = "multigit"
+version = "0.2.0"
+edition = "2021"
+description = "一个跨平台命令行工具，用于同时管理多个Git仓库的批量操作"
+authors = ["MultiGit Team"]
+license = "MIT"
+
+[[bin]]
+name = "multigit"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5.0", features = ["derive"] }
+serde = { version = "1.0.196", features = ["derive"] }
+serde_yaml = "0.9.34"
+tokio = { version = "1.36.0", features = ["full"] }
+chrono = { version = "0.4.35", features = ["serde"] }
+thiserror = "1.0.58"
+anyhow = "1.0.80"
+colored = "2.1.0"
+regex = "1.10.4"
+num_cpus = "1.16.0"
+indicatif = "0.17.8"
+dirs = "5.0.1"
+futures = "0.3.30"
