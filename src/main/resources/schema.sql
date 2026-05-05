@@ -1,0 +1,81 @@
+CREATE TABLE IF NOT EXISTS channel_config (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    merchant_id VARCHAR(64) NOT NULL COMMENT '商户ID',
+    channel VARCHAR(32) NOT NULL COMMENT '支付渠道：alipay/wechat/unionpay',
+    channel_merchant_id VARCHAR(128) NOT NULL COMMENT '渠道商户号',
+    app_id VARCHAR(128) NOT NULL COMMENT '应用ID',
+    private_key TEXT COMMENT '商户私钥（加密存储）',
+    public_key TEXT COMMENT '渠道公钥（加密存储）',
+    notify_url VARCHAR(255) COMMENT '回调通知URL',
+    enabled BOOLEAN DEFAULT TRUE COMMENT '是否启用',
+    priority INT DEFAULT 0 COMMENT '优先级',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_merchant_channel (merchant_id, channel),
+    INDEX idx_merchant_id (merchant_id),
+    INDEX idx_channel (channel)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='渠道配置表';
+
+CREATE TABLE IF NOT EXISTS payment_order (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    order_id VARCHAR(64) NOT NULL COMMENT '网关订单ID',
+    merchant_id VARCHAR(64) NOT NULL COMMENT '商户ID',
+    merchant_order_no VARCHAR(64) NOT NULL COMMENT '商户订单号',
+    amount DECIMAL(18,2) NOT NULL COMMENT '订单金额',
+    currency VARCHAR(8) DEFAULT 'CNY' COMMENT '币种',
+    channel VARCHAR(32) NOT NULL COMMENT '支付渠道',
+    channel_order_no VARCHAR(128) COMMENT '渠道订单号',
+    status VARCHAR(32) DEFAULT 'pending' COMMENT '订单状态：pending/paid/failed/closed/refunded/partial_refunded',
+    product_desc VARCHAR(255) COMMENT '商品描述',
+    notify_url VARCHAR(255) COMMENT '商户回调URL',
+    paid_at TIMESTAMP NULL COMMENT '支付时间',
+    callback_received BOOLEAN DEFAULT FALSE COMMENT '是否收到回调',
+    version INT DEFAULT 0 COMMENT '乐观锁版本号',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_order_id (order_id),
+    UNIQUE KEY uk_merchant_order (merchant_id, merchant_order_no),
+    INDEX idx_channel_order (channel_order_no),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='支付订单表';
+
+CREATE TABLE IF NOT EXISTS refund_record (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    refund_id VARCHAR(64) NOT NULL COMMENT '网关退款ID',
+    order_id VARCHAR(64) NOT NULL COMMENT '网关订单ID',
+    merchant_id VARCHAR(64) NOT NULL COMMENT '商户ID',
+    merchant_refund_no VARCHAR(64) NOT NULL COMMENT '商户退款单号',
+    amount DECIMAL(18,2) NOT NULL COMMENT '退款金额',
+    reason VARCHAR(255) COMMENT '退款原因',
+    channel_refund_no VARCHAR(128) COMMENT '渠道退款单号',
+    status VARCHAR(32) DEFAULT 'pending' COMMENT '退款状态：pending/success/failed',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_refund_id (refund_id),
+    UNIQUE KEY uk_merchant_refund (merchant_id, merchant_refund_no),
+    INDEX idx_order_id (order_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='退款记录表';
+
+CREATE TABLE IF NOT EXISTS notification_retry (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    retry_id VARCHAR(64) NOT NULL COMMENT '重试任务ID',
+    order_id VARCHAR(64) NOT NULL COMMENT '订单ID',
+    merchant_id VARCHAR(64) NOT NULL COMMENT '商户ID',
+    notify_url VARCHAR(500) NOT NULL COMMENT '通知URL',
+    notify_content TEXT COMMENT '通知内容(JSON)',
+    retry_count INT DEFAULT 0 COMMENT '已重试次数',
+    max_retry_count INT DEFAULT 5 COMMENT '最大重试次数',
+    status VARCHAR(32) DEFAULT 'pending' COMMENT '状态：pending/success/failed',
+    last_error_msg TEXT COMMENT '最后一次错误信息',
+    next_retry_at TIMESTAMP NULL COMMENT '下次重试时间',
+    last_notify_at TIMESTAMP NULL COMMENT '最后一次通知时间',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_retry_id (retry_id),
+    INDEX idx_order_id (order_id),
+    INDEX idx_merchant_id (merchant_id),
+    INDEX idx_status (status),
+    INDEX idx_next_retry_at (next_retry_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='通知重试队列表';
