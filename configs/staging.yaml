@@ -1,0 +1,27 @@
+env_name: staging
+
+servers:
+  - host: 192.168.2.50
+    port: 22
+    user: staging
+    password: ${STAGING_SSH_PASSWORD}
+
+build_command: npm run build:staging
+build_output: ./dist
+build_timeout: 300
+
+deploy_path: /opt/staging/myapp
+
+stop_command: pm2 stop myapp-staging
+start_command: pm2 start ecosystem.config.js --env staging
+start_delay: 3
+
+health_check:
+  type: http
+  url: http://localhost:3000/api/health
+  timeout: 10
+  expected_status_codes:
+    - 200
+    - 204
+
+rollback_enabled: true

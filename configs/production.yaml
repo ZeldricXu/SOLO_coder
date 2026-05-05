@@ -1,0 +1,37 @@
+env_name: production
+
+servers:
+  - host: 192.168.1.100
+    port: 22
+    user: deploy
+    key_file: /home/user/.ssh/prod_key.pem
+
+  - host: 192.168.1.101
+    port: 22
+    user: deploy
+    key_file: /home/user/.ssh/prod_key.pem
+
+build_command: npm run build
+build_output: ./dist
+build_timeout: 600
+
+deploy_path: /var/www/myapp
+
+stop_command: systemctl stop myapp
+start_command: systemctl start myapp
+start_delay: 5
+
+config_files:
+  - source: ./configs/prod/app.config.json
+    target: /var/www/myapp/config/app.config.json
+  - source: ./configs/prod/database.yaml
+    target: /var/www/myapp/config/database.yaml
+
+health_check:
+  type: http
+  url: http://localhost:8080/health
+  timeout: 30
+  retry_count: 3
+  retry_delay: 2
+
+rollback_enabled: true

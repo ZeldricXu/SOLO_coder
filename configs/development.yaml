@@ -1,0 +1,21 @@
+env_name: development
+
+servers:
+  - host: 127.0.0.1
+    port: 22
+    user: devuser
+    key_file: ~/.ssh/id_rsa
+
+build_command: npm run dev:build
+build_output: ./dist
+build_timeout: 120
+
+deploy_path: /home/devuser/projects/myapp
+
+start_command: npm run start:dev
+
+health_check:
+  type: process
+  process_name: node.*myapp
+
+rollback_enabled: false
