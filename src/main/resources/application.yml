@@ -1,0 +1,145 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: iot-connect-platform
+  
+  datasource:
+    url: jdbc:h2:mem:iotdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+  
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+    consumer:
+      group-id: iot-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      auto-offset-reset: earliest
+
+  redis:
+    host: localhost
+    port: 6379
+    password: 
+    database: 0
+    timeout: 60000
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+influxdb:
+  url: http://localhost:8086
+  token: your-token
+  org: iot-org
+  bucket: iot-data
+
+mqtt:
+  broker: tcp://localhost:1883
+  client-id: iot-server
+  username: admin
+  password: admin
+  topics:
+    device-data: iot/device/+/data
+    device-connect: iot/device/+/connect
+    device-disconnect: iot/device/+/disconnect
+    device-heartbeat: iot/device/+/heartbeat
+    device-control-response: iot/device/+/control/response
+
+logging:
+  level:
+    root: info
+    com.iotconnect: debug
+    org.hibernate.SQL: debug
+
+jwt:
+  secret: iotConnectSecretKeyForJwtTokenGeneration2026
+  expiration: 86400000
+
+alert:
+  aggregation:
+    window-minutes: 5
+  notification:
+    retry-count: 3
+    retry-interval-seconds: 60
+  async-detection:
+    enabled: true
+    thread-pool-size: 10
+    queue-capacity: 10000
+    use-redis: true
+
+heartbeat:
+  timeout-seconds: 120
+  check-interval-seconds: 30
+
+batch:
+  processing:
+    enabled: true
+    batch-size: 100
+    window-seconds: 5
+    max-buffer-size: 10000
+    flush-interval-seconds: 10
+
+reconnect:
+  enabled: true
+  initial-delay-seconds: 1
+  max-delay-seconds: 60
+  multiplier: 2.0
+  max-attempts: 10
+  jitter: 0.1
+  notification-threshold: 3
+
+batch-config:
+  default:
+    batch-size: 100
+    window-seconds: 5
+    max-buffer-size: 10000
+    enabled: true
+  types:
+    temperature_sensor:
+      batch-size: 50
+      window-seconds: 3
+      max-buffer-size: 5000
+      enabled: true
+    humidity_sensor:
+      batch-size: 50
+      window-seconds: 3
+      max-buffer-size: 5000
+      enabled: true
+    pressure_sensor:
+      batch-size: 100
+      window-seconds: 10
+      max-buffer-size: 10000
+      enabled: true
+    energy_meter:
+      batch-size: 200
+      window-seconds: 15
+      max-buffer-size: 20000
+      enabled: true
+    gate_way:
+      batch-size: 100
+      window-seconds: 5
+      max-buffer-size: 10000
+      enabled: true
