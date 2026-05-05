@@ -1,0 +1,143 @@
+version: "1.0"
+
+pipelines:
+  - source: "kafka_orders"
+    description: "订单数据清洗管道"
+    enabled: true
+    drop_unspecified: false
+    quality_threshold: 0.8
+
+    field_mappings:
+      - source_field: "order_id"
+        target_field: "order_id"
+        field_type: "string"
+        is_nullable: false
+        validators:
+          - "not_empty"
+
+      - source_field: "user_id"
+        target_field: "user_id"
+        field_type: "string"
+        is_nullable: false
+        validators:
+          - "not_null"
+
+      - source_field: "order_amount"
+        target_field: "order_amount"
+        field_type: "float"
+        default_value: 0.0
+        is_nullable: false
+        validators:
+          - "is_non_negative"
+
+      - source_field: "order_status"
+        target_field: "order_status"
+        field_type: "string"
+        default_value: "pending"
+        is_nullable: true
+
+      - source_field: "created_at"
+        target_field: "created_at"
+        field_type: "datetime"
+        is_nullable: false
+        validators:
+          - "is_date"
+
+      - source_field: "region"
+        target_field: "region"
+        field_type: "string"
+        default_value: "unknown"
+        is_nullable: true
+
+      - source_field: "category"
+        target_field: "category"
+        field_type: "string"
+        default_value: "other"
+        is_nullable: true
+
+  - source: "kafka_payments"
+    description: "支付数据清洗管道"
+    enabled: true
+    drop_unspecified: false
+    quality_threshold: 0.9
+
+    field_mappings:
+      - source_field: "payment_id"
+        target_field: "payment_id"
+        field_type: "string"
+        is_nullable: false
+        validators:
+          - "not_empty"
+
+      - source_field: "order_id"
+        target_field: "order_id"
+        field_type: "string"
+        is_nullable: false
+        validators:
+          - "not_null"
+
+      - source_field: "amount"
+        target_field: "payment_amount"
+        field_type: "float"
+        default_value: 0.0
+        is_nullable: false
+        validators:
+          - "is_positive"
+
+      - source_field: "payment_method"
+        target_field: "payment_method"
+        field_type: "string"
+        default_value: "unknown"
+        is_nullable: true
+
+      - source_field: "payment_status"
+        target_field: "payment_status"
+        field_type: "string"
+        default_value: "pending"
+        is_nullable: true
+
+      - source_field: "transaction_time"
+        target_field: "transaction_time"
+        field_type: "datetime"
+        is_nullable: false
+        validators:
+          - "is_date"
+
+  - source: "mysql_orders"
+    description: "MySQL订单表数据管道"
+    enabled: false
+    drop_unspecified: false
+    quality_threshold: 0.8
+
+    field_mappings:
+      - source_field: "id"
+        target_field: "order_id"
+        field_type: "integer"
+        is_nullable: false
+
+      - source_field: "user_id"
+        target_field: "user_id"
+        field_type: "integer"
+        is_nullable: false
+
+      - source_field: "total_amount"
+        target_field: "order_amount"
+        field_type: "float"
+        default_value: 0.0
+        is_nullable: false
+
+      - source_field: "status"
+        target_field: "order_status"
+        field_type: "string"
+        default_value: "pending"
+        is_nullable: true
+
+      - source_field: "created_at"
+        target_field: "created_at"
+        field_type: "datetime"
+        is_nullable: false
+
+      - source_field: "updated_at"
+        target_field: "updated_at"
+        field_type: "datetime"
+        is_nullable: true
