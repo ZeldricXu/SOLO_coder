@@ -1,0 +1,334 @@
+version: "2.0.0"
+description: "GameStats 玩家画像标签规则配置"
+updated_at: "2025-07-01"
+
+rules:
+  - rule_id: "activity_high_v2"
+    tag_name: "高活跃"
+    category: "activity"
+    description: "高活跃玩家 - 近90天活跃3天以上且日均行为20次以上"
+    enabled: true
+    priority: 100
+    exclusive_group: "activity_level"
+    confidence: 0.85
+    reasoning_template: "近90天活跃{unique_active_days}天，日均{avg_events_per_day:.1f}次行为"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "unique_active_days"
+          operator: "gte"
+          value: 3
+        - field: "avg_events_per_day"
+          operator: "gte"
+          value: 20
+
+  - rule_id: "activity_medium_v2"
+    tag_name: "中活跃"
+    category: "activity"
+    description: "中等活跃玩家 - 近90天活跃3天以上且日均行为10-20次"
+    enabled: true
+    priority: 90
+    exclusive_group: "activity_level"
+    confidence: 0.8
+    reasoning_template: "近90天活跃{unique_active_days}天，日均{avg_events_per_day:.1f}次行为"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "unique_active_days"
+          operator: "gte"
+          value: 3
+        - field: "avg_events_per_day"
+          operator: "gte"
+          value: 10
+        - field: "avg_events_per_day"
+          operator: "lt"
+          value: 20
+
+  - rule_id: "activity_low_v2"
+    tag_name: "低活跃"
+    category: "activity"
+    description: "低活跃玩家 - 近90天活跃3天以上但日均行为不足10次"
+    enabled: true
+    priority: 80
+    exclusive_group: "activity_level"
+    confidence: 0.7
+    reasoning_template: "近90天活跃{unique_active_days}天，日均{avg_events_per_day:.1f}次行为"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "unique_active_days"
+          operator: "gte"
+          value: 3
+        - field: "avg_events_per_day"
+          operator: "lt"
+          value: 10
+
+  - rule_id: "churn_risk_v2"
+    tag_name: "流失风险"
+    category: "activity"
+    description: "有流失风险的玩家 - 近90天活跃不足3天"
+    enabled: true
+    priority: 10
+    exclusive_group: "activity_level"
+    confidence: 0.75
+    reasoning_template: "近90天仅活跃{unique_active_days}天"
+    condition:
+      field: "unique_active_days"
+      operator: "lt"
+      value: 3
+
+  - rule_id: "login_user_v2"
+    tag_name: "登录用户"
+    category: "activity"
+    description: "登录过的玩家"
+    enabled: true
+    priority: 5
+    confidence: 1.0
+    reasoning_template: "累计登录{login_count}次"
+    condition:
+      field: "login_count"
+      operator: "gt"
+      value: 0
+
+  - rule_id: "super_active_v2"
+    tag_name: "超级活跃"
+    category: "activity"
+    description: "超级活跃玩家 - 近90天活跃30天以上"
+    enabled: true
+    priority: 110
+    confidence: 0.9
+    reasoning_template: "近90天活跃{unique_active_days}天，属于超级活跃玩家"
+    condition:
+      field: "unique_active_days"
+      operator: "gte"
+      value: 30
+
+  - rule_id: "payment_high_v2"
+    tag_name: "高付费"
+    category: "payment"
+    description: "高付费玩家 - 累计付费100元以上"
+    enabled: true
+    priority: 100
+    exclusive_group: "payment_level"
+    confidence: 0.9
+    reasoning_template: "累计付费{total_payment_amount:.2f}元，超过100元"
+    condition:
+      field: "total_payment_amount"
+      operator: "gte"
+      value: 100.0
+
+  - rule_id: "payment_medium_v2"
+    tag_name: "中付费"
+    category: "payment"
+    description: "中等付费玩家 - 累计付费10-100元"
+    enabled: true
+    priority: 90
+    exclusive_group: "payment_level"
+    confidence: 0.85
+    reasoning_template: "累计付费{total_payment_amount:.2f}元，在10-100元之间"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "total_payment_amount"
+          operator: "gte"
+          value: 10.0
+        - field: "total_payment_amount"
+          operator: "lt"
+          value: 100.0
+
+  - rule_id: "payment_low_v2"
+    tag_name: "低付费"
+    category: "payment"
+    description: "低付费玩家 - 累计付费0-10元"
+    enabled: true
+    priority: 80
+    exclusive_group: "payment_level"
+    confidence: 0.7
+    reasoning_template: "累计付费{total_payment_amount:.2f}元，低于10元"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "total_payment_amount"
+          operator: "gt"
+          value: 0.0
+        - field: "total_payment_amount"
+          operator: "lt"
+          value: 10.0
+
+  - rule_id: "non_payment_v2"
+    tag_name: "非付费"
+    category: "payment"
+    description: "非付费玩家 - 无付费记录"
+    enabled: true
+    priority: 10
+    exclusive_group: "payment_level"
+    confidence: 1.0
+    reasoning_template: "无付费记录"
+    condition:
+      field: "total_payment_amount"
+      operator: "eq"
+      value: 0.0
+
+  - rule_id: "whale_v2"
+    tag_name: "鲸鱼用户"
+    category: "payment"
+    description: "鲸鱼用户 - 累计付费500元以上"
+    enabled: true
+    priority: 110
+    confidence: 0.95
+    reasoning_template: "累计付费{total_payment_amount:.2f}元，属于高价值鲸鱼用户"
+    condition:
+      field: "total_payment_amount"
+      operator: "gte"
+      value: 500.0
+
+  - rule_id: "dolphin_v2"
+    tag_name: "海豚用户"
+    category: "payment"
+    description: "海豚用户 - 累计付费100-500元"
+    enabled: true
+    priority: 105
+    confidence: 0.9
+    reasoning_template: "累计付费{total_payment_amount:.2f}元，属于活跃付费海豚用户"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "total_payment_amount"
+          operator: "gte"
+          value: 100.0
+        - field: "total_payment_amount"
+          operator: "lt"
+          value: 500.0
+
+  - rule_id: "social_active_v2"
+    tag_name: "社交型"
+    category: "social"
+    description: "积极参与社交的玩家 - 社交互动20次以上"
+    enabled: true
+    priority: 100
+    exclusive_group: "social_level"
+    confidence: 0.85
+    reasoning_template: "累计社交互动{social_interaction_count}次"
+    condition:
+      field: "social_interaction_count"
+      operator: "gt"
+      value: 20
+
+  - rule_id: "social_light_v2"
+    tag_name: "轻度社交"
+    category: "social"
+    description: "轻度社交玩家 - 社交互动5-20次"
+    enabled: true
+    priority: 90
+    exclusive_group: "social_level"
+    confidence: 0.7
+    reasoning_template: "累计社交互动{social_interaction_count}次"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "social_interaction_count"
+          operator: "gt"
+          value: 5
+        - field: "social_interaction_count"
+          operator: "lte"
+          value: 20
+
+  - rule_id: "social_lone_v2"
+    tag_name: "独狼型"
+    category: "social"
+    description: "喜欢独自游戏的玩家 - 社交互动5次以下"
+    enabled: true
+    priority: 80
+    exclusive_group: "social_level"
+    confidence: 0.7
+    reasoning_template: "社交互动较少，仅{social_interaction_count}次"
+    condition:
+      field: "social_interaction_count"
+      operator: "lte"
+      value: 5
+
+  - rule_id: "quest_master_v2"
+    tag_name: "任务达人"
+    category: "gameplay"
+    description: "完成大量任务的玩家 - 完成任务50次以上"
+    enabled: true
+    priority: 50
+    confidence: 0.8
+    reasoning_template: "完成任务{quest_complete_count}次"
+    condition:
+      field: "quest_complete_count"
+      operator: "gt"
+      value: 50
+
+  - rule_id: "high_churn_risk_v2"
+    tag_name: "高流失风险"
+    category: "churn"
+    description: "高流失风险玩家 - 14天以上未活跃"
+    enabled: true
+    priority: 100
+    exclusive_group: "churn_level"
+    confidence: 0.9
+    reasoning_template: "超过{days_since_last_active}天未活跃"
+    condition:
+      field: "days_since_last_active"
+      operator: "gt"
+      value: 14
+
+  - rule_id: "medium_churn_risk_v2"
+    tag_name: "中流失风险"
+    category: "churn"
+    description: "中等流失风险玩家 - 7-14天未活跃"
+    enabled: true
+    priority: 90
+    exclusive_group: "churn_level"
+    confidence: 0.75
+    reasoning_template: "超过{days_since_last_active}天未活跃"
+    condition:
+      logical_op: "and"
+      conditions:
+        - field: "days_since_last_active"
+          operator: "gt"
+          value: 7
+        - field: "days_since_last_active"
+          operator: "lte"
+          value: 14
+
+  - rule_id: "low_churn_risk_v2"
+    tag_name: "低流失风险"
+    category: "churn"
+    description: "低流失风险玩家 - 7天内有活跃"
+    enabled: true
+    priority: 80
+    exclusive_group: "churn_level"
+    confidence: 0.7
+    reasoning_template: "近{days_since_last_active}天内有活跃"
+    condition:
+      field: "days_since_last_active"
+      operator: "lte"
+      value: 7
+
+  - rule_id: "new_player_v2"
+    tag_name: "新玩家"
+    category: "lifecycle"
+    description: "新玩家 - 登录次数少于3次"
+    enabled: true
+    priority: 50
+    confidence: 0.7
+    reasoning_template: "累计登录{login_count}次，属于新玩家"
+    condition:
+      field: "login_count"
+      operator: "lt"
+      value: 3
+
+  - rule_id: "veteran_v2"
+    tag_name: "资深玩家"
+    category: "lifecycle"
+    description: "资深玩家 - 登录次数超过50次"
+    enabled: true
+    priority: 60
+    confidence: 0.85
+    reasoning_template: "累计登录{login_count}次，属于资深玩家"
+    condition:
+      field: "login_count"
+      operator: "gt"
+      value: 50

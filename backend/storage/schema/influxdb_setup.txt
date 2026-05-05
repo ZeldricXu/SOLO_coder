@@ -1,0 +1,29 @@
+# GameStats InfluxDB 初始化配置
+# 创建组织、存储桶和令牌
+
+# 1. 创建组织
+influx org create --name gamestats --description "GameStats Analytics Organization"
+
+# 2. 创建存储桶
+influx bucket create --name events --org gamestats --retention 90d --description "Game events data (90 days retention)"
+influx bucket create --name stats --org gamestats --retention 365d --description "Statistics data (365 days retention)"
+influx bucket create --name monitoring --org gamestats --retention 7d --description "System monitoring data (7 days retention)"
+
+# 3. 创建API令牌 (保存输出的token)
+influx auth create --org gamestats --all-access --description "Full access token for GameStats"
+
+# 4. 示例查询 - 查看在线人数趋势
+# from(bucket: "stats")
+#   |> range(start: -1h)
+#   |> filter(fn: (r) => r._measurement == "online_stats")
+#   |> filter(fn: (r) => r._field == "online_count")
+#   |> aggregateWindow(every: 1m, fn: mean)
+#   |> yield(name: "mean")
+
+# 5. 示例查询 - 查看事件数量
+# from(bucket: "events")
+#   |> range(start: -24h)
+#   |> filter(fn: (r) => r._measurement == "game_events")
+#   |> filter(fn: (r) => r.event_type == "login")
+#   |> count()
+#   |> yield(name: "login_count")
