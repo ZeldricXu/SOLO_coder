@@ -1,0 +1,109 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: #262626;
+  background-color: #f0f2f5;
+}
+
+a {
+  color: #1890ff;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #40a9ff;
+}
+
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.page-header h2 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #262626;
+}
+
+.filter-card {
+  margin-bottom: 16px;
+}
+
+.table-card {
+  margin-bottom: 16px;
+}
+
+.stats-cards {
+  margin-bottom: 16px;
+}
+
+.chart-card {
+  margin-bottom: 16px;
+}
+
+.chart-card .ant-card-head-title {
+  font-weight: 600;
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .stats-cards .ant-col {
+    margin-bottom: 16px;
+  }
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+.ant-modal-content {
+  border-radius: 8px;
+}
+
+.ant-card {
+  border-radius: 8px;
+}
+
+.ant-btn {
+  border-radius: 6px;
+}
+
+.ant-input {
+  border-radius: 6px;
+}
+
+.ant-select-selector {
+  border-radius: 6px !important;
+}

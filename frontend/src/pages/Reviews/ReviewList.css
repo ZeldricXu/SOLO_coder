@@ -1,0 +1,434 @@
+import React, { useState, useEffect } from 'react';
+import {
+  Card,
+  Table,
+  Tag,
+  Button,
+  Space,
+  Select,
+  Input,
+  DatePicker,
+  Modal,
+  Descriptions,
+  message,
+  Badge,
+  Spin,
+} from 'antd';
+import {
+  SearchOutlined,
+  CheckOutlined,
+  CloseOutlined,
+  EyeOutlined,
+  ReloadOutlined,
+} from '@ant-design/icons';
+import { eventApi, registrationApi } from '../../services/api';
+import dayjs from 'dayjs';
+import './ReviewList.css';
+
+const { Option } = Select;
+const { RangePicker } = DatePicker;
+
+const ReviewList = () => {
+  const [loading, setLoading] = useState(false);
+  const [reviews, setReviews] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [selectedEvent, setSelectedEvent] = useState(null);
+  const [searchText, setSearchText] = useState('');
+  const [statusFilter, setStatusFilter] = useState('pending_review');
+  const [detailModalVisible, setDetailModalVisible] = useState(false);
+  const [selectedReview, setSelectedReview] = useState(null);
+  const [processing, setProcessing] = useState(false);
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  useEffect(() => {
+    fetchReviews();
+  }, [selectedEvent, statusFilter]);
+
+  const fetchEvents = async () => {
+    try {
+      const res = await eventApi.getEvents();
+      setEvents(res.data || []);
+      if (res.data && res.data.length > 0) {
+        setSelectedEvent(res.data[0].event_id);
+      }
+    } catch (error) {
+      console.error('获取活动列表失败', error);
+    }
+  };
+
+  const fetchReviews = async () => {
+    if (!selectedEvent) return;
+    
+    try {
+      setLoading(true);
+      const res = await registrationApi.getRegistrations(selectedEvent, {
+        status: statusFilter,
+      });
+      setReviews(res.data || []);
+    } catch (error) {
+      message.error('获取报名列表失败');
+      console.error(error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewDetail = (record) => {
+    setSelectedReview(record);
+    setDetailModalVisible(true);
+  };
+
+  const handleApprove = async (record) => {
+    try {
+      setProcessing(true);
+      await registrationApi.processReview(record.registration_id, {
+        action: 'approve',
+        notes: '审核通过',
+      });
+      message.success('审核通过');
+      fetchReviews();
+    } catch (error) {
+      message.error('审核操作失败');
+      console.error(error);
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleReject = async (record) => {
+    Modal.confirm({
+      title: '确认拒绝',
+      content: '确定要拒绝该报名申请吗？',
+      okText: '确认',
+      okType: 'danger',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          setProcessing(true);
+          await registrationApi.processReview(record.registration_id, {
+            action: 'reject',
+            notes: '审核不通过',
+          });
+          message.success('已拒绝该报名');
+          fetchReviews();
+        } catch (error) {
+          message.error('操作失败');
+          console.error(error);
+        } finally {
+          setProcessing(false);
+        }
+      },
+    });
+  };
+
+  const handleBatchApprove = async () => {
+    message.info('批量审核功能开发中');
+  };
+
+  const getStatusTag = (status) => {
+    const statusMap = {
+      pending_review: { text: '待审核', color: 'orange' },
+      approved: { text: '已通过', color: 'success' },
+      rejected: { text: '已拒绝', color: 'error' },
+      cancelled: { text: '已取消', color: 'default' },
+    };
+    const info = statusMap[status] || { text: status, color: 'default' };
+    return <Tag color={info.color}>{info.text}</Tag>;
+  };
+
+  const parseFormData = (formData) => {
+    try {
+      return typeof formData === 'string' ? JSON.parse(formData) : formData;
+    } catch {
+      return formData || {};
+    }
+  };
+
+  const columns = [
+    {
+      title: '序号',
+      width: 80,
+      render: (_, __, index) => index + 1,
+    },
+    {
+      title: '报名时间',
+      dataIndex: 'registered_at',
+      key: 'registered_at',
+      width: 180,
+      render: (text) => dayjs(text).format('YYYY-MM-DD HH:mm'),
+    },
+    {
+      title: '票务类型',
+      dataIndex: 'ticket_name',
+      key: 'ticket_name',
+      width: 120,
+      render: (text) => text || '免费',
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
+      width: 100,
+      render: getStatusTag,
+    },
+    {
+      title: '签到状态',
+      dataIndex: 'check_in_status',
+      key: 'check_in_status',
+      width: 100,
+      render: (checked) => (
+        checked ? <Tag color="success">已签到</Tag> : <Tag color="default">未签到</Tag>
+      ),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 200,
+      fixed: 'right',
+      render: (_, record) => (
+        <Space size="small">
+          <Button
+            type="link"
+            size="small"
+            icon={<EyeOutlined />}
+            onClick={() => handleViewDetail(record)}
+          >
+            详情
+          </Button>
+          {record.status === 'pending_review' && (
+            <>
+              <Button
+                type="link"
+                size="small"
+                icon={<CheckOutlined />}
+                onClick={() => handleApprove(record)}
+                loading={processing}
+                style={{ color: '#52c41a' }}
+              >
+                通过
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                icon={<CloseOutlined />}
+                onClick={() => handleReject(record)}
+                danger
+              >
+                拒绝
+              </Button>
+            </>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
+  const filteredReviews = reviews.filter((review) => {
+    if (!searchText) return true;
+    const formData = parseFormData(review.form_data);
+    const searchLower = searchText.toLowerCase();
+    return Object.values(formData).some(
+      (value) => String(value).toLowerCase().includes(searchLower)
+    );
+  });
+
+  const stats = {
+    pending: reviews.filter((r) => r.status === 'pending_review').length,
+    approved: reviews.filter((r) => r.status === 'approved').length,
+    rejected: reviews.filter((r) => r.status === 'rejected').length,
+  };
+
+  return (
+    <div className="review-list-page">
+      <div className="page-header">
+        <Space size="middle">
+          <h2>报名审核</h2>
+          <Button 
+            type="primary" 
+            icon={<ReloadOutlined />}
+            onClick={fetchReviews}
+          >
+            刷新
+          </Button>
+          {statusFilter === 'pending_review' && stats.pending > 0 && (
+            <Button onClick={handleBatchApprove}>
+              批量通过
+            </Button>
+          )}
+        </Space>
+      </div>
+
+      <Row gutter={16} className="stats-cards">
+        <Col span={6}>
+          <Card>
+            <div className="stat-item">
+              <span className="stat-label">待审核</span>
+              <span className="stat-value pending">
+                <Badge count={stats.pending} showZero />
+              </span>
+            </div>
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <div className="stat-item">
+              <span className="stat-label">已通过</span>
+              <span className="stat-value approved">{stats.approved}</span>
+            </div>
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <div className="stat-item">
+              <span className="stat-label">已拒绝</span>
+              <span className="stat-value rejected">{stats.rejected}</span>
+            </div>
+          </Card>
+        </Col>
+        <Col span={6}>
+          <Card>
+            <div className="stat-item">
+              <span className="stat-label">总报名</span>
+              <span className="stat-value">{reviews.length}</span>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Card className="filter-card">
+        <Space wrap size="middle">
+          <Select
+            style={{ width: 250 }}
+            placeholder="选择活动"
+            value={selectedEvent}
+            onChange={setSelectedEvent}
+            allowClear
+          >
+            {events.map((event) => (
+              <Option key={event.event_id} value={event.event_id}>
+                {event.title}
+              </Option>
+            ))}
+          </Select>
+
+          <Select
+            style={{ width: 150 }}
+            value={statusFilter}
+            onChange={setStatusFilter}
+          >
+            <Option value="pending_review">待审核</Option>
+            <Option value="approved">已通过</Option>
+            <Option value="rejected">已拒绝</Option>
+          </Select>
+
+          <Input.Search
+            placeholder="搜索报名信息"
+            allowClear
+            style={{ width: 250 }}
+            onChange={(e) => setSearchText(e.target.value)}
+          />
+
+          <RangePicker
+            placeholder={['开始日期', '结束日期']}
+            style={{ width: 280 }}
+          />
+        </Space>
+      </Card>
+
+      <Card className="table-card">
+        <Spin spinning={loading}>
+          <Table
+            columns={columns}
+            dataSource={filteredReviews}
+            rowKey="registration_id"
+            scroll={{ x: 800 }}
+            pagination={{
+              pageSize: 10,
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 条记录`,
+            }}
+          />
+        </Spin>
+      </Card>
+
+      <Modal
+        title="报名详情"
+        open={detailModalVisible}
+        onCancel={() => setDetailModalVisible(false)}
+        width={600}
+        footer={[
+          <Button key="close" onClick={() => setDetailModalVisible(false)}>
+            关闭
+          </Button>,
+          selectedReview?.status === 'pending_review' && (
+            <Space key="actions">
+              <Button
+                key="reject"
+                danger
+                onClick={() => {
+                  handleReject(selectedReview);
+                  setDetailModalVisible(false);
+                }}
+              >
+                拒绝
+              </Button>
+              <Button
+                key="approve"
+                type="primary"
+                onClick={() => {
+                  handleApprove(selectedReview);
+                  setDetailModalVisible(false);
+                }}
+              >
+                通过
+              </Button>
+            </Space>
+          ),
+        ]}
+      >
+        {selectedReview && (
+          <div className="review-detail">
+            <Descriptions bordered column={1}>
+              <Descriptions.Item label="报名ID">
+                {selectedReview.registration_id}
+              </Descriptions.Item>
+              <Descriptions.Item label="报名时间">
+                {dayjs(selectedReview.registered_at).format('YYYY-MM-DD HH:mm:ss')}
+              </Descriptions.Item>
+              <Descriptions.Item label="票务类型">
+                {selectedReview.ticket_name || '免费'}
+              </Descriptions.Item>
+              <Descriptions.Item label="状态">
+                {getStatusTag(selectedReview.status)}
+              </Descriptions.Item>
+              <Descriptions.Item label="签到状态">
+                {selectedReview.check_in_status ? (
+                  <Tag color="success">
+                    已签到 {selectedReview.check_in_time && dayjs(selectedReview.check_in_time).format('YYYY-MM-DD HH:mm')}
+                  </Tag>
+                ) : (
+                  <Tag color="default">未签到</Tag>
+                )}
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Divider>报名表单数据</Divider>
+
+            <Descriptions bordered column={1}>
+              {Object.entries(parseFormData(selectedReview.form_data)).map(([key, value]) => (
+                <Descriptions.Item key={key} label={key}>
+                  {String(value)}
+                </Descriptions.Item>
+              ))}
+            </Descriptions>
+          </div>
+        )}
+      </Modal>
+    </div>
+  );
+};
+
+export default ReviewList;
