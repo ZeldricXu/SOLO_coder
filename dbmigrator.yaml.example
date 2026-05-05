@@ -1,0 +1,36 @@
+# DBMigrator Configuration File
+# Copy this file to dbmigrator.yaml and configure for your environment
+
+environments:
+  development:
+    database:
+      driver: mysql
+      host: localhost
+      port: 3306
+      user: root
+      password: your_password
+      dbname: myapp_development
+
+  test:
+    database:
+      driver: mysql
+      host: localhost
+      port: 3306
+      user: root
+      password: your_password
+      dbname: myapp_test
+
+  production:
+    database:
+      driver: postgres
+      host: db.example.com
+      port: 5432
+      user: app_user
+      password: ${DB_PASSWORD}
+      dbname: myapp_production
+      sslmode: require
+
+migrations:
+  directory: migrations
+  table: schema_migrations
+  log_table: migration_logs
