@@ -1,0 +1,27 @@
+{
+  "name": "dochub-frontend",
+  "version": "1.0.0",
+  "description": "DocHub 文档协作平台前端应用",
+  "private": true,
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.15.0",
+    "react-quill": "^2.0.0",
+    "antd": "^5.9.0",
+    "@ant-design/icons": "^5.2.6",
+    "axios": "^1.5.0",
+    "dayjs": "^1.11.9",
+    "lodash": "^4.17.21",
+    "quill": "^1.3.7"
+  },
+  "devDependencies": {
+    "vite": "^4.4.9",
+    "@vitejs/plugin-react": "^4.0.4"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  }
+}
