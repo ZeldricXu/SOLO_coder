@@ -1,0 +1,153 @@
+{
+  "statusConfig": {
+    "version": "1.0.0",
+    "description": "TaskFlow 任务状态流转配置",
+    "updatedAt": "2026-05-05"
+  },
+  
+  "statuses": [
+    {
+      "value": "todo",
+      "label": "待办",
+      "color": "#d9d9d9",
+      "textColor": "#666666",
+      "icon": "📋",
+      "description": "任务已创建，等待开始"
+    },
+    {
+      "value": "in_progress",
+      "label": "进行中",
+      "color": "#1890ff",
+      "textColor": "#ffffff",
+      "icon": "🔄",
+      "description": "任务正在执行中"
+    },
+    {
+      "value": "completed",
+      "label": "已完成",
+      "color": "#52c41a",
+      "textColor": "#ffffff",
+      "icon": "✅",
+      "description": "任务已完成"
+    },
+    {
+      "value": "cancelled",
+      "label": "已取消",
+      "color": "#ff4d4f",
+      "textColor": "#ffffff",
+      "icon": "❌",
+      "description": "任务已取消"
+    }
+  ],
+
+  "primaryFlow": ["todo", "in_progress", "completed"],
+  "alternativeFlows": [
+    ["todo", "cancelled"],
+    ["in_progress", "cancelled"]
+  ],
+  "revertFlow": ["completed", "in_progress", "todo"],
+
+  "transitionRules": {
+    "todo": {
+      "allowedTransitions": ["in_progress", "cancelled"],
+      "businessRules": [
+        {
+          "name": "can_start_task",
+          "description": "可以开始任务",
+          "enabled": true,
+          "validateFunction": "validateCanStartTask"
+        },
+        {
+          "name": "can_cancel_task",
+          "description": "可以取消任务",
+          "enabled": true,
+          "validateFunction": "validateCanCancelTask"
+        }
+      ]
+    },
+    "in_progress": {
+      "allowedTransitions": ["todo", "completed", "cancelled"],
+      "businessRules": [
+        {
+          "name": "can_pause_task",
+          "description": "可以暂停任务",
+          "enabled": true,
+          "validateFunction": "validateCanPauseTask"
+        },
+        {
+          "name": "can_complete_task",
+          "description": "可以完成任务",
+          "enabled": true,
+          "validateFunction": "validateCanCompleteTask",
+          "conditions": {
+            "progressMustBe100": true,
+            "errorMessage": "任务进度必须达到100%才能标记为完成"
+          }
+        },
+        {
+          "name": "can_cancel_in_progress_task",
+          "description": "可以取消进行中的任务",
+          "enabled": true,
+          "validateFunction": "validateCanCancelInProgressTask"
+        }
+      ]
+    },
+    "completed": {
+      "allowedTransitions": ["in_progress"],
+      "businessRules": [
+        {
+          "name": "can_reopen_task",
+          "description": "可以重新打开任务",
+          "enabled": true,
+          "validateFunction": "validateCanReopenTask",
+          "conditions": {
+            "maxDaysSinceCompletion": 7,
+            "errorMessage": "任务已完成超过{days}天，无法重新打开"
+          }
+        }
+      ]
+    },
+    "cancelled": {
+      "allowedTransitions": ["todo"],
+      "businessRules": [
+        {
+          "name": "can_restore_task",
+          "description": "可以恢复已取消的任务",
+          "enabled": true,
+          "validateFunction": "validateCanRestoreTask"
+        }
+      ]
+    }
+  },
+
+  "globalSettings": {
+    "allowSameStatusTransition": false,
+    "optimisticLocking": {
+      "enabled": true,
+      "versionField": "version"
+    },
+    "historyTracking": {
+      "enabled": true,
+      "trackFields": ["status", "progress", "due_date", "priority"]
+    }
+  },
+
+  "customRules": {
+    "enabled": false,
+    "rules": [
+      {
+        "name": "custom_rule_example",
+        "description": "自定义规则示例",
+        "enabled": false,
+        "trigger": {
+          "fromStatus": "*",
+          "toStatus": "*"
+        },
+        "condition": {
+          "type": "javascript",
+          "code": "return true"
+        }
+      }
+    ]
+  }
+}
