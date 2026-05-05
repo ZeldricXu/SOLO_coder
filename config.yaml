@@ -1,0 +1,38 @@
+server:
+  port: 8080
+  mode: debug
+
+mysql:
+  host: localhost
+  port: 3306
+  username: root
+  password: password
+  database: game_leaderboard
+  charset: utf8mb4
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+websocket:
+  read_buffer_size: 1024
+  write_buffer_size: 1024
+  write_wait: 10
+  pong_wait: 60
+  ping_period: 54
+
+season:
+  auto_switch_enabled: true
+  check_interval: 1m
+  default_duration: 168h
+  archive_enabled: true
+  backup_timeout: 30s
+
+ranking:
+  incremental_update: true
+  snapshot_interval: 5m
+  push_aggregation_enabled: true
+  push_aggregation_window: 1s
+  same_score_same_rank: true
