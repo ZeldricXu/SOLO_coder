@@ -1,0 +1,82 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: rate-limiter-service
+  
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  endpoint:
+    health:
+      show-details: always
+    prometheus:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    com.ratelimiter: DEBUG
+    org.springframework.data.redis: WARN
+
+ratelimiter:
+  default:
+    threshold: 1000
+    window-size: 60
+    burst-size: 100
+  circuit:
+    default-failure-threshold: 10
+    default-success-threshold: 5
+    default-timeout-ms: 30000
+    notification:
+      enabled: true
+      max-retry-count: 3
+      retry-delay-ms: 1000
+      async: true
+  quota:
+    default-daily-quota: 10000
+  stats:
+    enabled: true
+    persist-interval-ms: 60000
+    high-error-rate-threshold: 0.1
+    max-stored-periods: 10080
+    enable-alerting: true
+    aggregation-dimensions:
+      - api_path
+      - time_period
+      - client_id
+      - user_id
+    alert-channels:
+      - email
+      - webhook
+  sliding-window:
+    cleanup:
+      enabled: true
+      interval-ms: 30000
+      local-cleanup-interval-ms: 60000
+  policy:
+    validation:
+      enabled: true
+      strict-mode: false
