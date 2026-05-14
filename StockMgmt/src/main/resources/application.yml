@@ -1,0 +1,81 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: stock-mgmt
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/stock_mgmt?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+    timeout: 5000
+    lettuce:
+      pool:
+        max-active: 8
+        max-wait: -1
+        max-idle: 8
+        min-idle: 0
+
+logging:
+  level:
+    com.stockmgmt: DEBUG
+    org.hibernate.SQL: WARN
+
+stock:
+  warning:
+    scan-interval: 60000
+    default-low-stock-threshold: 10
+    default-overstock-threshold: 500
+    default-low-stock-turnover-days: 7
+    default-overstock-turnover-days: 90
+
+    aggregation:
+      default-window-seconds: 300
+      default-max-notifications: 1
+      default-cooldown-seconds: 300
+
+  lock:
+    default-timeout-seconds: 30
+    default-max-retry: 3
+    default-retry-delay: 1
+
+  task:
+    max-retry: 3
+    retry-delay: 1000
+    worker-count: 2
+    processing-timeout: 300000
+
+  notification:
+    email:
+      enabled: false
+      host: smtp.example.com
+      port: 587
+      username: notification@example.com
+      password: password
+      from: notification@example.com
+      to: admin@example.com
+    sms:
+      enabled: false
+      provider: aliyun
+      access-key-id: your-access-key
+      access-key-secret: your-access-secret
+      sign-name: 库存管理
+      template-code: SMS_123456
+      phones: 13800138000
