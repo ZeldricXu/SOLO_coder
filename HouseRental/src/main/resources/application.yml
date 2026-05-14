@@ -1,0 +1,123 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: HouseRental
+  datasource:
+    url: jdbc:h2:mem:houserental;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      database: 0
+      timeout: 5000
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+logging:
+  level:
+    com.houserental: DEBUG
+    org.springframework.web: INFO
+
+application:
+  check:
+    rules:
+      - name: single_house_duplicate_check
+        scope: house
+        enabled: true
+        description: 检查单房源是否已有待处理申请，避免重复申请
+        priority: 1
+      - name: tenant_history_check
+        scope: tenant
+        enabled: true
+        description: 检查租客申请历史，同一租客可申请不同房源
+        priority: 2
+      - name: house_status_check
+        scope: house
+        enabled: true
+        description: 检查房源状态，已出租或已下架房源拒绝申请
+        priority: 3
+    default-scope: combined
+
+contract:
+  reminder:
+    types:
+      - type: long_term
+        name: 长租合同
+        threshold-months: 12
+        days-before: 60
+        frequency: 3
+        description: 租期12个月及以上的合同，提前60天开始提醒，每周提醒3次
+      - type: short_term
+        name: 短租合同
+        threshold-months: 3
+        days-before: 14
+        frequency: 1
+        description: 租期3-11个月的合同，提前14天开始提醒，每周提醒1次
+      - type: temporary
+        name: 临时合同
+        threshold-months: 1
+        days-before: 7
+        frequency: 1
+        description: 租期1-2个月的临时合同，提前7天开始提醒
+    long-term-days-before: 60
+    short-term-days-before: 14
+    long-term-threshold-months: 12
+
+house:
+  types:
+    - type: apartment
+      name: 公寓
+      description: 标准公寓住宅
+      enabled: true
+      category: residential
+    - type: house
+      name: 独栋住宅
+      description: 独栋别墅或独立住宅
+      enabled: true
+      category: residential
+    - type: villa
+      name: 别墅
+      description: 高档别墅
+      enabled: true
+      category: residential
+    - type: studio
+      name: 单身公寓
+      description: 开放式单间公寓
+      enabled: true
+      category: residential
+    - type: loft
+      name: 复式公寓
+      description: 挑高复式结构
+      enabled: false
+      category: residential
+  default-type: apartment
+
+payment:
+  queue:
+    redis-key: rental:payment:tasks
+    retry-key: rental:payment:retry
+    dead-letter-key: rental:payment:dead-letter
+  max-retry-count: 3
+  retry-delay-minutes: 5
+  retry-check-interval-ms: 60000
