@@ -1,0 +1,212 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2024-01-01T00:00:00Z",
+  "default_strategy": "balanced",
+  "strategies": {
+    "relevance": {
+      "name": "相关度优先",
+      "description": "纯BM25相关度排序，不考虑任何业务因子",
+      "enabled": true,
+      "scorers": [
+        {
+          "name": "bm25",
+          "weight": 1.0,
+          "description": "BM25文本相关性分数"
+        }
+      ]
+    },
+    "balanced": {
+      "name": "均衡排序",
+      "description": "相关度、时效性、点击率的均衡排序，适合大多数场景",
+      "enabled": true,
+      "scorers": [
+        {
+          "name": "bm25",
+          "weight": 0.5,
+          "description": "BM25文本相关性"
+        },
+        {
+          "name": "recency",
+          "weight": 0.2,
+          "description": "时间衰减分数"
+        },
+        {
+          "name": "popularity",
+          "weight": 0.3,
+          "description": "点击率/热度分数"
+        }
+      ]
+    },
+    "trending": {
+      "name": "热门优先",
+      "description": "高权重的时效性和热度排序，适合发现最新热门内容",
+      "enabled": true,
+      "scorers": [
+        {
+          "name": "bm25",
+          "weight": 0.3,
+          "description": "基础相关度保证"
+        },
+        {
+          "name": "recency",
+          "weight": 0.35,
+          "description": "强时效性"
+        },
+        {
+          "name": "popularity",
+          "weight": 0.35,
+          "description": "强热度权重"
+        }
+      ]
+    },
+    "fresh": {
+      "name": "最新优先",
+      "description": "极端时效性排序，适合新闻、动态内容场景",
+      "enabled": true,
+      "scorers": [
+        {
+          "name": "bm25",
+          "weight": 0.2,
+          "description": "基础相关度"
+        },
+        {
+          "name": "recency",
+          "weight": 0.7,
+          "description": "极高时效性"
+        },
+        {
+          "name": "popularity",
+          "weight": 0.1,
+          "description": "弱热度"
+        }
+      ]
+    },
+    "popular": {
+      "name": "历史热门",
+      "description": "基于长期积累的点击率/热度排序",
+      "enabled": true,
+      "scorers": [
+        {
+          "name": "bm25",
+          "weight": 0.25,
+          "description": "基础相关度"
+        },
+        {
+          "name": "recency",
+          "weight": 0.1,
+          "description": "弱时效性"
+        },
+        {
+          "name": "popularity",
+          "weight": 0.65,
+          "description": "强热度权重"
+        }
+      ]
+    },
+    "category_boost": {
+      "name": "分类加权",
+      "description": "对特定分类的内容给予额外权重加成",
+      "enabled": true,
+      "scorers": [
+        {
+          "name": "bm25",
+          "weight": 0.4,
+          "description": "基础相关度"
+        },
+        {
+          "name": "recency",
+          "weight": 0.2,
+          "description": "时效性"
+        },
+        {
+          "name": "popularity",
+          "weight": 0.25,
+          "description": "热度"
+        },
+        {
+          "name": "category",
+          "weight": 0.15,
+          "description": "分类偏好",
+          "params": {
+            "boost_categories": ["python", "ai", "ml"],
+            "boost_factor": 1.5
+          }
+        }
+      ]
+    },
+    "premium_content": {
+      "name": "优质内容优先",
+      "description": "优先展示高质量内容，包含阅读时长和作者评级因子",
+      "enabled": true,
+      "scorers": [
+        {
+          "name": "bm25",
+          "weight": 0.3,
+          "description": "文本相关性"
+        },
+        {
+          "name": "recency",
+          "weight": 0.15,
+          "description": "时效性"
+        },
+        {
+          "name": "popularity",
+          "weight": 0.2,
+          "description": "热度"
+        },
+        {
+          "name": "quality",
+          "weight": 0.2,
+          "description": "内容质量评分",
+          "params": {
+            "read_time_threshold": 5,
+            "word_count_threshold": 1000
+          }
+        },
+        {
+          "name": "author",
+          "weight": 0.15,
+          "description": "作者评级"
+        }
+      ]
+    }
+  },
+  "scorer_registry": {
+    "bm25": {
+      "module": "searchengine.modules.sort_strategy",
+      "class": "BM25Scorer",
+      "description": "BM25文本相关性评分器"
+    },
+    "recency": {
+      "module": "searchengine.modules.sort_strategy",
+      "class": "RecencyScorer",
+      "description": "时间衰减评分器"
+    },
+    "popularity": {
+      "module": "searchengine.modules.sort_strategy",
+      "class": "PopularityScorer",
+      "description": "热度/点击率评分器"
+    },
+    "category": {
+      "module": "searchengine.modules.sort_strategy",
+      "class": "CategoryScorer",
+      "description": "分类偏好评分器"
+    },
+    "quality": {
+      "module": "searchengine.modules.sort_strategy",
+      "class": "QualityScorer",
+      "description": "内容质量评分器"
+    },
+    "author": {
+      "module": "searchengine.modules.sort_strategy",
+      "class": "AuthorScorer",
+      "description": "作者评级评分器"
+    }
+  },
+  "global_settings": {
+    "enable_normalization": true,
+    "score_min": 0.0,
+    "score_max": 100.0,
+    "tie_breaker": "recency"
+  }
+}
