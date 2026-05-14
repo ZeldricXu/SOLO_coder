@@ -1,0 +1,143 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: CMSPlatform
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/cms_platform?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQL8Dialect
+
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-wait: -1ms
+        max-idle: 8
+        min-idle: 0
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+      key-prefix: cms:cache:
+
+  task:
+    scheduling:
+      pool:
+        size: 4
+
+cms:
+  review:
+    reminder:
+      enabled: true
+      max-reminder-count: 10
+      frequency:
+        critical: 5
+        urgent: 15
+        high: 30
+        normal: 60
+
+  publish:
+    warning:
+      enabled: true
+      offset-minutes:
+        critical: 1440
+        high: 720
+        normal: 120
+        low: 30
+
+  content:
+    types:
+      default-type: article
+      types:
+        - code: article
+          name: 文章
+          description: 标准文章内容
+          review-required: true
+          publish-approval-required: true
+          default-urgency: normal
+          default-importance: normal
+          max-title-length: 200
+          review-frequency-minutes: 60
+          warning-offset-minutes: 120
+        - code: news
+          name: 新闻
+          description: 新闻资讯内容
+          review-required: true
+          publish-approval-required: true
+          default-urgency: high
+          default-importance: high
+          max-title-length: 100
+          review-frequency-minutes: 30
+          warning-offset-minutes: 720
+        - code: announcement
+          name: 公告
+          description: 官方公告内容
+          review-required: true
+          publish-approval-required: true
+          default-urgency: urgent
+          default-importance: critical
+          max-title-length: 150
+          review-frequency-minutes: 15
+          warning-offset-minutes: 1440
+        - code: blog
+          name: 博客
+          description: 个人博客内容
+          review-required: false
+          publish-approval-required: false
+          default-urgency: normal
+          default-importance: low
+          max-title-length: 200
+          review-frequency-minutes: 60
+          warning-offset-minutes: 30
+        - code: page
+          name: 页面
+          description: 静态页面内容
+          review-required: true
+          publish-approval-required: true
+          default-urgency: normal
+          default-importance: normal
+          max-title-length: 200
+          review-frequency-minutes: 60
+          warning-offset-minutes: 120
+
+  statistics:
+    async:
+      enabled: true
+      worker:
+        enabled: true
+        view-interval: 1000
+        like-interval: 2000
+        share-interval: 3000
+        batch-size: 100
+    queue:
+      redis:
+        enabled: true
+        view-queue: cms:statistics:view:queue
+        like-queue: cms:statistics:like:queue
+        share-queue: cms:statistics:share:queue
+        task-set: cms:statistics:tasks:pending
+        task-hash-prefix: cms:statistics:task:
+
+logging:
+  level:
+    com.cms: DEBUG
+    org.springframework.cache: DEBUG
