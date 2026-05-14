@@ -1,0 +1,79 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: contract-mgmt
+  datasource:
+    url: jdbc:h2:mem:contractdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+
+contract:
+  reminder:
+    advance-days: 15
+  approval:
+    default-approvers:
+      - user_manager_01
+      - user_manager_02
+      - user_manager_03
+    timeout:
+      normal-hours: 24
+      urgent-hours: 4
+      critical-hours: 1
+      enabled: true
+    execution-check:
+      active-hours: 1
+      normal-hours: 6
+      inactive-hours: 24
+    approval-flow:
+      default-flow: default
+      flows:
+        - name: default
+          description: 默认审批流程
+          condition: default
+          enabled: true
+          approvers:
+            - user_manager_01
+            - user_manager_02
+        - name: high-value
+          description: 高金额审批流程
+          condition: amount>500000
+          enabled: true
+          approvers:
+            - user_manager_01
+            - user_manager_02
+            - user_manager_03
+        - name: urgent
+          description: 紧急合同审批流程
+          condition: urgency>=urgent
+          enabled: true
+          approvers:
+            - user_manager_01
+            - user_manager_02
+            - user_manager_03
+        - name: critical
+          description: 特别紧急审批流程
+          condition: urgency=critical
+          enabled: true
+          approvers:
+            - user_manager_01
+            - user_manager_02
+            - user_manager_03
+
+logging:
+  level:
+    com.contractmgmt: INFO
+    org.hibernate.SQL: WARN
