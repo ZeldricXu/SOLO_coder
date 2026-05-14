@@ -1,0 +1,136 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: AssetInventory
+
+  datasource:
+    url: jdbc:h2:mem:assetinventory;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+  sql:
+    init:
+      mode: always
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+logging:
+  level:
+    com.assetinventory: DEBUG
+    org.hibernate.SQL: DEBUG
+    org.springframework.data.redis: DEBUG
+
+inventory:
+  lock:
+    enabled: true
+    priority:
+      urgent:
+        name: "紧急盘点"
+        level: 1
+        timeout-seconds: 5
+        description: "紧急盘点任务，需要快速响应"
+      normal:
+        name: "普通盘点"
+        level: 2
+        timeout-seconds: 30
+        description: "普通盘点任务，可以等待锁释放"
+      scheduled:
+        name: "计划盘点"
+        level: 3
+        timeout-seconds: 60
+        description: "计划内盘点任务，最长等待时间"
+    default-priority: "normal"
+
+  alert:
+    enabled: true
+    severity:
+      critical:
+        name: "严重差异"
+        level: 1
+        alert-interval-seconds: 60
+        threshold: 0.5
+        description: "差异率>=50%，需要立即处理"
+      high:
+        name: "高优先级差异"
+        level: 2
+        alert-interval-seconds: 300
+        threshold: 0.2
+        description: "差异率>=20%，需要尽快处理"
+      medium:
+        name: "中等差异"
+        level: 3
+        alert-interval-seconds: 600
+        threshold: 0.1
+        description: "差异率>=10%，需要关注"
+      low:
+        name: "轻微差异"
+        level: 4
+        alert-interval-seconds: 1800
+        threshold: 0.0
+        description: "差异率<10%，定期处理"
+
+  detection:
+    enabled: true
+    redis:
+      queue-name: "inventory:detection:queue"
+      processing-set: "inventory:detection:processing"
+      retry-queue-name: "inventory:detection:retry"
+      max-retries: 3
+      retry-delay-seconds: 60
+    worker:
+      thread-count: 2
+      poll-timeout-ms: 500
+
+  categories:
+    enabled: true
+    defaults:
+      - code: "equipment"
+        name: "设备类"
+        description: "电子设备、办公设备、IT设备等"
+        status: "active"
+      - code: "furniture"
+        name: "家具类"
+        description: "办公家具、储物柜、文件柜等"
+        status: "active"
+      - code: "software"
+        name: "软件类"
+        description: "软件许可、授权证书、订阅服务等"
+        status: "active"
+      - code: "vehicle"
+        name: "车辆类"
+        description: "公司车辆、交通工具等"
+        status: "active"
+      - code: "building"
+        name: "建筑类"
+        description: "房屋建筑、土地使用权等"
+        status: "active"
+    auto-load: true
