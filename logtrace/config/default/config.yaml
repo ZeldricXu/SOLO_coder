@@ -1,0 +1,53 @@
+elasticsearch:
+  host: localhost
+  port: 9200
+  index_prefix: logtrace
+
+api:
+  host: 0.0.0.0
+  port: 5000
+  debug: false
+
+nodes:
+  - node_id: node_server_01
+    node_name: 应用服务器01
+    node_address: 192.168.1.100
+    log_path: /var/log/app.log
+    collect_mode: realtime
+    collect_interval: 10
+    enabled: true
+
+exception_rules:
+  - rule_id: rule_error_pattern
+    rule_name: 错误日志识别
+    pattern: error|exception|failed
+    log_level_filter:
+      - error
+      - fatal
+    severity: high
+    alert_enabled: true
+    alert_threshold: 10
+
+  - rule_id: rule_warning_pattern
+    rule_name: 警告日志识别
+    pattern: warning|warn|timeout
+    log_level_filter:
+      - warning
+    severity: medium
+    alert_enabled: true
+    alert_threshold: 50
+
+alert:
+  channels:
+    - type: console
+      enabled: true
+    - type: email
+      enabled: false
+      smtp_server: smtp.example.com
+      smtp_port: 587
+      sender: alerts@example.com
+      recipients:
+        - admin@example.com
+
+retention:
+  days: 30
