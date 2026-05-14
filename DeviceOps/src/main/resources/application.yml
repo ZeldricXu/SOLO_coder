@@ -1,0 +1,86 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: DeviceOps
+
+  datasource:
+    url: jdbc:h2:mem:deviceops;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+
+deviceops:
+  config:
+    refresh-interval-ms: 30000
+  queue:
+    redis-queue-key: deviceops:fault:queue
+    processing-set-key: deviceops:fault:processing
+    dead-letter-key: deviceops:fault:deadletter
+  worker:
+    thread-count: 4
+    poll-interval-ms: 100
+
+  alert:
+    retry:
+      high:
+        max-retries: 5
+        interval-seconds: 30
+        auto-retry: true
+      medium:
+        max-retries: 3
+        interval-seconds: 60
+        auto-retry: true
+      low:
+        max-retries: 1
+        interval-seconds: 300
+        auto-retry: false
+
+  task:
+    lock:
+      high:
+        timeout-seconds: 1800
+        max-wait-seconds: 60
+        priority-boost: true
+      medium:
+        timeout-seconds: 3600
+        max-wait-seconds: 300
+        priority-boost: true
+      low:
+        timeout-seconds: 7200
+        max-wait-seconds: 600
+        priority-boost: false
+
+logging:
+  level:
+    com.deviceops: DEBUG
+    org.hibernate.SQL: DEBUG
