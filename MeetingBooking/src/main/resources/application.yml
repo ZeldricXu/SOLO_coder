@@ -1,0 +1,105 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: MeetingBooking
+  datasource:
+    url: jdbc:h2:mem:meetingdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+meeting:
+  lock:
+    enabled: true
+    default-timeout-seconds: 30
+    type-configs:
+      urgent:
+        lock-timeout-seconds: 10
+        priority: 1
+        description: "紧急会议锁定配置"
+      regular:
+        lock-timeout-seconds: 60
+        priority: 5
+        description: "普通会议锁定配置"
+      training:
+        lock-timeout-seconds: 90
+        priority: 8
+        description: "培训会议锁定配置"
+      review:
+        lock-timeout-seconds: 45
+        priority: 6
+        description: "评审会议锁定配置"
+      interview:
+        lock-timeout-seconds: 30
+        priority: 3
+        description: "面试会议锁定配置"
+
+  reminder:
+    enabled: true
+    max-reminder-count: 3
+    reminder-interval-minutes: 30
+    strategy-configs:
+      important:
+        required-confirm-count: 2
+        max-reminder-count: 4
+        reminder-interval-minutes: 15
+        description: "重要参会人员确认策略"
+      normal:
+        required-confirm-count: 1
+        max-reminder-count: 3
+        reminder-interval-minutes: 30
+        description: "普通参会人员确认策略"
+      vip:
+        required-confirm-count: 3
+        max-reminder-count: 5
+        reminder-interval-minutes: 10
+        description: "VIP参会人员确认策略"
+
+  invite:
+    queue-name: meeting:invite:queue
+    processing-set-name: meeting:invite:processing
+    retry:
+      max-retry-count: 3
+      retry-delay-ms: 1000
+      backoff-multiplier: 2
+    worker:
+      enabled: true
+      poll-interval-ms: 500
+      batch-size: 10
+
+  type:
+    default-type: regular
+    enable-dynamic-config: true
+    cache-ttl-seconds: 300
+
+logging:
+  level:
+    com.meeting: DEBUG
+    org.springframework.data.redis: DEBUG
