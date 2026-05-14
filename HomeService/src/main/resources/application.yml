@@ -1,0 +1,165 @@
+spring:
+  application:
+    name: homeservice
+  datasource:
+    url: jdbc:mysql://localhost:3306/homeservice?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQLDialect
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.homeservice: DEBUG
+
+homeservice:
+  customer-level:
+    lock-timeout:
+      default:
+        wait-timeout-ms: 3000
+        hold-timeout-ms: 30000
+      platinum:
+        wait-timeout-ms: 500
+        hold-timeout-ms: 30000
+      gold:
+        wait-timeout-ms: 1000
+        hold-timeout-ms: 30000
+      silver:
+        wait-timeout-ms: 2000
+        hold-timeout-ms: 30000
+      bronze:
+        wait-timeout-ms: 3000
+        hold-timeout-ms: 30000
+      new:
+        wait-timeout-ms: 5000
+        hold-timeout-ms: 30000
+    reminder:
+      default:
+        interval-hours: 24
+        max-reminders: 3
+        activity-threshold: 5
+      platinum:
+        interval-hours: 48
+        max-reminders: 2
+        activity-threshold: 3
+      gold:
+        interval-hours: 36
+        max-reminders: 3
+        activity-threshold: 5
+      silver:
+        interval-hours: 24
+        max-reminders: 3
+        activity-threshold: 5
+      bronze:
+        interval-hours: 12
+        max-reminders: 5
+        activity-threshold: 10
+      new:
+        interval-hours: 6
+        max-reminders: 5
+        activity-threshold: 10
+
+  service-types:
+    auto-create-from-config: true
+    defaults:
+      - code: CLEANING
+        name: 家政清洁
+        description: 家庭日常清洁服务
+        base-price: 150.0
+        active: true
+        supported-regions:
+          - BEIJING
+          - SHANGHAI
+          - GUANGZHOU
+        min-duration: 60
+        max-duration: 240
+      - code: COOKING
+        name: 上门做饭
+        description: 专业厨师上门烹饪服务
+        base-price: 200.0
+        active: true
+        supported-regions:
+          - BEIJING
+          - SHANGHAI
+        min-duration: 90
+        max-duration: 300
+      - code: LAUNDRY
+        name: 洗衣服务
+        description: 专业衣物清洗熨烫服务
+        base-price: 80.0
+        active: true
+        supported-regions:
+          - BEIJING
+          - SHANGHAI
+          - GUANGZHOU
+          - SHENZHEN
+        min-duration: 30
+        max-duration: 120
+      - code: CHILDCARE
+        name: 育儿陪护
+        description: 专业育儿陪护服务
+        base-price: 300.0
+        active: true
+        supported-regions:
+          - BEIJING
+          - SHANGHAI
+        min-duration: 120
+        max-duration: 480
+      - code: ELDERCARE
+        name: 老人照料
+        description: 专业老年人陪护照料服务
+        base-price: 250.0
+        active: true
+        supported-regions:
+          - BEIJING
+          - SHANGHAI
+          - GUANGZHOU
+        min-duration: 120
+        max-duration: 480
+      - code: PETCARE
+        name: 宠物照料
+        description: 专业宠物护理照料服务
+        base-price: 120.0
+        active: false
+        supported-regions:
+          - BEIJING
+        min-duration: 30
+        max-duration: 180
+
+  redis:
+    enabled: false
+    host: localhost
+    port: 6379
+    queue:
+      settlement-queue-key: homeservice:settlement:queue
+      processing-key: homeservice:settlement:processing
+      failed-key: homeservice:settlement:failed
+      poll-interval-ms: 1000
+      max-processing-time-ms: 300000
+      retry-delay-ms: 5000
+      max-retries: 3
