@@ -1,0 +1,127 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: SocialNetwork
+  datasource:
+    url: jdbc:h2:mem:socialdb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: password
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+logging:
+  level:
+    com.social: DEBUG
+
+social:
+  privacy:
+    friend-request-policies:
+      all:
+        code: all
+        name: 所有人
+        description: 允许所有人发送好友请求
+        enabled: true
+        priority: 1
+      friends-of-friends:
+        code: friends_of_friends
+        name: 好友的好友
+        description: 仅允许好友的好友发送好友请求
+        enabled: true
+        priority: 2
+      followers-only:
+        code: followers_only
+        name: 仅关注者
+        description: 仅允许已关注的用户发送好友请求
+        enabled: true
+        priority: 3
+      none:
+        code: none
+        name: 拒绝所有人
+        description: 拒绝所有人发送好友请求
+        enabled: true
+        priority: 4
+
+    message-policies:
+      all:
+        code: all
+        name: 所有人
+        description: 允许所有人发送消息
+        enabled: true
+        priority: 1
+      friends-only:
+        code: friends_only
+        name: 仅好友
+        description: 仅允许好友发送消息
+        enabled: true
+        priority: 2
+      followers-only:
+        code: followers_only
+        name: 仅关注者
+        description: 仅允许已关注的用户发送消息
+        enabled: true
+        priority: 3
+      none:
+        code: none
+        name: 拒绝所有人
+        description: 拒绝所有人发送消息
+        enabled: true
+        priority: 4
+
+    post-visibilities:
+      public:
+        code: public
+        name: 公开
+        description: 所有人可见
+        enabled: true
+        priority: 1
+      friends-only:
+        code: friends_only
+        name: 仅好友可见
+        description: 仅好友可见
+        enabled: true
+        priority: 2
+      followers-only:
+        code: followers_only
+        name: 仅关注者可见
+        description: 仅关注者可见
+        enabled: true
+        priority: 3
+      private:
+        code: private
+        name: 仅自己可见
+        description: 仅自己可见
+        enabled: true
+        priority: 4
+
+    profile-visibilities:
+      public:
+        code: public
+        name: 公开
+        description: 所有人可见个人资料
+        enabled: true
+        priority: 1
+      friends-only:
+        code: friends_only
+        name: 仅好友可见
+        description: 仅好友可见个人资料
+        enabled: true
+        priority: 2
+      private:
+        code: private
+        name: 仅自己可见
+        description: 仅自己可见个人资料
+        enabled: true
+        priority: 3
