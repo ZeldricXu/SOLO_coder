@@ -1,0 +1,48 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ecommerce-logistics-test
+
+  datasource:
+    url: jdbc:h2:mem:ecommerce_logistics_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: false
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    database-platform: org.hibernate.dialect.H2Dialect
+
+logging:
+  level:
+    com.logistics: INFO
+    org.hibernate.SQL: WARN
+
+logistics:
+  lock:
+    timeout-seconds:
+      NORMAL: 30
+      URGENT: 5
+      SUPER_URGENT: 2
+
+  track:
+    high-frequency-threshold: 3
+    high-frequency-window-seconds: 5
+    batch-flush-threshold: 10
+    batch-flush-interval-ms: 2000
+
+  notification:
+    redis-queue-name: notification:queue:test
+    redis-failed-queue-name: notification:failed:test
+    max-retry-count: 3
+    retry-delay-ms: 1000
+    failed-check-interval-ms: 5000
+    max-workers: 5

@@ -1,0 +1,68 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: ecommerce-logistics
+
+  datasource:
+    url: jdbc:h2:mem:ecommerce_logistics;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    database-platform: org.hibernate.dialect.H2Dialect
+
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    timeout: 5000
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 600000
+
+logging:
+  level:
+    com.logistics: DEBUG
+    org.hibernate.SQL: DEBUG
+
+logistics:
+  lock:
+    timeout-seconds:
+      NORMAL: 30
+      URGENT: 5
+      SUPER_URGENT: 2
+
+  track:
+    high-frequency-threshold: 3
+    high-frequency-window-seconds: 5
+    batch-flush-threshold: 10
+    batch-flush-interval-ms: 2000
+
+  notification:
+    redis-queue-name: notification:queue
+    redis-failed-queue-name: notification:failed
+    max-retry-count: 3
+    retry-delay-ms: 1000
+    failed-check-interval-ms: 5000
+    max-workers: 5
