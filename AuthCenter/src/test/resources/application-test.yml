@@ -1,0 +1,41 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: authcenter-test
+  
+  datasource:
+    url: jdbc:h2:mem:authcenter_test;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+jwt:
+  secret: test-authcenter-secret-key-for-jwt-token-generation-2026-testing
+  expiration: 3600000
+
+mfa:
+  sms:
+    expiration: 60000
+    code-length: 6
+  email:
+    expiration: 60000
+
+session:
+  max-duration: 3600000
+
+security:
+  policy:
+    max-failed-login: 3
+    lock-duration: 60000
+    password-min-length: 6
+    password-require-complex: false
