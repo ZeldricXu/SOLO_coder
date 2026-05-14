@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.invoice.mgmt.statistics.mapper.InvoiceStatisticsMapper">
+    <resultMap id="InvoiceStatisticsResultMap" type="com.invoice.mgmt.common.entity.InvoiceStatistics">
+        <id property="statId" column="stat_id"/>
+        <result property="statMonth" column="stat_month"/>
+        <result property="issueCount" column="issue_count"/>
+        <result property="totalAmount" column="total_amount"/>
+        <result property="totalTax" column="total_tax"/>
+        <result property="verifyCount" column="verify_count"/>
+        <result property="verifyPassCount" column="verify_pass_count"/>
+        <result property="reimburseCount" column="reimburse_count"/>
+        <result property="reimburseApproveCount" column="reimburse_approve_count"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO t_invoice_statistics (stat_id, stat_month, issue_count, total_amount, total_tax,
+            verify_count, verify_pass_count, reimburse_count, reimburse_approve_count, created_at, updated_at)
+        VALUES (#{statId}, #{statMonth}, #{issueCount}, #{totalAmount}, #{totalTax},
+            #{verifyCount}, #{verifyPassCount}, #{reimburseCount}, #{reimburseApproveCount}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update">
+        UPDATE t_invoice_statistics SET
+            issue_count = #{issueCount},
+            total_amount = #{totalAmount},
+            total_tax = #{totalTax},
+            verify_count = #{verifyCount},
+            verify_pass_count = #{verifyPassCount},
+            reimburse_count = #{reimburseCount},
+            reimburse_approve_count = #{reimburseApproveCount},
+            updated_at = #{updatedAt}
+        WHERE stat_id = #{statId}
+    </update>
+
+    <select id="findById" resultMap="InvoiceStatisticsResultMap">
+        SELECT * FROM t_invoice_statistics WHERE stat_id = #{statId}
+    </select>
+
+    <select id="findByMonth" resultMap="InvoiceStatisticsResultMap">
+        SELECT * FROM t_invoice_statistics WHERE stat_month = #{statMonth}
+    </select>
+
+    <select id="findByMonthRange" resultMap="InvoiceStatisticsResultMap">
+        SELECT * FROM t_invoice_statistics WHERE stat_month &gt;= #{startMonth} AND stat_month &lt;= #{endMonth} ORDER BY stat_month
+    </select>
+
+    <update id="incrementIssueCount">
+        UPDATE t_invoice_statistics SET
+            issue_count = issue_count + 1,
+            total_amount = total_amount + #{amount},
+            total_tax = total_tax + #{tax},
+            updated_at = NOW()
+        WHERE stat_month = #{statMonth}
+    </update>
+
+    <update id="incrementVerifyCount">
+        UPDATE t_invoice_statistics SET
+            verify_count = verify_count + 1,
+            verify_pass_count = verify_pass_count + CASE WHEN #{passed} = TRUE THEN 1 ELSE 0 END,
+            updated_at = NOW()
+        WHERE stat_month = #{statMonth}
+    </update>
+
+    <update id="incrementReimburseCount">
+        UPDATE t_invoice_statistics SET
+            reimburse_count = reimburse_count + CASE WHEN #{approved} = FALSE THEN 1 ELSE 0 END,
+            reimburse_approve_count = reimburse_approve_count + CASE WHEN #{approved} = TRUE THEN 1 ELSE 0 END,
+            updated_at = NOW()
+        WHERE stat_month = #{statMonth}
+    </update>
+</mapper>
