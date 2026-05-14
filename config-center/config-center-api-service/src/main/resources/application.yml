@@ -1,0 +1,191 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: config-center
+  datasource:
+    url: jdbc:mysql://localhost:3306/config_center?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+
+config-center:
+  encryption:
+    enabled: true
+    algorithm: AES
+    secret-key: config-center-secret-key-123456789
+    iv: config-center-iv-
+    key-size: 256
+    cipher-algorithm: AES/CBC/PKCS5Padding
+
+  push:
+    enabled: true
+    max-retry-count: 3
+    retry-interval-seconds: 60
+    push-timeout-seconds: 30
+    parallel-push-count: 10
+    push-endpoint: /api/v1/configs/refresh
+    min-parallel-count: 1
+    max-parallel-count: 100
+    calculation-strategy: INSTANCE_COUNT_BASED
+    
+    async:
+      enabled: true
+      queue-capacity: 1000
+      core-pool-size: 5
+      max-pool-size: 20
+      keep-alive-seconds: 60
+      retry-count: 3
+      retry-interval-millis: 5000
+    
+    group-parallelism:
+      large-group-id: 50
+      medium-group-id: 20
+      small-group-id: 5
+    
+    group-configs:
+      - group-id: large-group-id
+        group-type: LARGE
+        strategy: FIXED
+        parallelism: 50
+        description: "大分组配置高并行度"
+      - group-id: medium-group-id
+        group-type: MEDIUM
+        strategy: INSTANCE_COUNT_BASED
+        description: "中等分组根据实例数动态计算"
+      - group-id: small-group-id
+        group-type: SMALL
+        strategy: PERCENTAGE
+        parallelism-percentage: 10
+        description: "小分组使用百分比"
+
+  version-compression:
+    enabled: true
+    max-versions-per-config: 100
+    compress-threshold-versions: 50
+    keep-latest-versions: 20
+    compression-algorithm: GZIP
+    min-compression-size: 1024
+    batch-size: 100
+    schedule-cron: "0 0 2 * * ?"
+    trigger-strategy: VERSION_COUNT
+    trigger-time-interval-minutes: 1440
+    retention-strategy: KEEP_LATEST
+    max-archive-age-days: 365
+    auto-cleanup: true
+    keep-key-versions:
+      - v1
+      - v10
+      - v20
+      - v50
+    
+    configs:
+      critical-config-id:
+        config-id: critical-config-id
+        keep-latest-versions: 50
+        compress-threshold-versions: 100
+        retention-strategy: KEEP_KEY_VERSIONS
+        trigger-strategy: BOTH
+        keep-key-versions:
+          - v1
+          - v5
+          - v10
+          - v20
+        description: "关键配置保留更多版本"
+
+  validation:
+    enabled: true
+    dynamic-reload-enabled: true
+    reload-interval-seconds: 300
+    
+    rules:
+      - rule-id: CUSTOM_REGEX_EMAIL
+        rule-type: REGEX
+        name: "邮箱格式校验"
+        description: "校验配置值是否为有效邮箱地址"
+        enabled: true
+        priority: 250
+        params:
+          pattern: "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+        error-message: "邮箱格式不正确"
+      
+      - rule-id: CUSTOM_ENUM_ENV
+        rule-type: ENUM
+        name: "环境枚举校验"
+        description: "校验环境值是否在允许的列表中"
+        enabled: true
+        priority: 260
+        params:
+          values:
+            - dev
+            - test
+            - staging
+            - prod
+          case-insensitive: true
+        error-message: "环境值必须是 dev/test/staging/prod 之一"
+      
+      - rule-id: CUSTOM_REGEX_IP
+        rule-type: REGEX
+        name: "IP地址校验"
+        description: "校验配置值是否为有效IP地址"
+        enabled: true
+        priority: 255
+        params:
+          pattern: "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+        error-message: "IP地址格式不正确"
+      
+      - rule-id: CUSTOM_NUMBER_PORT
+        rule-type: NUMBER_RANGE
+        name: "端口号校验"
+        description: "校验端口号是否在有效范围内"
+        enabled: true
+        priority: 240
+        params:
+          min: 1
+          max: 65535
+        error-message: "端口号必须在 1-65535 范围内"
+
+    config-rule-map:
+      database.host:
+        - CUSTOM_REGEX_IP
+      database.port:
+        - CUSTOM_NUMBER_PORT
+      email.sender:
+        - CUSTOM_REGEX_EMAIL
+      app.environment:
+        - CUSTOM_ENUM_ENV
+
+    config-mappings:
+      - config-key: "database.*"
+        rule-ids:
+          - VALUE_LENGTH
+          - SENSITIVE_CHECK
+        enabled: true
+        description: "数据库相关配置校验"
+      
+      - config-key-pattern: "*.host$"
+        rule-ids:
+          - CUSTOM_REGEX_IP
+          - VALUE_LENGTH
+        enabled: true
+        description: "Host配置校验"
+      
+      - config-key: "app.environment"
+        rule-ids:
+          - CUSTOM_ENUM_ENV
+        enabled: true
+        description: "环境配置校验"
+
+logging:
+  level:
+    com.configcenter: DEBUG
+    org.hibernate.SQL: DEBUG
