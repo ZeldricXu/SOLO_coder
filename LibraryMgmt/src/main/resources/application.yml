@@ -1,0 +1,103 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: library-mgmt
+  datasource:
+    url: jdbc:h2:mem:librarydb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 3000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: -1ms
+
+library:
+  borrow:
+    default-days: 15
+  reader:
+    default-borrow-limit: 5
+  lock:
+    timeout:
+      vip: 30
+      normal: 120
+      student: 60
+  reminder:
+    days-before-due:
+      热门: 7
+      普通: 3
+      文学: 5
+      科技: 4
+  notification:
+    max-retries: 3
+    retry-delay-seconds: 60
+    redis-queue:
+      queue-key: library:reservation:notifications
+      processing-key: library:reservation:processing
+      poll-interval-ms: 1000
+      max-workers: 3
+  category:
+    available:
+      - 热门
+      - 普通
+      - 文学
+      - 科技
+      - 历史
+      - 教育
+    config:
+      热门:
+        name: 热门
+        description: 高借阅需求的热门图书
+        reminder-policy: early
+        max-borrow-days: 7
+        enabled: true
+      普通:
+        name: 普通
+        description: 一般借阅需求的普通图书
+        reminder-policy: default
+        max-borrow-days: 15
+        enabled: true
+      文学:
+        name: 文学
+        description: 文学作品类图书
+        reminder-policy: medium
+        max-borrow-days: 21
+        enabled: true
+      科技:
+        name: 科技
+        description: 科学技术类图书
+        reminder-policy: default
+        max-borrow-days: 14
+        enabled: true
+      历史:
+        name: 历史
+        description: 历史类图书
+        reminder-policy: default
+        max-borrow-days: 15
+        enabled: true
+      教育:
+        name: 教育
+        description: 教育类图书
+        reminder-policy: default
+        max-borrow-days: 15
+        enabled: true
