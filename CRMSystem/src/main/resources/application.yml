@@ -1,0 +1,109 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: CRMSystem
+  
+  datasource:
+    url: jdbc:h2:mem:crmdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+
+logging:
+  level:
+    com.crm: DEBUG
+    org.hibernate.SQL: DEBUG
+
+crm:
+  reminder:
+    high-value:
+      advance-hours: 48
+      description: "高价值客户（VIP）"
+    medium-value:
+      advance-hours: 36
+      description: "中等价值客户"
+    low-value:
+      advance-hours: 24
+      description: "低价值客户"
+
+  opportunity:
+    alert:
+      large-amount:
+        threshold: 100000.0
+        alert-days: 3
+        description: "大额机会（>=10万）"
+      medium-amount:
+        threshold: 50000.0
+        alert-days: 5
+        description: "中等额度机会（5万-10万）"
+      small-amount:
+        threshold: 0.0
+        alert-days: 7
+        description: "小额机会（<5万）"
+
+  category:
+    queue:
+      queue-name: "crm:category:tasks"
+      processing-queue-name: "crm:category:processing"
+      failed-queue-name: "crm:category:failed"
+      max-retries: 3
+      retry-delay-ms: 1000
+      poll-interval-ms: 500
+      processing-timeout-ms: 30000
+
+  customer:
+    types:
+      - code: "ENTERPRISE"
+        name: "企业客户"
+        description: "企业组织类客户"
+        enabled: true
+        priority: 1
+      - code: "INDIVIDUAL"
+        name: "个人客户"
+        description: "个人消费者客户"
+        enabled: true
+        priority: 2
+      - code: "VIP"
+        name: "VIP客户"
+        description: "高价值VIP客户"
+        enabled: true
+        priority: 0
+      - code: "GOVERNMENT"
+        name: "政府客户"
+        description: "政府机构类客户"
+        enabled: true
+        priority: 1
+      - code: "PARTNER"
+        name: "合作伙伴"
+        description: "渠道合作伙伴"
+        enabled: true
+        priority: 1
