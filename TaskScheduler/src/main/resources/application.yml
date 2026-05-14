@@ -1,0 +1,101 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: taskscheduler
+  
+  datasource:
+    url: jdbc:h2:mem:taskscheduler;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+  
+  quartz:
+    job-store-type: memory
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: TaskScheduler
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 10
+            threadPriority: 5
+          jobStore:
+            class: org.quartz.simpl.RAMJobStore
+            misfireThreshold: 60000
+
+taskscheduler:
+  loadbalancer:
+    strategy: composite_least_load
+    resource-weights:
+      cpu-weight: 0.4
+      memory-weight: 0.35
+      task-weight: 0.25
+    task-type-strategy:
+      query: round_robin
+      batch: least_load
+      etl: weighted
+      analytics: composite_least_load
+
+  timeout:
+    default-timeout-seconds: 300
+    lightweight-threshold-seconds: 60
+    heavy-threshold-seconds: 600
+    task-type-timeouts:
+      query: 30
+      batch: 300
+      etl: 600
+      analytics: 1200
+      maintenance: 1800
+      report: 900
+      notification: 10
+
+  scheduler:
+    enable-parallel-dispatch: true
+    enable-batch-dispatch: true
+    dispatch-thread-pool-size: 20
+    max-concurrent-dispatches: 50
+    batch-dispatch-interval-ms: 100
+    max-batch-size: 100
+
+  failhandler:
+    enable-async-retry: true
+    retry-thread-pool-size: 10
+    max-concurrent-retries: 20
+    base-retry-delay-seconds: 30
+    max-retry-delay-seconds: 600
+    retry-scan-interval-seconds: 5
+
+logging:
+  level:
+    com.taskscheduler: INFO
+    org.springframework: WARN
+    org.hibernate: WARN
+    org.quartz: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
