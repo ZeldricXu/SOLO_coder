@@ -1,0 +1,156 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: reviewsystem
+
+  datasource:
+    url: jdbc:h2:mem:reviewdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+    database-platform: org.hibernate.dialect.H2Dialect
+
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+    timeout: 10000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-wait: -1ms
+        max-idle: 8
+        min-idle: 0
+
+  jackson:
+    date-format: yyyy-MM-dd'T'HH:mm:ss'Z'
+    time-zone: UTC
+    serialization:
+      write-dates-as-timestamps: false
+
+  cache:
+    type: redis
+    redis:
+      time-to-live: 3600000
+
+review:
+  queue:
+    audit:
+      name: review:audit:queue
+      retry-count: 3
+      retry-delay: 5000
+      worker-enabled: true
+      worker-interval: 1000
+      batch-size: 10
+    sentiment:
+      name: review:sentiment:queue
+      retry-count: 3
+      retry-delay: 5000
+      worker-enabled: true
+      worker-interval: 1000
+      batch-size: 10
+
+  recommend:
+    weights:
+      default:
+        quality: 0.35
+        sentiment: 0.25
+        heat: 0.20
+        time: 0.20
+      news:
+        quality: 0.50
+        sentiment: 0.20
+        heat: 0.15
+        time: 0.15
+      entertainment:
+        quality: 0.20
+        sentiment: 0.25
+        heat: 0.35
+        time: 0.20
+      tech:
+        quality: 0.40
+        sentiment: 0.20
+        heat: 0.20
+        time: 0.20
+
+  audit:
+    rules:
+      sensitive-words:
+        - 赌博
+        - 色情
+        - 暴力
+        - 毒品
+        - 诈骗
+        - 反动
+        - 邪教
+        - 恐怖
+        - 枪支
+        - 弹药
+        - 假币
+        - 走私
+        - 洗钱
+        - 逃税
+        - 行贿
+        - 受贿
+      quality-check:
+        min-length: 5
+        max-length: 2000
+        min-quality-score: 30
+        spam-detection:
+          enabled: true
+          phone-pattern: "1[3-9]\\d{9}"
+          url-pattern: "https?://[\\w-]+(\\.[\\w-]+)+[/#?]?.*"
+          repeat-threshold: 0.7
+          same-word-max-count: 10
+          email-pattern: "[\\w.-]+@[\\w-]+\\.[\\w.-]+"
+          qq-pattern: "[1-9]\\d{4,10}"
+          wechat-pattern: "[a-zA-Z][a-zA-Z0-9_-]{5,19}"
+      violation-types:
+        spam:
+          name: 垃圾广告
+          priority: 30
+          auto-reject: true
+        sensitive:
+          name: 敏感内容
+          priority: 90
+          auto-reject: true
+        abusive:
+          name: 辱骂攻击
+          priority: 70
+          auto-reject: false
+        illegal:
+          name: 违法违规
+          priority: 100
+          auto-reject: true
+        low_quality:
+          name: 低质量内容
+          priority: 20
+          auto-reject: false
+        duplicate:
+          name: 重复内容
+          priority: 15
+          auto-reject: false
+
+logging:
+  level:
+    root: INFO
+    com.reviewsystem: DEBUG
+    org.springframework.data.redis: INFO
