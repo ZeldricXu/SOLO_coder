@@ -1,0 +1,62 @@
+{
+  "system:read": {
+    "name": "system:read",
+    "description": "读取系统配置和状态信息",
+    "category": "system"
+  },
+  "system:write": {
+    "name": "system:write",
+    "description": "修改系统配置",
+    "category": "system"
+  },
+  "user:manage": {
+    "name": "user:manage",
+    "description": "用户管理（创建、修改、删除用户）",
+    "category": "user"
+  },
+  "user:read": {
+    "name": "user:read",
+    "description": "查看用户信息",
+    "category": "user"
+  },
+  "role:manage": {
+    "name": "role:manage",
+    "description": "角色管理（创建、修改、删除角色）",
+    "category": "role"
+  },
+  "role:read": {
+    "name": "role:read",
+    "description": "查看角色信息",
+    "category": "role"
+  },
+  "resource:manage": {
+    "name": "resource:manage",
+    "description": "资源管理（注册、修改、删除资源）",
+    "category": "resource"
+  },
+  "resource:read": {
+    "name": "resource:read",
+    "description": "查看资源信息",
+    "category": "resource"
+  },
+  "audit:read": {
+    "name": "audit:read",
+    "description": "查看审计日志",
+    "category": "audit"
+  },
+  "audit:export": {
+    "name": "audit:export",
+    "description": "导出审计日志",
+    "category": "audit"
+  },
+  "session:manage": {
+    "name": "session:manage",
+    "description": "会话管理（强制登出、查看会话）",
+    "category": "session"
+  },
+  "session:read": {
+    "name": "session:read",
+    "description": "查看会话信息",
+    "category": "session"
+  }
+}
