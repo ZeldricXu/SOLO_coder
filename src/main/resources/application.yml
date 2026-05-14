@@ -1,0 +1,115 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: MailService
+  datasource:
+    url: jdbc:mysql://localhost:3306/mailservice?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQL8Dialect
+        format_sql: true
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+    timeout: 10000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-idle: 8
+        min-idle: 0
+        max-wait: -1ms
+  mail:
+    host: smtp.example.com
+    port: 465
+    username: noreply@example.com
+    password: your_password
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          ssl:
+            enable: true
+          starttls:
+            enable: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 50MB
+
+app:
+  mail:
+    attachment-path: /tmp/mail-attachments
+    max-attachment-size: 10485760
+    retry-count: 3
+    retry-interval: 5000
+    imap:
+      host: imap.example.com
+      port: 993
+      protocol: imaps
+      username: noreply@example.com
+      password: your_password
+  search:
+    page-size: 20
+    async-indexing: true
+  redis-queue:
+    send-queue-key: mail:send:queue
+    index-queue-key: mail:index:queue
+    send-processing-key: mail:send:processing
+    index-processing-key: mail:index:processing
+    send-dead-letter-key: mail:send:deadletter
+    index-dead-letter-key: mail:index:deadletter
+    send-worker-count: 5
+    index-worker-count: 3
+    poll-timeout: 5000
+    max-retries: 3
+    retry-delay: 60000
+  rule-priority:
+    dynamic-sorting-enabled: true
+    decay-interval-minutes: 60
+    decay-factor: 0.9
+    min-priority: 0
+    max-priority: 1000
+    adjustment-threshold: 10
+    rules:
+      - rule-name: "紧急邮件"
+        rule-pattern: "(?i)(urgent|紧急|重要|high priority|priority: high)"
+        target-category: "urgent"
+        base-priority: 100
+        enabled: true
+      - rule-name: "工作邮件"
+        rule-pattern: "(?i)(project|work|meeting|项目|会议|工作|报告|report|memo)"
+        target-category: "work"
+        base-priority: 80
+        enabled: true
+      - rule-name: "通知邮件"
+        rule-pattern: "(?i)(notification|notification:|通知|公告|notice|alert)"
+        target-category: "notification"
+        base-priority: 60
+        enabled: true
+      - rule-name: "促销邮件"
+        rule-pattern: "(?i)(discount|sale|促销|优惠|特价|special offer|coupon)"
+        target-category: "promotion"
+        base-priority: 30
+        enabled: true
+      - rule-name: "社交邮件"
+        rule-pattern: "(?i)(social|facebook|twitter|linkedin|社交|好友|邀请|invite|friend)"
+        target-category: "social"
+        base-priority: 20
+        enabled: true
+      - rule-name: "垃圾邮件"
+        rule-pattern: "(?i)(spam|垃圾|unsubscribe|订閱|newsletter|促销.*推广)"
+        target-category: "spam"
+        base-priority: 10
+        enabled: true

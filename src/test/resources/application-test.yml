@@ -1,0 +1,37 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: MailService-Test
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    database-platform: org.hibernate.dialect.H2Dialect
+  mail:
+    host: test-smtp.example.com
+    port: 25
+    username: test@example.com
+    password: test-password
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+
+app:
+  mail:
+    attachment-path: /tmp/test-attachments
+    max-attachment-size: 10485760
+    retry-count: 3
+    retry-interval: 5000
+  search:
+    page-size: 20
