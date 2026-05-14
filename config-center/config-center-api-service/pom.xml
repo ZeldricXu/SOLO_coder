@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.configcenter</groupId>
+        <artifactId>config-center</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>config-center-api-service</artifactId>
+    <packaging>jar</packaging>
+    <name>ConfigCenter API Service</name>
+    <description>API服务模块：提供配置管理、推送、查询接口</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.configcenter</groupId>
+            <artifactId>config-center-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.configcenter</groupId>
+            <artifactId>config-center-config-management</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.configcenter</groupId>
+            <artifactId>config-center-version-control</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.configcenter</groupId>
+            <artifactId>config-center-group-management</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.configcenter</groupId>
+            <artifactId>config-center-push</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.configcenter</groupId>
+            <artifactId>config-center-audit</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.configcenter</groupId>
+            <artifactId>config-center-import-export</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-jpa</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-validation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>mysql</groupId>
+            <artifactId>mysql-connector-java</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.alibaba</groupId>
+            <artifactId>fastjson</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>cn.hutool</groupId>
+            <artifactId>hutool-all</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <mainClass>com.configcenter.ConfigCenterApplication</mainClass>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>
