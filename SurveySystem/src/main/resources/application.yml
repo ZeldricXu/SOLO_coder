@@ -1,0 +1,86 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: SurveySystem
+  datasource:
+    url: jdbc:h2:mem:surveydb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+
+survey:
+  types:
+    enable-config-init: true
+    list:
+      - code: satisfaction
+        name: 满意度调查
+        description: 用于用户满意度调查的问卷类型
+        status: active
+        category: business
+        icon: icon-star
+        color: "#FF6B6B"
+        system: true
+        sort-order: 0
+      - code: market
+        name: 市场调研
+        description: 用于市场分析和用户调研的问卷类型
+        status: active
+        category: business
+        icon: icon-chart
+        color: "#4ECDC4"
+        system: true
+        sort-order: 1
+      - code: feedback
+        name: 反馈收集
+        description: 用于收集用户反馈建议的问卷类型
+        status: active
+        category: support
+        icon: icon-message
+        color: "#45B7D1"
+        system: true
+        sort-order: 2
+      - code: evaluation
+        name: 评估考核
+        description: 用于评估和考核的问卷类型
+        status: active
+        category: hr
+        icon: icon-check
+        color: "#96CEB4"
+        system: true
+        sort-order: 3
+      - code: registration
+        name: 报名登记
+        description: 用于活动报名和信息登记的问卷类型
+        status: active
+        category: event
+        icon: icon-form
+        color: "#FFEAA7"
+        system: true
+        sort-order: 4
+      - code: research
+        name: 学术研究
+        description: 用于学术研究和数据分析的问卷类型
+        status: active
+        category: research
+        icon: icon-book
+        color: "#DDA0DD"
+        system: true
+        sort-order: 5
+
+logging:
+  level:
+    com.survey: INFO
