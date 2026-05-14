@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.flightmgmt</groupId>
+        <artifactId>FlightMgmt</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>status</artifactId>
+    <name>status</name>
+    <description>状态模块 - 航班状态更新与通知管理</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.flightmgmt</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.flightmgmt</groupId>
+            <artifactId>flight</artifactId>
+        </dependency>
+    </dependencies>
+</project>
