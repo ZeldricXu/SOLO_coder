@@ -1,0 +1,372 @@
+{
+  "profiles": {
+    "h264": {
+      "name": "H.264 (AVC)",
+      "codec_name": "libx264",
+      "description": "广泛兼容的视频编码",
+      "supported_formats": [
+        "mp4",
+        "mkv",
+        "mov",
+        "avi",
+        "flv",
+        "m4v"
+      ],
+      "default_audio_codec": "aac",
+      "presets": {
+        "ultrafast": {
+          "crf": 28,
+          "speed": "fastest",
+          "quality": "low"
+        },
+        "superfast": {
+          "crf": 28,
+          "speed": "very_fast",
+          "quality": "low"
+        },
+        "veryfast": {
+          "crf": 28,
+          "speed": "fast",
+          "quality": "medium"
+        },
+        "faster": {
+          "crf": 24,
+          "speed": "medium_fast",
+          "quality": "medium"
+        },
+        "fast": {
+          "crf": 24,
+          "speed": "medium",
+          "quality": "good"
+        },
+        "medium": {
+          "crf": 23,
+          "speed": "balanced",
+          "quality": "good"
+        },
+        "slow": {
+          "crf": 22,
+          "speed": "slow",
+          "quality": "better"
+        },
+        "slower": {
+          "crf": 20,
+          "speed": "slower",
+          "quality": "best"
+        },
+        "veryslow": {
+          "crf": 18,
+          "speed": "slowest",
+          "quality": "best"
+        }
+      },
+      "options": {
+        "threads": 0,
+        "pix_fmt": "yuv420p"
+      }
+    },
+    "h265": {
+      "name": "H.265 (HEVC)",
+      "codec_name": "libx265",
+      "description": "高效视频编码，压缩比更高",
+      "supported_formats": [
+        "mp4",
+        "mkv",
+        "mov"
+      ],
+      "default_audio_codec": "aac",
+      "presets": {
+        "ultrafast": {
+          "crf": 30,
+          "speed": "fastest",
+          "quality": "low"
+        },
+        "superfast": {
+          "crf": 30,
+          "speed": "very_fast",
+          "quality": "low"
+        },
+        "veryfast": {
+          "crf": 28,
+          "speed": "fast",
+          "quality": "medium"
+        },
+        "faster": {
+          "crf": 26,
+          "speed": "medium_fast",
+          "quality": "medium"
+        },
+        "fast": {
+          "crf": 26,
+          "speed": "medium",
+          "quality": "good"
+        },
+        "medium": {
+          "crf": 24,
+          "speed": "balanced",
+          "quality": "good"
+        },
+        "slow": {
+          "crf": 22,
+          "speed": "slow",
+          "quality": "better"
+        },
+        "slower": {
+          "crf": 20,
+          "speed": "slower",
+          "quality": "best"
+        },
+        "veryslow": {
+          "crf": 18,
+          "speed": "slowest",
+          "quality": "best"
+        }
+      },
+      "options": {
+        "threads": 0,
+        "pix_fmt": "yuv420p10le"
+      }
+    },
+    "vp9": {
+      "name": "VP9",
+      "codec_name": "libvpx-vp9",
+      "description": "Google开源视频编码",
+      "supported_formats": [
+        "webm",
+        "mkv"
+      ],
+      "default_audio_codec": "libvorbis",
+      "presets": {
+        "realtime": {
+          "crf": 32,
+          "cpu_used": 5,
+          "speed": "fastest",
+          "quality": "low"
+        },
+        "good": {
+          "crf": 30,
+          "cpu_used": 2,
+          "speed": "medium",
+          "quality": "good"
+        },
+        "best": {
+          "crf": 28,
+          "cpu_used": 0,
+          "speed": "slow",
+          "quality": "best"
+        }
+      },
+      "options": {
+        "threads": 0,
+        "tile_columns": 2,
+        "row_mt": 1
+      }
+    },
+    "vp8": {
+      "name": "VP8",
+      "codec_name": "libvpx",
+      "description": "VP8视频编码，兼容性更好",
+      "supported_formats": [
+        "webm",
+        "mkv"
+      ],
+      "default_audio_codec": "libvorbis",
+      "presets": {
+        "fast": {
+          "crf": 32,
+          "cpu_used": 5,
+          "speed": "fastest",
+          "quality": "low"
+        },
+        "medium": {
+          "crf": 30,
+          "cpu_used": 2,
+          "speed": "medium",
+          "quality": "good"
+        },
+        "slow": {
+          "crf": 28,
+          "cpu_used": 0,
+          "speed": "slow",
+          "quality": "best"
+        }
+      },
+      "options": {
+        "threads": 0
+      }
+    },
+    "av1": {
+      "name": "AV1",
+      "codec_name": "libaom-av1",
+      "description": "下一代开源视频编码，压缩比最高",
+      "supported_formats": [
+        "webm",
+        "mkv",
+        "mp4"
+      ],
+      "default_audio_codec": "libopus",
+      "presets": {
+        "fast": {
+          "crf": 32,
+          "cpu_used": 6,
+          "speed": "fastest",
+          "quality": "low"
+        },
+        "medium": {
+          "crf": 30,
+          "cpu_used": 4,
+          "speed": "medium",
+          "quality": "good"
+        },
+        "slow": {
+          "crf": 28,
+          "cpu_used": 2,
+          "speed": "slow",
+          "quality": "best"
+        }
+      },
+      "options": {
+        "threads": 0,
+        "tiles": "2x2"
+      }
+    },
+    "mpeg4": {
+      "name": "MPEG-4",
+      "codec_name": "mpeg4",
+      "description": "传统MPEG-4编码",
+      "supported_formats": [
+        "mp4",
+        "avi",
+        "mkv",
+        "mov"
+      ],
+      "default_audio_codec": "mp3",
+      "presets": {
+        "fast": {
+          "qmin": 2,
+          "qmax": 31,
+          "speed": "fastest",
+          "quality": "low"
+        },
+        "medium": {
+          "qmin": 2,
+          "qmax": 20,
+          "speed": "medium",
+          "quality": "good"
+        },
+        "slow": {
+          "qmin": 1,
+          "qmax": 15,
+          "speed": "slow",
+          "quality": "best"
+        }
+      },
+      "options": {
+        "threads": 0
+      }
+    },
+    "flv": {
+      "name": "FLV",
+      "codec_name": "flv",
+      "description": "Flash视频编码",
+      "supported_formats": [
+        "flv"
+      ],
+      "default_audio_codec": "mp3",
+      "presets": {
+        "low": {
+          "bitrate": "500k",
+          "speed": "fast",
+          "quality": "low"
+        },
+        "medium": {
+          "bitrate": "1000k",
+          "speed": "medium",
+          "quality": "good"
+        },
+        "high": {
+          "bitrate": "2000k",
+          "speed": "slow",
+          "quality": "best"
+        }
+      },
+      "options": {}
+    },
+    "wmv2": {
+      "name": "WMV2",
+      "codec_name": "wmv2",
+      "description": "Windows Media Video 2",
+      "supported_formats": [
+        "wmv",
+        "avi"
+      ],
+      "default_audio_codec": "wma2",
+      "presets": {
+        "low": {
+          "bitrate": "500k",
+          "speed": "fast",
+          "quality": "low"
+        },
+        "medium": {
+          "bitrate": "1500k",
+          "speed": "medium",
+          "quality": "good"
+        },
+        "high": {
+          "bitrate": "3000k",
+          "speed": "slow",
+          "quality": "best"
+        }
+      },
+      "options": {}
+    }
+  },
+  "format_codec_mapping": {
+    "mp4": [
+      "h264",
+      "h265",
+      "av1",
+      "mpeg4"
+    ],
+    "webm": [
+      "vp9",
+      "vp8",
+      "av1"
+    ],
+    "avi": [
+      "mpeg4",
+      "h264",
+      "wmv2"
+    ],
+    "mkv": [
+      "h264",
+      "h265",
+      "vp9",
+      "vp8",
+      "av1"
+    ],
+    "mov": [
+      "h264",
+      "h265",
+      "mpeg4"
+    ],
+    "flv": [
+      "flv",
+      "h264"
+    ],
+    "wmv": [
+      "wmv2"
+    ],
+    "m4v": [
+      "h264"
+    ]
+  },
+  "default_config": {
+    "default_video_codec": "h264",
+    "default_preset": "medium",
+    "default_crf": 23,
+    "default_audio_bitrate": "128k",
+    "default_fps": 30,
+    "max_resolution": "3840x2160"
+  }
+}
