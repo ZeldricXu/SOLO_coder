@@ -1,0 +1,88 @@
+server:
+  http_address: ":8080"
+  https_address: ":8443"
+  socks5_address: ":1080"
+  api_address: ":8081"
+  max_connections: 1000
+  connect_timeout: 30
+  read_timeout: 60
+  write_timeout: 60
+
+target_timeouts:
+  - target_pattern: "slow-api.example.com"
+    connect_timeout: 60
+    read_timeout: 120
+    write_timeout: 120
+    idle_timeout: 600
+    hold_timeout: 900
+    max_connections: 30
+
+  - target_pattern: "*.database.internal"
+    connect_timeout: 45
+    read_timeout: 180
+    write_timeout: 180
+    idle_timeout: 900
+    hold_timeout: 1200
+    max_connections: 20
+
+rules:
+  - rule_id: "rule_api_forward"
+    target_pattern: "api.example.com"
+    allowed_protocols:
+      - "http"
+      - "https"
+    forward_mode: "direct"
+    rate_limit: 1000
+    enabled: true
+
+  - rule_id: "rule_internal_services"
+    target_pattern: "*.internal.local"
+    allowed_protocols:
+      - "http"
+      - "https"
+      - "socks5"
+    forward_mode: "direct"
+    rate_limit: 500
+    enabled: true
+
+  - rule_id: "rule_all_http"
+    target_pattern: "*"
+    allowed_protocols:
+      - "http"
+    forward_mode: "direct"
+    rate_limit: 100
+    enabled: true
+
+pool:
+  max_connections: 50
+  min_idle_connections: 2
+  idle_timeout: 300
+  connection_timeout: 30
+  hold_timeout: 600
+  reclaim_interval: 30
+  max_reconnect_rate: 10
+  reconnect_window: 1
+
+health:
+  enabled: true
+  interval: 30
+  timeout: 5
+  retry_count: 3
+  failure_threshold: 3
+  auto_clean: true
+  batch_clean_size: 100
+
+stats:
+  enabled: true
+  file_path: "./data/stats.json"
+  interval_seconds: 60
+  max_records: 1000
+  buffer_size: 1000
+  flush_interval: 10
+
+log:
+  level: "info"
+  file_path: "./logs/netproxy.log"
+  max_size: 100
+  max_backups: 3
+  max_age: 28
