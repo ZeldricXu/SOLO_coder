@@ -1,0 +1,17 @@
+spring:
+  data:
+    mongodb:
+      uri: mongodb://localhost:27017/maplocation_test
+      database: maplocation_test
+
+logging:
+  level:
+    com.maplocation: DEBUG
+    org.springframework.data.mongodb: DEBUG
+
+task:
+  execution:
+    pool:
+      core-size: 2
+      max-size: 5
+      queue-capacity: 10
