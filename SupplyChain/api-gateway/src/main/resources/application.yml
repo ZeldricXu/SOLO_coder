@@ -1,0 +1,33 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+services:
+  supplier:
+    base-url: http://localhost:8081
+  purchase:
+    base-url: http://localhost:8082
+  inventory:
+    base-url: http://localhost:8083
+  logistics:
+    base-url: http://localhost:8084
+  analytics:
+    base-url: http://localhost:8085
+  collaboration:
+    base-url: http://localhost:8086
+  contract:
+    base-url: http://localhost:8087
+  alert:
+    base-url: http://localhost:8088
+  history:
+    base-url: http://localhost:8089
+
+springdoc:
+  api-docs:
+    enabled: true
+  swagger-ui:
+    enabled: true
+    path: /swagger-ui.html
