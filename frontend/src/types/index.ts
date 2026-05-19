@@ -49,3 +49,20 @@ export interface ChatMessage {
   sources?: SourceNode[];
   timestamp: Date;
 }
+
+export interface APIConfig {
+  id: string;
+  name: string;
+  apiKey: string;
+  baseUrl: string;
+  model: string;
+  embeddingModel: string;
+  createdAt: number;
+}
+
+export interface UploadProgress {
+  status: "idle" | "uploading" | "processing" | "success" | "error";
+  progress: number;
+  elapsedTime: number;
+  error?: string;
+}
