@@ -1,0 +1,17 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+python_classes = ["Test*", "*Test"]
+python_functions = ["test_*", "*_test"]
+asyncio_mode = "auto"
+addopts = "-v --strict-markers --strict-config"
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests",
+    "e2e: End-to-end tests",
+    "slow: Slow running tests",
+    "asyncio: Asyncio tests",
+]
+
+log_cli = true
+log_cli_level = "INFO"
