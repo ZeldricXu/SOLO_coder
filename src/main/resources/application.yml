@@ -1,0 +1,139 @@
+spring:
+  application:
+    name: iot-platform
+  profiles:
+    active: dev
+
+  r2dbc:
+    url: r2dbc:mysql://localhost:3306/iot_platform?characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/iot_platform?characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    type: com.zaxxer.hikari.HikariDataSource
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      lettuce:
+        pool:
+          max-active: 50
+          max-idle: 20
+          min-idle: 5
+          max-wait: 3000ms
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+    encoding: UTF-8
+
+server:
+  port: 8080
+  reactive:
+    session:
+      timeout: 30m
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.iotplatform.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+logging:
+  level:
+    root: INFO
+    com.iotplatform: DEBUG
+    org.springframework.r2dbc: DEBUG
+    com.baomidou.mybatisplus: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+iot:
+  gateway:
+    routes:
+      - id: config-service
+        path: /api/config/**
+        uri: lb://config-service
+      - id: device-service
+        path: /api/device/**
+        uri: lb://device-service
+      - id: storage-service
+        path: /api/storage/**
+        uri: lb://storage-service
+  cache:
+    caffeine:
+      maximum-size: 10000
+      expire-after-write: 1h
+      expire-after-access: 30m
+  offline:
+    buffer-size: 10000
+    sync-interval: 30000
+    retry-attempts: 3
+  notification:
+    channels:
+      sms:
+        enabled: true
+        provider: aliyun
+      email:
+        enabled: true
+        host: smtp.gmail.com
+        port: 587
+      webhook:
+        enabled: true
+        timeout: 10000
+  storage:
+    providers:
+      s3:
+        enabled: false
+        endpoint: s3.amazonaws.com
+        bucket: iot-data
+      minio:
+        enabled: true
+        endpoint: http://localhost:9000
+        access-key: minioadmin
+        secret-key: minioadmin
+        bucket: iot-data
+  edge:
+    inference:
+      model-path: /models
+      max-concurrent-tasks: 10
+      task-timeout: 300000
+    aggregation:
+      window-size: 5000
+      slide-interval: 1000
+      max-windows: 100

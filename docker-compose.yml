@@ -1,0 +1,226 @@
+version: '3.8'
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "100m"
+    max-file: "3"
+
+x-restart: &default-restart
+  unless-stopped
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: iot-platform-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:iot_platform}
+      MYSQL_USER: ${MYSQL_USER:iot}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:iot123}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/conf.d:/etc/mysql/conf.d
+    command: [
+      '--character-set-server=utf8mb4',
+      '--collation-server=utf8mb4_unicode_ci',
+      '--max_connections=500',
+      '--innodb_buffer_pool_size=1G',
+      '--innodb_log_file_size=256M',
+      '--slow_query_log=1',
+      '--long_query_time=2'
+    ]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - iot-platform-net
+    restart: *default-restart
+    logging: *default-logging
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: iot-platform-redis
+    command: [
+      'redis-server',
+      '--requirepass', '${REDIS_PASSWORD:}',
+      '--appendonly', 'yes',
+      '--maxmemory', '512mb',
+      '--maxmemory-policy', 'allkeys-lru',
+      '--save', '900', '1',
+      '--save', '300', '10',
+      '--save', '60', '10000'
+    ]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - iot-platform-net
+    restart: *default-restart
+    logging: *default-logging
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-11T07-46-16Z
+    container_name: iot-platform-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:minioadmin}
+      MINIO_BUCKET: ${MINIO_BUCKET:iot-data}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 30s
+    networks:
+      - iot-platform-net
+    restart: *default-restart
+    logging: *default-logging
+
+  prometheus:
+    image: prom/prometheus:v2.48.1
+    container_name: iot-platform-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - iot-platform-net
+    restart: *default-restart
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:10.2.3
+    container_name: iot-platform-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:admin}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - iot-platform-net
+    restart: *default-restart
+    logging: *default-logging
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_NAME: iot-platform
+        APP_VERSION: 1.0.0
+    container_name: iot-platform-app
+    image: iot-platform/iot-platform:latest
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:staging}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_DATABASE: ${MYSQL_DATABASE:iot_platform}
+      DB_USERNAME: ${MYSQL_USER:iot}
+      DB_PASSWORD: ${MYSQL_PASSWORD:iot123}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:}
+      JAVA_OPTS: >-
+        -Xms512m
+        -Xmx1024m
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/var/log/iot-platform/
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./logs:/var/log/iot-platform
+      - app_data:/opt/app/data
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - iot-platform-net
+    restart: *default-restart
+    logging: *default-logging
+
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: iot-platform-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./docker/nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./docker/nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./docker/nginx/ssl:/etc/nginx/ssl:ro
+      - nginx_logs:/var/log/nginx
+    depends_on:
+      - app
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - iot-platform-net
+    restart: *default-restart
+    logging: *default-logging
+
+volumes:
+  mysql_data:
+  redis_data:
+  minio_data:
+  prometheus_data:
+  grafana_data:
+  app_data:
+  nginx_logs:
+
+networks:
+  iot-platform-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16

@@ -1,0 +1,41 @@
+spring:
+  r2dbc:
+    url: r2dbc:mysql://${DB_HOST:staging-db}:${DB_PORT:3306}/iot_platform_staging?characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:staging-db}:${DB_PORT:3306}/iot_platform_staging?characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+
+  data:
+    redis:
+      host: ${REDIS_HOST:staging-redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      lettuce:
+        pool:
+          max-active: 30
+          max-idle: 10
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+logging:
+  level:
+    root: INFO
+    com.iotplatform: INFO
+    org.springframework.r2dbc: INFO
+    com.baomidou.mybatisplus: INFO
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

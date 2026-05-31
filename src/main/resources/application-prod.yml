@@ -1,0 +1,76 @@
+spring:
+  r2dbc:
+    url: r2dbc:mysql://${DB_HOST:prod-db}:${DB_PORT:3306}/iot_platform_prod?characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    pool:
+      max-size: 50
+      initial-size: 10
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:prod-db}:${DB_PORT:3306}/iot_platform_prod?characterEncoding=utf8&useSSL=true&serverTimezone=Asia/Shanghai
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:root}
+    hikari:
+      maximum-pool-size: 100
+      minimum-idle: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:prod-redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 100
+          max-idle: 50
+          min-idle: 10
+          max-wait: 3000ms
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    clean-disabled: true
+
+logging:
+  level:
+    root: WARN
+    com.iotplatform: INFO
+    org.springframework.r2dbc: WARN
+    com.baomidou.mybatisplus: WARN
+  file:
+    name: /var/log/iot-platform/application.log
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      environment: production
+      application: ${spring.application.name}
+
+server:
+  port: 8080
+  http2:
+    enabled: true
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain

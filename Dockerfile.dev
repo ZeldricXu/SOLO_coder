@@ -1,0 +1,27 @@
+FROM maven:3.9.6-eclipse-temurin-17
+
+ENV APP_HOME=/app
+ENV SPRING_PROFILES_ACTIVE=dev
+ENV MAVEN_OPTS="-Xmx1024m -XX:MaxMetaspaceSize=256m"
+
+WORKDIR ${APP_HOME}
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    iputils-ping \
+    net-tools \
+    vim \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY pom.xml .
+RUN mvn dependency:go-offline -B
+
+COPY src ./src
+
+EXPOSE 8080 5005
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT [ "mvn" ]
+CMD [ "spring-boot:run", "-Dspring-boot.run.profiles=dev", "-Dspring-boot.run.jvmArguments=-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=*:5005" ]

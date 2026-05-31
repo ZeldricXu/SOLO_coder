@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter xmlns="http://findbugs.sourceforge.net/findbugs-filter">
+    <Match>
+        <Class name="~.*\.(DTO|Entity|Config|Application)$"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2,MS_SHOULD_BE_FINAL"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*Test$"/>
+        <Bug pattern="URF_UNREAD_FIELD,NP_UNWRITTEN_FIELD"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*Controller$"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*Mapper$"/>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+        <Class name="~.*ServiceImpl$"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+        <Class name="~.*Entity$"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_NULL_ON_SOME_PATH"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="BC_UNCONFIRMED_CAST"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="WOC_WRITE_ONLY_COLLECTION_FIELD"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="IS2_INCONSISTENT_SYNC"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="PZLA_PREFER_ZERO_LENGTH_ARRAYS"/>
+    </Match>
+</FindBugsFilter>

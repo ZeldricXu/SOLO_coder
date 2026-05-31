@@ -1,0 +1,28 @@
+spring:
+  r2dbc:
+    url: r2dbc:mysql://localhost:3306/iot_platform_dev?characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/iot_platform_dev?characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+logging:
+  level:
+    root: DEBUG
+    com.iotplatform: DEBUG
+    org.springframework.r2dbc: DEBUG
+    com.baomidou.mybatisplus: DEBUG

@@ -1,0 +1,92 @@
+<?xml version="1.0"?>
+<ruleset name="IoT Platform PMD Ruleset"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>Custom PMD ruleset for IoT Platform project</description>
+
+    <rule ref="category/java/errorprone.xml">
+        <exclude name="BeanMembersShouldSerialize"/>
+        <exclude name="DataflowAnomalyAnalysis"/>
+        <exclude name="AssignmentToNonFinalStatic"/>
+        <exclude name="MissingStaticMethodInNonInstantiatableClass"/>
+        <exclude name="UseProperClassLoader"/>
+    </rule>
+
+    <rule ref="category/java/bestpractices.xml">
+        <exclude name="GuardLogStatement"/>
+        <exclude name="LiteralsFirstInComparisons"/>
+        <exclude name="UnusedPrivateField"/>
+        <exclude name="UnusedPrivateMethod"/>
+        <exclude name="UnusedLocalVariable"/>
+        <exclude name="UseCollectionIsEmpty"/>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml">
+        <exclude name="ShortVariable"/>
+        <exclude name="ShortClassName"/>
+        <exclude name="LongVariable"/>
+        <exclude name="AvoidDuplicateLiterals"/>
+        <exclude name="MethodArgumentCouldBeFinal"/>
+        <exclude name="LocalVariableCouldBeFinal"/>
+        <exclude name="ForLoopVariableCount"/>
+        <exclude name="CallSuperInConstructor"/>
+    </rule>
+
+    <rule ref="category/java/design.xml">
+        <exclude name="LawOfDemeter"/>
+        <exclude name="CyclomaticComplexity"/>
+        <exclude name="NPathComplexity"/>
+        <exclude name="ExcessiveImports"/>
+        <exclude name="UseUtilityClass"/>
+        <exclude name="AvoidDeeplyNestedIfStmts"/>
+        <exclude name="UseObjectForClearerAPI"/>
+    </rule>
+
+    <rule ref="category/java/documentation.xml">
+        <exclude name="CommentSize"/>
+        <exclude name="CommentRequired"/>
+    </rule>
+
+    <rule ref="category/java/multithreading.xml">
+        <exclude name="AvoidThreadGroup"/>
+        <exclude name="DontCallThreadRun"/>
+    </rule>
+
+    <rule ref="category/java/performance.xml">
+        <exclude name="AvoidInstantiatingObjectsInLoops"/>
+        <exclude name="UseStringBufferForStringAppends"/>
+    </rule>
+
+    <rule ref="category/java/security.xml">
+        <exclude name="MethodReturnsInternalArray"/>
+        <exclude name="ArrayIsStoredDirectly"/>
+    </rule>
+
+    <rule ref="category/java/errorprone.xml/CloseResource">
+        <properties>
+            <property name="closeTargets" value="close,closeQuietly"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/bestpractices.xml/SystemPrintln">
+        <priority>3</priority>
+    </rule>
+
+    <rule ref="category/java/bestpractices.xml/CheckSkipResult">
+        <priority>3</priority>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml/UnnecessaryParentheses">
+        <priority>4</priority>
+    </rule>
+
+    <rule ref="category/java/design.xml/UseSingleton">
+        <priority>3</priority>
+    </rule>
+
+    <rule ref="category/java/performance.xml/UnnecessaryWrapperObjectCreation">
+        <priority>3</priority>
+    </rule>
+</ruleset>
