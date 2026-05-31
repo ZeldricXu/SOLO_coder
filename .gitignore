@@ -1,0 +1,61 @@
+# Binaries
+/bin/
+/bin-*/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test output
+coverage.out
+coverage.html
+*.test
+
+# Vendor
+/vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+/logs/
+*.log
+*.log.*
+
+# Env files
+.env
+.env.local
+.env.*.local
+!configs/env/.env.*
+
+# Build artifacts
+*.o
+*.a
+*.obj
+*.lib
+
+# Go workspace
+go.work
+go.work.sum
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Docker volumes
+/data/

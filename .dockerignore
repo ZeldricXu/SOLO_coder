@@ -1,0 +1,53 @@
+# Build artifacts
+bin/
+*.exe
+*.test
+*.out
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Test and coverage
+coverage.out
+coverage.html
+
+# Env files
+.env
+.env.local
+.env.*.local
+
+# Vendor
+vendor/
+
+# Documentation
+*.md
+!README.md
+
+# Configs (only include what's needed)
+configs/env/
+!configs/prometheus.yml
+
+# Kubernetes
+k8s/
+
+# Scripts
+scripts/
+
+# CI
+.github/

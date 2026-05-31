@@ -1,0 +1,64 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: config-platform
+  labels:
+    app: config-platform
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: config-platform
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: config-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
+spec:
+  tls:
+    - hosts:
+        - config-platform.example.com
+      secretName: config-platform-tls
+  rules:
+    - host: config-platform.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: config-platform
+                port:
+                  name: http
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: config-platform-env
+data:
+  APP_ENV: "prod"
+  PORT: "8080"
+  LOG_LEVEL: "warn"
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: config-platform
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: config-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: config-platform

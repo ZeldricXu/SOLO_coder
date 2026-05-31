@@ -1,0 +1,193 @@
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  skip-dirs:
+    - vendor/
+    - .git/
+    - node_modules/
+  skip-files:
+    - ".*_mock\\.go$"
+    - ".*\\.pb\\.go$"
+
+linters:
+  enable:
+    - errcheck
+    - gosimple
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - typecheck
+    - gofmt
+    - goimports
+    - misspell
+    - nolintlint
+    - unconvert
+    - prealloc
+    - gocritic
+    - revive
+    - durationcheck
+    - nilerr
+    - exportloopref
+    - errorlint
+    - makezero
+    - predeclared
+    - noctx
+    - rowserrcheck
+    - sqlclosecheck
+    - wastedassign
+    - asciicheck
+    - bodyclose
+    - containedctx
+    - contextcheck
+    - decorder
+    - dogsled
+    - dupword
+    - errchkjson
+    - errname
+    - execinquery
+    - exhaustive
+    - exhaustruct
+    - forbidigo
+    - forcetypeassert
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - gocognit
+    - goconst
+    - gocritic
+    - gocyclo
+    - godot
+    - godox
+    - goerr113
+    - goheader
+    - gomodguard
+    - goprintffuncname
+    - gosec
+    - intrange
+    - lll
+    - maintidx
+    - nakedret
+    - nestif
+    - nilnil
+    - nlreturn
+    - noflog
+    - nonamedreturns
+    - nosprintfhostport
+    - paralleltest
+    - perfsprint
+    - promlinter
+    - reassign
+    - revive
+    - tenv
+    - testableexamples
+    - testpackage
+    - thelper
+    - tparallel
+    - unparam
+    - usestdlibvars
+    - varnamelen
+    - whitespace
+    - wrapcheck
+    - wsl
+  disable:
+    - exhaustivestruct
+    - exhaustruct
+    - wrapcheck
+    - varnamelen
+    - nonamedreturns
+    - nlreturn
+    - wsl
+    - gochecknoinits
+    - gomnd
+    - godox
+    - lll
+    - funlen
+
+linters-settings:
+  gofmt:
+    simplify: true
+  goimports:
+    local-prefixes: github.com/enterprise/config-platform
+  revive:
+    rules:
+      - name: exported
+        disabled: false
+      - name: unused-parameter
+        disabled: true
+      - name: unreachable-code
+        disabled: false
+      - name: redefines-builtin-id
+        disabled: false
+  govet:
+    enable-all: true
+    disable:
+      - shadow
+      - fieldalignment
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - hugeParam
+      - rangeValCopy
+  gosec:
+    excludes:
+      - G101
+      - G104
+      - G107
+      - G112
+      - G204
+      - G304
+      - G401
+      - G402
+      - G501
+  misspell:
+    locale: US
+    ignore-words:
+      - cancelled
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+  unparam:
+    check-exported: false
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: true
+  nolintlint:
+    require-explanation: true
+    require-specific: true
+  gocyclo:
+    min-complexity: 15
+  gocognit:
+    min-complexity: 20
+  nestif:
+    min-complexity: 5
+  maintidx:
+    under: 40
+  nakedret:
+    max-func-lines: 30
+  varnamelen:
+    min-name-length: 2
+    max-distance: 30
+
+issues:
+  exclude-rules:
+    - path: _test\\.go
+      linters:
+        - errcheck
+        - gosec
+        - funlen
+        - gocognit
+    - path: cmd/
+      linters:
+        - gochecknoinits
+    - text: "Error return value"
+      linters:
+        - errcheck
+      source: "\\.(Close|Write|Sync)\\(\\)"
+  max-per-linter: 0
+  max-same-issues: 0
+  fix: false
