@@ -1,0 +1,10 @@
+Alembic migration versions will be stored here.
+
+To create a new migration:
+    alembic revision --autogenerate -m "description"
+
+To apply migrations:
+    alembic upgrade head
+
+To rollback:
+    alembic downgrade -1
