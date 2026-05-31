@@ -1,0 +1,82 @@
+[licenses]
+deny = [
+    "AGPL-3.0",
+    "GPL-3.0",
+    "LGPL-3.0",
+]
+
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "BSD-2-Clause",
+    "ISC",
+    "Unlicense",
+    "MPL-2.0",
+    "Zlib",
+]
+
+copyleft = "warn"
+default = "warn"
+confidence-threshold = 0.8
+
+[[licenses.clarify]]
+name = "ring"
+expression = "MIT AND ISC AND OpenSSL"
+
+[bans]
+multiple-versions = "warn"
+wildcards = "warn"
+
+deny = [
+    { name = "mac-address", reason = "CVE-2022-1234" },
+]
+
+skip = [
+    { name = "openssl-src", version = ">=111" },
+]
+
+skip-tree = [
+    { name = "postgres-protocol", depth = 1 },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "allow"
+
+[sources.allow-org]
+github = [
+    "tokio-rs",
+    "tokio-rs/*",
+    "hyperium/*",
+    "rustls/*",
+    "rust-lang/*",
+    "dtolnay/*",
+    "serde-rs/*",
+    "launchbadge/*",
+    "bluejekyll/*",
+    "contain-rs/*",
+    "mitsuhiko/*",
+    "Peternator7/*",
+    "xemwebe/*",
+    "mockingbot/*",
+    "robertbastian/*",
+    "BurntSushi/*",
+]
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+git-fetch-with-cli = false
+ignore = [
+    "RUSTSEC-2020-0000",
+]
+severity-threshold = "low"
+yanked = "warn"
+unmaintained = "warn"
+notice = "warn"
+
+[output]
+show-stats = true
+show-summary = true
+format = "human"

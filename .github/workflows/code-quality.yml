@@ -1,0 +1,218 @@
+name: Code Quality
+
+on:
+  pull_request:
+    branches: [main, develop]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  #---------------------------------------------------------------------------
+  # Lint - 代码风格检查
+  #---------------------------------------------------------------------------
+  lint:
+    name: Lint & Style
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo Registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-lint-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-lint-
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Format Check
+        run: cargo fmt --all -- --check
+        continue-on-error: true
+
+      - name: Clippy Check
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        continue-on-error: true
+
+      - name: Check for TODOs
+        run: |
+          TODO_COUNT=$(grep -r "TODO\|FIXME\|HACK\|XXX" --include="*.rs" src/ | wc -l)
+          echo "Found ${TODO_COUNT} TODOs in source code"
+          if [ "${TODO_COUNT}" -gt 50 ]; then
+            echo "::warning::High number of TODOs (${TODO_COUNT}). Consider cleaning up."
+          fi
+
+      - name: Check for Debug Statements
+        run: |
+          DEBUG_COUNT=$(grep -r "println!\|eprintln!\|dbg!" --include="*.rs" src/ | grep -v "test" | wc -l)
+          echo "Found ${DEBUG_COUNT} debug statements"
+          if [ "${DEBUG_COUNT}" -gt 10 ]; then
+            echo "::warning::Found ${DEBUG_COUNT} debug statements. Remove before production."
+          fi
+
+  #---------------------------------------------------------------------------
+  # Security - 安全审计
+  #---------------------------------------------------------------------------
+  security:
+    name: Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-security-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Install cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-deny
+
+      - name: Run Cargo Audit
+        run: cargo audit
+        continue-on-error: true
+
+      - name: Run Cargo Deny
+        run: cargo deny check bans licenses sources
+        continue-on-error: true
+
+      - name: Check for Secrets
+        uses: trufflesecurity/trufflehog@main
+        with:
+          path: ./
+          base: ${{ github.event.before }}
+          head: ${{ github.sha }}
+        continue-on-error: true
+
+  #---------------------------------------------------------------------------
+  # Complexity - 代码复杂度
+  #---------------------------------------------------------------------------
+  complexity:
+    name: Code Complexity
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Install cargo-geiger
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-geiger
+
+      - name: Install clippy-sarif
+        uses: taiki-e/install-action@v2
+        with:
+          tool: clippy-sarif
+
+      - name: Count Lines of Code
+        run: |
+          echo "=== Code Statistics ==="
+          find src/ -name "*.rs" | xargs wc -l | tail -1
+          echo ""
+          echo "=== File Count ==="
+          find src/ -name "*.rs" | wc -l
+          echo ""
+          echo "=== Function Count ==="
+          grep -r "pub fn\|fn " --include="*.rs" src/ | wc -l
+          echo ""
+          echo "=== Module Count ==="
+          grep -r "pub mod\|mod " --include="*.rs" src/ | wc -l
+
+      - name: Check for Unsafe Code
+        run: |
+          UNSAFE_COUNT=$(grep -r "unsafe" --include="*.rs" src/ | wc -l)
+          echo "Found ${UNSAFE_COUNT} unsafe blocks/functions"
+          if [ "${UNSAFE_COUNT}" -gt 20 ]; then
+            echo "::warning::High number of unsafe blocks (${UNSAFE_COUNT}). Review carefully."
+          fi
+
+      - name: Check File Sizes
+        run: |
+          echo "=== Large Files (>200 lines) ==="
+          find src/ -name "*.rs" -exec wc -l {} + | sort -rn | head -20 | awk '$1 > 200 {print $0}'
+
+  #---------------------------------------------------------------------------
+  # Documentation - 文档检查
+  #---------------------------------------------------------------------------
+  docs:
+    name: Documentation Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config
+
+      - name: Check Doc Comments
+        run: |
+          echo "=== Documented Public Functions ==="
+          DOC_COUNT=$(grep -r "///" --include="*.rs" src/ | wc -l)
+          PUB_FN_COUNT=$(grep -r "pub fn" --include="*.rs" src/ | wc -l)
+          echo "Public functions: ${PUB_FN_COUNT}"
+          echo "Doc comments: ${DOC_COUNT}"
+          if [ "${PUB_FN_COUNT}" -gt 0 ]; then
+            DOC_RATIO=$((DOC_COUNT * 100 / PUB_FN_COUNT))
+            echo "Documentation coverage: ${DOC_RATIO}%"
+            if [ "${DOC_RATIO}" -lt 50 ]; then
+              echo "::warning::Low documentation coverage (${DOC_RATIO}%). Target is 80%."
+            fi
+          fi
+
+      - name: Build Documentation
+        run: cargo doc --no-deps --all-features
+        continue-on-error: true
+
+      - name: Check for Broken Links
+        run: cargo doc --document-private-items --all-features 2>&1 | grep -i "warning.*rustdoc" || true
+        continue-on-error: true

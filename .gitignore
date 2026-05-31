@@ -1,0 +1,68 @@
+# Rust build artifacts
+/target/
+
+# Cargo lock file (only for binaries, libraries should commit it)
+# For binary projects, Cargo.lock should be committed
+# Cargo.lock
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+/logs/
+*.log
+*.log.*
+
+# Data
+/data/
+/storage/
+*.db
+*.sqlite
+
+# Coverage
+coverage/
+*.lcov
+.cobertura.xml
+
+# Docs
+/book/
+/doc/
+
+# Temp files
+tmp/
+temp/
+*.tmp
+
+# Docker
+.docker/
+
+# Test artifacts
+cargo-test-results/
+junit.xml
+
+# Benchmark
+target/criterion/
+
+# Profiling
+perf.data
+perf.data.old
+flamegraph.svg
+
+# Security
+*.pem
+*.key
+secrets.json

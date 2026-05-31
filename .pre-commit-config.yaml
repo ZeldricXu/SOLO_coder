@@ -1,0 +1,103 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        name: Trim Trailing Whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+        name: Fix End of Files
+      - id: check-yaml
+        name: Check YAML
+        args: [--unsafe]
+      - id: check-json
+        name: Check JSON
+      - id: check-toml
+        name: Check TOML
+      - id: check-added-large-files
+        name: Check for Added Large Files
+        args: ['--maxkb=1024']
+      - id: check-merge-conflict
+        name: Check for Merge Conflicts
+      - id: check-ast
+        name: Check Python AST
+      - id: detect-private-key
+        name: Detect Private Keys
+      - id: no-commit-to-branch
+        name: Prevent Commits to Main
+        args: [--branch=main]
+
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      - id: fmt
+        name: Rust Formatter
+        args: [--all]
+      - id: cargo-check
+        name: Cargo Check
+        args: [--workspace]
+      - id: clippy
+        name: Rust Clippy
+        args: [--all-targets, --all-features]
+
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        name: Lint Dockerfiles
+        args:
+          - --ignore=DL3008
+          - --ignore=DL3006
+          - --ignore=DL3018
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        name: ShellCheck
+        args: [--severity=warning]
+
+  - repo: https://github.com/psf/black
+    rev: 24.10.0
+    hooks:
+      - id: black
+        name: Black Formatter
+        language_version: python3.11
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: Sort Python Imports
+
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        name: Python Linter
+        args: [--max-line-length=100, --extend-ignore=E203,W503]
+
+  - repo: local
+    hooks:
+      - id: cargo-audit
+        name: Cargo Audit
+        entry: cargo audit
+        language: system
+        pass_filenames: false
+        files: ^Cargo\.(toml|lock)$
+      - id: cargo-deny
+        name: Cargo Deny
+        entry: cargo deny check
+        language: system
+        pass_filenames: false
+        files: ^Cargo\.(toml|lock)$
+      - id: cargo-test
+        name: Cargo Test
+        entry: cargo test
+        language: system
+        pass_filenames: false
+        types: [rust]
+
+default_stages: [commit]
+fail_fast: false
+minimum_pre_commit_version: 2.20.0

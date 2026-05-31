@@ -1,0 +1,125 @@
+groups:
+  - name: middleware_alerts
+    rules:
+      - alert: MiddlewareDown
+        expr: up{job="middleware"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "中间件服务不可用"
+          description: "中间件实例 {{ $labels.instance }} 已停止超过1分钟"
+          runbook: "https://wiki.company.com/runbooks/middleware-down"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5..", job="middleware"}[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "高错误率"
+          description: "实例 {{ $labels.instance }} 5xx错误率超过5%"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="middleware"}[5m])) > 1
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "高延迟"
+          description: "实例 {{ $labels.instance }} P99延迟超过1秒"
+
+      - alert: HighMemoryUsage
+        expr: process_resident_memory_bytes{job="middleware"} > 512 * 1024 * 1024
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "高内存使用"
+          description: "实例 {{ $labels.instance }} 内存使用超过512MB"
+
+      - alert: DatabaseConnectionPoolExhausted
+        expr: db_connections_idle{job="middleware"} < 2
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "数据库连接池耗尽"
+          description: "实例 {{ $labels.instance }} 空闲连接少于2个"
+
+      - alert: RedisConnectionFailed
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Redis连接失败"
+          description: "Redis实例 {{ $labels.instance }} 连接失败"
+
+      - alert: KafkaConsumerLag
+        expr: kafka_consumer_group_lag > 1000
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Kafka消费延迟"
+          description: "消费者组 {{ $labels.group }} 延迟超过1000条消息"
+
+      - alert: DataQualityCheckFailed
+        expr: quality_check_failed > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "数据质量检查失败"
+          description: "规则 {{ $labels.rule_id }} 检查失败"
+
+  - name: database_alerts
+    rules:
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "PostgreSQL不可用"
+          description: "PostgreSQL实例 {{ $labels.instance }} 已停止"
+
+      - alert: HighConnections
+        expr: pg_connections_active > 80
+        for: 5m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "高连接数"
+          description: "PostgreSQL活跃连接超过80个"
+
+      - alert: SlowQuery
+        expr: rate(pg_stat_database_tup_returned{datname="enterprise_middleware"}[5m]) > 100000
+        for: 10m
+        labels:
+          severity: warning
+          team: database
+        annotations:
+          summary: "慢查询检测"
+          description: "数据库查询速率异常高"
+
+      - alert: ReplicationLag
+        expr: pg_replication_lag > 300
+        for: 2m
+        labels:
+          severity: critical
+          team: database
+        annotations:
+          summary: "复制延迟高"
+          description: "复制延迟超过300秒"

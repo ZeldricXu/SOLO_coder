@@ -1,0 +1,18 @@
+[toolchain]
+channel = "stable"
+version = "1.75.0"
+components = ["rustfmt", "clippy", "rustc-docs", "rust-analysis"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-pc-windows-msvc", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu"]
+
+[profile]
+dev = ["tools"]
+release = []
+
+[tools]
+cargo-edit = "0.12"
+cargo-audit = "0.20"
+cargo-deny = "0.14"
+cargo-outdated = "0.15"
+cargo-tarpaulin = "0.27"
+cargo-bloat = "0.11"
+cargo-llvm-cov = "0.6"

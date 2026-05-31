@@ -1,0 +1,85 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+shutdown_timeout = 30
+
+[database]
+url = "postgresql://localhost:5432/enterprise_middleware"
+pool_size = 10
+connect_timeout = 30
+idle_timeout = 600
+max_lifetime = 1800
+acquire_timeout = 30
+
+[redis]
+url = "redis://localhost:6379/0"
+pool_size = 10
+connect_timeout = 5
+idle_timeout = 300
+max_lifetime = 1800
+
+[logging]
+dir = "./logs"
+level = "info"
+format = "json"
+rotation = "daily"
+retention_days = 30
+compression = false
+ansi_colors = false
+
+[storage]
+backend = "local"
+local_path = "./data/storage"
+s3_bucket = "enterprise-middleware"
+s3_region = "us-east-1"
+s3_access_key = ""
+s3_secret_key = ""
+s3_endpoint = ""
+
+[cdc]
+enabled = false
+source_type = "postgres"
+connection_string = "postgresql://localhost:5432/testdb"
+server_id = 1
+slot_name = "enterprise_middleware_slot"
+include_tables = ["public.users", "public.orders"]
+exclude_tables = []
+output_kafka_brokers = "localhost:9092"
+output_topic = "cdc_events"
+batch_size = 100
+polling_interval_ms = 1000
+
+[data_quality]
+enabled = true
+schedule_pool_size = 4
+alert_enabled = true
+alert_channels = ["slack"]
+anomaly_storage_enabled = true
+
+[metadata_crawler]
+enabled = true
+schedule_pool_size = 2
+sample_data_count = 100
+histogram_buckets = 10
+statistics_enabled = true
+
+[lineage]
+enabled = true
+sql_dialect = "postgres"
+store_parsed_queries = true
+build_dag = true
+
+[notification]
+enabled = true
+default_channel = "in_app"
+rate_limit_per_minute = 100
+retry_count = 3
+retry_interval_ms = 1000
+smtp_host = ""
+smtp_port = 25
+smtp_username = ""
+smtp_password = ""
+slack_webhook = ""
+dingtalk_webhook = ""
+wechat_webhook = ""
+webhook_timeout_ms = 5000

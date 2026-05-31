@@ -1,0 +1,39 @@
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "target-cpu=haswell"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-cpu=haswell"]
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[build]
+incremental = true
+target-dir = "target"
+
+[registries.crates-io]
+protocol = "sparse"
+
+[net]
+retry = 3
+git-fetch-with-cli = false
+
+[http]
+timeout = 60000
+
+[term]
+verbose = false
+color = "auto"
+progress = { when = "auto", width = "terminal" }
+
+[alias]
+t = "test"
+b = "build"
+r = "run"
+c = "check"
+cl = "clippy"
+f = "fmt"
+doc = "doc --open"
+dev = "run --features postgres,otel"
+prod = "build --release --features postgres,otel"
+cov = "llvm-cov --all-features --workspace --lcov --output-path lcov.info"

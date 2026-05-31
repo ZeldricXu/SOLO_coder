@@ -1,0 +1,54 @@
+# Rust build artifacts
+/target/
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+.pre-commit-config.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Data
+data/
+storage/
+
+# Tests
+tests/
+
+# Docs
+docs/
+*.md
+
+# Environment
+.env
+.env.*
+
+# Docker
+docker-compose.yml
+docker-compose.override.yml
+
+# Temp
+tmp/
+temp/
+
+# Coverage
+coverage/
+
+# Misc
+README.md
+CHANGELOG.md
+CONTRIBUTING.md
+LICENSE

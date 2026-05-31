@@ -1,0 +1,130 @@
+[package]
+name = "enterprise-middleware"
+version = "0.1.0"
+edition = "2021"
+description = "企业级中间件 - 核心处理、存储、CDC、数据质量、元数据采集、血缘解析与通知"
+license = "MIT"
+rust-version = "1.75.0"
+authors = ["Enterprise Middleware Team"]
+keywords = ["middleware", "enterprise", "cdc", "data-quality", "lineage"]
+categories = ["asynchronous", "database", "web-programming::http-server"]
+repository = "https://github.com/enterprise/middleware"
+homepage = "https://enterprise.github.io/middleware"
+documentation = "https://docs.rs/enterprise-middleware"
+readme = "README.md"
+
+[package.metadata]
+maintainers = ["platform-team@company.com"]
+deployment = "kubernetes"
+observability = "opentelemetry"
+
+[lib]
+name = "enterprise_middleware"
+path = "src/lib.rs"
+
+[[bin]]
+name = "enterprise-middleware"
+path = "src/main.rs"
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+axum = { version = "0.7", features = ["json", "http1", "http2", "ws"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
+serde_json = "1.0"
+serde_yaml = "0.9"
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "chrono", "uuid", "json", "macros"] }
+sqlx-mysql = { version = "0.7", features = ["runtime-tokio", "chrono", "uuid", "json"] }
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager", "streams"] }
+bb8 = "0.8"
+bb8-redis = "0.14"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "time", "registry"] }
+tracing-appender = "0.2"
+tracing-log = "0.2"
+opentelemetry = { version = "0.22", features = ["trace", "metrics", "rt-tokio"] }
+opentelemetry-otlp = "0.15"
+opentelemetry-semantic-conventions = "0.14"
+chrono = { version = "0.4", features = ["serde", "clock", "std"] }
+uuid = { version = "1.6", features = ["v4", "serde", "fast-rng"] }
+thiserror = "1.0"
+anyhow = "1.0"
+parking_lot = "0.12"
+dashmap = "5.5"
+once_cell = "1.19"
+regex = "1.10"
+reqwest = { version = "0.12", features = ["json", "stream", "gzip", "brotli", "deflate"] }
+tower = { version = "0.4", features = ["util", "timeout", "rate-limit", "load-shed"] }
+tower-http = { version = "0.5", features = ["cors", "compression", "trace", "request-id", "catch-panic"] }
+async-trait = "0.1"
+bytes = "1.5"
+futures = "0.3"
+pin-project-lite = "0.2"
+base64 = "0.22"
+flate2 = "1.0"
+config = { version = "0.14", features = ["toml", "env", "json"] }
+dotenvy = "0.15"
+job_scheduler = "1.3"
+cron = "0.12"
+petgraph = "0.6"
+walkdir = "2.5"
+sha2 = "0.10"
+hmac = "0.12"
+nom = "7.1"
+nom-sql = "0.2"
+tera = "1.19"
+s3 = "0.34"
+object_store = { version = "0.9", features = ["aws", "local", "gcp", "azure"] }
+datafusion = { version = "38.0", default-features = false, features = ["unicode_expressions"] }
+arrow = "52.0"
+parquet = "52.0"
+rand = "0.8"
+hex = "0.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+tempfile = "3.10"
+proptest = "1.4"
+criterion = { version = "0.5", features = ["html_reports"] }
+test-case = "3.3"
+mockall = "0.12"
+hyper = { version = "1", features = ["full"] }
+axum-test = "15"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+overflow-checks = false
+incremental = false
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+[profile.test]
+opt-level = 1
+debug = true
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+debug = false
+
+[workspace]
+resolver = "2"
+
+[features]
+default = ["postgres"]
+postgres = ["sqlx/runtime-tokio"]
+mysql = ["sqlx-mysql/runtime-tokio"]
+s3-storage = ["object_store/aws"]
+gcs-storage = ["object_store/gcp"]
+azure-storage = ["object_store/azure"]
+local-storage = ["object_store/local"]
+otel = ["opentelemetry/trace"]
+bench = ["criterion"]
