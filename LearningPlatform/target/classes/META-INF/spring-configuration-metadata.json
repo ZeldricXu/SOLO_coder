@@ -1,0 +1,135 @@
+{
+  "groups": [
+    {
+      "name": "learning.backup",
+      "type": "com.learningplatform.config.BackupConfig",
+      "sourceType": "com.learningplatform.config.BackupConfig"
+    },
+    {
+      "name": "learning.backup.activity",
+      "type": "com.learningplatform.config.BackupConfig$Activity",
+      "sourceType": "com.learningplatform.config.BackupConfig",
+      "sourceMethod": "public com.learningplatform.config.BackupConfig.Activity getActivity() "
+    },
+    {
+      "name": "learning.backup.frequency",
+      "type": "com.learningplatform.config.BackupConfig$Frequency",
+      "sourceType": "com.learningplatform.config.BackupConfig",
+      "sourceMethod": "public com.learningplatform.config.BackupConfig.Frequency getFrequency() "
+    },
+    {
+      "name": "learning.certificate",
+      "type": "com.learningplatform.config.CertificateConfig",
+      "sourceType": "com.learningplatform.config.CertificateConfig"
+    },
+    {
+      "name": "learning.course",
+      "type": "com.learningplatform.config.CourseTypeConfig",
+      "sourceType": "com.learningplatform.config.CourseTypeConfig"
+    },
+    {
+      "name": "learning.review",
+      "type": "com.learningplatform.config.ReviewQueueConfig",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig"
+    },
+    {
+      "name": "learning.review.worker",
+      "type": "com.learningplatform.config.ReviewQueueConfig$Worker",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig",
+      "sourceMethod": "public com.learningplatform.config.ReviewQueueConfig.Worker getWorker() "
+    }
+  ],
+  "properties": [
+    {
+      "name": "learning.backup.activity.threshold",
+      "type": "java.util.Map<java.lang.String,java.lang.Integer>",
+      "sourceType": "com.learningplatform.config.BackupConfig$Activity"
+    },
+    {
+      "name": "learning.backup.activity.window-minutes",
+      "type": "java.lang.Integer",
+      "sourceType": "com.learningplatform.config.BackupConfig$Activity"
+    },
+    {
+      "name": "learning.backup.cleanup-days-to-keep",
+      "type": "java.lang.Integer",
+      "sourceType": "com.learningplatform.config.BackupConfig"
+    },
+    {
+      "name": "learning.backup.frequency.interval-minutes",
+      "type": "java.util.Map<java.lang.String,java.lang.Integer>",
+      "sourceType": "com.learningplatform.config.BackupConfig$Frequency"
+    },
+    {
+      "name": "learning.certificate.algorithm",
+      "type": "java.util.Map<java.lang.String,java.lang.String>",
+      "sourceType": "com.learningplatform.config.CertificateConfig"
+    },
+    {
+      "name": "learning.certificate.available-algorithms",
+      "type": "java.util.Map<java.lang.String,java.lang.String>",
+      "sourceType": "com.learningplatform.config.CertificateConfig"
+    },
+    {
+      "name": "learning.certificate.secret",
+      "type": "java.lang.String",
+      "sourceType": "com.learningplatform.config.CertificateConfig"
+    },
+    {
+      "name": "learning.certificate.validity-years",
+      "type": "java.util.Map<java.lang.String,java.lang.Integer>",
+      "sourceType": "com.learningplatform.config.CertificateConfig"
+    },
+    {
+      "name": "learning.course.all-types",
+      "type": "java.util.List<com.learningplatform.config.CourseTypeConfig$CourseType>",
+      "sourceType": "com.learningplatform.config.CourseTypeConfig"
+    },
+    {
+      "name": "learning.course.enabled-types",
+      "type": "java.util.List<com.learningplatform.config.CourseTypeConfig$CourseType>",
+      "sourceType": "com.learningplatform.config.CourseTypeConfig"
+    },
+    {
+      "name": "learning.course.environment",
+      "type": "org.springframework.core.env.Environment",
+      "sourceType": "com.learningplatform.config.CourseTypeConfig"
+    },
+    {
+      "name": "learning.course.types",
+      "type": "java.util.Map<java.lang.String,com.learningplatform.config.CourseTypeConfig$CourseType>",
+      "sourceType": "com.learningplatform.config.CourseTypeConfig"
+    },
+    {
+      "name": "learning.review.max-retry-attempts",
+      "type": "java.lang.Integer",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig"
+    },
+    {
+      "name": "learning.review.queue-name",
+      "type": "java.lang.String",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig"
+    },
+    {
+      "name": "learning.review.retry-delay-ms",
+      "type": "java.lang.Long",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig"
+    },
+    {
+      "name": "learning.review.worker.batch-size",
+      "type": "java.lang.Integer",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig$Worker"
+    },
+    {
+      "name": "learning.review.worker.enabled",
+      "type": "java.lang.Boolean",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig$Worker"
+    },
+    {
+      "name": "learning.review.worker.poll-interval-ms",
+      "type": "java.lang.Long",
+      "sourceType": "com.learningplatform.config.ReviewQueueConfig$Worker"
+    }
+  ],
+  "hints": []
+}
