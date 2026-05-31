@@ -1,0 +1,85 @@
+spring:
+  application:
+    name: file-lifecycle-manager-test
+  profiles:
+    active: test
+  r2dbc:
+    url: r2dbc:h2:mem:///testdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+server:
+  port: 8081
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.solocoder.infrastructure.persistence.entity
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: false
+
+logging:
+  level:
+    com.solocoder: DEBUG
+    org.springframework.web: INFO
+  masking:
+    enabled: true
+  plugins:
+    trace-id:
+      enabled: true
+    metrics:
+      enabled: false
+    error-alert:
+      enabled: false
+
+storage:
+  master:
+    base-path: ${java.io.tmpdir}/storage_test/master
+  replica:
+    base-path: ${java.io.tmpdir}/storage_test/replica
+  lifecycle:
+    cleanup-interval: 3600000
+  read-write-routing:
+    enabled: true
+
+feature:
+  store:
+    online-url: redis://localhost:6379
+    offline-url: jdbc:h2:mem:feature_store
+
+gpu:
+  scheduler:
+    node-count: 2
+    gpus-per-node: 4
+    preemption-enabled: false
+
+document:
+  pipeline:
+    chunk-size: 1000
+    chunk-overlap: 200
+    embedding-dimension: 384
