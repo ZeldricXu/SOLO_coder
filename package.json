@@ -1,0 +1,32 @@
+{
+  "name": "security-modules",
+  "version": "1.0.0",
+  "description": "企业级安全模块集合 - 包含数据脱敏、审计日志、TEE、MPC、联邦学习、密钥管理、数据分类、差分隐私",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "lint": "eslint 'src/**/*.ts'"
+  },
+  "keywords": [
+    "security",
+    "privacy",
+    "data-masking",
+    "audit-log",
+    "tee",
+    "mpc",
+    "federated-learning",
+    "differential-privacy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0"
+  }
+}

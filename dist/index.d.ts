@@ -1,0 +1,44 @@
+export * from './types';
+export * from './utils';
+import { DynamicDataMasking } from './modules/dynamic-data-masking';
+import { MaskingConfig, MaskingContext } from './modules/dynamic-data-masking';
+import { AuditLogTamperProtection } from './modules/audit-log-tamper-protection';
+import { TrustedExecutionEnvironment } from './modules/trusted-execution-environment';
+import { SecureMultipartyComputation } from './modules/secure-multiparty-computation';
+import { FederatedLearningCoordinator } from './modules/federated-learning-coordinator';
+import { KeyShardingManagement } from './modules/key-sharding-management';
+import { DataClassification } from './modules/data-classification';
+import { DifferentialPrivacyInjection } from './modules/differential-privacy-injection';
+export { DynamicDataMasking, MaskingConfig, MaskingContext, AuditLogTamperProtection, TrustedExecutionEnvironment, SecureMultipartyComputation, FederatedLearningCoordinator, KeyShardingManagement, DataClassification, DifferentialPrivacyInjection, };
+export declare const MODULES: {
+    readonly DynamicDataMasking: typeof DynamicDataMasking;
+    readonly AuditLogTamperProtection: typeof AuditLogTamperProtection;
+    readonly TrustedExecutionEnvironment: typeof TrustedExecutionEnvironment;
+    readonly SecureMultipartyComputation: typeof SecureMultipartyComputation;
+    readonly FederatedLearningCoordinator: typeof FederatedLearningCoordinator;
+    readonly KeyShardingManagement: typeof KeyShardingManagement;
+    readonly DataClassification: typeof DataClassification;
+    readonly DifferentialPrivacyInjection: typeof DifferentialPrivacyInjection;
+};
+export declare const MODULE_NAMES: {
+    readonly DynamicDataMasking: "Dynamic Data Masking";
+    readonly AuditLogTamperProtection: "Audit Log Tamper Protection";
+    readonly TrustedExecutionEnvironment: "Trusted Execution Environment";
+    readonly SecureMultipartyComputation: "Secure Multi-Party Computation";
+    readonly FederatedLearningCoordinator: "Federated Learning Coordinator";
+    readonly KeyShardingManagement: "Key Sharding Management";
+    readonly DataClassification: "Data Classification";
+    readonly DifferentialPrivacyInjection: "Differential Privacy Injection";
+};
+export declare function getModuleDescription(moduleName: keyof typeof MODULES): string;
+export declare function createZeroTrustSecurity(): {
+    dynamicDataMasking: (config: ConstructorParameters<typeof DynamicDataMasking>[0]) => DynamicDataMasking;
+    auditLogTamperProtection: (config?: ConstructorParameters<typeof AuditLogTamperProtection>[0]) => AuditLogTamperProtection;
+    trustedExecutionEnvironment: (knownMeasurements?: ConstructorParameters<typeof TrustedExecutionEnvironment>[0]) => TrustedExecutionEnvironment;
+    secureMultipartyComputation: () => SecureMultipartyComputation;
+    federatedLearningCoordinator: (masterSecret?: ConstructorParameters<typeof FederatedLearningCoordinator>[0]) => FederatedLearningCoordinator;
+    keyShardingManagement: () => KeyShardingManagement;
+    dataClassification: (config?: ConstructorParameters<typeof DataClassification>[0]) => DataClassification;
+    differentialPrivacyInjection: (defaultBudget?: ConstructorParameters<typeof DifferentialPrivacyInjection>[0]) => DifferentialPrivacyInjection;
+};
+export default createZeroTrustSecurity;
