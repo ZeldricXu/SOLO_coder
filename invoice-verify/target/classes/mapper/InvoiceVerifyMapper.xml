@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.invoice.mgmt.verify.mapper.InvoiceVerifyMapper">
+    <resultMap id="InvoiceVerifyResultMap" type="com.invoice.mgmt.common.entity.InvoiceVerify">
+        <id property="verifyId" column="verify_id"/>
+        <result property="invoiceId" column="invoice_id"/>
+        <result property="verifyType" column="verify_type"/>
+        <result property="verifyResult" column="verify_result"/>
+        <result property="verifySource" column="verify_source"/>
+        <result property="verifyDetail" column="verify_detail"/>
+        <result property="verifiedAt" column="verified_at"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO t_invoice_verify (verify_id, invoice_id, verify_type, verify_result, verify_source, verify_detail, verified_at, created_at)
+        VALUES (#{verifyId}, #{invoiceId}, #{verifyType}, #{verifyResult}, #{verifySource}, #{verifyDetail}, #{verifiedAt}, #{createdAt})
+    </insert>
+
+    <select id="findById" resultMap="InvoiceVerifyResultMap">
+        SELECT * FROM t_invoice_verify WHERE verify_id = #{verifyId}
+    </select>
+
+    <select id="findByInvoiceId" resultMap="InvoiceVerifyResultMap">
+        SELECT * FROM t_invoice_verify WHERE invoice_id = #{invoiceId} ORDER BY verified_at DESC
+    </select>
+
+    <select id="findLatestByInvoiceId" resultMap="InvoiceVerifyResultMap">
+        SELECT * FROM t_invoice_verify WHERE invoice_id = #{invoiceId} ORDER BY verified_at DESC LIMIT 1
+    </select>
+</mapper>

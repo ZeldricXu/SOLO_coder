@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.invoice.mgmt.history.mapper.InvoiceHistoryMapper">
+    <resultMap id="InvoiceHistoryResultMap" type="com.invoice.mgmt.common.entity.InvoiceHistory">
+        <id property="id" column="id"/>
+        <result property="invoiceId" column="invoice_id"/>
+        <result property="actionType" column="action_type"/>
+        <result property="actionContent" column="action_content"/>
+        <result property="operator" column="operator"/>
+        <result property="actionTime" column="action_time"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO t_invoice_history (invoice_id, action_type, action_content, operator, action_time, created_at)
+        VALUES (#{invoiceId}, #{actionType}, #{actionContent}, #{operator}, #{actionTime}, #{createdAt})
+    </insert>
+
+    <select id="findByInvoiceId" resultMap="InvoiceHistoryResultMap">
+        SELECT * FROM t_invoice_history WHERE invoice_id = #{invoiceId} ORDER BY action_time DESC
+    </select>
+
+    <select id="findByActionType" resultMap="InvoiceHistoryResultMap">
+        SELECT * FROM t_invoice_history WHERE action_type = #{actionType} ORDER BY action_time DESC
+    </select>
+
+    <select id="findByOperator" resultMap="InvoiceHistoryResultMap">
+        SELECT * FROM t_invoice_history WHERE operator = #{operator} ORDER BY action_time DESC
+    </select>
+
+    <select id="findByTimeRange" resultMap="InvoiceHistoryResultMap">
+        SELECT * FROM t_invoice_history WHERE action_time &gt;= #{start} AND action_time &lt;= #{end} ORDER BY action_time DESC
+    </select>
+</mapper>

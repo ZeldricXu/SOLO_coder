@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.invoice.mgmt.status.mapper.InvoiceStatusLogMapper">
+    <resultMap id="InvoiceStatusLogResultMap" type="com.invoice.mgmt.common.entity.InvoiceStatusLog">
+        <id property="id" column="id"/>
+        <result property="invoiceId" column="invoice_id"/>
+        <result property="previousStatus" column="previous_status"/>
+        <result property="currentStatus" column="current_status"/>
+        <result property="operator" column="operator"/>
+        <result property="remark" column="remark"/>
+        <result property="changeTime" column="change_time"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO t_invoice_status_log (invoice_id, previous_status, current_status, operator, remark, change_time, created_at)
+        VALUES (#{invoiceId}, #{previousStatus}, #{currentStatus}, #{operator}, #{remark}, #{changeTime}, #{createdAt})
+    </insert>
+
+    <select id="findById" resultMap="InvoiceStatusLogResultMap">
+        SELECT * FROM t_invoice_status_log WHERE id = #{id}
+    </select>
+
+    <select id="findByInvoiceId" resultMap="InvoiceStatusLogResultMap">
+        SELECT * FROM t_invoice_status_log WHERE invoice_id = #{invoiceId} ORDER BY change_time DESC
+    </select>
+
+    <select id="findLatestByInvoiceId" resultMap="InvoiceStatusLogResultMap">
+        SELECT * FROM t_invoice_status_log WHERE invoice_id = #{invoiceId} ORDER BY change_time DESC LIMIT 1
+    </select>
+</mapper>

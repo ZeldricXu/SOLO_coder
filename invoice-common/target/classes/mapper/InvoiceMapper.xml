@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.invoice.mgmt.common.mapper.InvoiceMapper">
+    <resultMap id="InvoiceResultMap" type="com.invoice.mgmt.common.entity.Invoice">
+        <id property="invoiceId" column="invoice_id"/>
+        <result property="invoiceType" column="invoice_type"/>
+        <result property="invoiceNo" column="invoice_no"/>
+        <result property="invoiceCode" column="invoice_code"/>
+        <result property="buyerName" column="buyer_name"/>
+        <result property="buyerTaxNo" column="buyer_tax_no"/>
+        <result property="sellerName" column="seller_name"/>
+        <result property="sellerTaxNo" column="seller_tax_no"/>
+        <result property="invoiceAmount" column="invoice_amount"/>
+        <result property="taxAmount" column="tax_amount"/>
+        <result property="totalAmount" column="total_amount"/>
+        <result property="invoiceStatus" column="invoice_status"/>
+        <result property="issueTime" column="issue_time"/>
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO t_invoice (invoice_id, invoice_type, invoice_no, invoice_code, buyer_name, buyer_tax_no,
+            seller_name, seller_tax_no, invoice_amount, tax_amount, total_amount, invoice_status, issue_time, created_at, updated_at)
+        VALUES (#{invoiceId}, #{invoiceType}, #{invoiceNo}, #{invoiceCode}, #{buyerName}, #{buyerTaxNo},
+            #{sellerName}, #{sellerTaxNo}, #{invoiceAmount}, #{taxAmount}, #{totalAmount}, #{invoiceStatus}, #{issueTime}, #{createdAt}, #{updatedAt})
+    </insert>
+
+    <update id="update">
+        UPDATE t_invoice SET
+            buyer_name = #{buyerName},
+            buyer_tax_no = #{buyerTaxNo},
+            seller_name = #{sellerName},
+            seller_tax_no = #{sellerTaxNo},
+            invoice_amount = #{invoiceAmount},
+            tax_amount = #{taxAmount},
+            total_amount = #{totalAmount},
+            invoice_status = #{invoiceStatus},
+            issue_time = #{issueTime},
+            updated_at = #{updatedAt}
+        WHERE invoice_id = #{invoiceId}
+    </update>
+
+    <select id="findById" resultMap="InvoiceResultMap">
+        SELECT * FROM t_invoice WHERE invoice_id = #{invoiceId}
+    </select>
+
+    <select id="findByNoAndCode" resultMap="InvoiceResultMap">
+        SELECT * FROM t_invoice WHERE invoice_no = #{invoiceNo} AND invoice_code = #{invoiceCode}
+    </select>
+
+    <select id="findByStatus" resultMap="InvoiceResultMap">
+        SELECT * FROM t_invoice WHERE invoice_status = #{invoiceStatus}
+    </select>
+
+    <update id="updateStatus">
+        UPDATE t_invoice SET invoice_status = #{status}, updated_at = NOW() WHERE invoice_id = #{invoiceId}
+    </update>
+</mapper>

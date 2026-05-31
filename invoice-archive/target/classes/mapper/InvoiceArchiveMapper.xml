@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.invoice.mgmt.archive.mapper.InvoiceArchiveMapper">
+    <resultMap id="InvoiceArchiveResultMap" type="com.invoice.mgmt.common.entity.InvoiceArchive">
+        <id property="archiveId" column="archive_id"/>
+        <result property="invoiceId" column="invoice_id"/>
+        <result property="archiveType" column="archive_type"/>
+        <result property="storagePath" column="storage_path"/>
+        <result property="fileName" column="file_name"/>
+        <result property="fileSize" column="file_size"/>
+        <result property="md5" column="md5"/>
+        <result property="archivedBy" column="archived_by"/>
+        <result property="archivedAt" column="archived_at"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <insert id="insert">
+        INSERT INTO t_invoice_archive (archive_id, invoice_id, archive_type, storage_path, file_name, file_size, md5, archived_by, archived_at, created_at)
+        VALUES (#{archiveId}, #{invoiceId}, #{archiveType}, #{storagePath}, #{fileName}, #{fileSize}, #{md5}, #{archivedBy}, #{archivedAt}, #{createdAt})
+    </insert>
+
+    <select id="findById" resultMap="InvoiceArchiveResultMap">
+        SELECT * FROM t_invoice_archive WHERE archive_id = #{archiveId}
+    </select>
+
+    <select id="findByInvoiceId" resultMap="InvoiceArchiveResultMap">
+        SELECT * FROM t_invoice_archive WHERE invoice_id = #{invoiceId} ORDER BY archived_at DESC
+    </select>
+
+    <select id="findByType" resultMap="InvoiceArchiveResultMap">
+        SELECT * FROM t_invoice_archive WHERE archive_type = #{archiveType} ORDER BY archived_at DESC
+    </select>
+</mapper>

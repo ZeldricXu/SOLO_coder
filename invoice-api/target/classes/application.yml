@@ -1,0 +1,109 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: invoice-mgmt-service
+  datasource:
+    url: jdbc:mysql://localhost:3306/invoice_mgmt?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+    timeout: 5000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-wait: -1ms
+        max-idle: 8
+        min-idle: 0
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.invoice.mgmt.common.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    default-statement-timeout: 30
+
+redis:
+  queue:
+    prefix: invoice:queue:
+    poll:
+      timeout: 1000
+
+invoice:
+  default:
+    seller:
+      name: 销售公司
+      taxno: 911100000000000000
+  archive:
+    path: /tmp/invoice-archive
+  verify:
+    online:
+      timeout: 5000
+      mock: true
+    max-retry: 3
+    retry-delay: 1000
+    use-redis: true
+  reimburse:
+    use-redis: true
+  number:
+    warning:
+      base-threshold: 20
+      high-frequency: 10
+      low-frequency: 50
+    frequency:
+      window-days: 7
+      high-threshold: 20
+      low-threshold: 2
+  types:
+    enable-config: true
+    auto-sync-to-db: true
+    configs:
+      - code: vat_special
+        name: 增值税专用发票
+        tax-rate: 0.13
+        enabled: true
+        description: 适用于一般纳税人，可用于抵扣进项税
+      - code: vat_common
+        name: 增值税普通发票
+        tax-rate: 0.13
+        enabled: true
+        description: 适用于小规模纳税人或个人消费者
+      - code: vat_electronic
+        name: 增值税电子普通发票
+        tax-rate: 0.13
+        enabled: true
+        description: 电子发票，与纸质发票具有同等法律效力
+      - code: vat_9pct
+        name: 增值税9%税率发票
+        tax-rate: 0.09
+        enabled: true
+        description: 适用于交通运输、建筑、房地产等行业
+      - code: vat_6pct
+        name: 增值税6%税率发票
+        tax-rate: 0.06
+        enabled: true
+        description: 适用于现代服务业、生活服务业等
+      - code: vat_zero
+        name: 增值税零税率发票
+        tax-rate: 0.00
+        enabled: true
+        description: 适用于出口货物、跨境服务等
+
+logging:
+  level:
+    root: INFO
+    com.invoice.mgmt: DEBUG
+    org.mybatis: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
