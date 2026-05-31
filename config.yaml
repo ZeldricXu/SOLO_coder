@@ -1,0 +1,62 @@
+
+scheduler:
+  max_retry_attempts: 3
+  retry_delay_seconds: 1
+  task_timeout_seconds: 300
+
+ota:
+  delta_algorithm: bsdiff
+  max_batch_size: 100
+  auto_rollback_enabled: true
+  rollback_threshold: 0.3
+
+device_shadow:
+  sync_interval_seconds: 30
+  max_shadow_size: 8192
+
+rule_engine:
+  max_rules: 1000
+  execution_timeout_seconds: 10
+
+storage:
+  provider: local
+  local:
+    base_path: ./data/storage
+  s3:
+    endpoint_url: ""
+    access_key: ""
+    secret_key: ""
+    bucket: ""
+
+notification:
+  channels:
+    - email
+    - webhook
+    - sms
+  default_channel: email
+  email:
+    smtp_host: localhost
+    smtp_port: 25
+    smtp_user: ""
+    smtp_password: ""
+    use_tls: false
+    from_address: noreply@example.com
+
+protocol:
+  drivers:
+    - modbus
+    - mqtt
+    - opcua
+  standard_format: json
+
+monitoring:
+  collection_interval_seconds: 15
+  retention_days: 30
+
+inference:
+  model_path: ./models
+  max_concurrent_tasks: 4
+
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
