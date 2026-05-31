@@ -1,0 +1,80 @@
+# syntax=docker/dockerfile:1.6
+
+FROM eclipse-temurin:17-jdk-alpine AS builder
+
+LABEL maintainer="ChainETL Team <dev@chainetl.com>"
+LABEL description="ChainETL Platform Builder"
+
+ENV MAVEN_OPTS="-XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+ENV MAVEN_HOME=/opt/maven
+ENV PATH=${MAVEN_HOME}/bin:${PATH}
+
+RUN apk add --no-cache curl tar bash && \
+    MAVEN_VERSION=3.9.6 && \
+    curl -fsSL https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/apache-maven-${MAVEN_VERSION}-bin.tar.gz \
+    | tar -xz -C /opt && \
+    ln -s /opt/apache-maven-${MAVEN_VERSION} ${MAVEN_HOME} && \
+    mvn --version
+
+WORKDIR /build
+
+COPY pom.xml .
+RUN mvn -B -e -C -T 1C org.apache.maven.plugins:maven-dependency-plugin:3.6.1:go-offline -Pprod
+
+COPY src ./src
+RUN mvn -B -e -T 1C clean package -DskipTests -Pprod && \
+    java -Djarmode=layertools -jar target/chainetl-platform-*.jar extract --destination target/extracted
+
+FROM eclipse-temurin:17-jre-alpine AS runtime
+
+LABEL maintainer="ChainETL Team <dev@chainetl.com>"
+LABEL description="ChainETL Platform - Enterprise Blockchain ETL Pipeline"
+LABEL org.opencontainers.image.title="ChainETL Platform"
+LABEL org.opencontainers.image.description="Enterprise-grade Blockchain ETL Pipeline Platform"
+LABEL org.opencontainers.image.url="https://chainetl.com"
+LABEL org.opencontainers.image.vendor="ChainETL"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+
+ENV JAVA_OPTS=""
+ENV JAVA_TOOL_OPTIONS=""
+ENV APP_HOME=/app
+ENV SPRING_PROFILES_ACTIVE=prod
+
+RUN addgroup -S chainetl -g 1000 && \
+    adduser -S chainetl -u 1000 -G chainetl -h ${APP_HOME} -s /sbin/nologin
+
+RUN apk add --no-cache \
+    curl \
+    tzdata \
+    ca-certificates \
+    && rm -rf /var/cache/apk/*
+
+RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
+
+WORKDIR ${APP_HOME}
+
+COPY --from=builder --chown=chainetl:chainetl /build/target/extracted/dependencies/ ./
+COPY --from=builder --chown=chainetl:chainetl /build/target/extracted/spring-boot-loader/ ./
+COPY --from=builder --chown=chainetl:chainetl /build/target/extracted/snapshot-dependencies/ ./
+COPY --from=builder --chown=chainetl:chainetl /build/target/extracted/application/ ./
+
+RUN mkdir -p ${APP_HOME}/logs ${APP_HOME}/tmp && \
+    chown -R chainetl:chainetl ${APP_HOME}
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+USER chainetl:chainetl
+
+EXPOSE 8080
+EXPOSE 9090
+
+ENTRYPOINT [ "sh", "-c", "java $JAVA_OPTS \
+    -Djava.security.egd=file:/dev/./urandom \
+    -Dfile.encoding=UTF-8 \
+    -Duser.timezone=Asia/Shanghai \
+    -Dspring.profiles.active=${SPRING_PROFILES_ACTIVE} \
+    -Dlogging.path=${APP_HOME}/logs \
+    -Djava.io.tmpdir=${APP_HOME}/tmp \
+    org.springframework.boot.loader.launch.JarLauncher" ]

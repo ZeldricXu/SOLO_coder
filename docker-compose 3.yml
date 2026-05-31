@@ -1,0 +1,275 @@
+version: '3.8'
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "100m"
+    max-file: "10"
+    tag: "{{.Name}}"
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+x-healthcheck: &default-healthcheck
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 60s
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: chainetl-mysql
+    <<: *default-restart
+    <<: *default-logging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-chainetl_root_pass}
+      MYSQL_DATABASE: ${DB_NAME:-chainetl}
+      MYSQL_USER: ${DB_USERNAME:-chainetl}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-chainetl_pass}
+      TZ: Asia/Shanghai
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb_buffer_pool_size=1G
+      --innodb_log_file_size=256M
+      --innodb_flush_log_at_trx_commit=1
+      --max_connections=500
+      --wait_timeout=28800
+      --interactive_timeout=28800
+      --slow_query_log=1
+      --long_query_time=2
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/mysql/conf:/etc/mysql/conf.d
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+    networks:
+      - chainetl-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: chainetl-redis
+    <<: *default-restart
+    <<: *default-logging
+    environment:
+      TZ: Asia/Shanghai
+    command: >
+      redis-server
+      --requirepass ${REDIS_PASSWORD:-chainetl_redis_pass}
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --appendonly yes
+      --aof-use-rdb-preamble yes
+      --save 60 10000
+      --save 300 1000
+      --save 900 100
+      --slowlog-log-slower-than 10000
+      --slowlog-max-len 128
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "redis-cli", "--raw", "incr", "ping"]
+    networks:
+      - chainetl-network
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: chainetl-prometheus
+    <<: *default-restart
+    <<: *default-logging
+    user: "65534:65534"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./docker/prometheus/rules:/etc/prometheus/rules
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+    networks:
+      - chainetl-network
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: chainetl-grafana
+    <<: *default-restart
+    <<: *default-logging
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: "grafana-clock-panel,grafana-simple-json-datasource"
+      TZ: Asia/Shanghai
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health"]
+    depends_on:
+      - prometheus
+    networks:
+      - chainetl-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: chainetl-elasticsearch
+    <<: *default-restart
+    <<: *default-logging
+    environment:
+      - node.name=chainetl-es-01
+      - cluster.name=chainetl-cluster
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - xpack.security.enabled=false
+      - xpack.security.enrollment.enabled=false
+      - TZ=Asia/Shanghai
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - es-data:/usr/share/elasticsearch/data
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -vq '\"status\":\"red\"'"]
+    networks:
+      - chainetl-network
+
+  logstash:
+    image: docker.elastic.co/logstash/logstash:8.13.4
+    container_name: chainetl-logstash
+    <<: *default-restart
+    <<: *default-logging
+    environment:
+      - LS_JAVA_OPTS=-Xms256m -Xmx512m
+      - TZ=Asia/Shanghai
+    volumes:
+      - ./docker/logstash/pipeline:/usr/share/logstash/pipeline
+      - ./docker/logstash/config:/usr/share/logstash/config
+    ports:
+      - "5044:5044"
+      - "9600:9600"
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD-SHELL", "curl -s http://localhost:9600/_node/stats | grep -q '\"status\":\"green\"'"]
+    depends_on:
+      - elasticsearch
+    networks:
+      - chainetl-network
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:8.13.4
+    container_name: chainetl-kibana
+    <<: *default-restart
+    <<: *default-logging
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - TZ=Asia/Shanghai
+    ports:
+      - "5601:5601"
+    volumes:
+      - ./docker/kibana/config:/usr/share/kibana/config
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD-SHELL", "curl -s http://localhost:5601/api/status | grep -q '\"level\":\"available\"'"]
+    depends_on:
+      - elasticsearch
+    networks:
+      - chainetl-network
+
+  chainetl-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        - BUILDKIT_INLINE_CACHE=1
+    image: chainetl/chainetl-platform:${APP_VERSION:-latest}
+    container_name: chainetl-app
+    <<: *default-restart
+    <<: *default-logging
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_NAME=${DB_NAME:-chainetl}
+      - DB_USERNAME=${DB_USERNAME:-chainetl}
+      - DB_PASSWORD=${DB_PASSWORD:-chainetl_pass}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-chainetl_redis_pass}
+      - JAVA_OPTS=-Xms512m -Xmx2g -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/app/logs/heapdump.hprof
+      - TZ=Asia/Shanghai
+      - SERVER_PORT=8080
+      - MANAGEMENT_SERVER_PORT=9091
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+      - "9091:9091"
+    volumes:
+      - ./logs:/app/logs
+      - ./docker/app/config:/app/config
+      - ./docker/app/keystore:/app/keystore
+    healthcheck:
+      <<: *default-healthcheck
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/actuator/health || exit 1"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - chainetl-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 3G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  es-data:
+    driver: local
+
+networks:
+  chainetl-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16

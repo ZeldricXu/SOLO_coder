@@ -1,0 +1,170 @@
+spring:
+  application:
+    name: chainetl-platform
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  codec:
+    max-in-memory-size: 10MB
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:chainetl}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    encoding: UTF-8
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  type-handlers-package: com.chainetl.common.handler
+  global-config:
+    banner: false
+    db-config:
+      id-type: input
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+server:
+  port: ${SERVER_PORT:8080}
+  http2:
+    enabled: true
+  compression:
+    enabled: true
+    mime-types: application/json,text/xml,text/plain
+  netty:
+    connection-timeout: 30s
+    idle-timeout: 60s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,caches
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+    metrics:
+      export:
+        prometheus:
+          enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 1m
+    tags:
+      application: ${spring.application.name}
+
+resilience4j:
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 1s
+        retry-exceptions:
+          - java.net.SocketTimeoutException
+          - java.io.IOException
+          - com.chainetl.common.exception.TimeoutException
+    instances:
+      multisig:
+        base-config: default
+      storage:
+        base-config: default
+      indexer:
+        base-config: default
+      chain:
+        base-config: default
+      events:
+        base-config: default
+      zkp:
+        base-config: default
+      gas:
+        base-config: default
+      transaction:
+        base-config: default
+      resource:
+        base-config: default
+
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 10
+        failure-rate-threshold: 50
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 3
+    instances:
+      chain-rpc:
+        base-config: default
+
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 10
+        max-wait-duration: 5s
+    instances:
+      default:
+        base-config: default
+
+storage:
+  ipfs:
+    api-url: ${IPFS_API_URL:http://localhost:5001}
+    gateway-url: ${IPFS_GATEWAY_URL:http://localhost:8080}
+  arweave:
+    gateway-url: ${ARWEAVE_GATEWAY_URL:https://arweave.net}
+
+chain:
+  default-chain-id: ${DEFAULT_CHAIN_ID:1}
+  rpc-timeout: 30s
+  health-check-interval: 30s
+
+logging:
+  level:
+    root: INFO
+    com.chainetl: DEBUG
+    org.springframework.web: INFO
+    com.baomidou.mybatisplus: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/chainetl.log
+    max-size: 100MB
+    max-history: 30
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    enabled: true

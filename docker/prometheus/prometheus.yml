@@ -1,0 +1,61 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+  external_labels:
+    monitor: 'chainetl-monitor'
+    environment: 'production'
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'chainetl-app'
+    metrics_path: '/actuator/prometheus'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['chainetl-app:8080']
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '([^:]+):.*'
+        replacement: '$1'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'jvm_(threads|memory|gc)_.*'
+        action: keep
+      - source_labels: [__name__]
+        regex: 'system_cpu_.*'
+        action: keep
+      - source_labels: [__name__]
+        regex: 'http_server_requests_seconds_.*'
+        action: keep
+      - source_labels: [__name__]
+        regex: 'resilience4j_.*'
+        action: keep
+
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql:9104']
+    metrics_path: '/metrics'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+    metrics_path: '/metrics'
+
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:9113']
+    metrics_path: '/metrics'

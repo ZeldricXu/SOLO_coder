@@ -1,0 +1,200 @@
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 50
+          max-idle: 20
+          min-idle: 10
+          max-wait: 3000ms
+        shutdown-timeout: 100ms
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:chainetl}?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=UTC&allowPublicKeyRetrieval=true&verifyServerCertificate=false
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      connection-test-query: SELECT 1
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    clean-disabled: true
+    validate-on-migrate: true
+
+server:
+  port: ${SERVER_PORT:8080}
+  http2:
+    enabled: true
+  compression:
+    enabled: true
+    mime-types: application/json,text/xml,text/plain
+    min-response-size: 1024
+  netty:
+    connection-timeout: 30s
+    idle-timeout: 60s
+    write-timeout: 30s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: never
+      show-components: always
+      roles: ACTUATOR_ADMIN
+    metrics:
+      export:
+        prometheus:
+          enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 1m
+        descriptions: false
+    tags:
+      application: ${spring.application.name}
+      environment: production
+    web:
+      server:
+        auto-time-requests: true
+    binders:
+      jvm:
+        enabled: true
+      uptime:
+        enabled: true
+      processor:
+        enabled: true
+      files:
+        enabled: true
+      disk:
+        enabled: true
+
+resilience4j:
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 1s
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        exponential-max-wait-duration: 10s
+        retry-exceptions:
+          - java.net.SocketTimeoutException
+          - java.io.IOException
+          - com.chainetl.common.exception.TimeoutException
+    instances:
+      multisig:
+        base-config: default
+      storage:
+        base-config: default
+      indexer:
+        base-config: default
+      chain:
+        base-config: default
+      events:
+        base-config: default
+      zkp:
+        base-config: default
+      gas:
+        base-config: default
+      transaction:
+        base-config: default
+      resource:
+        base-config: default
+
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        slow-call-rate-threshold: 60
+        slow-call-duration-threshold: 5s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        automatic-transition-from-open-to-half-open-enabled: true
+        max-wait-duration-in-half-open-state: 10s
+    instances:
+      chain-rpc:
+        base-config: default
+
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 50
+        max-wait-duration: 5s
+    instances:
+      default:
+        base-config: default
+
+  thread-pool-bulkhead:
+    configs:
+      default:
+        max-thread-pool-size: 20
+        core-thread-pool-size: 10
+        queue-capacity: 50
+        keep-alive-duration: 60s
+    instances:
+      default:
+        base-config: default
+
+storage:
+  ipfs:
+    api-url: ${IPFS_API_URL:http://localhost:5001}
+    gateway-url: ${IPFS_GATEWAY_URL:http://localhost:8080}
+    timeout: 30s
+    retry-attempts: 3
+  arweave:
+    gateway-url: ${ARWEAVE_GATEWAY_URL:https://arweave.net}
+    timeout: 30s
+    retry-attempts: 3
+
+chain:
+  default-chain-id: ${DEFAULT_CHAIN_ID:1}
+  rpc-timeout: 30s
+  health-check-interval: 30s
+  max-retry-attempts: 3
+  circuit-breaker-enabled: true
+
+logging:
+  level:
+    root: WARN
+    com.chainetl: INFO
+    org.springframework: WARN
+    com.baomidou.mybatisplus: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+    file: "{\"timestamp\":\"%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ}\",\"level\":\"%level\",\"thread\":\"%thread\",\"logger\":\"%logger{36}\",\"message\":\"%msg%n\"}"
+  file:
+    name: /var/log/chainetl/chainetl.log
+    max-size: 500MB
+    max-history: 30
+    total-size-cap: 10GB
+  logback:
+    rollingpolicy:
+      clean-history-on-start: false
+
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+    enabled: false
+  swagger-ui:
+    enabled: false

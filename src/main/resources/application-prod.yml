@@ -1,0 +1,168 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3s
+      lettuce:
+        pool:
+          max-active: 50
+          max-idle: 25
+          min-idle: 10
+          max-wait: 1000ms
+        shutdown-timeout: 100ms
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:chainetl_prod}?useUnicode=true&characterEncoding=utf8&useSSL=true&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:chainetl}
+    password: ${DB_PASSWORD:}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 15
+      connection-timeout: 10000
+      idle-timeout: 120000
+      max-lifetime: 600000
+      connection-test-query: SELECT 1
+      validation-timeout: 3000
+      leak-detection-threshold: 60000
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    clean-disabled: true
+
+server:
+  port: 8080
+  http2:
+    enabled: true
+  compression:
+    enabled: true
+    mime-types: application/json,text/xml,text/plain,text/css,text/javascript,application/javascript
+    min-response-size: 1024
+  netty:
+    connection-timeout: 15s
+    idle-timeout: 30s
+    max-initial-line-length: 4096
+    max-header-size: 8192
+    max-chunk-size: 8192
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: never
+      show-components: never
+      probes:
+        enabled: true
+    metrics:
+      export:
+        prometheus:
+          enabled: true
+          step: 15s
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 15s
+        descriptions: false
+    tags:
+      application: ${spring.application.name}
+      environment: production
+    distribution:
+      percentiles-histogram:
+        http:
+          server:
+            requests: true
+      percentiles:
+        http:
+          server:
+            requests: 0.5, 0.75, 0.9, 0.95, 0.99
+      sla:
+        http:
+          server:
+            requests: 50ms, 100ms, 200ms, 500ms, 1s
+
+logging:
+  level:
+    root: WARN
+    com.chainetl: WARN
+    org.springframework: WARN
+    org.springframework.web: WARN
+    com.baomidou.mybatisplus: WARN
+    io.github.resilience4j: INFO
+  pattern:
+    console: ""
+    file: '{"timestamp":"%d{yyyy-MM-dd HH:mm:ss.SSS}","level":"%p","thread":"%t","logger":"%logger{36}","message":"%m"}%n'
+  file:
+    name: /var/log/chainetl/chainetl-prod.log
+    max-size: 200MB
+    max-history: 90
+    total-size-cap: 10GB
+  logback:
+    rollingpolicy:
+      file-name-pattern: /var/log/chainetl/archived/chainetl-prod.%d{yyyy-MM-dd}.%i.log.gz
+      max-file-size: 200MB
+      max-history: 90
+      total-size-cap: 10GB
+      clean-history-on-start: false
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+resilience4j:
+  retry:
+    configs:
+      default:
+        max-attempts: 3
+        wait-duration: 500ms
+        enable-exponential-backoff: true
+        exponential-backoff-multiplier: 2
+        exponential-max-wait-duration: 5s
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-type: COUNT_BASED
+        sliding-window-size: 50
+        failure-rate-threshold: 20
+        slow-call-rate-threshold: 30
+        slow-call-duration-threshold: 5s
+        wait-duration-in-open-state: 30s
+        permitted-number-of-calls-in-half-open-state: 5
+        automatic-transition-from-open-to-half-open-enabled: true
+    instances:
+      chain-rpc:
+        base-config: default
+        sliding-window-size: 100
+        failure-rate-threshold: 10
+  bulkhead:
+    configs:
+      default:
+        max-concurrent-calls: 50
+        max-wait-duration: 3s
+
+storage:
+  ipfs:
+    api-url: ${IPFS_API_URL:http://ipfs:5001}
+    gateway-url: ${IPFS_GATEWAY_URL:http://ipfs:8080}
+  arweave:
+    gateway-url: ${ARWEAVE_GATEWAY_URL:https://arweave.net}
+
+chain:
+  default-chain-id: ${DEFAULT_CHAIN_ID:1}
+  rpc-timeout: 15s
+  health-check-interval: 15s
+  max-retry-attempts: 3

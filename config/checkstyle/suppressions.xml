@@ -1,0 +1,17 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <suppress files=".*dto/.*\.java$" checks="MethodCount"/>
+    <suppress files=".*model/.*\.java$" checks="MethodCount"/>
+    <suppress files=".*dto/.*\.java$" checks="ParameterNumber"/>
+    <suppress files=".*model/.*\.java$" checks="ParameterNumber"/>
+    <suppress files=".*mapper/.*\.java$" checks="LineLength"/>
+    <suppress files=".*Test\.java$" checks="MagicNumber"/>
+    <suppress files=".*Tests\.java$" checks="MagicNumber"/>
+    <suppress files=".*Test\.java$" checks="LineLength"/>
+    <suppress files=".*Tests\.java$" checks="LineLength"/>
+    <suppress files=".*ChainETLApplication\.java$" checks="HideUtilityClassConstructor"/>
+</suppressions>

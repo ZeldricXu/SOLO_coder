@@ -1,0 +1,71 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 15
+
+  datasource:
+    url: jdbc:h2:mem:chainetl_test;DB_CLOSE_DELAY=-1;MODE=MySQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+    hikari:
+      maximum-pool-size: 5
+      minimum-idle: 1
+
+  flyway:
+    enabled: false
+
+  sql:
+    init:
+      mode: always
+
+server:
+  port: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      enabled: false
+
+logging:
+  level:
+    root: OFF
+    com.chainetl: INFO
+  pattern:
+    console: ""
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false
+
+resilience4j:
+  retry:
+    configs:
+      default:
+        max-attempts: 1
+        wait-duration: 10ms
+
+storage:
+  ipfs:
+    api-url: http://localhost:5001
+    gateway-url: http://localhost:8080
+  arweave:
+    gateway-url: https://arweave.net
+
+chain:
+  default-chain-id: 1
+  rpc-timeout: 5s
+  health-check-interval: 60s

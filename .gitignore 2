@@ -1,0 +1,191 @@
+# Compiled class files
+*.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Log files
+*.log
+*.log.*
+logs/
+!logs/.gitkeep
+hs_err_pid*
+replay_pid*
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+.m2/
+
+# Gradle
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vs/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Eclipse
+.settings/
+.project
+.classpath
+.factorypath
+
+# NetBeans
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+.nb-gradle/
+
+# Spring Boot
+application-local.yml
+application-local.yaml
+application-local.properties
+devtools.properties
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Testing
+coverage/
+.coveragerc
+.pytest_cache/
+.mypy_cache/
+.tox/
+coverage-html/
+.pytest_cache/
+*.lcov
+
+# Security
+*.key
+*.pem
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.truststore
+.env
+.env.*
+!.env.example
+
+# Docker
+docker-compose.override.yml
+docker-compose.dev.yml
+.dockerignore
+Dockerfile.local
+
+# Kubernetes
+*.yaml
+*.yml
+!k8s/
+helm/charts/
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editor
+*.bak
+*.tmp
+*.temp
+.vscode/
+.idea/
+
+# Node (if any frontend)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# Static analysis
+target/checkstyle-result.xml
+target/pmd.xml
+target/pmd.html
+target/spotbugsXml.xml
+target/site/
+target/dependency-check-report.html
+target/dependency-check-report.xml
+target/dependency-check-report.json
+trivy-results.sarif
+trivy-image-results.sarif
+
+# JVM
+*.hprof
+*.jfr
+*.gc
+heapdump.hprof
+java_pid*.hprof
+
+# Build artifacts
+out/
+dist/
+bin/
+lib/
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitattributes
+*.patch
+*.diff
+
+# CI
+.github/
+.gitlab/
+
+# Documentation
+docs/_build/
+site/
+
+# Release
+CHANGELOG.md.next
+RELEASE_NOTES.md
+
+# Performance benchmarks
+jmeter/results/
+gatling/results/
+
+# Local run data
+data/
+uploads/
+tmp/
+temp/

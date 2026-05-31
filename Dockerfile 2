@@ -1,0 +1,41 @@
+FROM eclipse-temurin:17-jre-alpine AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache curl tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone
+
+FROM eclipse-temurin:17-jre-alpine
+
+LABEL org.opencontainers.image.title="ChainETL Platform" \
+      org.opencontainers.image.description="链上数据ETL管道平台" \
+      org.opencontainers.image.version="1.0.0" \
+      org.opencontainers.image.vendor="ChainETL" \
+      org.opencontainers.image.source="https://github.com/chainetl/chainetl-platform" \
+      org.opencontainers.image.licenses="Apache-2.0"
+
+WORKDIR /app
+
+RUN apk add --no-cache curl tzdata && \
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    addgroup -S chainetl && \
+    adduser -S chainetl -G chainetl && \
+    mkdir -p /app/logs && \
+    chown -R chainetl:chainetl /app
+
+USER chainetl:chainetl
+
+COPY --chown=chainetl:chainetl target/chainetl-platform-*.jar app.jar
+
+EXPOSE 8080 9090
+
+ENV JAVA_OPTS="-Xms512m -Xmx1024m -XX:+UseG1GC -XX:MaxGCPauseMillis=200 -XX:+ExitOnOutOfMemoryError"
+ENV SPRING_PROFILES_ACTIVE=prod
+ENV TZ=Asia/Shanghai
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -jar app.jar"]

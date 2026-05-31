@@ -1,0 +1,74 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:chainetl_dev}?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:password}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+server:
+  port: 8080
+  netty:
+    connection-timeout: 60s
+    idle-timeout: 120s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+
+logging:
+  level:
+    root: INFO
+    com.chainetl: DEBUG
+    org.springframework.web: DEBUG
+    com.baomidou.mybatisplus: DEBUG
+    org.springframework.r2dbc: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %highlight(%-5level) %cyan(%logger{36}) - %msg%n"
+  file:
+    name: logs/chainetl-dev.log
+    max-size: 50MB
+    max-history: 10
+
+springdoc:
+  swagger-ui:
+    enabled: true
+  api-docs:
+    enabled: true
+
+resilience4j:
+  retry:
+    configs:
+      default:
+        max-attempts: 2
+        wait-duration: 500ms
+
+storage:
+  ipfs:
+    api-url: ${IPFS_API_URL:http://localhost:5001}
+    gateway-url: ${IPFS_GATEWAY_URL:http://localhost:8080}
+  arweave:
+    gateway-url: ${ARWEAVE_GATEWAY_URL:https://arweave.net}
+
+chain:
+  default-chain-id: 1
+  rpc-timeout: 60s
+  health-check-interval: 60s
