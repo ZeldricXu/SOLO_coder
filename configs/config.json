@@ -1,0 +1,21 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8080
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "postgres",
+    "db_name": "datamigration",
+    "ssl_mode": "disable",
+    "max_open": 20,
+    "max_idle": 5
+  },
+  "log": {
+    "level": "info",
+    "encoding": "json",
+    "output_path": "stdout"
+  }
+}
