@@ -1,0 +1,63 @@
+server:
+  port: 8328
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,mpc-metrics
+  endpoint:
+    prometheus:
+      enabled: true
+
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/datamasker;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_id
+
+datamasker:
+  shamir:
+    default-threshold: 3
+    default-shares: 5
+    prime-bits: 256
+  privacy:
+    default-epsilon: 1.0
+    default-delta: 1.0E-5
+    max-budget: 10.0
+  mpc:
+    protocol-timeout: 30000
+    max-parties: 10
+  federation:
+    min-participants: 2
+    max-rounds: 100
+    convergence-threshold: 0.001
+  tee:
+    enclave-path: /opt/enclave
+    attestation-url: https://attestation.example.com
+  classification:
+    scan-batch-size: 1000
+    sensitive-threshold: 0.85
+  audit:
+    hash-algorithm: SHA-256
+    chain-depth: 1000
+  masking:
+    default-strategy: PARTIAL
+    preserve-length: true
