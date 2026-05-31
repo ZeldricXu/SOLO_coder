@@ -1,0 +1,153 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: EventTicket
+  
+  datasource:
+    url: jdbc:h2:mem:eventticket;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+  
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      database: 0
+      timeout: 6000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+ticket:
+  lock:
+    default-ticket-type: regular
+    timeouts:
+      vip:
+        lock-timeout-seconds: 300
+        payment-timeout-minutes: 10
+        auto-release-delay-minutes: 3
+        description: "VIP票务 - 短超时快速响应"
+      regular:
+        lock-timeout-seconds: 900
+        payment-timeout-minutes: 15
+        auto-release-delay-minutes: 5
+        description: "普通票务 - 长超时等待锁释放"
+      vvip:
+        lock-timeout-seconds: 180
+        payment-timeout-minutes: 8
+        auto-release-delay-minutes: 2
+        description: "VVIP票务 - 超短超时极速响应"
+      student:
+        lock-timeout-seconds: 1200
+        payment-timeout-minutes: 20
+        auto-release-delay-minutes: 8
+        description: "学生票务 - 超长超时给予充足时间"
+
+verification:
+  retry:
+    default-strategy: medium
+    capacity-small-threshold: 1000
+    capacity-large-threshold: 10000
+    strategies:
+      small:
+        max-retries: 2
+        retry-delay-seconds: 5
+        backoff-multiplier: 1
+        description: "小型活动 - 较少重试减少开销"
+      medium:
+        max-retries: 3
+        retry-delay-seconds: 3
+        backoff-multiplier: 2
+        description: "中型活动 - 均衡重试策略"
+      large:
+        max-retries: 5
+        retry-delay-seconds: 2
+        backoff-multiplier: 2
+        description: "大型活动 - 更多重试确保入场"
+
+seat:
+  section:
+    default-section: regular
+    sections:
+      vip:
+        name: "vip"
+        display-name: "VIP区"
+        base-price: 1800
+        priority: 1
+        selectable: true
+        color-code: "#FFD700"
+        description: "贵宾座位区域"
+        min-seats: 50
+        max-seats: 500
+      regular:
+        name: "regular"
+        display-name: "普通区"
+        base-price: 500
+        priority: 2
+        selectable: true
+        color-code: "#87CEEB"
+        description: "普通座位区域"
+        min-seats: 100
+        max-seats: 5000
+      vvip:
+        name: "vvip"
+        display-name: "VVIP区"
+        base-price: 3800
+        priority: 0
+        selectable: true
+        color-code: "#FF69B4"
+        description: "至尊座位区域"
+        min-seats: 20
+        max-seats: 100
+      student:
+        name: "student"
+        display-name: "学生区"
+        base-price: 200
+        priority: 3
+        selectable: true
+        color-code: "#90EE90"
+        description: "学生优惠区域"
+        min-seats: 50
+        max-seats: 200
+      standing:
+        name: "standing"
+        display-name: "站票区"
+        base-price: 100
+        priority: 4
+        selectable: false
+        color-code: "#D3D3D3"
+        description: "无座位站立区域"
+        min-seats: 0
+        max-seats: 10000
+
+verification-queue:
+  name: "eventticket:verification:confirmations"
+  processing:
+    batch-size: 100
+    poll-interval-ms: 1000
+    max-wait-ms: 30000
+
+logging:
+  level:
+    com.eventticket: DEBUG
+    org.hibernate.SQL: DEBUG
