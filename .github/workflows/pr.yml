@@ -1,0 +1,52 @@
+name: PR Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches:
+      - main
+      - develop
+      - 'release/**'
+
+env:
+  GO_VERSION: '1.21'
+
+jobs:
+  pr-checklist:
+    name: PR Checklist
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Check PR size
+        uses: codelytv/pr-size-action@v1
+        with:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          max_changes: 500
+          exclude_files: |
+            go.mod
+            go.sum
+            *.md
+
+      - name: Check PR title follows convention
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            style
+            refactor
+            perf
+            test
+            build
+            ci
+            chore
+            revert
+
+  ci:
+    name: Run CI Checks
+    uses: ./.github/workflows/ci.yml
+    secrets: inherit
+    if: github.event.pull_request.draft == false

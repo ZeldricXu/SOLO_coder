@@ -1,0 +1,53 @@
+package: github.com/edgevision/edgevision
+coverage:
+  status:
+    project:
+      default:
+        target: 80%
+        threshold: 5%
+        base: auto
+        if_not_found: success
+        if_ci_failed: error
+        informational: false
+        only_pulls: false
+        branches:
+          - main
+          - develop
+          - release/*
+
+    patch:
+      default:
+        target: 80%
+        threshold: 10%
+        base: auto
+        if_not_found: success
+        if_ci_failed: error
+        informational: false
+        only_pulls: true
+
+    changes:
+      default:
+        target: 80%
+        base: auto
+        if_not_found: success
+        if_ci_failed: error
+        informational: true
+        only_pulls: false
+
+ignore:
+  - "bin/**"
+  - "cmd/**"
+  - "tests/**"
+  - "**/*_test.go"
+  - "**/mock*.go"
+  - "**/*.pb.go"
+  - "internal/models/**"
+  - "api/**"
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+  require_base: false
+  require_head: true
+  hide_project_coverage: false
