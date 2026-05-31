@@ -1,0 +1,26 @@
+{
+  "name": "session130-tests",
+  "version": "1.0.0",
+  "description": "Unit tests for Enterprise Data Hub modules",
+  "scripts": {
+    "test": "jest --verbose",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:config": "jest tests/config.test.js",
+    "test:logger": "jest tests/logger.test.js",
+    "test:tenant": "jest tests/tenant.test.js"
+  },
+  "dependencies": {
+    "supertest": "^6.3.4",
+    "axios": "^1.6.7"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "@types/jest": "^29.5.12"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": ["**/tests/**/*.test.js"],
+    "setupFilesAfterEnv": ["<rootDir>/jest.setup.js"]
+  }
+}
