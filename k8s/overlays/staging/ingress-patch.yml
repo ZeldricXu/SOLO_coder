@@ -1,0 +1,12 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orchestration-app
+  namespace: orchestration-staging
+spec:
+  tls:
+  - hosts:
+    - staging.orchestration.example.com
+    secretName: orchestration-staging-tls
+  rules:
+  - host: staging.orchestration.example.com

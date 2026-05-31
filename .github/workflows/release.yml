@@ -1,0 +1,59 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.0.0)'
+        required: true
+      release_notes:
+        description: 'Release notes'
+        required: true
+
+jobs:
+  create-release:
+    name: Create Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Update Version in POM
+        run: |
+          mvn versions:set -DnewVersion=${{ github.event.inputs.version }} -DgenerateBackupPoms=false
+          mvn versions:commit
+
+      - name: Commit Version Bump
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add pom.xml **/pom.xml
+          git commit -m "Release version ${{ github.event.inputs.version }}"
+          git push origin HEAD:main
+
+      - name: Create Tag
+        run: |
+          git tag -a v${{ github.event.inputs.version }} -m "Release ${{ github.event.inputs.version }}"
+          git push origin v${{ github.event.inputs.version }}
+
+      - name: Build with Maven
+        run: mvn clean package -Pprod -DskipTests
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Release v${{ github.event.inputs.version }}
+          body: ${{ github.event.inputs.release_notes }}
+          files: |
+            web/target/web-*.jar
+          generate_release_notes: true

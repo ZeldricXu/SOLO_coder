@@ -1,0 +1,22 @@
+version: '3.8'
+
+services:
+  mysql:
+    extends:
+      file: docker-compose.yml
+      service: mysql
+
+  redis:
+    extends:
+      file: docker-compose.yml
+      service: redis
+
+  prometheus:
+    extends:
+      file: docker-compose.yml
+      service: prometheus
+
+  grafana:
+    extends:
+      file: docker-compose.yml
+      service: grafana

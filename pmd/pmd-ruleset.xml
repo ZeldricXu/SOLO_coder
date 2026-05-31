@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<ruleset name="Orchestration Rules"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+    <description>
+        Custom ruleset for the Task Orchestration Platform project
+    </description>
+
+    <rule ref="category/java/bestpractices.xml/AvoidAssertAsIdentifier"/>
+    <rule ref="category/java/bestpractices.xml/AvoidBranchingStatementAsLastInLoop"/>
+    <rule ref="category/java/bestpractices.xml/AvoidDecimalLiteralsInBigDecimalConstructor"/>
+    <rule ref="category/java/bestpractices.xml/AvoidInstantiatingObjectsInLoops"/>
+    <rule ref="category/java/bestpractices.xml/AvoidUsingHardCodedIP"/>
+    <rule ref="category/java/bestpractices.xml/AvoidUsingNativeCode"/>
+    <rule ref="category/java/bestpractices.xml/AvoidUsingVolatile"/>
+    <rule ref="category/java/bestpractices.xml/CheckResultSet"/>
+    <rule ref="category/java/bestpractices.xml/CloseResource"/>
+    <rule ref="category/java/bestpractices.xml/DefaultLabelNotLastInSwitchStmt"/>
+    <rule ref="category/java/bestpractices.xml/ForLoopCanBeForeach"/>
+    <rule ref="category/java/bestpractices.xml/GuardLogStatement"/>
+    <rule ref="category/java/bestpractices.xml/JumbledIncrementer"/>
+    <rule ref="category/java/bestpractices.xml/MissingBreakInSwitch"/>
+    <rule ref="category/java/bestpractices.xml/MissingStaticMethodInNonInstantiatableClass"/>
+    <rule ref="category/java/bestpractices.xml/OverrideBothEqualsAndHashcode"/>
+    <rule ref="category/java/bestpractices.xml/PreserveStackTrace"/>
+    <rule ref="category/java/bestpractices.xml/ReplaceHashtableWithMap"/>
+    <rule ref="category/java/bestpractices.xml/ReplaceVectorWithList"/>
+    <rule ref="category/java/bestpractices.xml/UseAssertEqualsInsteadOfAssertTrue"/>
+    <rule ref="category/java/bestpractices.xml/UseCollectionIsEmpty"/>
+    <rule ref="category/java/bestpractices.xml/UseTryWithResources"/>
+    <rule ref="category/java/bestpractices.xml/UseVarargs"/>
+
+    <rule ref="category/java/codestyle.xml/ExtendsObject"/>
+    <rule ref="category/java/codestyle.xml/FieldDeclarationsShouldBeAtStartOfClass"/>
+    <rule ref="category/java/codestyle.xml/ForLoopShouldBeWhileLoop"/>
+    <rule ref="category/java/codestyle.xml/TooManyStaticImports"/>
+    <rule ref="category/java/codestyle.xml/UnnecessaryConstructor"/>
+    <rule ref="category/java/codestyle.xml/UnnecessaryFullyQualifiedName"/>
+    <rule ref="category/java/codestyle.xml/UnnecessaryImport"/>
+    <rule ref="category/java/codestyle.xml/UnnecessaryModifier"/>
+    <rule ref="category/java/codestyle.xml/UnnecessaryReturn"/>
+
+    <rule ref="category/java/design.xml/AvoidDeeplyNestedIfStmts"/>
+    <rule ref="category/java/design.xml/AvoidRethrowingException"/>
+    <rule ref="category/java/design.xml/AvoidThrowingNewInstanceOfSameException"/>
+    <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+    <rule ref="category/java/design.xml/ExceptionAsFlowControl"/>
+    <rule ref="category/java/design.xml/FinalFieldCouldBeStatic"/>
+    <rule ref="category/java/design.xml/GodClass"/>
+    <rule ref="category/java/design.xml/IdenticalCatchBranches"/>
+    <rule ref="category/java/design.xml/ImmutableField"/>
+    <rule ref="category/java/design.xml/LogicInversion"/>
+    <rule ref="category/java/design.xml/UseUtilityClass"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidCatchingNPE"/>
+    <rule ref="category/java/errorprone.xml/AvoidCatchingThrowable"/>
+    <rule ref="category/java/errorprone.xml/AvoidDecimalLiteralsInBigDecimalConstructor"/>
+    <rule ref="category/java/errorprone.xml/AvoidDuplicateLiterals"/>
+    <rule ref="category/java/errorprone.xml/AvoidFieldNameMatchingMethodName"/>
+    <rule ref="category/java/errorprone.xml/AvoidFieldNameMatchingTypeName"/>
+    <rule ref="category/java/errorprone.xml/BrokenNullCheck"/>
+    <rule ref="category/java/errorprone.xml/CloseResource"/>
+    <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals"/>
+    <rule ref="category/java/errorprone.xml/EmptyIfStmt"/>
+    <rule ref="category/java/errorprone.xml/EmptyStatementNotInLoop"/>
+    <rule ref="category/java/errorprone.xml/InvalidLogMessageFormat"/>
+    <rule ref="category/java/errorprone.xml/NullAssignment"/>
+    <rule ref="category/java/errorprone.xml/SingleMethodSingleton"/>
+    <rule ref="category/java/errorprone.xml/StringBufferInstantiationWithChar"/>
+
+    <rule ref="category/java/multithreading.xml/AvoidAsyncActionsWhileSubmittingToThreadPool"/>
+    <rule ref="category/java/multithreading.xml/AvoidThreadGroup"/>
+    <rule ref="category/java/multithreading.xml/AvoidUsingVolatile"/>
+    <rule ref="category/java/multithreading.xml/DoNotUseThreads"/>
+    <rule ref="category/java/multithreading.xml/DoubleCheckedLocking"/>
+    <rule ref="category/java/multithreading.xml/NonThreadSafeSingleton"/>
+    <rule ref="category/java/multithreading.xml/UnsynchronizedStaticFormatter"/>
+    <rule ref="category/java/multithreading.xml/UseConcurrentHashMap"/>
+
+    <rule ref="category/java/performance.xml/AvoidConcatInLoop"/>
+    <rule ref="category/java/performance.xml/AvoidInstantiatingObjectsInLoops"/>
+    <rule ref="category/java/performance.xml/OptimizableToArrayCall"/>
+    <rule ref="category/java/performance.xml/UseArrayListInsteadOfVector"/>
+    <rule ref="category/java/performance.xml/UseArraysAsList"/>
+    <rule ref="category/java/performance.xml/UseStringBufferForStringAppends"/>
+
+    <rule ref="category/java/security.xml/AvoidCipherWithoutIntegrity"/>
+    <rule ref="category/java/security.xml/AvoidDefaultCipher"/>
+    <rule ref="category/java/security.xml/AvoidDeserializationOfUntrustedData"/>
+    <rule ref="category/java/security.xml/InsecureCryptoIv"/>
+    <rule ref="category/java/security.xml/NonStaticInitializer"/>
+</ruleset>
