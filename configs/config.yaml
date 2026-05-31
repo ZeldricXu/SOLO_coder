@@ -1,0 +1,54 @@
+server:
+  port: 8080
+  read_timeout: 15s
+  write_timeout: 15s
+  idle_timeout: 60s
+
+engine:
+  max_workers: 100
+  max_queue_size: 10000
+  request_timeout: 30s
+  shutdown_timeout: 10s
+
+logger:
+  log_dir: ./logs
+  max_file_size: 104857600
+  max_files: 10
+  rotation_policy: size
+  rotation_time: 1h
+  compress: true
+  retention_days: 30
+  level: info
+
+cache:
+  max_size: 104857600
+  default_ttl: 1h
+  eviction_policy: lru
+
+storage:
+  default_type: memory
+  s3:
+    bucket: datatrace
+    region: cn-east
+    access_key: ""
+    secret_key: ""
+
+notification:
+  retry_interval: 5s
+  max_retries: 3
+  buffer_size: 10000
+
+scheduler:
+  max_workers: 50
+
+tsdb:
+  max_raw_points: 100000
+  default_retention: 720h
+  compression: gorilla
+
+lifecycle:
+  check_interval: 1h
+  hot_duration: 24h
+  warm_duration: 168h
+  cold_duration: 720h
+  max_age: 8760h
