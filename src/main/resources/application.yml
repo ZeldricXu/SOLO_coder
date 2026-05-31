@@ -1,0 +1,127 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: device-management-platform
+
+  r2dbc:
+    url: r2dbc:mysql://localhost:3306/device_platform?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/device_platform?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 10000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: -1ms
+
+  jackson:
+    date-format: yyyy-MM-dd'T'HH:mm:ss'Z'
+    time-zone: UTC
+    serialization:
+      write-dates-as-timestamps: false
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    baseline-version: 0
+    encoding: UTF-8
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.device.platform.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: AUTO
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+gateway:
+  log:
+    request-body: true
+    response-body: false
+    max-body-size: 10240
+  rate-limit:
+    enabled: true
+    default-requests-per-second: 100
+    burst-capacity: 200
+
+offline:
+  cache:
+    max-size: 10000
+  sync:
+    batch-size: 100
+    max-retry: 3
+
+ota:
+  auto-rollback:
+    enabled: true
+  failure-threshold: 0.1
+  batch:
+    default-size: 100
+
+aggregation:
+  window-size-ms: 60000
+  batch-size: 1000
+
+metrics:
+  snapshot:
+    interval-ms: 60000
+
+storage:
+  backup:
+    directory: ./backups
+    default-retention-days: 30
+    auto-schedule: false
+
+logging:
+  level:
+    root: INFO
+    com.device.platform: DEBUG
+    org.springframework.web: INFO
+    org.mybatis: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: ./logs/device-platform.log
+    max-size: 100MB
+    max-history: 30
