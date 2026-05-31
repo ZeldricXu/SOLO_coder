@@ -1,0 +1,156 @@
+server:
+  port: 8080
+  netty:
+    threads:
+      worker: 16
+
+spring:
+  application:
+    name: streamsql
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/streamsql?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false
+    username: root
+    password: root
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 5000
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+          max-wait: 3000
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    encoding: UTF-8
+  cache:
+    type: caffeine
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: Asia/Shanghai
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.streamsql.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+
+logging:
+  level:
+    root: INFO
+    com.streamsql: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+streamsql:
+  cache:
+    caffeine:
+      maximum-size: 10000
+      expire-after-write: 3600s
+      expire-after-access: 1800s
+  scheduler:
+    thread-pool-size: 10
+  quality-check:
+    thread-pool-size: 5
+    retry-count: 3
+  vector:
+    index-path: ./data/vector-index
+    dimension: 1536
+  cdc:
+    server-id: 1001
+    batch-size: 1000
+  timeseries:
+    compression-enabled: true
+    downsampling-enabled: true
+  lifecycle:
+    archive-enabled: true
+    cleanup-enabled: true
+
+  features:
+    streaming-processing:
+      enabled: false
+      description: "流式处理模式 - 应对大数据量场景"
+    event-driven-architecture:
+      enabled: false
+      description: "事件驱动架构 - 解耦模块间通信"
+    circuit-breaker:
+      enabled: false
+      description: "熔断器 - 应对依赖故障的降级策略"
+    retry-policy:
+      enabled: false
+      description: "重试策略 - 应对临时故障的自动恢复"
+    fallback-policy:
+      enabled: false
+      description: "降级策略 - 提供默认值或缓存结果"
+
+  streaming:
+    batch-size: 1000
+    parallelism: 4
+    flush-interval-ms: 1000
+    max-retries: 3
+    retry-delay-ms: 100
+    enable-backpressure: true
+    queue-capacity: 10000
+
+  event:
+    queue-capacity: 10000
+    consumer-threads: 4
+    retry-interval-ms: 5000
+    max-retry-attempts: 3
+    enable-dead-letter-queue: true
+
+  resilience:
+    circuit-breaker:
+      enabled: true
+      failure-threshold: 5
+      success-threshold: 3
+      timeout-ms: 30000
+      half-open-wait-ms: 60000
+      half-open-max-calls: 1
+    retry:
+      enabled: true
+      max-attempts: 3
+      initial-delay-ms: 100
+      max-delay-ms: 10000
+      multiplier: 2.0
+      enable-exponential-backoff: true
+    fallback:
+      enabled: true
+      return-default-value: true
+      cache-fallback-result: false
+      cache-ttl-ms: 60000
