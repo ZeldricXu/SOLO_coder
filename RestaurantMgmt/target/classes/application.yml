@@ -1,0 +1,129 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: RestaurantMgmt
+  datasource:
+    url: jdbc:h2:mem:restaurantdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password: 
+      database: 0
+      timeout: 5000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+
+restaurant:
+  payment:
+    timeout:
+      enabled: true
+      check-interval-ms: 60000
+      default-timeout: 10
+      default-reminder: 7
+      tiers:
+        - name: small
+          min-amount: 0.0
+          max-amount: 100.0
+          timeout-minutes: 5
+          reminder-minutes: 3
+          description: 小额订单-快速处理
+        - name: medium
+          min-amount: 100.0
+          max-amount: 500.0
+          timeout-minutes: 10
+          reminder-minutes: 7
+          description: 中额订单-标准处理
+        - name: large
+          min-amount: 500.0
+          max-amount: 999999.99
+          timeout-minutes: 20
+          reminder-minutes: 15
+          description: 大额订单-顾客确认
+  stock:
+    deduction:
+      warning-level-high-ratio: 0.3
+      warning-level-medium-ratio: 0.6
+      default-strategy: confirm_deduct
+      strategies:
+        - name: critical
+          strategy-type: pre_deduct
+          description: 关键食材-预扣减确保可用
+          ingredient-ids:
+            - ingredient_001
+            - ingredient_002
+            - ingredient_003
+          categories:
+            - 肉类
+            - 海鲜
+        - name: normal
+          strategy-type: confirm_deduct
+          description: 普通食材-确认扣减减少浪费
+          categories:
+            - 蔬菜
+            - 调料
+            - 饮品
+            - 主食
+  dish:
+    category:
+      categories:
+        - code: main
+          name: 主菜
+          description: 招牌主菜、特色菜品
+          sort-order: 1
+          enabled: true
+          icon: 🍽️
+        - code: appetizer
+          name: 凉菜
+          description: 开胃小菜、凉拌菜
+          sort-order: 2
+          enabled: true
+          icon: 🥗
+        - code: soup
+          name: 汤品
+          description: 各类汤品、炖汤
+          sort-order: 3
+          enabled: true
+          icon: 🍲
+        - code: drink
+          name: 饮品
+          description: 饮料、酒水、果汁
+          sort-order: 4
+          enabled: true
+          icon: 🥤
+        - code: staple
+          name: 主食
+          description: 米饭、面食、点心
+          sort-order: 5
+          enabled: true
+          icon: 🍚
+        - code: dessert
+          name: 甜点
+          description: 餐后甜点、水果
+          sort-order: 6
+          enabled: true
+          icon: 🍰
+  table:
+    allocation:
+      enabled: true
+      worker-count: 3
+      max-retry: 3
