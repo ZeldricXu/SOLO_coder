@@ -1,0 +1,80 @@
+spring:
+  application:
+    name: contract-audit-platform
+  profiles:
+    active: dev
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/contraudit?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    encoding: UTF-8
+
+server:
+  port: 8080
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+caffeine:
+  cache:
+    maximumSize: 10000
+    expireAfterWrite: 3600s
+
+wallet:
+  hd:
+    derivation-path: m/44'/60'/0'/0
+    mnemonic-length: 12
+
+multisig:
+  default-confirmations: 2
+  max-signers: 10
+
+bridge:
+  confirmations: 15
+  timeout: 3600
+
+storage:
+  ipfs:
+    gateway: http://localhost:5001
+    timeout: 30000
+  arweave:
+    gateway: https://arweave.net
+    timeout: 30000
+
+zkp:
+  circuits:
+    verify-path: /circuits/verify_key.json
+
+ethereum:
+  rpc:
+    url: http://localhost:8545
+    timeout: 30000

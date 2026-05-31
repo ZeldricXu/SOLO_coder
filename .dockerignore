@@ -1,0 +1,77 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**
+!**/src/test/**
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+build/
+!**/src/main/**/build/
+
+### VS Code ###
+.vscode/
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+logs/
+
+### CI/CD ###
+.github/
+.gitlab-ci.yml
+.travis.yml
+Jenkinsfile
+
+### Tests ###
+src/test/
+
+### Configs ###
+application-dev.yml
+application-test.yml
+checkstyle.xml
+pmd.xml
+spotbugs-exclude.xml
+*.iml
+
+### Git ###
+.git/
+.gitignore
+.gitattributes
+.github/
+
+### Maven ###
+.mvn/
+mvnw
+mvnw.cmd
+.pom.xml.bak
+
+### Docker ###
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+### Docs ###
+*.md
+docs/

@@ -1,0 +1,111 @@
+HELP.md
+target/
+!.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+build/
+*.log
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### OS ###
+.DS_Store
+Thumbs.db
+
+### Logs ###
+*.log
+logs/
+/var/
+
+### Build outputs ###
+target/
+*.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+### Maven ###
+.mvn/
+mvnw
+mvnw.cmd
+
+### Gradle ###
+.gradle
+
+### IDE ###
+*.iml
+*.ipr
+*.iws
+.idea/
+.settings/
+.project
+.classpath
+
+### Profiles (may contain secrets) ###
+application-local.yml
+application-secret.yml
+*.properties.local
+.env
+.env.*
+!.env.example
+
+### Docker ###
+docker-compose.override.yml
+*.docker.local
+
+### Monitoring data ###
+prometheus_data/
+grafana_data/
+
+### Database ###
+*.db
+*.sqlite
+
+### Testing ###
+coverage/
+.nyc_output/
+junit/
+
+### Kubernetes ###
+*.kubeconfig
+
+### Secrets ###
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+
+### Temporary files ###
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo

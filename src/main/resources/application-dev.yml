@@ -1,0 +1,117 @@
+spring:
+  application:
+    name: contract-audit-platform-dev
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/contraudit_dev?useUnicode=true&characterEncoding=utf8&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: root
+    password: root123
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 3000
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    out-of-order: true
+    clean-disabled: true
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  codec:
+    max-in-memory-size: 10MB
+
+server:
+  port: 8080
+  shutdown: graceful
+  netty:
+    connection-timeout: 30000
+    idle-timeout: 60000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+  endpoint:
+    health:
+      show-details: always
+    loggers:
+      enabled: true
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.contraudit.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  level:
+    root: INFO
+    com.contraudit: DEBUG
+    org.springframework.web: DEBUG
+    org.springframework.data: DEBUG
+    com.baomidou.mybatisplus: DEBUG
+    org.web3j: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+  file:
+    name: logs/contraudit-dev.log
+    max-size: 50MB
+    max-history: 30
+    total-size-cap: 1GB
+
+wallet:
+  hd:
+    derivation-path: m/44'/60'/0'/0
+    mnemonic-length: 12
+
+storage:
+  ipfs:
+    gateway: https://ipfs.infura.io:5001/api/v0
+    api-key: ${IPFS_API_KEY:}
+    api-secret: ${IPFS_API_SECRET:}
+  arweave:
+    gateway: https://arweave.net
+    wallet: ${ARWEAVE_WALLET:}
+
+zkp:
+  circuit:
+    base-path: /var/lib/contraudit/circuits
+    cache-size: 100
+
+listener:
+  event:
+    max-retries: 3
+    retry-interval: 5000
+    callback-timeout: 30000

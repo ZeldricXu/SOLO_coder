@@ -1,0 +1,188 @@
+spring:
+  application:
+    name: contract-audit-platform
+
+  datasource:
+    url: ${PROD_DB_URL}
+    username: ${PROD_DB_USER}
+    password: ${PROD_DB_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      minimum-idle: 20
+      maximum-pool-size: 100
+      connection-timeout: 5000
+      idle-timeout: 120000
+      max-lifetime: 600000
+      leak-detection-threshold: 30000
+      connection-test-query: SELECT 1
+      validation-timeout: 3000
+      initialization-fail-timeout: -1
+
+  data:
+    redis:
+      host: ${PROD_REDIS_HOST}
+      port: ${PROD_REDIS_PORT:6379}
+      password: ${PROD_REDIS_PASSWORD}
+      database: 0
+      timeout: 1500
+      lettuce:
+        pool:
+          max-active: 50
+          max-idle: 25
+          min-idle: 15
+          max-wait: 2000
+        shutdown-timeout: 100ms
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    clean-disabled: true
+    out-of-order: false
+    fail-on-missing-locations: true
+
+  servlet:
+    multipart:
+      max-file-size: 25MB
+      max-request-size: 25MB
+      file-size-threshold: 10MB
+
+  codec:
+    max-in-memory-size: 5MB
+
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+      fail-on-empty-beans: false
+    deserialization:
+      fail-on-unknown-properties: false
+
+server:
+  port: 8080
+  shutdown: graceful
+  http2:
+    enabled: true
+  netty:
+    connection-timeout: 10000
+    idle-timeout: 15000
+    initial-line-length: 4096
+    max-chunk-size: 8192
+    max-initial-line-length: 4096
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css
+    min-response-size: 1024
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: never
+      show-components: when-authorized
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,db,redis,discoveryComposite
+        liveness:
+          include: livenessState,ping
+    metrics:
+      export:
+        prometheus:
+          enabled: true
+          step: 15s
+          descriptions: false
+    info:
+      build:
+        enabled: true
+      env:
+        enabled: true
+  metrics:
+    use-global-registry: true
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: prod
+      region: ${CLOUD_REGION:ap-east-1}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+      percentiles:
+        http.server.requests: 0.5, 0.75, 0.9, 0.95, 0.99
+
+mybatis-plus:
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.contraudit.**.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    lazy-loading-enabled: false
+    aggressive-lazy-loading: false
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+    default-statement-timeout: 30000
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+    banner: false
+
+logging:
+  level:
+    root: ERROR
+    com.contraudit: WARN
+    org.springframework: WARN
+    org.apache.ibatis: ERROR
+    org.web3j: ERROR
+    io.netty: WARN
+    com.mysql: ERROR
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "{\"timestamp\":\"%d{yyyy-MM-dd'T'HH:mm:ss.SSSZ}\",\"level\":\"%level\",\"logger\":\"%logger{50}\",\"thread\":\"%thread\",\"message\":\"%msg\"}%n"
+  file:
+    name: /var/log/contraudit/contraudit-prod.json
+    max-size: 200MB
+    max-history: 14
+    total-size-cap: 10GB
+  logback:
+    rollingpolicy:
+      file-name-pattern: /var/log/contraudit/archived/contraudit-prod.%d{yyyy-MM-dd}.%i.json.gz
+      clean-history-on-start: false
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
+wallet:
+  hd:
+    derivation-path: m/44'/60'/0'/0
+    mnemonic-length: 12
+
+storage:
+  ipfs:
+    gateway: ${STORAGE_IPFS_GATEWAY}
+    api-key: ${STORAGE_IPFS_API_KEY}
+    api-secret: ${STORAGE_IPFS_API_SECRET}
+  arweave:
+    gateway: ${STORAGE_ARWEAVE_GATEWAY}
+    wallet: ${STORAGE_ARWEAVE_WALLET}
+
+zkp:
+  circuit:
+    base-path: /var/lib/contraudit/circuits
+    cache-size: 500
+
+listener:
+  event:
+    max-retries: 10
+    retry-interval: 2000
+    callback-timeout: 10000
