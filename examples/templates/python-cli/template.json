@@ -1,0 +1,9 @@
+{
+    "name": "Python CLI Tool",
+    "description": "A Python command-line tool",
+    "project_type": "cli",
+    "language": "python",
+    "parameters": [
+        {"name": "command_name", "description": "CLI command name", "default": "mycmd"}
+    ]
+}
