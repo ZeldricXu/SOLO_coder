@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.tracetopology.infrastructure.persistence.mapper.EntityMapper">
+    <resultMap id="BaseResultMap" type="com.tracetopology.infrastructure.persistence.entity.EntityPO">
+        <id column="id" property="id"/>
+        <result column="type" property="type"/>
+        <result column="status" property="status"/>
+        <result column="attributes" property="attributes"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, type, status, attributes, created_at, updated_at
+    </sql>
+
+    <select id="findByType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_entity
+        WHERE type = #{type}
+        ORDER BY created_at DESC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findByStatus" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM t_entity
+        WHERE status = #{status}
+        ORDER BY created_at DESC
+    </select>
+</mapper>
