@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter xmlns="https://spotbugs.github.io/"
+                xsi:schemaLocation="https://spotbugs.github.io/ https://spotbugs.github.io/xsd/filter.xsd"
+                xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+
+    <Match>
+        <Package name="~com\.edgescheduler\..*\.entity"/>
+        <Bug code="EI,EI2,UR,UM"/>
+    </Match>
+
+    <Match>
+        <Package name="~com\.edgescheduler\..*\.dto"/>
+        <Bug code="EI,EI2"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*Application"/>
+        <Bug code="RCN"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="RCN_REDUNDANT_NULLCHECK_WOULD_HAVE_BEEN_A_NPE"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Rank value="16"/>
+    </Match>
+</FindBugsFilter>

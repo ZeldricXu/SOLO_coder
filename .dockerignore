@@ -1,0 +1,11 @@
+.git
+.gitignore
+.idea
+*.iml
+target
+etc
+docker-compose*.yml
+.github
+*.md
+LICENSE
+.gitattributes
