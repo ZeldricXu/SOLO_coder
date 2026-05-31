@@ -1,0 +1,19 @@
+warn-on-all-wildcards = true
+disallowed-names = [
+    "foo",
+    "bar",
+    "baz",
+]
+
+[complexity-considered-harmful]
+too-many-arguments = 7
+too-many-lines = 150
+large-stack-frames = 512
+type-complexity = 1000
+cognitive-complexity = 25
+too-many-branches = 15
+struct-excessive-bools = 3
+
+[cargo]
+features = ["default"]
+all-targets = true

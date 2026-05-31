@@ -1,0 +1,79 @@
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'edge-scheduler'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['edge-scheduler:8080']
+
+processors:
+  batch:
+    timeout: 10s
+    send_batch_size: 10000
+
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 2000
+    spike_limit_mib: 500
+
+  resourcedetection:
+    detectors: [env, system]
+    timeout: 5s
+    override: false
+
+  k8sattributes:
+    passthrough: false
+    pod_association:
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.ip
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.uid
+      - sources:
+          - from: connection
+
+exporters:
+  logging:
+    verbosity: detailed
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+  otlp:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: "edge_scheduler"
+    send_timestamps: true
+    metric_expiration: 180m
+    enable_open_metrics: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [logging, otlp]
+
+    metrics:
+      receivers: [otlp, prometheus]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [logging, prometheus]
+
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resourcedetection]
+      exporters: [logging]
+
+  extensions: []

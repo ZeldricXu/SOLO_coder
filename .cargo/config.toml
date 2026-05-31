@@ -1,0 +1,71 @@
+[build]
+target-dir = "target"
+incremental = true
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.test]
+opt-level = 1
+debug = 2
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 128
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = "fat"
+panic = "abort"
+incremental = false
+codegen-units = 1
+rpath = false
+strip = "symbols"
+
+[profile.production]
+inherits = "release"
+opt-level = "z"
+lto = "thin"
+codegen-units = 1
+strip = "debuginfo"
+
+[env]
+RUST_BACKTRACE = "1"
+
+[registries.crates-io]
+protocol = "sparse"
+
+[net]
+retry = 3
+git-fetch-with-cli = false
+
+[target.x86_64-unknown-linux-gnu]
+linker = "x86_64-linux-gnu-gcc"
+
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[target.x86_64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]
+
+[target.aarch64-apple-darwin]
+rustflags = [
+  "-C", "link-arg=-undefined",
+  "-C", "link-arg=dynamic_lookup",
+]

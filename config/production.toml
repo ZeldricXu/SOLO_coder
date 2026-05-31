@@ -1,0 +1,60 @@
+[app]
+name = "edge-scheduler"
+env = "production"
+host = "0.0.0.0"
+port = 8080
+debug = false
+
+[server]
+max_request_size = 10485760
+request_timeout = 30
+graceful_shutdown_timeout = 60
+
+[cors]
+allowed_origins = ["https://example.com"]
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+allowed_headers = ["Content-Type", "Authorization", "X-Request-ID"]
+
+[database]
+pool_size = 50
+connect_timeout = 30
+
+[redis]
+pool_size = 50
+connect_timeout = 5
+
+[security]
+jwt_expiry = 1800
+
+[telemetry]
+enabled = true
+otlp_endpoint = "http://otel-collector:4317"
+service_name = "edge-scheduler"
+service_version = "0.1.0"
+
+[cloud_sync]
+enabled = true
+interval = 15
+api_endpoint = "https://api.example.com/v1"
+
+[mqtt]
+broker_url = "tcp://mqtt-broker:1883"
+client_id = "edge-scheduler-prod"
+
+[health_check]
+interval = 15
+
+[rate_limit]
+enabled = true
+requests = 5000
+period = 60
+
+[modules]
+device_shadow = true
+rule_engine = true
+inference_scheduler = true
+device_lifecycle = true
+data_aggregation = true
+offline_cache = true
+ota_upgrade = true
+protocol_adapter = true

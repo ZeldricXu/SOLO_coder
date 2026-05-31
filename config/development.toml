@@ -1,0 +1,66 @@
+[app]
+name = "edge-scheduler"
+env = "development"
+host = "0.0.0.0"
+port = 8080
+debug = true
+
+[server]
+max_request_size = 10485760
+request_timeout = 30
+graceful_shutdown_timeout = 30
+
+[cors]
+allowed_origins = ["http://localhost:3000", "http://localhost:8080"]
+allowed_methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+allowed_headers = ["Content-Type", "Authorization", "X-Request-ID"]
+
+[database]
+url = "postgres://postgres:postgres@localhost:5432/edge_scheduler"
+pool_size = 10
+connect_timeout = 30
+
+[redis]
+url = "redis://localhost:6379/0"
+pool_size = 10
+connect_timeout = 5
+
+[security]
+jwt_secret = "dev-secret-key-change-in-production"
+jwt_expiry = 3600
+
+[telemetry]
+enabled = false
+otlp_endpoint = "http://localhost:4317"
+service_name = "edge-scheduler"
+service_version = "0.1.0"
+
+[cloud_sync]
+enabled = false
+interval = 30
+api_endpoint = "https://api.example.com/v1"
+api_key = "dev-api-key"
+
+[mqtt]
+broker_url = "tcp://localhost:1883"
+client_id = "edge-scheduler-dev"
+username = "admin"
+password = "admin"
+
+[health_check]
+interval = 30
+
+[rate_limit]
+enabled = false
+requests = 1000
+period = 60
+
+[modules]
+device_shadow = true
+rule_engine = true
+inference_scheduler = true
+device_lifecycle = true
+data_aggregation = true
+offline_cache = true
+ota_upgrade = true
+protocol_adapter = true
