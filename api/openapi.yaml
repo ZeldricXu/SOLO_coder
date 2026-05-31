@@ -1,0 +1,241 @@
+openapi: 3.0.0
+info:
+  title: SoloCoder Session138 API
+  description: 日志级别动态调整平台API
+  version: 1.0.0
+servers:
+  - url: /api/v1
+paths:
+  /health:
+    get:
+      summary: 健康检查
+      responses:
+        '200':
+          description: 服务正常
+  /logger/level:
+    post:
+      summary: 设置日志级别
+      tags: [Logger]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                service:
+                  type: string
+                level:
+                  type: string
+                  enum: [debug, info, warn, error, panic, fatal]
+      responses:
+        '200':
+          description: 设置成功
+  /logger/levels:
+    get:
+      summary: 获取所有日志级别配置
+      tags: [Logger]
+      responses:
+        '200':
+          description: 成功
+  /logger/level/{service}:
+    get:
+      summary: 获取指定服务的日志级别
+      tags: [Logger]
+      parameters:
+        - name: service
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 成功
+    delete:
+      summary: 重置指定服务的日志级别
+      tags: [Logger]
+      parameters:
+        - name: service
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 重置成功
+  /catalog/services:
+    post:
+      summary: 注册服务
+      tags: [Catalog]
+      responses:
+        '201':
+          description: 注册成功
+    get:
+      summary: 搜索服务
+      tags: [Catalog]
+      responses:
+        '200':
+          description: 成功
+  /catalog/services/{id}:
+    get:
+      summary: 获取服务详情
+      tags: [Catalog]
+      responses:
+        '200':
+          description: 成功
+    put:
+      summary: 更新服务
+      tags: [Catalog]
+      responses:
+        '200':
+          description: 成功
+    delete:
+      summary: 删除服务
+      tags: [Catalog]
+      responses:
+        '200':
+          description: 成功
+  /catalog/dependency-graph:
+    get:
+      summary: 获取依赖关系图
+      tags: [Catalog]
+      responses:
+        '200':
+          description: 成功
+  /scaffold/templates:
+    get:
+      summary: 获取模板列表
+      tags: [Scaffold]
+      responses:
+        '200':
+          description: 成功
+  /scaffold/generate:
+    post:
+      summary: 生成项目
+      tags: [Scaffold]
+      responses:
+        '200':
+          description: 成功
+  /vulnerability/sbom/analyze:
+    post:
+      summary: 分析SBOM漏洞
+      tags: [Vulnerability]
+      responses:
+        '200':
+          description: 成功
+  /vulnerability/cves:
+    get:
+      summary: 获取CVE列表
+      tags: [Vulnerability]
+      responses:
+        '200':
+          description: 成功
+  /core/process:
+    post:
+      summary: 核心数据处理
+      tags: [Core]
+      responses:
+        '200':
+          description: 成功
+  /gateway/routes:
+    post:
+      summary: 注册路由
+      tags: [Gateway]
+      responses:
+        '201':
+          description: 成功
+    get:
+      summary: 获取路由列表
+      tags: [Gateway]
+      responses:
+        '200':
+          description: 成功
+  /gateway/convert:
+    post:
+      summary: 协议转换
+      tags: [Gateway]
+      responses:
+        '200':
+          description: 成功
+  /contract/validate/openapi:
+    post:
+      summary: 验证OpenAPI Schema
+      tags: [Contract]
+      responses:
+        '200':
+          description: 成功
+  /contract/mock:
+    post:
+      summary: 创建Mock服务器
+      tags: [Contract]
+      responses:
+        '201':
+          description: 成功
+  /environment:
+    post:
+      summary: 创建预览环境
+      tags: [Environment]
+      responses:
+        '201':
+          description: 成功
+    get:
+      summary: 获取环境列表
+      tags: [Environment]
+      responses:
+        '200':
+          description: 成功
+  /environment/stats:
+    get:
+      summary: 获取使用统计
+      tags: [Environment]
+      responses:
+        '200':
+          description: 成功
+  /documentation/search:
+    post:
+      summary: 搜索文档
+      tags: [Documentation]
+      responses:
+        '200':
+          description: 成功
+  /feature-flags:
+    post:
+      summary: 创建特性开关
+      tags: [FeatureFlag]
+      responses:
+        '201':
+          description: 成功
+    get:
+      summary: 获取特性开关列表
+      tags: [FeatureFlag]
+      responses:
+        '200':
+          description: 成功
+  /feature-flags/evaluate:
+    post:
+      summary: 评估特性开关
+      tags: [FeatureFlag]
+      responses:
+        '200':
+          description: 成功
+tags:
+  - name: Logger
+    description: 日志级别动态调整
+  - name: Catalog
+    description: 软件目录与发现
+  - name: Scaffold
+    description: 项目脚手架生成
+  - name: Vulnerability
+    description: 依赖漏洞分析
+  - name: Core
+    description: 核心处理模块
+  - name: Gateway
+    description: API网关
+  - name: Contract
+    description: API契约测试
+  - name: Environment
+    description: 环境自助申请
+  - name: Documentation
+    description: 内部文档索引
+  - name: FeatureFlag
+    description: 特性开关管理
