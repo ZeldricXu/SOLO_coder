@@ -1,0 +1,42 @@
+namespace: default
+version: 1
+parameters:
+  processing:
+    poolSize: 10
+    timeout: 30000
+    retries: 3
+    batchSize: 100
+    concurrency: 5
+    rules:
+      - id: rule_001
+        name: uppercase_name
+        sourceField: name
+        targetField: name_uppercase
+        transform: uppercase
+        enabled: true
+      - id: rule_002
+        name: trim_whitespace
+        sourceField: description
+        targetField: description
+        transform: trim
+        enabled: true
+    standardization:
+      charset: utf-8
+      dateFormat: ISO
+      timezone: UTC
+      decimalPlaces: 2
+      trimWhitespace: true
+      nullHandling: keep
+  image:
+    p2p:
+      enabled: true
+    maxConcurrentLayers: 5
+  gateway:
+    sampleRate: 1.0
+    logHeaders: true
+    logBody: false
+  storage:
+    retentionDays: 30
+    maxBackups: 100
+enabled: true
+applied_at: "2026-05-11T08:30:00Z"

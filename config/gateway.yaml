@@ -1,0 +1,44 @@
+tracing:
+  enabled: true
+  sampleRate: 1.0
+  logHeaders: true
+  logBody: false
+  maxBodySize: 1024
+
+routes:
+  - path: /api/v1/resources
+    method: POST
+    target: /api/v1/resources
+    timeout: 30000
+    retry: 3
+    enabled: true
+    rateLimit:
+      requestsPerMinute: 100
+      burst: 20
+
+  - path: /api/v1/resources/:id/status
+    method: GET
+    target: /api/v1/resources/:id/status
+    timeout: 10000
+    retry: 1
+    enabled: true
+    rateLimit:
+      requestsPerMinute: 500
+      burst: 100
+
+  - path: /api/v1/data/:schema
+    method: GET
+    target: /api/v1/data/:schema
+    timeout: 15000
+    retry: 2
+    enabled: true
+    rateLimit:
+      requestsPerMinute: 200
+      burst: 50
+
+  - path: /health
+    method: GET
+    target: /health
+    timeout: 5000
+    retry: 0
+    enabled: true
