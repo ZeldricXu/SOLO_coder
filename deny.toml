@@ -1,0 +1,46 @@
+[licenses]
+allow = [
+  "Apache-2.0",
+  "MIT",
+  "BSD-2-Clause",
+  "BSD-3-Clause",
+  "CC0-1.0",
+  "ISC",
+  "Unicode-DFS-2016",
+]
+
+default = "deny"
+
+deny = []
+
+unlicensed = "deny"
+
+ignore = []
+
+[bans]
+multiple-versions = "warn"
+deny = [
+  { name = "memoffset", version = "< 0.6" },
+  { name = "chrono", version = "< 0.4.20" },
+  { name = "serde", version = "< 1.0.171" },
+]
+
+skip = []
+skip-tree = []
+
+[sources]
+unknown-registry = "warn"
+
+[sources.allow-org]
+github = []
+bitbucket = []
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+vulnerability = "deny"
+notice = "warn"
+unmaintained = "warn"
+yanked = "warn"
+
+ignore = []

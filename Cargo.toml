@@ -1,0 +1,150 @@
+[package]
+name = "enterprise_platform"
+version = "0.1.0"
+edition = "2021"
+authors = ["Platform Engineering Team"]
+description = "Enterprise-grade platform with monitoring, security, and federated learning capabilities"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/platform/enterprise_platform"
+homepage = "https://platform.example.com"
+documentation = "https://docs.platform.example.com"
+keywords = ["enterprise", "monitoring", "federated-learning", "security", "rust"]
+categories = ["asynchronous", "concurrency", "cryptography", "database", "web-programming"]
+rust-version = "1.75"
+
+[profile.dev]
+opt-level = 1
+debug = true
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = "unwind"
+incremental = true
+codegen-units = 256
+rpath = false
+
+[profile.release]
+opt-level = 3
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+incremental = false
+rpath = false
+strip = "symbols"
+
+[profile.production]
+inherits = "release"
+opt-level = "z"
+debug = false
+debug-assertions = false
+overflow-checks = false
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+incremental = false
+rpath = false
+strip = true
+
+[profile.test]
+opt-level = 1
+debug = 2
+debug-assertions = true
+overflow-checks = true
+lto = false
+panic = "unwind"
+
+[profile.bench]
+opt-level = 3
+debug = false
+lto = "fat"
+codegen-units = 1
+
+[features]
+default = ["std"]
+std = ["serde/std", "chrono/std", "uuid/std", "sqlx/runtime-tokio"]
+nightly = []
+simd = []
+unstable = []
+
+postgres = ["sqlx/postgres"]
+mysql = ["sqlx/mysql"]
+sqlite = ["sqlx/sqlite"]
+
+telemetry = []
+metrics = ["telemetry"]
+tracing-opentelemetry = ["telemetry"]
+
+[dependencies]
+tokio = { version = "1.36", features = ["full"] }
+axum = "0.7"
+serde = { version = "1.0", features = ["derive", "std"] }
+serde_json = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1.8", features = ["v4", "serde", "std"] }
+chrono = { version = "0.4", features = ["serde", "std", "clock"] }
+sha2 = "0.10"
+hmac = "0.12"
+rand = { version = "0.8", features = ["std_rng"] }
+num-bigint = "0.4"
+num-traits = "0.2"
+num-integer = "0.1"
+aes-gcm = "0.10"
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "macros"] }
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager", "cluster-async"] }
+bb8 = "0.8"
+bb8-redis = "0.14"
+async-trait = "0.1"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors", "trace", "compression", "limit"] }
+bytes = "1.5"
+futures = "0.3"
+pin-project-lite = "0.2"
+once_cell = "1.19"
+parking_lot = "0.12"
+regex = "1.10"
+hex = "0.4"
+dotenvy = "0.15"
+config = { version = "0.14", features = ["toml", "json", "yaml", "env"] }
+serde_yaml = "0.9"
+toml = "0.8"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = "0.5"
+test-log = { version = "0.2", features = ["trace"] }
+proptest = "1.4"
+proptest-derive = "0.4"
+quickcheck = "1.0"
+quickcheck_macros = "1.0"
+
+[[bin]]
+name = "enterprise_platform"
+path = "src/main.rs"
+
+[[bench]]
+name = "monitoring"
+path = "benches/monitoring.rs"
+harness = false
+
+[[bench]]
+name = "shamir"
+path = "benches/shamir.rs"
+harness = false
+
+[[bench]]
+name = "audit_log"
+path = "benches/audit_log.rs"
+harness = false
+
+[package.metadata.docs.rs]
+features = ["postgres"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[workspace]
+members = []

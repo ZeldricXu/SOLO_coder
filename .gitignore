@@ -1,0 +1,63 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+*.iml
+.idea/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.development
+!.env.production
+
+# Logs
+logs/
+*.log
+*.pid
+*.seed
+
+# Coverage
+coverage/
+tarpaulin-report.html
+cobertura.xml
+*.profraw
+*.profdata
+
+# Benchmark results
+target/criterion/
+
+# Test artifacts
+test-output/
+
+# Documentation
+docs/
+target/doc/
+
+# Backup files
+*.bak
+*.tmp
+*.old
+
+# Temp
+tmp/
+temp/
+*.cache

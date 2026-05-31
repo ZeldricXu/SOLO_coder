@@ -1,0 +1,46 @@
+# ============================================
+# Stage 1: Builder
+# ============================================
+FROM rust:1.75-bookworm AS builder
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \
+    lld \
+    clang \
+    pkg-config \
+    libssl-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN rustup target add x86_64-unknown-linux-gnu
+
+COPY Cargo.toml Cargo.lock ./
+RUN mkdir -p src && echo 'fn main() {}' > src/main.rs
+RUN cargo build --release --target x86_64-unknown-linux-gnu
+RUN rm -rf src
+
+COPY . .
+RUN cargo build --release --target x86_64-unknown-linux-gnu
+
+# ============================================
+# Stage 2: Distroless Runtime
+# ============================================
+FROM gcr.io/distroless/cc-debian12:nonroot
+
+LABEL org.opencontainers.image.title="Enterprise Platform (Distroless)"
+LABEL org.opencontainers.image.description="Enterprise-grade platform - Production optimized"
+LABEL org.opencontainers.image.source="https://github.com/platform/enterprise_platform"
+LABEL org.opencontainers.image.licenses="MIT"
+
+WORKDIR /app
+
+COPY --from=builder /app/target/x86_64-unknown-linux-gnu/release/enterprise_platform /app/
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+ENV RUST_LOG=info
+ENV APP_ENV=production
+
+EXPOSE 8080
+
+ENTRYPOINT ["/app/enterprise_platform"]

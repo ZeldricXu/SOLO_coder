@@ -1,0 +1,61 @@
+name: PR Labeler
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+jobs:
+  labeler:
+    name: Label PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Label PR based on title
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = context.payload.pull_request.title.toLowerCase();
+            const labelsToAdd = [];
+            
+            if (title.includes('feat') || title.includes('feature')) {
+              labelsToAdd.push('feature');
+            } else if (title.includes('fix') || title.includes('bug')) {
+              labelsToAdd.push('bugfix');
+            } else if (title.includes('docs')) {
+              labelsToAdd.push('documentation');
+            } else if (title.includes('refactor')) {
+              labelsToAdd.push('refactor');
+            } else if (title.includes('test')) {
+              labelsToAdd.push('tests');
+            } else if (title.includes('ci') || title.includes('build')) {
+              labelsToAdd.push('ci');
+            } else if (title.includes('chore')) {
+              labelsToAdd.push('chore');
+            }
+            
+            if (labelsToAdd.length > 0) {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.payload.pull_request.number,
+                labels: labelsToAdd
+              });
+            }
+
+  size-labeler:
+    name: Size Label
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Label PR based on size
+        uses: actions/labeler@v5
+        with:
+          repo-token: "${{ secrets.GITHUB_TOKEN }}"
+          configuration-path: .github/labeler.yml

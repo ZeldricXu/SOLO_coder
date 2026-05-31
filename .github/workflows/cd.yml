@@ -1,0 +1,187 @@
+name: CD Pipeline
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_run:
+    workflows: ['CI Pipeline']
+    types: [completed]
+    branches: [main]
+
+env:
+  RUST_VERSION: 1.75.0
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  docker-build:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-,suffix=-{{date}}
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=Enterprise Platform
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Build and push (Debian)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Build and push (Alpine)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.alpine
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          suffix: -alpine
+
+      - name: Build and push (Distroless)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.distroless
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+          suffix: -distroless
+
+  release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: |
+            x86_64-unknown-linux-gnu
+            x86_64-unknown-linux-musl
+            aarch64-unknown-linux-gnu
+            aarch64-unknown-linux-musl
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build for all targets
+        run: |
+          cargo build --release --target x86_64-unknown-linux-gnu
+          cargo build --release --target x86_64-unknown-linux-musl
+          cargo build --release --target aarch64-unknown-linux-gnu
+          cargo build --release --target aarch64-unknown-linux-musl
+
+      - name: Package artifacts
+        run: |
+          tar -czvf enterprise_platform-linux-x86_64-gnu.tar.gz -C target/x86_64-unknown-linux-gnu/release enterprise_platform
+          tar -czvf enterprise_platform-linux-x86_64-musl.tar.gz -C target/x86_64-unknown-linux-musl/release enterprise_platform
+          tar -czvf enterprise_platform-linux-aarch64-gnu.tar.gz -C target/aarch64-unknown-linux-gnu/release enterprise_platform
+          tar -czvf enterprise_platform-linux-aarch64-musl.tar.gz -C target/aarch64-unknown-linux-musl/release enterprise_platform
+
+      - name: Generate CHANGELOG
+        uses: orhun/git-cliff-action@v3
+        id: git-cliff
+        with:
+          config: cliff.toml
+          args: -vv --latest --strip header
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Enterprise Platform ${{ github.ref_name }}
+          body: ${{ steps.git-cliff.outputs.content }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-pre') || contains(github.ref_name, '-rc') }}
+          files: |
+            enterprise_platform-linux-x86_64-gnu.tar.gz
+            enterprise_platform-linux-x86_64-musl.tar.gz
+            enterprise_platform-linux-aarch64-gnu.tar.gz
+            enterprise_platform-linux-aarch64-musl.tar.gz
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [docker-build, release]
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-pre') && !contains(github.ref_name, '-rc') }}
+    environment:
+      name: staging
+      url: https://staging.platform.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Kubernetes (Staging)
+        run: |
+          echo "Deploying ${{ github.ref_name }} to staging..."
+          kubectl set image deployment/enterprise-platform enterprise-platform=${{ env.DOCKER_IMAGE }}:${{ github.ref_name }} -n staging
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: deploy-staging
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-pre') && !contains(github.ref_name, '-rc') }}
+    environment:
+      name: production
+      url: https://platform.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Kubernetes (Production)
+        run: |
+          echo "Deploying ${{ github.ref_name }} to production..."
+          kubectl set image deployment/enterprise-platform enterprise-platform=${{ env.DOCKER_IMAGE }}:${{ github.ref_name }} -n production

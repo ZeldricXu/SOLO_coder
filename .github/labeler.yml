@@ -1,0 +1,29 @@
+feature:
+  - head-branch: ['^feat/', '^feature/', '^feat-']
+
+bugfix:
+  - head-branch: ['^fix/', '^bug/', '^fix-']
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: ['**/*.md', '**/docs/**', '**/doc/**']
+
+refactor:
+  - head-branch: ['^refactor/', '^refactor-']
+
+tests:
+  - changed-files:
+      - any-glob-to-any-file: ['**/*_test.rs', '**/tests/**', '**/benches/**']
+  - head-branch: ['^test/', '^test-']
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file: ['.github/**', '.github/workflows/**', 'Makefile', 'Makefile.toml']
+  - head-branch: ['^ci/', '^build/', '^ci-']
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file: ['**/Cargo.toml', '**/Cargo.lock']
+
+security:
+  - head-branch: ['^security/', '^sec/']

@@ -1,0 +1,65 @@
+# Rust build artifacts
+target/
+**/target/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git files
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Configuration examples
+.env.example
+.env.local
+.env.*.local
+
+# Test artifacts
+*.profraw
+*.profdata
+coverage/
+cobertura.xml
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Temp files
+tmp/
+temp/
+*.log
+*.pid
+*.seed
+
+# Cargo files
+Cargo.lock.bak
+.cargo/config.toml.local
+
+# Benchmark results
+target/criterion/
+
+# CI files
+.github/
+.gitlab-ci.yml
+.travis.yml
+bitbucket-pipelines.yml
+
+# Local development
+.venv/
+node_modules/

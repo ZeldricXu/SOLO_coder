@@ -1,0 +1,144 @@
+[config]
+default_to_workspace = false
+min_version = "0.36.0"
+
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = "true"
+RUST_LOG = "info"
+
+[tasks.build]
+description = "Build the project"
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.build-dev]
+description = "Build the project in development mode"
+command = "cargo"
+args = ["build"]
+
+[tasks.build-production]
+description = "Build the project for production (size optimized)"
+command = "cargo"
+args = ["build", "--profile", "production"]
+
+[tasks.test]
+description = "Run tests"
+command = "cargo"
+args = ["test", "--", "--nocapture"]
+
+[tasks.test-coverage]
+description = "Run tests with coverage"
+dependencies = ["install-cargo-tarpaulin"]
+command = "cargo"
+args = ["tarpaulin", "--out", "Html", "--out", "Xml"]
+
+[tasks.install-cargo-tarpaulin]
+description = "Install cargo-tarpaulin for coverage"
+install_crate = { crate_name = "cargo-tarpaulin", binary = "cargo-tarpaulin", test_arg = ["--help"] }
+
+[tasks.lint]
+description = "Run clippy linting"
+command = "cargo"
+args = ["clippy", "--all-targets", "--all-features", "--", "-D", "warnings"]
+
+[tasks.fmt]
+description = "Format the code"
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.fmt-check]
+description = "Check code formatting"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.check]
+description = "Check the project"
+command = "cargo"
+args = ["check", "--all-targets", "--all-features"]
+
+[tasks.bench]
+description = "Run benchmarks"
+command = "cargo"
+args = ["bench"]
+
+[tasks.doc]
+description = "Generate documentation"
+command = "cargo"
+args = ["doc", "--no-deps", "--document-private-items"]
+
+[tasks.doc-open]
+description = "Generate and open documentation"
+command = "cargo"
+args = ["doc", "--no-deps", "--document-private-items", "--open"]
+
+[tasks.clean]
+description = "Clean build artifacts"
+command = "cargo"
+args = ["clean"]
+
+[tasks.run]
+description = "Run the application"
+command = "cargo"
+args = ["run", "--release"]
+
+[tasks.run-dev]
+description = "Run the application in development mode"
+command = "cargo"
+args = ["run"]
+
+[tasks.audit]
+description = "Audit dependencies for security vulnerabilities"
+dependencies = ["install-cargo-audit"]
+command = "cargo"
+args = ["audit", "--file", "./Cargo.lock", "--stale"]
+
+[tasks.install-cargo-audit]
+description = "Install cargo-audit"
+install_crate = { crate_name = "cargo-audit", binary = "cargo-audit", test_arg = ["--help"] }
+
+[tasks.deny]
+description = "Check dependencies with cargo-deny"
+dependencies = ["install-cargo-deny"]
+command = "cargo"
+args = ["deny", "check"]
+
+[tasks.install-cargo-deny]
+description = "Install cargo-deny"
+install_crate = { crate_name = "cargo-deny", binary = "cargo-deny", test_arg = ["--help"] }
+
+[tasks.udeps]
+description = "Find unused dependencies"
+dependencies = ["install-cargo-udeps"]
+command = "cargo"
+args = ["udeps", "--all-targets"]
+
+[tasks.install-cargo-udeps]
+description = "Install cargo-udeps"
+install_crate = { crate_name = "cargo-udeps", binary = "cargo-udeps", test_arg = ["--help"] }
+
+[tasks.miri]
+description = "Run miri for undefined behavior detection"
+dependencies = ["install-miri"]
+command = "cargo"
+args = ["miri", "test"]
+
+[tasks.install-miri]
+description = "Install miri"
+command = "rustup"
+args = ["component", "add", "miri"]
+
+[tasks.safety]
+description = "Run all safety checks"
+dependencies = ["audit", "deny", "udeps"]
+
+[tasks.quality]
+description = "Run all quality checks"
+dependencies = ["fmt-check", "lint", "check", "test"]
+
+[tasks.ci]
+description = "Run all CI checks"
+dependencies = ["quality", "safety"]
+
+[tasks.release]
+description = "Prepare release build"
+dependencies = ["build-production"]

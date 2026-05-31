@@ -1,0 +1,28 @@
+msrv = "1.75.0"
+
+warn = [
+    "clippy::all",
+    "clippy::cargo",
+    "clippy::nursery",
+    "clippy::pedantic",
+]
+
+allow = [
+    "clippy::similar_names",
+    "clippy::module_name_repetitions",
+    "clippy::too_many_lines",
+    "clippy::future_not_send",
+    "clippy::needless_pass_by_value",
+    "clippy::single_match_else",
+    "clippy::too_many_arguments",
+    "clippy::struct_excessive_bools",
+    "clippy::missing_errors_doc",
+    "clippy::missing_panics_doc",
+    "clippy::must_use_candidate",
+    "clippy::return_self_not_must_use",
+]
+
+allow-by-default = false
+
+[third-party]
+clippy_lints = "0.1.75"

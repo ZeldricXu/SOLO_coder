@@ -1,0 +1,8 @@
+edition = "2021"
+max_width = 100
+tab_spaces = 4
+reorder_imports = true
+reorder_modules = true
+match_block_trailing_comma = true
+newline_style = "Auto"
+use_small_heuristics = "Max"
