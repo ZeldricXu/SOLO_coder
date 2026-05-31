@@ -1,0 +1,150 @@
+spring:
+  application:
+    name: edgescheduler
+  profiles:
+    active: dev
+  webflux:
+    base-path: /
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-wait: -1ms
+          max-idle: 8
+          min-idle: 0
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/edgescheduler?useUnicode=true&characterEncoding=utf-8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    type: com.zaxxer.hikari.HikariDataSource
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      auto-commit: true
+      idle-timeout: 30000
+      pool-name: EdgeSchedulerHikariCP
+      max-lifetime: 1800000
+      connection-timeout: 30000
+      connection-test-query: SELECT 1
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+    encoding: UTF-8
+    validate-on-migrate: true
+    clean-disabled: true
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.edgescheduler.domain.entity,com.edgescheduler.modules.*.domain
+  configuration:
+    map-underscore-to-camel-case: true
+    cache-enabled: false
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+      version-field: version
+
+server:
+  port: 8080
+  netty:
+    connection-timeout: 60s
+    idle-timeout: 120s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    export:
+      prometheus:
+        enabled: true
+
+edgescheduler:
+  auth:
+    enabled: true
+    secret-key: edgescheduler-secret-key-2024
+    signature-expire-seconds: 300
+  cache:
+    caffeine:
+      maximum-size: 10000
+      expire-after-write: 10m
+      expire-after-access: 5m
+  shadow:
+    sync-interval: 5000
+    cache-ttl: 3600
+    monitor:
+      enabled: true
+      health-check-interval: 60000
+      latency-warning-threshold-ms: 1000
+      latency-error-threshold-ms: 5000
+      conflict-warning-threshold: 10
+      conflict-error-threshold: 50
+      metric-retention-days: 7
+  aggregation:
+    time-window-seconds: 300
+    max-buffer-size: 10000
+    recovery:
+      enabled: true
+      checkpoint-interval: 30000
+      max-retry-attempts: 5
+      retry-interval-ms: 300000
+      dlq-max-size: 1000
+      data-validation-enabled: true
+  inference:
+    queue-size: 1000
+    worker-threads: 4
+    versioning:
+      enabled: true
+      max-version-history: 50
+      auto-cleanup-deprecated: true
+      default-rollback-enabled: true
+      release-lock-timeout-ms: 300000
+  ota:
+    max-retry-count: 3
+    grayscale-groups: 3
+  offline:
+    max-cache-size: 100000
+    sync-interval: 10000
+    retry-interval: 60000
+  rules:
+    event-queue-size: 10000
+    worker-threads: 2
+  device:
+    heartbeat-timeout: 60000
+    offline-check-interval: 30000
+
+logging:
+  level:
+    root: info
+    com.edgescheduler: debug
+    org.springframework.web: info
+    com.baomidou.mybatisplus: info
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+  file:
+    name: logs/edgescheduler.log
+    max-size: 100MB
+    max-history: 30
