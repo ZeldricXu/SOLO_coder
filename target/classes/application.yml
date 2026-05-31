@@ -1,0 +1,88 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: asset-manage
+  datasource:
+    url: jdbc:mysql://localhost:3306/asset_manage?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.MySQL8Dialect
+
+asset-lock:
+  enabled: true
+  default-config:
+    timeout-seconds: 30
+    max-retry-count: 3
+    retry-delay-ms: 1000
+    granularity: ASSET
+  type-configs:
+    computer:
+      timeout-seconds: 60
+      max-retry-count: 5
+      retry-delay-ms: 500
+      granularity: ASSET
+      min-value-threshold: 5000
+    vehicle:
+      timeout-seconds: 120
+      max-retry-count: 10
+      retry-delay-ms: 2000
+      granularity: CATEGORY
+      min-value-threshold: 100000
+    furniture:
+      timeout-seconds: 15
+      max-retry-count: 2
+      retry-delay-ms: 500
+      granularity: ASSET
+      min-value-threshold: 1000
+  high-value-config:
+    threshold: 50000
+    timeout-seconds: 300
+    max-retry-count: 20
+    retry-delay-ms: 5000
+    granularity: ASSET
+
+depreciation:
+  enabled: true
+  pre-calculate:
+    enabled: true
+    pre-calculate-days: 3
+    cache-expire-minutes: 60
+  methods:
+    straight_line:
+      name: 直线法
+      enabled: true
+      description: 按原值的固定比例计算折旧
+      formula: originalValue * rate / 12
+    accelerated:
+      name: 加速折旧法
+      enabled: true
+      description: 按净值的固定比例计算折旧
+      formula: netValue * rate / 12
+    double_declining:
+      name: 双倍余额递减法
+      enabled: true
+      description: 按双倍直线法折旧率计算
+      formula: netValue * (2 / usefulLife) / 12
+    sum_of_years:
+      name: 年限总和法
+      enabled: true
+      description: 按尚可使用年限除以年限总和计算
+      formula: originalValue * (remainingLife / sumOfYears) / 12
+
+inventory:
+  async:
+    enabled: true
+    pool-size: 5
+    queue-capacity: 1000
+    max-retry-count: 3
+    retry-delay-ms: 1000
