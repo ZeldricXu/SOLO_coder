@@ -1,0 +1,41 @@
+env: development
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: solocoder
+  sslmode: disable
+
+redis:
+  addr: localhost:6379
+  password: ""
+  db: 0
+
+logger:
+  level: debug
+  dev_mode: true
+
+chains:
+  - name: Ethereum Mainnet
+    chain_id: 1
+    rpc_url: https://eth.llamarpc.com
+    ws_url: wss://eth.llamarpc.com
+    explorer: https://etherscan.io
+
+  - name: Sepolia Testnet
+    chain_id: 11155111
+    rpc_url: https://sepolia.drpc.org
+    ws_url: wss://sepolia.drpc.org
+    explorer: https://sepolia.etherscan.io
+
+  - name: Polygon Mainnet
+    chain_id: 137
+    rpc_url: https://polygon.llamarpc.com
+    ws_url: wss://polygon.llamarpc.com
+    explorer: https://polygonscan.com
