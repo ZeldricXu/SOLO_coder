@@ -1,0 +1,23 @@
+{
+  "name": "industrial-gateway-tests",
+  "version": "1.0.0",
+  "description": "Integration tests for Industrial IoT Edge Gateway",
+  "scripts": {
+    "test": "jest --verbose",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:inference": "jest tests/edge_inference.test.js",
+    "test:aggregation": "jest tests/data_aggregation.test.js",
+    "test:rules": "jest tests/rule_engine.test.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "@babel/core": "^7.23.0",
+    "@babel/preset-env": "^7.23.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "uuid": "^9.0.1"
+  }
+}
