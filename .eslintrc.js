@@ -1,0 +1,120 @@
+module.exports = {
+  root: true,
+  env: {
+    node: true,
+    es2022: true,
+    jest: true,
+  },
+  parser: '@typescript-eslint/parser',
+  parserOptions: {
+    ecmaVersion: 2022,
+    sourceType: 'module',
+    project: './tsconfig.json',
+    tsconfigRootDir: __dirname,
+  },
+  plugins: [
+    '@typescript-eslint',
+    'import',
+    'security',
+    'sonarjs',
+    'prettier',
+  ],
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+    'plugin:@typescript-eslint/recommended-requiring-type-checking',
+    'plugin:import/recommended',
+    'plugin:import/typescript',
+    'plugin:security/recommended',
+    'plugin:sonarjs/recommended',
+    'plugin:prettier/recommended',
+  ],
+  settings: {
+    'import/resolver': {
+      typescript: {
+        alwaysTryTypes: true,
+        project: './tsconfig.json',
+      },
+      node: {
+        extensions: ['.js', '.ts'],
+      },
+    },
+    'import/parsers': {
+      '@typescript-eslint/parser': ['.ts'],
+    },
+  },
+  rules: {
+    'prettier/prettier': 'error',
+    '@typescript-eslint/interface-name-prefix': 'off',
+    '@typescript-eslint/explicit-function-return-type': 'off',
+    '@typescript-eslint/explicit-module-boundary-types': 'off',
+    '@typescript-eslint/no-explicit-any': 'warn',
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+        varsIgnorePattern: '^_',
+        caughtErrorsIgnorePattern: '^_',
+      },
+    ],
+    '@typescript-eslint/consistent-type-imports': [
+      'error',
+      { prefer: 'type-imports' },
+    ],
+    '@typescript-eslint/no-floating-promises': 'error',
+    '@typescript-eslint/no-misused-promises': 'error',
+    '@typescript-eslint/prefer-nullish-coalescing': 'warn',
+    '@typescript-eslint/prefer-optional-chain': 'warn',
+    '@typescript-eslint/strict-boolean-expressions': 'warn',
+    'import/order': [
+      'error',
+      {
+        groups: [
+          'builtin',
+          'external',
+          'internal',
+          'parent',
+          'sibling',
+          'index',
+        ],
+        'newlines-between': 'always',
+        alphabetize: {
+          order: 'asc',
+          caseInsensitive: true,
+        },
+      },
+    ],
+    'import/no-unresolved': 'error',
+    'import/no-duplicates': 'error',
+    'import/no-cycle': 'error',
+    'sonarjs/cognitive-complexity': ['warn', 15],
+    'sonarjs/no-duplicate-string': 'warn',
+    'sonarjs/no-identical-functions': 'warn',
+    'security/detect-object-injection': 'off',
+    'security/detect-non-literal-fs-filename': 'warn',
+    'no-console': ['warn', { allow: ['warn', 'error'] }],
+    'prefer-const': 'error',
+    'no-var': 'error',
+    eqeqeq: ['error', 'smart'],
+    curly: ['error', 'all'],
+    'no-throw-literal': 'error',
+    'prefer-promise-reject-errors': 'error',
+  },
+  ignorePatterns: [
+    'node_modules/',
+    'dist/',
+    'coverage/',
+    '*.config.js',
+    'jest.config.js',
+  ],
+  overrides: [
+    {
+      files: ['test/**/*.ts'],
+      rules: {
+        '@typescript-eslint/no-explicit-any': 'off',
+        '@typescript-eslint/no-non-null-assertion': 'off',
+        'sonarjs/no-duplicate-string': 'off',
+      },
+    },
+  ],
+};
