@@ -1,0 +1,263 @@
+CREATE TABLE IF NOT EXISTS shamir_key_share (
+    id VARCHAR(64) PRIMARY KEY,
+    key_id VARCHAR(64) NOT NULL,
+    share_index INT NOT NULL,
+    share_value TEXT NOT NULL,
+    owner_id VARCHAR(64),
+    threshold INT NOT NULL,
+    total_shares INT NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    created_by VARCHAR(64),
+    updated_by VARCHAR(64),
+    INDEX idx_key_id (key_id),
+    INDEX idx_owner_id (owner_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS audit_log (
+    id VARCHAR(64) PRIMARY KEY,
+    log_id VARCHAR(64) NOT NULL,
+    operation VARCHAR(128) NOT NULL,
+    operator_id VARCHAR(64),
+    operator_name VARCHAR(128),
+    resource_type VARCHAR(64),
+    resource_id VARCHAR(64),
+    request_params TEXT,
+    response_result TEXT,
+    status VARCHAR(32),
+    ip_address VARCHAR(64),
+    user_agent VARCHAR(512),
+    timestamp BIGINT NOT NULL,
+    previous_hash VARCHAR(128),
+    current_hash VARCHAR(128) NOT NULL,
+    block_height INT NOT NULL,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_operator (operator_id),
+    INDEX idx_resource (resource_type, resource_id),
+    INDEX idx_timestamp (timestamp),
+    UNIQUE KEY uk_block_height (block_height)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS mpc_session (
+    id VARCHAR(64) PRIMARY KEY,
+    session_id VARCHAR(64) NOT NULL,
+    protocol_name VARCHAR(64) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    participant_ids TEXT,
+    protocol_data TEXT,
+    result TEXT,
+    start_time DATETIME,
+    end_time DATETIME,
+    current_round INT DEFAULT 0,
+    total_rounds INT DEFAULT 1,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    created_by VARCHAR(64),
+    updated_by VARCHAR(64),
+    INDEX idx_status (status),
+    INDEX idx_protocol (protocol_name)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS fl_training_task (
+    id VARCHAR(64) PRIMARY KEY,
+    task_id VARCHAR(64) NOT NULL,
+    model_name VARCHAR(128) NOT NULL,
+    model_version VARCHAR(32),
+    status VARCHAR(32) NOT NULL,
+    participant_ids TEXT,
+    current_round INT DEFAULT 0,
+    total_rounds INT NOT NULL,
+    hyperparameters TEXT,
+    global_model TEXT,
+    aggregated_gradients TEXT,
+    start_time DATETIME,
+    end_time DATETIME,
+    accuracy DOUBLE,
+    loss DOUBLE,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_status (status),
+    INDEX idx_model (model_name, model_version)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS fl_client_update (
+    id VARCHAR(64) PRIMARY KEY,
+    update_id VARCHAR(64) NOT NULL,
+    task_id VARCHAR(64) NOT NULL,
+    client_id VARCHAR(64) NOT NULL,
+    round_number INT NOT NULL,
+    encrypted_gradients TEXT,
+    encrypted_weights TEXT,
+    sample_count INT,
+    local_loss DOUBLE,
+    submitted_at DATETIME NOT NULL,
+    status VARCHAR(32),
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_task_round (task_id, round_number),
+    INDEX idx_client (client_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS data_classification (
+    id VARCHAR(64) PRIMARY KEY,
+    classification_id VARCHAR(64) NOT NULL,
+    data_source VARCHAR(128) NOT NULL,
+    table_name VARCHAR(128) NOT NULL,
+    column_name VARCHAR(128) NOT NULL,
+    data_type VARCHAR(64),
+    data_category VARCHAR(64),
+    security_level VARCHAR(32) NOT NULL,
+    sensitive_pattern VARCHAR(512),
+    confidence_score DOUBLE,
+    policy_id VARCHAR(64),
+    scanned_at DATETIME,
+    scan_job_id VARCHAR(64),
+    status VARCHAR(32),
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_data_source (data_source, table_name),
+    INDEX idx_category (data_category),
+    INDEX idx_security_level (security_level)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS classification_policy (
+    id VARCHAR(64) PRIMARY KEY,
+    policy_id VARCHAR(64) NOT NULL,
+    policy_name VARCHAR(128) NOT NULL,
+    description VARCHAR(512),
+    default_level VARCHAR(32) NOT NULL,
+    category_level_map TEXT,
+    rules TEXT,
+    enabled TINYINT(1) DEFAULT 1,
+    priority INT DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_enabled (enabled),
+    INDEX idx_priority (priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS scan_job (
+    id VARCHAR(64) PRIMARY KEY,
+    job_id VARCHAR(64) NOT NULL,
+    job_name VARCHAR(128) NOT NULL,
+    data_source VARCHAR(128) NOT NULL,
+    tables TEXT,
+    status VARCHAR(32) NOT NULL,
+    start_time DATETIME,
+    end_time DATETIME,
+    total_scanned INT DEFAULT 0,
+    sensitive_found INT DEFAULT 0,
+    error_message TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_status (status),
+    INDEX idx_data_source (data_source)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS tee_enclave (
+    id VARCHAR(64) PRIMARY KEY,
+    enclave_id VARCHAR(64) NOT NULL,
+    enclave_name VARCHAR(128) NOT NULL,
+    enclave_type VARCHAR(32) NOT NULL,
+    status VARCHAR(32) NOT NULL,
+    host_id VARCHAR(64),
+    host_address VARCHAR(128),
+    port INT,
+    mrenclave VARCHAR(128),
+    mrsigner VARCHAR(128),
+    public_key TEXT,
+    attributes TEXT,
+    last_attestation_time DATETIME,
+    last_health_check_time DATETIME,
+    attestation_status VARCHAR(32),
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_status (status),
+    INDEX idx_enclave_type (enclave_type),
+    INDEX idx_host (host_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS attestation_report (
+    id VARCHAR(64) PRIMARY KEY,
+    report_id VARCHAR(64) NOT NULL,
+    enclave_id VARCHAR(64) NOT NULL,
+    attestation_type VARCHAR(32) NOT NULL,
+    quote TEXT,
+    quote_data TEXT,
+    verified TINYINT(1) DEFAULT 0,
+    verification_result VARCHAR(256),
+    verification_time DATETIME,
+    verifier VARCHAR(128),
+    claims TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_enclave (enclave_id),
+    INDEX idx_verified (verified)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS masking_policy (
+    id VARCHAR(64) PRIMARY KEY,
+    policy_id VARCHAR(64) NOT NULL,
+    policy_name VARCHAR(128) NOT NULL,
+    description VARCHAR(512),
+    data_source VARCHAR(128) NOT NULL,
+    table_name VARCHAR(128) NOT NULL,
+    column_name VARCHAR(128) NOT NULL,
+    min_clearance_level VARCHAR(32),
+    strategy_type VARCHAR(32) NOT NULL,
+    allowed_roles TEXT,
+    enabled TINYINT(1) DEFAULT 1,
+    priority INT DEFAULT 0,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_table (data_source, table_name),
+    INDEX idx_enabled (enabled),
+    INDEX idx_priority (priority)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS privacy_budget (
+    id VARCHAR(64) PRIMARY KEY,
+    budget_id VARCHAR(64) NOT NULL,
+    user_id VARCHAR(64) NOT NULL,
+    data_source VARCHAR(128) NOT NULL,
+    total_epsilon DOUBLE NOT NULL,
+    total_delta DOUBLE NOT NULL,
+    consumed_epsilon DOUBLE DEFAULT 0,
+    consumed_delta DOUBLE DEFAULT 0,
+    remaining_epsilon DOUBLE NOT NULL,
+    remaining_delta DOUBLE NOT NULL,
+    reset_time DATETIME,
+    reset_period VARCHAR(32),
+    auto_reset TINYINT(1) DEFAULT 1,
+    status VARCHAR(32),
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    UNIQUE KEY uk_user_source (user_id, data_source),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS dp_query_log (
+    id VARCHAR(64) PRIMARY KEY,
+    log_id VARCHAR(64) NOT NULL,
+    query_id VARCHAR(64),
+    user_id VARCHAR(64) NOT NULL,
+    data_source VARCHAR(128) NOT NULL,
+    query_type VARCHAR(64),
+    epsilon DOUBLE NOT NULL,
+    delta DOUBLE NOT NULL,
+    sensitivity DOUBLE NOT NULL,
+    noise_type VARCHAR(32),
+    noise_scale DOUBLE,
+    original_result DOUBLE,
+    noisy_result DOUBLE,
+    query_time DATETIME NOT NULL,
+    budget_exceeded TINYINT(1) DEFAULT 0,
+    query_params TEXT,
+    created_at DATETIME NOT NULL,
+    updated_at DATETIME NOT NULL,
+    INDEX idx_user (user_id),
+    INDEX idx_data_source (data_source),
+    INDEX idx_query_time (query_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

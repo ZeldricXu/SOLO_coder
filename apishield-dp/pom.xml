@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.apishield</groupId>
+        <artifactId>apishield-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>apishield-dp</artifactId>
+    <name>APIShield DP</name>
+    <description>差分隐私注入模块 - 添加校准噪声，隐私预算管理</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.apishield</groupId>
+            <artifactId>apishield-application</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-math3</artifactId>
+            <version>3.6.1</version>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <optional>true</optional>
+        </dependency>
+    </dependencies>
+</project>
