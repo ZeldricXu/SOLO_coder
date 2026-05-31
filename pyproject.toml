@@ -1,0 +1,55 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "db-pool-platform"
+version = "1.0.0"
+description = "云原生基础设施平台 - 数据库连接池管理与查询优化"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi==0.115.0",
+    "uvicorn[standard]==0.30.6",
+    "pydantic==2.9.2",
+    "pydantic-settings==2.5.2",
+    "sqlalchemy==2.0.35",
+    "alembic==1.13.3",
+    "asyncpg==0.29.0",
+    "psycopg2-binary==2.9.9",
+    "aiomysql==0.2.0",
+    "celery==5.4.0",
+    "redis==5.0.8",
+    "httpx==0.27.2",
+    "python-dotenv==1.0.1",
+    "aiofiles==24.1.0",
+    "jinja2==3.1.4",
+    "pyyaml==6.0.2",
+    "jsonschema==4.23.0",
+    "python-json-logger==2.0.7",
+    "opentelemetry-api==1.27.0",
+    "opentelemetry-sdk==1.27.0",
+    "opentelemetry-instrumentation-fastapi==0.48b0",
+    "prometheus-client==0.21.0",
+    "watchdog==4.0.2",
+    "click==8.1.7",
+    "rich==13.8.1",
+    "inquirer==3.4.0",
+    "packaging==24.1",
+    "requests==2.32.3",
+]
+
+[project.scripts]
+db-pool-cli = "app.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["tests/*", "*/alembic/*"]
