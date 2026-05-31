@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "platform-core"
+version = "0.2.0"
+description = "企业级开发平台核心模块 - 重构版：领域驱动+依赖注入"
+requires-python = ">=3.10"
+dependencies = ["typing-extensions>=4.5.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.20.0", "mypy>=1.0", "ruff>=0.1.0", "jinja2>=3.1.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+
+[tool.mypy]
+python_version = "3.10"
+src_paths = ["src"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "N"]
+ignore = ["E501"]

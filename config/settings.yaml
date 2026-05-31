@@ -1,0 +1,118 @@
+project:
+  name: StreamSQL
+  version: "1.0.0"
+  description: "流式数据处理与查询平台"
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  workers: 4
+  log_level: "info"
+
+database:
+  metastore:
+    driver: "postgresql"
+    host: "localhost"
+    port: 5432
+    database: "streamsql_meta"
+    username: "postgres"
+    password: ""
+    pool_size: 10
+    max_overflow: 20
+  timeseries:
+    driver: "clickhouse"
+    host: "localhost"
+    port: 8123
+    database: "streamsql_ts"
+
+cache:
+  redis:
+    host: "localhost"
+    port: 6379
+    db: 0
+    password: ""
+    max_connections: 50
+    default_ttl: 3600
+
+messaging:
+  kafka:
+    bootstrap_servers: "localhost:9092"
+    group_id: "streamsql-consumer"
+    auto_offset_reset: "earliest"
+    enable_auto_commit: false
+    topics:
+      cdc_events: "streamsql.cdc.events"
+      lineage_events: "streamsql.lineage.events"
+      quality_alerts: "streamsql.quality.alerts"
+
+storage:
+  hot:
+    type: "postgresql"
+    retention_days: 30
+  cold:
+    type: "parquet"
+    base_path: "/data/streamsql/cold"
+    retention_days: 180
+  archive:
+    type: "parquet"
+    base_path: "/data/streamsql/archive"
+    compression: "snappy"
+    retention_days: 365
+
+cdc:
+  mysql:
+    host: "localhost"
+    port: 3306
+    username: "root"
+    password: ""
+    server_id: 1001
+    binlog_position: 4
+  postgresql:
+    host: "localhost"
+    port: 5432
+    database: "source_db"
+    username: "postgres"
+    password: ""
+    replication_slot: "streamsql_slot"
+    publication: "streamsql_pub"
+
+lifecycle:
+  tiering:
+    hot_to_cold_days: 30
+    cold_to_archive_days: 180
+    check_interval_minutes: 60
+  cleanup:
+    archive_retention_days: 365
+    cleanup_interval_hours: 24
+
+vector:
+  dimension: 768
+  index_type: "IVF_FLAT"
+  nlist: 100
+  nprobe: 10
+  metric: "L2"
+
+timeseries:
+  compression:
+    algorithm: "gorilla"
+    block_size: 4096
+  downsampling:
+    intervals: ["1m", "5m", "1h", "1d"]
+    default_aggregation: "avg"
+  multires:
+    resolutions:
+      - { interval: "1m", retention: "7d" }
+      - { interval: "5m", retention: "30d" }
+      - { interval: "1h", retention: "90d" }
+      - { interval: "1d", retention: "365d" }
+
+quality:
+  default_strictness: "warning"
+  check_interval_minutes: 30
+  max_concurrent_checks: 5
+  anomaly_threshold: 3.0
+
+metadata:
+  scan_interval_hours: 6
+  max_sample_rows: 1000
+  sample_method: "random"
