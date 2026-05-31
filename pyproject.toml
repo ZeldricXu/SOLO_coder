@@ -1,0 +1,219 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "infra-platform"
+version = "1.0.0"
+description = "Enterprise Infrastructure Platform - 企业级基础设施平台"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Infrastructure Team", email = "infra@example.com" }]
+license = { text = "MIT" }
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.1.0",
+    "python-multipart>=0.0.6",
+    "python-jose[cryptography]>=3.3.0",
+    "passlib[bcrypt]>=1.7.4",
+    "pyjwt>=2.8.0",
+    "sqlalchemy>=2.0.23",
+    "alembic>=1.12.0",
+    "aiosqlite>=0.19.0",
+    "asyncpg>=0.29.0",
+    "redis>=5.0.0",
+    "whoosh>=2.7.4",
+    "jinja2>=3.1.2",
+    "click>=8.1.7",
+    "rich>=13.7.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.25.0",
+    "requests>=2.31.0",
+    "pyyaml>=6.0.1",
+    "toml>=0.10.2",
+    "graphql-core>=3.2.3",
+    "openapi-schema-validator>=0.6.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "pytest-cov>=4.1.0",
+    "pytest-xdist>=3.5.0",
+    "pytest-mock>=3.12.0",
+    "httpx>=0.25.0",
+]
+lint = [
+    "ruff>=0.1.0",
+    "mypy>=1.7.0",
+    "bandit>=1.7.5",
+    "safety>=2.3.5",
+    "pre-commit>=3.6.0",
+]
+docs = [
+    "mkdocs>=1.5.3",
+    "mkdocs-material>=9.4.0",
+]
+all = [
+    "infra-platform[dev,lint,docs]",
+]
+
+[project.scripts]
+scaffold = "src.scaffold.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+asyncio_mode = "auto"
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = false
+fail_under = 80
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "pass",
+    "logger.debug",
+    "logger.info",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "S",      # flake8-bandit
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins
+    "C4",     # flake8-comprehensions
+    "DTZ",    # flake8-datetimez
+    "EM",     # flake8-errmsg
+    "FBT",    # flake8-boolean-trap
+    "G",      # flake8-logging-format
+    "ISC",    # flake8-implicit-str-concat
+    "ICN",    # flake8-import-conventions
+    "PIE",    # flake8-pie
+    "PT",     # flake8-pytest-style
+    "Q",      # flake8-quotes
+    "RSE",    # flake8-raise
+    "RET",    # flake8-return
+    "SIM",    # flake8-simplify
+    "T10",    # flake8-debugger
+    "T20",    # flake8-print
+    "TID",    # flake8-tidy-imports
+    "TCH",    # flake8-type-checking
+    "TRY",    # tryceratops
+    "UP",     # pyupgrade
+    "W",      # pycodestyle warnings
+    "YTT",    # flake8-2020
+]
+
+ignore = [
+    "E501",    # Line too long (handled by formatter)
+    "S101",    # Use of assert detected
+    "T201",    # Print statements (allowed in CLI)
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+known-third-party = ["fastapi", "uvicorn", "pydantic", "sqlalchemy"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "T201", "E501"]
+"*/cli.py" = ["T201", "T202"]
+"main.py" = ["T201"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "lf"
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_return_any = true
+warn_unused_configs = true
+disallow_subclassing_any = true
+disallow_untyped_calls = false
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = true
+no_implicit_optional = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+warn_unreachable = true
+show_error_codes = true
+show_error_context = true
+color_output = true
+
+[[tool.mypy.overrides]]
+module = "src.*"
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = [
+    "fastapi.*",
+    "uvicorn.*",
+    "pydantic.*",
+    "sqlalchemy.*",
+    "whoosh.*",
+    "jinja2.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+[tool.bandit]
+targets = ["src"]
+exclude_dirs = ["tests", "docs", "build", "dist", "*/__pycache__"]
+skips = [
+    "B101",  # assert_used (allowed in tests)
+    "B106",  # hardcoded_password_string (development configs)
+    "B303",  # md5 (not used for security)
+    "B324",  # weak_cryptographic_key (dev environments)
+]
+
+[tool.bandit.assert_used]
+skips = ["tests/*"]
+
+[tool.safety]
+ignore = [
+    # CVE-yyyy-xxxx: Some vulnerability description
+]
+stdin = false
+full-report = true
+output = "screen"

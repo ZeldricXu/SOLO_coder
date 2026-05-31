@@ -1,0 +1,40 @@
+# Ruff configuration
+# See: https://docs.astral.sh/ruff/configuration/
+
+line-length = 120
+target-version = "py310"
+
+[lint]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "I",      # isort
+    "N",      # pep8-naming
+    "UP",     # pyupgrade
+    "S",      # flake8-bandit
+    "B",      # flake8-bugbear
+    "A",      # flake8-builtins
+    "C4",     # flake8-comprehensions
+    "DTZ",    # flake8-datetimez
+    "EM",     # flake8-errmsg
+    "PT",     # flake8-pytest-style
+    "Q",      # flake8-quotes
+    "SIM",    # flake8-simplify
+    "T10",    # flake8-debugger
+    "TRY",    # tryceratops
+    "W",      # pycodestyle warnings
+]
+
+ignore = [
+    "E501",    # Line too long
+    "S101",    # Use of assert detected
+    "T201",    # Print statements
+]
+
+[lint.isort]
+known-first-party = ["src"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
