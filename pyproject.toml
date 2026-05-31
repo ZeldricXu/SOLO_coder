@@ -1,0 +1,65 @@
+[tool.poetry]
+name = "task-orchestrator"
+version = "0.1.0"
+description = "轻量高效的依赖任务编排中间件"
+authors = ["Your Team <team@example.com>"]
+readme = "README.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.109.0"
+uvicorn = {extras = ["standard"], version = "^0.27.0"}
+pydantic = "^2.6.0"
+pydantic-settings = "^2.1.0"
+sqlalchemy = "^2.0.25"
+alembic = "^1.13.1"
+celery = "^5.3.6"
+redis = "^5.0.1"
+python-dotenv = "^1.0.0"
+aiofiles = "^23.2.1"
+httpx = "^0.26.0"
+jinja2 = "^3.1.3"
+tenacity = "^8.2.3"
+boto3 = "^1.34.51"
+minio = "^7.2.5"
+psycopg2-binary = "^2.9.9"
+asyncpg = "^0.29.0"
+pyyaml = "^6.0.1"
+python-dateutil = "^2.8.2"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+pytest-asyncio = "^0.23.5"
+pytest-cov = "^4.1.0"
+pylint = "^3.0.3"
+flake8 = "^7.0.0"
+black = "^24.2.0"
+mypy = "^1.8.0"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ['py310']
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+ignore_missing_imports = true
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114",
+    "C0115",
+    "C0116",
+    "W0611",
+    "R0903",
+]
+
+[build-system]
+requires = ["poetry-core>=1.7.0"]
+build-backend = "poetry.core.masonry.api"
