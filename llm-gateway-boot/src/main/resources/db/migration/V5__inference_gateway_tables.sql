@@ -1,0 +1,82 @@
+CREATE TABLE IF NOT EXISTS inference_request (
+    request_id VARCHAR(64) NOT NULL PRIMARY KEY COMMENT '请求ID',
+    model_id VARCHAR(64) COMMENT '模型ID',
+    endpoint_id VARCHAR(64) COMMENT '端点ID',
+    provider VARCHAR(64) COMMENT '提供商',
+    prompt TEXT COMMENT '输入Prompt',
+    max_tokens INT DEFAULT 1024 COMMENT '最大Token数',
+    temperature DECIMAL(3,2) DEFAULT 0.7 COMMENT '温度',
+    top_p DECIMAL(3,2) DEFAULT 0.9 COMMENT 'Top P',
+    status VARCHAR(32) DEFAULT 'pending' COMMENT '状态',
+    response_text LONGTEXT COMMENT '响应文本',
+    prompt_tokens INT DEFAULT 0 COMMENT '输入Token数',
+    completion_tokens INT DEFAULT 0 COMMENT '输出Token数',
+    total_tokens INT DEFAULT 0 COMMENT '总Token数',
+    latency_ms BIGINT DEFAULT 0 COMMENT '延迟(毫秒)',
+    error_code VARCHAR(64) COMMENT '错误码',
+    error_message TEXT COMMENT '错误信息',
+    fallback_used TINYINT DEFAULT 0 COMMENT '是否使用降级',
+    fallback_reason VARCHAR(255) COMMENT '降级原因',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    completed_at DATETIME COMMENT '完成时间',
+    INDEX idx_model_id (model_id),
+    INDEX idx_status (status),
+    INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='推理请求表';
+
+CREATE TABLE IF NOT EXISTS provider_config (
+    provider_id VARCHAR(64) NOT NULL PRIMARY KEY COMMENT '提供商ID',
+    provider_name VARCHAR(64) NOT NULL COMMENT '提供商名称',
+    base_url VARCHAR(255) NOT NULL COMMENT '基础URL',
+    api_key VARCHAR(255) COMMENT 'API密钥',
+    api_type VARCHAR(32) DEFAULT 'rest' COMMENT 'API类型',
+    timeout INT DEFAULT 30 COMMENT '超时时间(秒)',
+    max_retries INT DEFAULT 3 COMMENT '最大重试次数',
+    rate_limit INT DEFAULT 100 COMMENT '限流QPS',
+    enabled TINYINT DEFAULT 1 COMMENT '是否启用',
+    priority INT DEFAULT 0 COMMENT '优先级',
+    load_balancer VARCHAR(32) DEFAULT 'round_robin' COMMENT '负载均衡策略',
+    circuit_breaker_enabled TINYINT DEFAULT 1 COMMENT '是否启用熔断',
+    failure_threshold INT DEFAULT 50 COMMENT '失败阈值(%)',
+    fallback_enabled TINYINT DEFAULT 1 COMMENT '是否启用降级',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT DEFAULT 0 COMMENT '逻辑删除标记',
+    UNIQUE KEY uk_provider_name (provider_name, deleted),
+    INDEX idx_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提供商配置表';
+
+CREATE TABLE IF NOT EXISTS provider_health (
+    health_id VARCHAR(64) NOT NULL PRIMARY KEY COMMENT '健康ID',
+    provider_id VARCHAR(64) NOT NULL COMMENT '提供商ID',
+    status VARCHAR(32) DEFAULT 'healthy' COMMENT '状态',
+    success_rate DECIMAL(5,2) DEFAULT 100.00 COMMENT '成功率',
+    avg_latency_ms BIGINT DEFAULT 0 COMMENT '平均延迟',
+    error_count BIGINT DEFAULT 0 COMMENT '错误数',
+    total_requests BIGINT DEFAULT 0 COMMENT '总请求数',
+    last_check_at DATETIME COMMENT '最后检查时间',
+    circuit_open TINYINT DEFAULT 0 COMMENT '是否熔断',
+    circuit_opened_at DATETIME COMMENT '熔断时间',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    INDEX idx_provider_id (provider_id),
+    INDEX idx_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='提供商健康状态表';
+
+CREATE TABLE IF NOT EXISTS route_rule (
+    rule_id VARCHAR(64) NOT NULL PRIMARY KEY COMMENT '规则ID',
+    rule_name VARCHAR(128) NOT NULL COMMENT '规则名称',
+    match_pattern VARCHAR(255) COMMENT '匹配模式',
+    match_type VARCHAR(32) DEFAULT 'prefix' COMMENT '匹配类型',
+    priority INT DEFAULT 0 COMMENT '优先级',
+    target_provider VARCHAR(64) COMMENT '目标提供商',
+    target_model VARCHAR(64) COMMENT '目标模型',
+    fallback_provider VARCHAR(64) COMMENT '降级提供商',
+    rate_limit INT COMMENT '限流QPS',
+    enabled TINYINT DEFAULT 1 COMMENT '是否启用',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT DEFAULT 0 COMMENT '逻辑删除标记',
+    INDEX idx_priority (priority),
+    INDEX idx_enabled (enabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='路由规则表';
