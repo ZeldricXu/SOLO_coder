@@ -1,0 +1,45 @@
+{
+  "name": "ai-evaluation-platform",
+  "version": "1.0.0",
+  "description": "企业级AI模型评估与自动化引擎平台",
+  "main": "dist/server.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "ts-node src/server.ts",
+    "watch": "tsc --watch",
+    "lint": "tsc --noEmit"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "zod": "^3.22.4",
+    "ioredis": "^5.3.2",
+    "node-cache": "^5.1.2",
+    "uuid": "^9.0.1",
+    "jsonwebtoken": "^9.0.2",
+    "bcryptjs": "^2.4.3",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "compression": "^1.7.4",
+    "node-cron": "^3.0.3",
+    "winston": "^3.11.0",
+    "axios": "^1.6.5",
+    "cheerio": "^1.0.0-rc.12",
+    "marked": "^11.1.1",
+    "pdf-parse": "^1.1.1",
+    "mammoth": "^1.6.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.10.6",
+    "@types/uuid": "^9.0.7",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cors": "^2.8.17",
+    "@types/compression": "^1.7.5",
+    "@types/node-cron": "^3.0.11",
+    "@types/pdf-parse": "^1.1.4",
+    "typescript": "^5.3.3",
+    "ts-node": "^10.9.2"
+  }
+}
