@@ -1,0 +1,15 @@
+target/
+.idea/
+*.iml
+*.iws
+*.ipr
+.mvn/
+.mvnw
+.mvnw.cmd
+*.log
+logs/
+*.jar
+*.class
+.DS_Store
+.env
+docker-compose.override.yml

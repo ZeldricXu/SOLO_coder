@@ -1,0 +1,135 @@
+stages:
+  - build
+  - test
+  - code-quality
+  - package
+  - docker-build
+  - deploy
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dorg.slf4j.simpleLogger.showDateTime=true -Dorg.slf4j.simpleLogger.dateTimeFormat=HH:mm:ss,SSS"
+  MAVEN_CLI_OPTS: "-B -DskipTests=false --show-version"
+  DOCKER_IMAGE: "$CI_REGISTRY_IMAGE:$CI_COMMIT_REF_SLUG"
+  DOCKER_IMAGE_LATEST: "$CI_REGISTRY_IMAGE:latest"
+
+.cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .m2/repository
+    - target/
+  policy: pull-push
+
+build:
+  stage: build
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - mvn $MAVEN_CLI_OPTS clean compile -Pdev
+  cache: !reference [.cache]
+  artifacts:
+    paths:
+      - "**/target"
+    expire_in: 1 hour
+
+test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - mvn $MAVEN_CLI_OPTS test -Pdev
+  cache: !reference [.cache]
+  artifacts:
+    reports:
+      junit:
+        - "**/target/surefire-reports/TEST-*.xml"
+    paths:
+      - "**/target/site/jacoco/"
+    expire_in: 1 day
+
+code-quality:
+  stage: code-quality
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - mvn $MAVEN_CLI_OPTS checkstyle:check pmd:check spotbugs:check -Pcode-quality
+  cache: !reference [.cache]
+  artifacts:
+    paths:
+      - "**/target/checkstyle-result.xml"
+      - "**/target/pmd.xml"
+      - "**/target/spotbugsXml.xml"
+    expire_in: 1 day
+  allow_failure: true
+
+package:
+  stage: package
+  image: maven:3.9-eclipse-temurin-17
+  script:
+    - |
+      if [ "$CI_COMMIT_BRANCH" == "main" ]; then
+        mvn $MAVEN_CLI_OPTS clean package -Pprod -DskipTests -pl smartflow-boot -am
+      elif [ "$CI_COMMIT_BRANCH" == "develop" ]; then
+        mvn $MAVEN_CLI_OPTS clean package -Pstaging -DskipTests -pl smartflow-boot -am
+      else
+        mvn $MAVEN_CLI_OPTS clean package -Pdev -DskipTests -pl smartflow-boot -am
+      fi
+  cache: !reference [.cache]
+  artifacts:
+    paths:
+      - smartflow-boot/target/smartflow-boot-*.jar
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+    - tags
+
+docker-build:
+  stage: docker-build
+  image: docker:24
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  script:
+    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" $CI_REGISTRY
+    - docker build -t $DOCKER_IMAGE .
+    - docker tag $DOCKER_IMAGE $DOCKER_IMAGE_LATEST
+    - docker push $DOCKER_IMAGE
+    - docker push $DOCKER_IMAGE_LATEST
+  only:
+    - main
+    - develop
+
+deploy-staging:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan $STAGING_SERVER >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    - ssh $STAGING_USER@$STAGING_SERVER "cd /opt/smartflow && docker-compose pull app && docker-compose up -d app"
+  environment:
+    name: staging
+    url: $STAGING_URL
+  only:
+    - develop
+
+deploy-production:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - apk add --no-cache openssh-client
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan $PROD_SERVER >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    - ssh $PROD_USER@$PROD_SERVER "cd /opt/smartflow && docker-compose pull app && docker-compose up -d app"
+  environment:
+    name: production
+    url: $PROD_URL
+  only:
+    - main
+  when: manual

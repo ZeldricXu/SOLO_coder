@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.smartflow</groupId>
+        <artifactId>smartflow-parent</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>smartflow-approval-engine</artifactId>
+    <name>smartflow-approval-engine</name>
+    <description>审批规则引擎模块 - 条件分支、会签/或签、动态审批人</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.smartflow</groupId>
+            <artifactId>smartflow-common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.smartflow</groupId>
+            <artifactId>smartflow-persistence</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+        </dependency>
+    </dependencies>
+</project>

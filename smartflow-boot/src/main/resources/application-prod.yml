@@ -1,0 +1,118 @@
+server:
+  port: 8080
+  shutdown: graceful
+  netty:
+    idle-timeout: 120s
+
+spring:
+  application:
+    name: smartflow
+  profiles:
+    active: prod
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:prod-db}:3306/smartflow_prod?useUnicode=true&characterEncoding=utf-8&useSSL=true&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:admin}
+    password: ${DB_PASSWORD}
+    hikari:
+      minimum-idle: 20
+      maximum-pool-size: 100
+      idle-timeout: 60000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      connection-init-sql: SELECT 1
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    locations: classpath:db/migration
+    encoding: UTF-8
+    validate-on-migrate: true
+  data:
+    redis:
+      host: ${REDIS_HOST:prod-redis}
+      port: 6379
+      password: ${REDIS_PASSWORD}
+      database: 0
+      timeout: 3000ms
+      ssl: true
+      lettuce:
+        pool:
+          min-idle: 20
+          max-idle: 50
+          max-active: 200
+          max-wait: 3000ms
+        shutdown-timeout: 200ms
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+    serialization:
+      write-dates-as-timestamps: false
+      fail-on-empty-beans: false
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  type-aliases-package: com.smartflow.persistence.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
+    cache-enabled: true
+    local-cache-scope: statement
+  global-config:
+    db-config:
+      id-type: assign_id
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+        step: 30s
+    tags:
+      application: ${spring.application.name}
+      environment: ${env}
+    web:
+      server:
+        request:
+          autotime:
+            enabled: true
+
+logging:
+  level:
+    root: ERROR
+    com.smartflow: WARN
+    org.springframework: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+  file:
+    name: logs/smartflow-prod.log
+    max-size: 500MB
+    max-history: 90
+    total-size-cap: 50GB
+  logback:
+    rollingpolicy:
+      max-file-size: 500MB
+      max-history: 90
+      total-size-cap: 50GB
+
+sla:
+  monitor:
+    check-interval: 15000
+    enabled: true
+
+tenant:
+  isolation:
+    enabled: true
