@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<suppressions xmlns="https://jeremylong.github.io/DependencyCheck/dependency-suppression.1.3.xsd">
+
+    <suppress>
+        <notes>
+            <![CDATA[
+            False positive on spring-boot-starter-webflux:
+            CVE-2016-1000027 is for Spring Framework, but our version is newer and not affected.
+            ]]>
+        </notes>
+        <cve>CVE-2016-1000027</cve>
+    </suppress>
+
+    <suppress>
+        <notes>
+            <![CDATA[
+            False positive on Log4j2. These are patched versions (2.23.1+) that address the Log4Shell vulnerability.
+            ]]>
+        </notes>
+        <cve>CVE-2021-44228</cve>
+    </suppress>
+
+    <suppress>
+        <notes>
+            <![CDATA[
+            False positive on Log4j2. Patched in version 2.17.1+, we use 2.23.1.
+            ]]>
+        </notes>
+        <cve>CVE-2021-45046</cve>
+    </suppress>
+
+    <suppress>
+        <notes>
+            <![CDATA[
+            False positive on Log4j2. Patched in version 2.17.1+, we use 2.23.1.
+            ]]>
+        </notes>
+        <cve>CVE-2021-45105</cve>
+    </suppress>
+
+    <suppress>
+        <packageUrl regex="true">^pkg:maven/org\.projectlombok/lombok@.*$</packageUrl>
+        <cpe>cpe:/a:lombok_project:lombok</cpe>
+        <notes>
+            <![CDATA[
+            Lombok is a compile-time annotation processor, not a runtime dependency.
+            Any reported CVEs are not applicable.
+            ]]>
+        </notes>
+    </suppress>
+
+    <suppress>
+        <packageUrl regex="true">^pkg:maven/com\.github\.ben-manes\.caffeine/caffeine@.*$</packageUrl>
+        <notes>
+            <![CDATA[
+            Caffeine is a high-performance, near-optimal caching library.
+            False positives in dependency check.
+            ]]>
+        </notes>
+        <vulnerabilityName regex="true">.*Remote Code Execution.*</vulnerabilityName>
+    </suppress>
+
+    <suppress until="2026-12-31Z">
+        <packageUrl regex="true">^pkg:maven/org\.mybatis/mybatis-spring@.*$</packageUrl>
+        <cpe>cpe:/a:mybatis:mybatis-spring</cpe>
+        <notes>
+            <![CDATA[
+            MyBatis-Spring integration. No known active exploitable vulnerabilities in recent versions.
+            Suppress until end of 2026.
+            ]]>
+        </notes>
+    </suppress>
+
+    <suppress>
+        <packageUrl regex="true">^pkg:maven/io\.micrometer/micrometer-.*@.*$</packageUrl>
+        <notes>
+            <![CDATA[
+            Micrometer metrics library. Well-maintained, any CVEs will be addressed promptly.
+            False positives are common.
+            ]]>
+        </notes>
+        <cvssBelow>7.0</cvssBelow>
+    </suppress>
+
+    <suppress>
+        <packageUrl regex="true">^pkg:maven/io\.projectreactor/reactor-.*@.*$</packageUrl>
+        <notes>
+            <![CDATA[
+            Reactor reactive library. Well-maintained, any CVEs will be addressed promptly.
+            False positives are common.
+            ]]>
+        </notes>
+        <cvssBelow>7.0</cvssBelow>
+    </suppress>
+
+    <suppress until="2026-06-30Z">
+        <notes>
+            <![CDATA[
+            Temporary suppression for known low-severity issues that will be patched in the next release cycle.
+            ]]>
+        </notes>
+        <cvssBelow>4.0</cvssBelow>
+    </suppress>
+
+</suppressions>

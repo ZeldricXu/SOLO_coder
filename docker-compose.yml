@@ -1,0 +1,196 @@
+version: '3.8'
+
+x-common-logging: &common-logging
+  driver: "json-file"
+  options:
+    max-size: "100m"
+    max-file: "3"
+    tag: "{{.Name}}"
+
+x-common-restart: &common-restart
+  restart: unless-stopped
+
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: monitoring-mysql
+    <<: *common-restart
+    logging: *common-logging
+    environment:
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:password}
+      MYSQL_DATABASE: ${DB_NAME:monitoring}
+      MYSQL_USER: ${DB_USER:monitoring}
+      MYSQL_PASSWORD: ${DB_PASSWORD:password}
+      TZ: ${TZ:UTC}
+    ports:
+      - "${DB_PORT:3306}:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./persistence/src/main/resources/db/migration:/docker-entrypoint-initdb.d:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --innodb-buffer-pool-size=512M
+      - --max-connections=200
+      - --slow-query-log=1
+      - --long-query-time=2
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring-network
+
+  redis:
+    image: redis:7.2.4-alpine
+    container_name: monitoring-redis
+    <<: *common-restart
+    logging: *common-logging
+    environment:
+      TZ: ${TZ:UTC}
+    ports:
+      - "${REDIS_PORT:6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - monitoring-network
+
+  prometheus:
+    image: prom/prometheus:v2.51.2
+    container_name: monitoring-prometheus
+    <<: *common-restart
+    logging: *common-logging
+    environment:
+      TZ: ${TZ:UTC}
+    ports:
+      - "${PROM_PORT:9090}:9090"
+    volumes:
+      - prometheus-data:/prometheus
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=15d
+      - --web.console.libraries=/etc/prometheus/console_libraries
+      - --web.console.templates=/etc/prometheus/consoles
+      - --web.enable-lifecycle
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring-network
+    depends_on:
+      - app
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: monitoring-grafana
+    <<: *common-restart
+    logging: *common-logging
+    environment:
+      TZ: ${TZ:UTC}
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    ports:
+      - "${GRAFANA_PORT:3000}:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - monitoring-network
+    depends_on:
+      - prometheus
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: monitoring-app
+    <<: *common-restart
+    logging: *common-logging
+    environment:
+      TZ: ${TZ:UTC}
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:prod}
+      JAVA_OPTS: >-
+        -Xms512m
+        -Xmx1024m
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=200
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/app/logs/
+        -Dfile.encoding=UTF-8
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_NAME: ${DB_NAME:monitoring}
+      DB_USER: ${DB_USER:monitoring}
+      DB_PASSWORD: ${DB_PASSWORD:password}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+    ports:
+      - "${APP_PORT:8080}:8080"
+    volumes:
+      - app-logs:/app/logs
+      - ./bootstrap/src/main/resources/config:/app/config:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - monitoring-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  app-logs:
+    driver: local
+
+networks:
+  monitoring-network:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
