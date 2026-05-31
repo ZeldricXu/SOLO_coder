@@ -1,0 +1,166 @@
+spring:
+  application:
+    name: metric-platform
+  profiles:
+    active: default
+
+  r2dbc:
+    url: r2dbc:mysql://localhost:3306/metric_platform?useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: root
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/metric_platform?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    master:
+      jdbc-url: jdbc:mysql://localhost:3306/metric_platform?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      username: root
+      password: root
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      maximum-pool-size: 32
+      minimum-idle: 8
+      connection-timeout: 30000
+    slave:
+      jdbc-url: jdbc:mysql://localhost:3307/metric_platform?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      username: root
+      password: root
+      driver-class-name: com.mysql.cj.jdbc.Driver
+      maximum-pool-size: 64
+      minimum-idle: 16
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 5s
+      lettuce:
+        pool:
+          max-active: 64
+          max-idle: 32
+          min-idle: 8
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+    baseline-version: 0
+    locations: classpath:db/migration
+    encoding: UTF-8
+
+  freemarker:
+    template-loader-path: classpath:/templates/
+    suffix: .ftl
+    content-type: text/html
+    charset: UTF-8
+
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=10000, expireAfterWrite=10m
+
+  task:
+    scheduling:
+      pool:
+        size: 16
+
+server:
+  port: 8080
+  netty:
+    connection-timeout: 30s
+    idle-timeout: 60s
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers
+  endpoint:
+    health:
+      show-details: always
+    loggers:
+      enabled: true
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.metricplatform.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl
+  global-config:
+    db-config:
+      id-type: assign_uuid
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+logging:
+  level:
+    root: INFO
+    com.metricplatform: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+datasource:
+  routing:
+    enabled: true
+
+plugin:
+  sql-performance:
+    enabled: true
+    slow-sql-threshold: 1000
+  data-encryption:
+    enabled: true
+    algorithm: AES
+  data-desensitization:
+    enabled: true
+  audit-log:
+    enabled: true
+    max-history: 10000
+
+gateway:
+  event:
+    notification-enabled: true
+    notification-throttle-ms: 60000
+    notification-channels:
+      - webhook
+      - email
+    notification-receivers:
+      - admin@metricplatform.com
+      - ops@metricplatform.com
+
+metric-platform:
+  jwt:
+    secret: metric-platform-secret-key-2026-ultra-secure-key-for-jwt-signing
+    expiration: 86400000
+  rate-limit:
+    default-capacity: 100
+    default-refill-tokens: 10
+    default-refill-duration: 1s
+  lifecycle:
+    hot-data-days: 7
+    warm-data-days: 30
+    cold-data-days: 90
+    archive-enabled: true
+    cleanup-enabled: true
+  schedule:
+    thread-pool-size: 32
+    task-timeout: 3600000
+  cdc:
+    enabled: false
+    offset-storage: file
+    offset-file-path: ./data/cdc/offsets.dat
+    history-file-path: ./data/cdc/dbhistory.dat
+  vector:
+    index-path: ./data/vector/index
+    embedding-dimension: 1536
+    index-type: hnsw
