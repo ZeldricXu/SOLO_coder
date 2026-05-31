@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+coverage/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+prisma/migrations/**/migration_lock.toml
