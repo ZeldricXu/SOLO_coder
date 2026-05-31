@@ -1,0 +1,22 @@
+{
+  "name": "llmgateway-tests",
+  "version": "1.0.0",
+  "description": "自动化测试套件 - LLMGateway大语言模型推理网关",
+  "scripts": {
+    "test": "jest --config jest.config.js",
+    "test:watch": "jest --watch --config jest.config.js",
+    "test:coverage": "jest --coverage --config jest.config.js",
+    "test:adversarial": "jest tests/adversarial.test.js --config jest.config.js",
+    "test:feature-store": "jest tests/feature-store.test.js --config jest.config.js",
+    "test:prompt": "jest tests/prompt-experiments.test.js --config jest.config.js"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3",
+    "@types/jest": "^29.5.8",
+    "jest-html-reporter": "^3.10.2"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
