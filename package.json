@@ -1,0 +1,31 @@
+{
+  "name": "depguard-api-tests",
+  "version": "1.0.0",
+  "description": "DepGuard API Integration Tests",
+  "scripts": {
+    "test": "jest --runInBand",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:scaffold": "jest tests/scaffold --runInBand",
+    "test:apicontract": "jest tests/apicontract --runInBand"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "@types/jest": "^29.5.12",
+    "axios": "^1.6.8"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testTimeout": 30000,
+    "setupFilesAfterEnv": [
+      "./tests/setup.js"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "collectCoverageFrom": [
+      "tests/**/*.js"
+    ]
+  }
+}
