@@ -1,0 +1,45 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: prod
+      args:
+        VERSION: "0.0.1-dev"
+        GIT_COMMIT: "local"
+        BUILD_TIME: "local"
+    container_name: session287-app
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Shanghai
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "/bin/session287", "--healthcheck"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+  app-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: dev
+    container_name: session287-dev
+    profiles: ["dev"]
+    ports:
+      - "8080:8080"
+      - "2345:2345"
+    volumes:
+      - .:/src
+    environment:
+      - TZ=Asia/Shanghai

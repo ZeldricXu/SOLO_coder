@@ -1,0 +1,17 @@
+bin/
+.coverage/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+vendor/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
