@@ -1,0 +1,73 @@
+version: '3.8'
+
+services:
+  middleware:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: production
+    container_name: enterprise-middleware
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - LOG_LEVEL=info
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http = require('http'); const options = {hostname: 'localhost', port: 3000, path: '/api/v1/metrics', method: 'GET', timeout: 2000}; const req = http.request(options, (res) => {process.exit(res.statusCode === 200 ? 0 : 1)}); req.on('error', () => process.exit(1)); req.end();"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - middleware-network
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 256M
+
+  redis:
+    image: redis:7-alpine
+    container_name: middleware-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - middleware-network
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-secret}
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  dns-server:
+    image: coredns/coredns:1.11
+    container_name: middleware-dns
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+    volumes:
+      - ./dns-config:/etc/coredns
+    networks:
+      - middleware-network
+    command: -conf /etc/coredns/Corefile
+
+volumes:
+  redis-data:
+  logs:
+
+networks:
+  middleware-network:
+    driver: bridge

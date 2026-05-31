@@ -1,0 +1,85 @@
+{
+  "name": "enterprise-middleware",
+  "version": "1.0.0",
+  "description": "Enterprise-grade middleware for request routing and protocol conversion",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "scripts": {
+    "clean": "rimraf dist coverage",
+    "build": "tsc",
+    "build:dev": "tsc --sourceMap --declarationMap",
+    "build:staging": "tsc --sourceMap",
+    "build:prod": "tsc",
+    "start": "node dist/index.js",
+    "start:dev": "cross-env NODE_ENV=development ts-node-dev --respawn --transpile-only src/index.ts",
+    "start:staging": "cross-env NODE_ENV=staging node dist/index.js",
+    "start:prod": "cross-env NODE_ENV=production node dist/index.js",
+    "dev": "npm run start:dev",
+    "watch": "tsc --watch",
+    "lint": "eslint \"src/**/*.ts\"",
+    "lint:fix": "eslint \"src/**/*.ts\" --fix",
+    "format": "prettier --write \"src/**/*.{ts,json}\"",
+    "format:check": "prettier --check \"src/**/*.{ts,json}\"",
+    "typecheck": "tsc --noEmit",
+    "test": "jest --passWithNoTests",
+    "test:watch": "jest --watch",
+    "test:cov": "jest --coverage",
+    "precommit": "lint-staged",
+    "quality": "npm run lint && npm run typecheck && npm run test",
+    "prebuild": "npm run clean",
+    "postbuild": "echo \"Build completed successfully!\""
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "fastify": "^4.25.0",
+    "ioredis": "^5.3.2",
+    "node-cache": "^5.1.2",
+    "zod": "^3.22.4",
+    "winston": "^3.11.0",
+    "pino": "^8.17.0",
+    "uuid": "^9.0.1",
+    "axios": "^1.6.2",
+    "tar": "^6.2.0",
+    "fs-extra": "^11.2.0",
+    "mime-types": "^2.1.35",
+    "dotenv": "^16.3.1",
+    "cross-env": "^7.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/express": "^4.17.21",
+    "@types/uuid": "^9.0.7",
+    "@types/fs-extra": "^11.0.4",
+    "@types/jest": "^29.5.10",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-node": "^11.1.0",
+    "prettier": "^3.1.0",
+    "typescript": "^5.3.0",
+    "ts-node": "^10.9.1",
+    "ts-node-dev": "^2.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.1",
+    "rimraf": "^5.0.5",
+    "lint-staged": "^15.1.0",
+    "husky": "^8.0.3"
+  },
+  "lint-staged": {
+    "src/**/*.ts": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "src/**/*.{json,md}": [
+      "prettier --write"
+    ]
+  }
+}
