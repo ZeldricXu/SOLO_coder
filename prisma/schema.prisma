@@ -1,0 +1,234 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Resource {
+  id         String   @id @default(cuid())
+  type       String
+  status     String   @default("pending")
+  attributes Json
+  config     Json?
+  labels     Json?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  runs       Run[]
+  events     Event[]
+}
+
+model Config {
+  id          String   @id @default(cuid())
+  configId    String   @unique
+  namespace   String
+  version     Int
+  parameters  Json
+  enabled     Boolean  @default(true)
+  appliedAt   DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Run {
+  id           String   @id @default(cuid())
+  runId        String   @unique
+  entityId     String
+  phase        String   @default("initializing")
+  progress     Float    @default(0)
+  startedAt    DateTime @default(now())
+  completedAt  DateTime?
+  errorDetail  String?
+  resource     Resource @relation(fields: [resourceId], references: [id])
+  resourceId   String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Snapshot {
+  id         String   @id @default(cuid())
+  snapshotId String   @unique
+  timestamp  DateTime @default(now())
+  metrics    Json
+  dimensions Json
+  createdAt  DateTime @default(now())
+}
+
+model Command {
+  id            String   @id @default(cuid())
+  commandId     String   @unique
+  commandType   String
+  aggregateId   String
+  payload       Json
+  metadata      Json
+  actorId       String?
+  timestamp     DateTime @default(now())
+  auditLog      AuditLog?
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  logId      String   @unique
+  action     String
+  actorId    String
+  resourceId String?
+  details    Json
+  commandId  String?  @unique
+  command    Command? @relation(fields: [commandId], references: [id])
+  timestamp  DateTime @default(now())
+}
+
+model Event {
+  id           String   @id @default(cuid())
+  eventId      String   @unique
+  eventType    String
+  aggregateId  String
+  version      Int
+  payload      Json
+  metadata     Json
+  timestamp    DateTime @default(now())
+  resource     Resource @relation(fields: [resourceId], references: [id])
+  resourceId   String
+}
+
+model ChaosScenario {
+  id            String   @id @default(cuid())
+  scenarioId    String   @unique
+  name          String
+  description   String?
+  faultType     String
+  targetScope   Json
+  parameters    Json
+  autoRollback  Boolean  @default(true)
+  rollbackConfig Json?
+  status        String   @default("draft")
+  createdBy     String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model ChaosInjection {
+  id           String   @id @default(cuid())
+  injectionId  String   @unique
+  scenarioId   String
+  targetIds    String[]
+  status       String   @default("pending")
+  startedAt    DateTime?
+  endedAt      DateTime?
+  rollbackAt   DateTime?
+  errorDetail  String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TrafficPolicy {
+  id          String   @id @default(cuid())
+  policyId    String   @unique
+  name        String
+  policyType  String
+  namespace   String
+  rules       Json
+  targets     Json
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model DnsUpstream {
+  id         String   @id @default(cuid())
+  upstreamId String   @unique
+  name       String
+  addresses  String[]
+  priority   Int      @default(0)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model DnsCache {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  records   Json
+  ttl       Int
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+}
+
+model Certificate {
+  id             String   @id @default(cuid())
+  certId         String   @unique
+  commonName     String
+  sanNames       String[]
+  certificate    String
+  privateKey     String
+  issuer         String
+  serialNumber   String
+  notBefore      DateTime
+  notAfter       DateTime
+  rotationPolicy String   @default("auto")
+  status         String   @default("active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model CertificateRevocation {
+  id             String   @id @default(cuid())
+  revocationId   String   @unique
+  serialNumber   String
+  reason         String
+  revokedAt      DateTime @default(now())
+  createdAt      DateTime @default(now())
+}
+
+model ImageLayer {
+  id          String   @id @default(cuid())
+  layerId     String   @unique
+  digest      String
+  size        Int
+  contentUrl  String
+  registry    String
+  repository  String
+  createdAt   DateTime @default(now())
+}
+
+model ImageSyncTask {
+  id             String   @id @default(cuid())
+  taskId         String   @unique
+  sourceRegistry String
+  targetRegistry String
+  repository     String
+  tag            String
+  status         String   @default("pending")
+  progress       Float    @default(0)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  errorDetail    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}
+
+model SidecarTemplate {
+  id          String   @id @default(cuid())
+  templateId  String   @unique
+  name        String
+  image       String
+  args        Json
+  resources   Json
+  volumeMounts Json?
+  config      Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SidecarInjection {
+  id             String   @id @default(cuid())
+  injectionId    String   @unique
+  templateId     String
+  targetSelector Json
+  injectionPolicy String  @default("always")
+  enabled        Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+}

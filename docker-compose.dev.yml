@@ -1,0 +1,39 @@
+version: '3.9'
+
+services:
+  postgres:
+    extends:
+      file: docker-compose.yml
+      service: postgres
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data/pgdata
+
+  redis:
+    extends:
+      file: docker-compose.yml
+      service: redis
+    volumes:
+      - redis_dev_data:/data
+
+  chaoslab:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: chaoslab-api-dev
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://${DB_USER:-chaoslab}:${DB_PASSWORD:-chaoslab_password}@postgres:5432/${DB_NAME:-chaoslab}?schema=public
+      REDIS_URL: redis://:${REDIS_PASSWORD:-redis_password}@redis:6379/0
+      LOG_LEVEL: debug
+    volumes:
+      - .:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+      - "9229:9229"
+    command: npm run dev
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:

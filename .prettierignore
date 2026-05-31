@@ -1,0 +1,15 @@
+node_modules
+dist
+build
+coverage
+*.min.js
+*.d.ts
+.prisma
+node_modules/
+dist/
+build/
+coverage/
+prisma/migrations/
+k8s/
+.github/
+.husky/

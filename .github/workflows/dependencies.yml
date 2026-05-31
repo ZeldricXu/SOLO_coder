@@ -1,0 +1,83 @@
+name: Dependencies - 自动更新
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-dependencies:
+    name: 更新依赖
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: 配置 Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: 安装 npm-check-updates
+        run: npm install -g npm-check-updates
+
+      - name: 更新 package.json 依赖
+        run: ncu -u
+
+      - name: 安装更新后的依赖
+        run: npm install
+
+      - name: 运行测试
+        run: |
+          npm run prisma:generate
+          npm run typecheck
+          npm run lint
+          npm run test:ci
+
+      - name: 创建 Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.RELEASE_TOKEN }}
+          commit-message: "chore(deps): 更新项目依赖"
+          title: "chore(deps): 自动更新项目依赖"
+          body: |
+            ## 依赖更新
+
+            这是一个自动创建的依赖更新 PR。
+
+            ### 更新内容
+            - 所有 npm 依赖已更新到最新版本
+            - 已通过类型检查、lint 和测试
+
+            ### 注意事项
+            - 请仔细审查变更，确保没有破坏性更新
+            - 如有需要，请手动调整版本号
+            - 合并前请确保所有 CI 检查通过
+          branch: chore/deps-update
+          labels: dependencies, automated pr
+          reviewers: ${{ github.repository_owner }}
+
+  dependabot:
+    name: Dependabot 合并
+    runs-on: ubuntu-latest
+    needs: update-dependencies
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    steps:
+      - name: 自动合并 Dependabot PR
+        uses: ridedott/merge-me-action@v2
+        with:
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_LOGIN: dependabot[bot]

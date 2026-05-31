@@ -1,0 +1,249 @@
+name: CI - 持续集成
+
+on:
+  push:
+    branches: [main, develop, 'feature/**', 'hotfix/**']
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: '20'
+  NPM_CACHE_DIR: ~/.npm
+
+jobs:
+  setup:
+    name: 初始化环境
+    runs-on: ubuntu-latest
+    outputs:
+      node_version: ${{ steps.node_version.outputs.node_version }}
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 输出 Node 版本
+        id: node_version
+        run: echo "node_version=$(node --version)" >> $GITHUB_OUTPUT
+
+  install-deps:
+    name: 安装依赖
+    runs-on: ubuntu-latest
+    needs: setup
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 缓存 node_modules
+        uses: actions/cache@v4
+        id: cache-node-modules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: 安装依赖
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
+        run: npm ci
+
+  lint:
+    name: 代码静态检查
+    runs-on: ubuntu-latest
+    needs: install-deps
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 恢复 node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: ESLint 检查
+        run: npm run lint
+
+      - name: Prettier 格式检查
+        run: npm run format:check
+
+  typecheck:
+    name: TypeScript 类型检查
+    runs-on: ubuntu-latest
+    needs: install-deps
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 恢复 node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: 生成 Prisma Client
+        run: npm run prisma:generate
+
+      - name: 类型检查
+        run: npm run typecheck
+
+  test:
+    name: 单元测试
+    runs-on: ubuntu-latest
+    needs: install-deps
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: chaoslab_test
+          POSTGRES_USER: chaoslab
+          POSTGRES_PASSWORD: chaoslab_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 恢复 node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: 生成 Prisma Client
+        run: npm run prisma:generate
+
+      - name: 运行数据库迁移
+        env:
+          DATABASE_URL: postgresql://chaoslab:chaoslab_test@localhost:5432/chaoslab_test?schema=public
+        run: npm run prisma:migrate:deploy
+
+      - name: 运行测试
+        env:
+          DATABASE_URL: postgresql://chaoslab:chaoslab_test@localhost:5432/chaoslab_test?schema=public
+          REDIS_URL: redis://localhost:6379/0
+          NODE_ENV: test
+        run: npm run test:ci
+
+      - name: 上传覆盖率报告
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  build:
+    name: 生产构建
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test]
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 恢复 node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: 生成 Prisma Client
+        run: npm run prisma:generate
+
+      - name: 构建
+        run: npm run build:production
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  security-audit:
+    name: 安全审计
+    runs-on: ubuntu-latest
+    needs: install-deps
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 恢复 node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+
+      - name: npm 安全审计
+        run: npm run audit
+
+  check-all:
+    name: CI 检查汇总
+    runs-on: ubuntu-latest
+    needs: [lint, typecheck, test, build, security-audit]
+    if: always()
+    steps:
+      - name: 检查所有作业状态
+        uses: re-actors/alls-green@release/v1
+        with:
+          jobs: ${{ toJSON(needs) }}

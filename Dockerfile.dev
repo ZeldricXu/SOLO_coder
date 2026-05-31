@@ -1,0 +1,31 @@
+# ============================================
+# Development Dockerfile
+# ============================================
+FROM node:20-alpine AS development
+
+WORKDIR /app
+
+ENV NODE_ENV=development \
+    NPM_CONFIG_LOGLEVEL=info
+
+RUN apk add --no-cache \
+    curl \
+    openssl \
+    git \
+    bash \
+    && rm -rf /var/cache/apk/*
+
+COPY package*.json ./
+COPY prisma ./prisma/
+
+RUN npm install && \
+    npm run prisma:generate
+
+COPY . .
+
+EXPOSE 3000 9229
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:3000/health || exit 1
+
+CMD ["npm", "run", "dev"]
