@@ -1,0 +1,28 @@
+{
+  "name": "zero-trust-controller-tests",
+  "version": "1.0.0",
+  "description": "零信任网络访问控制器集成测试套件",
+  "private": true,
+  "scripts": {
+    "test": "jest --config jest.config.js",
+    "test:tee": "jest --config jest.config.js --testPathPattern=tee",
+    "test:masking": "jest --config jest.config.js --testPathPattern=masking",
+    "test:federated": "jest --config jest.config.js --testPathPattern=federated",
+    "test:ci": "jest --config jest.config.js --ci --reporters=default --reporters=jest-junit",
+    "lint": "eslint . --ext .js"
+  },
+  "dependencies": {
+    "supertest": "^6.3.4",
+    "axios": "^1.6.7",
+    "uuid": "^9.0.1",
+    "chance": "^1.1.11"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-junit": "^16.0.0",
+    "eslint": "^8.57.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

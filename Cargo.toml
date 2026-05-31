@@ -1,0 +1,63 @@
+[package]
+name = "zero-trust-controller"
+version = "0.1.0"
+edition = "2021"
+description = "零信任网络访问控制器 - Zero Trust Network Access Controller"
+authors = ["Zero Trust Team"]
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = "3.6"
+chrono = { version = "0.4", features = ["serde", "utc"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+sha2 = "0.10"
+hmac = "0.12"
+rand = "0.8"
+rand_chacha = "0.3"
+rsa = { version = "0.9", features = ["sha2"] }
+aes-gcm = "0.10"
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.23"
+opentelemetry = { version = "0.22", features = ["trace"] }
+opentelemetry-otlp = "0.15"
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json"] }
+redis = { version = "0.24", features = ["aio", "tokio-comp", "connection-manager"] }
+bb8 = "0.8"
+bb8-redis = "0.14"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+base64 = "0.21"
+hex = "0.4"
+num-bigint = "0.4"
+num-traits = "0.2"
+password-hash = "0.5"
+argon2 = "0.5"
+percent-encoding = "2.3"
+futures = "0.3"
+parking_lot = "0.12"
+dashmap = "5.5"
+once_cell = "1.19"
+regex = "1.10"
+lazy_static = "1.4"
+num_cpus = "1.16"
+tower-http = { version = "0.5", features = ["cors"] }
+lru = "0.12"
+prometheus = "0.13"
+metrics = "0.21"
+metrics-exporter-prometheus = "0.12"
+tokio-util = { version = "0.7", features = ["rt"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+proptest = "1.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
