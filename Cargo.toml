@@ -1,0 +1,43 @@
+[package]
+name = "modelguard"
+version = "0.1.0"
+edition = "2021"
+description = "ModelGuard - 模型安全对齐评估平台"
+
+[dependencies]
+axum = "0.7"
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "macros", "chrono"] }
+redis = { version = "0.24", features = ["aio", "tokio-comp"] }
+bb8 = "0.8"
+bb8-redis = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+opentelemetry = "0.22"
+opentelemetry-otlp = "0.15"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+rand = "0.8"
+parking_lot = "0.12"
+dashmap = "6.0"
+async-trait = "0.1"
+futures = "0.3"
+percent-encoding = "2.0"
+http = "1.0"
+http-body-util = "0.1"
+mime = "0.3"
+base64 = "0.22"
+ndarray = "0.15"
+num-traits = "0.2"
+priority-queue = "1.4"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[[bin]]
+name = "modelguard"
+path = "src/main.rs"
