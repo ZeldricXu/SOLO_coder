@@ -1,0 +1,113 @@
+# Build artifacts
+bin/
+obj/
+out/
+build/
+dist/
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.app
+
+# Go related
+vendor/
+go.work
+go.work.sum
+
+# Version control
+.git/
+.gitignore
+.gitattributes
+.github/
+*.git
+.svn
+.hg
+CVS
+
+# IDE and editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.project
+.classpath
+.settings/
+.vs/
+*.iml
+*.ipr
+*.iws
+
+# Environment files
+.env
+.env.local
+.env.*.local
+.env.development
+.env.testing
+.env.staging
+.env.production
+
+# Logs and data
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+data/
+*.sqlite
+*.db
+*.db-journal
+
+# Test coverage
+coverage/
+*.cover
+*.coverage
+coverage.out
+coverage.html
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.cache
+*.crdownload
+
+# Node and frontend (if any)
+node_modules/
+frontend/node_modules/
+npm-debug.log*
+yarn.lock
+package-lock.json
+dist/
+build/
+
+# OS specific
+.DS_Store
+AppleDouble
+LSOverride
+Icon?
+
+# Docker
+docker-compose.override.yml
+docker-compose.dev.yml
+docker-compose.local.yml
+
+# CI/CD
+.travis.yml
+.circleci/
+.gitlab-ci.yml
+.coveralls.yml
+
+# Documentation (optional)
+# docs/
+# README.md
+
+# Kubernetes
+k8s/overlays/
+*.yaml.tpl

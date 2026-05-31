@@ -1,0 +1,90 @@
+{
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0",
+    "mode": "test",
+    "read_timeout": 30,
+    "write_timeout": 30,
+    "tls_enabled": false,
+    "tls_cert": "",
+    "tls_key": ""
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "postgres",
+    "dbname": "streamsql_test",
+    "sslmode": "disable",
+    "max_open_conn": 20,
+    "max_idle_conn": 10,
+    "conn_max_lifetime": 300,
+    "timezone": "Asia/Shanghai"
+  },
+  "redis": {
+    "addr": "localhost:6379",
+    "password": "",
+    "db": 1,
+    "pool_size": 20,
+    "min_idle_conn": 5,
+    "dial_timeout": 5,
+    "read_timeout": 3,
+    "write_timeout": 3
+  },
+  "log": {
+    "level": "info",
+    "format": "json",
+    "output": "stdout",
+    "file": "logs/streamsql_test.log",
+    "max_size": 50,
+    "max_backups": 5,
+    "max_age": 7,
+    "compress": false
+  },
+  "modules": {
+    "compression": {
+      "default_algorithm": "gorilla",
+      "default_block_size": 1024,
+      "multi_res_enabled": true
+    },
+    "quality": {
+      "check_interval": "*/10 * * * *",
+      "max_retry": 2,
+      "anomaly_retention_days": 7
+    },
+    "lifecycle": {
+      "hot_threshold_days": 7,
+      "warm_threshold_days": 30,
+      "archive_path": "./test_data/archive",
+      "cleanup_cron": "0 3 * * *",
+      "auto_archive": false,
+      "auto_delete": false
+    },
+    "cdc": {
+      "buffer_size": 5000,
+      "output_format": "json",
+      "recovery_enable": false,
+      "recovery_path": "./test_data/cdc_recovery",
+      "batch_size": 50
+    },
+    "vector_index": {
+      "default_dimension": 1536,
+      "default_metric": "cosine",
+      "index_path": "./test_data/vector_indexes",
+      "build_worker_num": 2,
+      "search_ef": 64
+    },
+    "crawler": {
+      "scan_interval": "0 */12 * * *",
+      "sample_size": 50,
+      "timeout": 30,
+      "parallelism": 2
+    },
+    "auth": {
+      "enabled": true,
+      "jwt_secret": "test-secret-key-12345",
+      "jwt_expiry_hours": 12,
+      "api_keys_enabled": true
+    }
+  }
+}

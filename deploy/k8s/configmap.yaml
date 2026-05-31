@@ -1,0 +1,51 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: streamsql-config
+  namespace: streamsql
+  labels:
+    app: streamsql
+data:
+  # 数据库配置
+  db.host: "postgres-postgresql.database.svc.cluster.local"
+  db.port: "5432"
+  db.name: "streamsql_prod"
+  db.sslmode: "verify-full"
+
+  # Redis配置
+  redis.addr: "redis-redis-ha.database.svc.cluster.local:6379"
+
+  # 服务器配置
+  server.host: "0.0.0.0"
+  server.port: "8080"
+  server.mode: "release"
+
+  # 日志配置
+  log.level: "info"
+  log.format: "json"
+
+  # 模块配置
+  compression.default_algorithm: "gorilla"
+  compression.default_block_size: "8192"
+
+  quality.check_interval: "*/2 * * * *"
+  quality.max_retry: "3"
+
+  lifecycle.hot_threshold_days: "3"
+  lifecycle.warm_threshold_days: "30"
+  lifecycle.archive_path: "/app/data/archive"
+  lifecycle.cleanup_cron: "0 1 * * *"
+
+  cdc.buffer_size: "100000"
+  cdc.output_format: "protobuf"
+  cdc.batch_size: "1000"
+
+  vector_index.default_dimension: "1536"
+  vector_index.default_metric: "cosine"
+  vector_index.index_path: "/app/data/vector_indexes"
+  vector_index.build_worker_num: "16"
+  vector_index.search_ef: "512"
+
+  crawler.scan_interval: "0 */1 * * *"
+  crawler.sample_size: "5000"
+  crawler.parallelism: "16"

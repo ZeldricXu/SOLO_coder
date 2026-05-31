@@ -1,0 +1,200 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main, develop, feature/* ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  GO_VERSION: '1.21'
+  GOLANGCI_LINT_VERSION: 'v1.55.2'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================
+  # Stage 1: Code Quality Checks
+  # ============================================
+  code-quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Verify Go modules
+        run: |
+          go mod verify
+          go mod tidy
+          git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not in sync"; exit 1)
+
+      - name: Check gofmt
+        run: |
+          gofmt -l -d . | tee gofmt.out
+          if [ -s gofmt.out ]; then
+            echo "Code is not gofmt compliant"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: ${{ env.GOLANGCI_LINT_VERSION }}
+          args: --timeout=10m --config=.golangci.yml
+          skip-cache: false
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+  # ============================================
+  # Stage 2: Unit Tests
+  # ============================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    strategy:
+      matrix:
+        go-version: [ '1.21', '1.22' ]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go ${{ matrix.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+
+      - name: Run unit tests with coverage
+        run: |
+          go test \
+            -v \
+            -race \
+            -coverprofile=coverage.out \
+            -covermode=atomic \
+            -coverpkg=./... \
+            ./...
+
+      - name: Check coverage threshold
+        run: |
+          go tool cover -func=coverage.out -o coverage.txt
+          total=$(grep 'total:' coverage.txt | awk '{print $3}' | sed 's/%//')
+          echo "Total coverage: ${total}%"
+          if (( $(echo "$total < 70" | bc -l) )); then
+            echo "Coverage below 70% threshold!"
+            exit 1
+          fi
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report-${{ matrix.go-version }}
+          path: coverage.*
+          retention-days: 7
+
+  # ============================================
+  # Stage 3: Build
+  # ============================================
+  build:
+    name: Build Application
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    strategy:
+      matrix:
+        os: [ linux, darwin ]
+        arch: [ amd64, arm64 ]
+        exclude:
+          - os: darwin
+            arch: arm64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: 0
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          GIT_COMMIT=${GITHUB_SHA::7}
+          
+          mkdir -p dist/${{ matrix.os }}-${{ matrix.arch }}
+          
+          go build \
+            -ldflags="-s -w \
+              -X main.Version=$VERSION \
+              -X main.BuildTime=$BUILD_TIME \
+              -X main.GitCommit=$GIT_COMMIT" \
+            -o dist/${{ matrix.os }}-${{ matrix.arch }}/streamsql \
+            ./cmd/streamsql/main.go
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: streamsql-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/${{ matrix.os }}-${{ matrix.arch }}/
+          retention-days: 30
+
+  # ============================================
+  # Stage 4: Security Scan
+  # ============================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Run gosec
+        uses: securecodewarrior/gosec-action@v2
+        with:
+          args: '-fmt=json -out=gosec-report.json ./...'
+          fail_on_severity: medium
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report
+          path: gosec-report.json
+          retention-days: 30
+
+      - name: Run Snyk vulnerability scan
+        uses: snyk/actions/golang@master
+        continue-on-error: true
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high

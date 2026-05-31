@@ -1,0 +1,90 @@
+{
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0",
+    "mode": "debug",
+    "read_timeout": 30,
+    "write_timeout": 30,
+    "tls_enabled": false,
+    "tls_cert": "",
+    "tls_key": ""
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "postgres",
+    "dbname": "streamsql_dev",
+    "sslmode": "disable",
+    "max_open_conn": 50,
+    "max_idle_conn": 25,
+    "conn_max_lifetime": 300,
+    "timezone": "Asia/Shanghai"
+  },
+  "redis": {
+    "addr": "localhost:6379",
+    "password": "",
+    "db": 0,
+    "pool_size": 50,
+    "min_idle_conn": 10,
+    "dial_timeout": 5,
+    "read_timeout": 3,
+    "write_timeout": 3
+  },
+  "log": {
+    "level": "debug",
+    "format": "console",
+    "output": "stdout",
+    "file": "logs/streamsql.log",
+    "max_size": 100,
+    "max_backups": 10,
+    "max_age": 30,
+    "compress": false
+  },
+  "modules": {
+    "compression": {
+      "default_algorithm": "gorilla",
+      "default_block_size": 1024,
+      "multi_res_enabled": true
+    },
+    "quality": {
+      "check_interval": "*/5 * * * *",
+      "max_retry": 3,
+      "anomaly_retention_days": 30
+    },
+    "lifecycle": {
+      "hot_threshold_days": 7,
+      "warm_threshold_days": 30,
+      "archive_path": "./data/archive",
+      "cleanup_cron": "0 2 * * *",
+      "auto_archive": true,
+      "auto_delete": false
+    },
+    "cdc": {
+      "buffer_size": 10000,
+      "output_format": "json",
+      "recovery_enable": true,
+      "recovery_path": "./data/cdc_recovery",
+      "batch_size": 100
+    },
+    "vector_index": {
+      "default_dimension": 1536,
+      "default_metric": "cosine",
+      "index_path": "./data/vector_indexes",
+      "build_worker_num": 4,
+      "search_ef": 128
+    },
+    "crawler": {
+      "scan_interval": "0 */6 * * *",
+      "sample_size": 100,
+      "timeout": 60,
+      "parallelism": 4
+    },
+    "auth": {
+      "enabled": false,
+      "jwt_secret": "dev-secret-key-change-in-production",
+      "jwt_expiry_hours": 24,
+      "api_keys_enabled": false
+    }
+  }
+}

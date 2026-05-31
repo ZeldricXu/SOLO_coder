@@ -1,0 +1,90 @@
+{
+  "server": {
+    "port": 8080,
+    "host": "0.0.0.0",
+    "mode": "release",
+    "read_timeout": 120,
+    "write_timeout": 120,
+    "tls_enabled": true,
+    "tls_cert": "/etc/ssl/certs/streamsql.pem",
+    "tls_key": "/etc/ssl/private/streamsql.key"
+  },
+  "database": {
+    "host": "prod-db.internal",
+    "port": 5432,
+    "user": "streamsql_prod",
+    "password": "${DB_PASSWORD}",
+    "dbname": "streamsql_prod",
+    "sslmode": "verify-full",
+    "max_open_conn": 200,
+    "max_idle_conn": 100,
+    "conn_max_lifetime": 900,
+    "timezone": "Asia/Shanghai"
+  },
+  "redis": {
+    "addr": "prod-redis-cluster.internal:6379",
+    "password": "${REDIS_PASSWORD}",
+    "db": 0,
+    "pool_size": 200,
+    "min_idle_conn": 50,
+    "dial_timeout": 10,
+    "read_timeout": 5,
+    "write_timeout": 5
+  },
+  "log": {
+    "level": "warn",
+    "format": "json",
+    "output": "file",
+    "file": "/var/log/streamsql/streamsql.log",
+    "max_size": 1000,
+    "max_backups": 60,
+    "max_age": 180,
+    "compress": true
+  },
+  "modules": {
+    "compression": {
+      "default_algorithm": "gorilla",
+      "default_block_size": 8192,
+      "multi_res_enabled": true
+    },
+    "quality": {
+      "check_interval": "*/2 * * * *",
+      "max_retry": 3,
+      "anomaly_retention_days": 365
+    },
+    "lifecycle": {
+      "hot_threshold_days": 3,
+      "warm_threshold_days": 30,
+      "archive_path": "/data/streamsql/archive",
+      "cleanup_cron": "0 1 * * *",
+      "auto_archive": true,
+      "auto_delete": true
+    },
+    "cdc": {
+      "buffer_size": 100000,
+      "output_format": "protobuf",
+      "recovery_enable": true,
+      "recovery_path": "/data/streamsql/cdc_recovery",
+      "batch_size": 1000
+    },
+    "vector_index": {
+      "default_dimension": 1536,
+      "default_metric": "cosine",
+      "index_path": "/data/streamsql/vector_indexes",
+      "build_worker_num": 16,
+      "search_ef": 512
+    },
+    "crawler": {
+      "scan_interval": "0 */1 * * *",
+      "sample_size": 5000,
+      "timeout": 300,
+      "parallelism": 16
+    },
+    "auth": {
+      "enabled": true,
+      "jwt_secret": "${JWT_SECRET}",
+      "jwt_expiry_hours": 8,
+      "api_keys_enabled": true
+    }
+  }
+}
