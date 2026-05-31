@@ -1,0 +1,17 @@
+{{- if .Values.verticalPodAutoscaler.enabled }}
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: {{ include "nft-indexer.fullname" . }}
+  labels:
+    {{- include "nft-indexer.labels" . | nindent 4 }}
+spec:
+  targetRef:
+    apiVersion: "apps/v1"
+    kind: Deployment
+    name: {{ include "nft-indexer.fullname" . }}
+  updatePolicy:
+    updateMode: {{ .Values.verticalPodAutoscaler.updateMode }}
+  resourcePolicy:
+    {{- toYaml .Values.verticalPodAutoscaler.resourcePolicy | nindent 4 }}
+{{- end }}

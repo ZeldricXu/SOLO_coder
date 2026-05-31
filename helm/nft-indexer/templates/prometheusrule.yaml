@@ -1,0 +1,31 @@
+{{- if .Values.prometheusRule.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "nft-indexer.fullname" . }}
+  {{- if .Values.prometheusRule.namespace }}
+  namespace: {{ .Values.prometheusRule.namespace }}
+  {{- end }}
+  labels:
+    {{- include "nft-indexer.labels" . | nindent 4 }}
+    {{- with .Values.prometheusRule.additionalLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  groups:
+    - name: nft-indexer.rules
+      rules:
+        {{- range .Values.prometheusRule.rules }}
+        - alert: {{ .alert }}
+          expr: {{ .expr | quote }}
+          for: {{ .for }}
+          labels:
+            severity: {{ .labels.severity }}
+          annotations:
+            summary: {{ .annotations.summary | quote }}
+            description: {{ .annotations.description | quote }}
+            {{- with .annotations.runbook_url }}
+            runbook_url: {{ . | quote }}
+            {{- end }}
+        {{- end }}
+{{- end }}

@@ -1,0 +1,308 @@
+stages:
+  - prepare
+  - quality
+  - build
+  - test
+  - security
+  - package
+  - containerize
+  - deploy
+  - release
+
+variables:
+  JAVA_VERSION: "17"
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Xmx2048m"
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  CI_REGISTRY_IMAGE: "$CI_REGISTRY/$CI_PROJECT_NAMESPACE/$CI_PROJECT_NAME"
+
+default:
+  image: maven:3.9.6-eclipse-temurin-17
+  tags:
+    - docker
+  interruptible: true
+
+cache:
+  key:
+    files:
+      - pom.xml
+      - .mvn/wrapper/maven-wrapper.properties
+  paths:
+    - .m2/repository
+    - target/
+  policy: pull
+
+.prepare:
+  stage: prepare
+  script:
+    - echo "CI_COMMIT_SHA=$CI_COMMIT_SHA"
+    - echo "CI_COMMIT_REF_NAME=$CI_COMMIT_REF_NAME"
+    - echo "CI_PROJECT_NAME=$CI_PROJECT_NAME"
+    - chmod +x mvnw
+    - ./mvnw -version
+  cache:
+    policy: pull-push
+
+lint:
+  extends: .prepare
+  stage: quality
+  script:
+    - ./mvnw enforcer:enforce checkstyle:check -B
+  artifacts:
+    when: always
+    reports:
+      codequality: target/checkstyle-result.xml
+    paths:
+      - target/checkstyle-result.xml
+    expire_in: 7 days
+  allow_failure: false
+
+pmd:
+  extends: .prepare
+  stage: quality
+  script:
+    - ./mvnw pmd:check pmd:cpd-check -B
+  artifacts:
+    when: always
+    reports:
+      codequality: target/pmd.xml
+    paths:
+      - target/pmd.xml
+      - target/cpd.xml
+    expire_in: 7 days
+  allow_failure: false
+
+spotbugs:
+  extends: .prepare
+  stage: quality
+  script:
+    - ./mvnw spotbugs:check -B
+  artifacts:
+    when: always
+    reports:
+      codequality: target/spotbugsXml.xml
+    paths:
+      - target/spotbugsXml.xml
+    expire_in: 7 days
+  allow_failure: false
+
+sonarqube:
+  extends: .prepare
+  stage: quality
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"
+    GIT_DEPTH: "0"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - ./mvnw clean verify sonar:sonar -B -Pci
+      -Dsonar.projectKey=$SONAR_PROJECT_KEY
+      -Dsonar.organization=$SONAR_ORGANIZATION
+      -Dsonar.host.url=$SONAR_HOST_URL
+      -Dsonar.login=$SONAR_TOKEN
+  allow_failure: true
+  only:
+    - main
+    - develop
+    - /^release-.*$/
+
+build:
+  extends: .prepare
+  stage: build
+  script:
+    - ./mvnw compile test-compile -B
+  cache:
+    policy: pull-push
+  needs: []
+
+unit-test:
+  extends: .prepare
+  stage: test
+  script:
+    - ./mvnw test -B -Pci
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+      coverage_report:
+        coverage_format: jacoco
+        path: target/site/jacoco/jacoco.xml
+    paths:
+      - target/surefire-reports/
+      - target/site/jacoco/
+    expire_in: 30 days
+  needs:
+    - build
+  coverage: '/Total.*?([0-9]{1,3})%/'
+
+integration-test:
+  extends: .prepare
+  stage: test
+  services:
+    - name: mysql:8.0.36
+      alias: mysql
+      variables:
+        MYSQL_DATABASE: nft_indexer_test
+        MYSQL_USER: test
+        MYSQL_PASSWORD: test123
+        MYSQL_ROOT_PASSWORD: root123
+    - name: redis:7.2-alpine
+      alias: redis
+  script:
+    - ./mvnw failsafe:integration-test failsafe:verify -B -Pci
+      -Dspring.profiles.active=test
+      -Dspring.r2dbc.url=r2dbc:mysql://mysql:3306/nft_indexer_test
+      -Dspring.data.redis.host=redis
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/failsafe-reports/TEST-*.xml
+    paths:
+      - target/failsafe-reports/
+    expire_in: 30 days
+  needs:
+    - unit-test
+  only:
+    - main
+    - develop
+    - /^release-.*$/
+
+trivy-scan:
+  stage: security
+  image:
+    name: aquasec/trivy:latest
+    entrypoint: [""]
+  variables:
+    GIT_STRATEGY: none
+  before_script:
+    - apk add --no-cache docker
+  script:
+    - docker pull $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA || true
+    - trivy image --severity CRITICAL,HIGH --exit-code 1 --no-progress $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+  needs:
+    - containerize
+  allow_failure: false
+  only:
+    - main
+    - develop
+
+package:
+  extends: .prepare
+  stage: package
+  script:
+    - ./mvnw clean package -DskipTests -B -Pskip-quality,release
+  artifacts:
+    paths:
+      - target/nft-indexer-*.jar
+      - target/nft-indexer-*-sources.jar
+      - target/nft-indexer-*-javadoc.jar
+    expire_in: 90 days
+  needs:
+    - unit-test
+    - lint
+    - pmd
+    - spotbugs
+
+containerize:
+  stage: containerize
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker info
+    - echo "$CI_REGISTRY_PASSWORD" | docker login $CI_REGISTRY -u $CI_REGISTRY_USER --password-stdin
+  script:
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
+    - docker tag $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA $CI_REGISTRY_IMAGE:latest
+    - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
+    - docker push $CI_REGISTRY_IMAGE:latest
+  needs:
+    - package
+  only:
+    - main
+    - develop
+    - tags
+
+deploy-staging:
+  stage: deploy
+  image: alpine/helm:3.14.0
+  environment:
+    name: staging
+    url: https://staging.nftindexer.example.com
+  variables:
+    KUBE_NAMESPACE: staging
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$STAGING_KUBECONFIG" > ~/.kube/config
+    - chmod 600 ~/.kube/config
+    - helm repo update
+  script:
+    - helm upgrade nft-indexer ./helm/nft-indexer
+      --install
+      --namespace $KUBE_NAMESPACE
+      --set image.repository=$CI_REGISTRY_IMAGE
+      --set image.tag=$CI_COMMIT_SHA
+      --values ./helm/nft-indexer/values-staging.yaml
+      --atomic
+      --timeout 10m
+  needs:
+    - containerize
+    - integration-test
+  only:
+    - develop
+
+deploy-production:
+  stage: deploy
+  image: alpine/helm:3.14.0
+  environment:
+    name: production
+    url: https://nftindexer.example.com
+  variables:
+    KUBE_NAMESPACE: production
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$PRODUCTION_KUBECONFIG" > ~/.kube/config
+    - chmod 600 ~/.kube/config
+  script:
+    - helm upgrade nft-indexer ./helm/nft-indexer
+      --install
+      --namespace $KUBE_NAMESPACE
+      --set image.repository=$CI_REGISTRY_IMAGE
+      --set image.tag=$CI_COMMIT_TAG
+      --values ./helm/nft-indexer/values-production.yaml
+      --atomic
+      --timeout 15m
+  needs:
+    - containerize
+    - integration-test
+  only:
+    - tags
+  when: manual
+
+release:
+  stage: release
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
+  rules:
+    - if: $CI_COMMIT_TAG
+  script:
+    - echo "Creating release $CI_COMMIT_TAG"
+  release:
+    name: "Release $CI_COMMIT_TAG"
+    description: "Release $CI_COMMIT_TAG of NFTIndexer"
+    tag_name: $CI_COMMIT_TAG
+    ref: $CI_COMMIT_SHA
+    assets:
+      links:
+        - name: "Docker Image"
+          url: "$CI_REGISTRY_IMAGE:$CI_COMMIT_TAG"
+        - name: "Download JAR"
+          url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_TAG/raw/target/nft-indexer-$CI_COMMIT_TAG.jar?job=package"
+  needs:
+    - deploy-production

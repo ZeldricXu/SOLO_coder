@@ -1,0 +1,52 @@
+<?xml version="1.0"?>
+<!DOCTYPE suppressions PUBLIC
+        "-//Checkstyle//DTD SuppressionFilter Configuration 1.2//EN"
+        "https://checkstyle.org/dtds/suppressions_1_2.dtd">
+
+<suppressions>
+    <suppress files="\.java$" checks="MagicNumber"
+              lines=".*@.*Value.*|.*@.*Request.*|.*@.*Mapping.*|.*@.*Bean.*"/>
+
+    <suppress files=".*entity.*\.java$" checks="MagicNumber"/>
+    <suppress files=".*entity.*\.java$" checks="ParameterNumber"/>
+    <suppress files=".*entity.*\.java$" checks="MethodLength"/>
+    <suppress files=".*entity.*\.java$" checks="JavaNCSS"/>
+
+    <suppress files=".*dto.*\.java$" checks="MagicNumber"/>
+    <suppress files=".*dto.*\.java$" checks="ParameterNumber"/>
+    <suppress files=".*dto.*\.java$" checks="MethodLength"/>
+    <suppress files=".*dto.*\.java$" checks="JavaNCSS"/>
+
+    <suppress files=".*mapper.*\.java$" checks="MissingJavadocMethod"/>
+    <suppress files=".*mapper.*\.java$" checks="MethodName"/>
+
+    <suppress files=".*controller.*\.java$" checks="MagicNumber"
+              lines=".*@.*(GetMapping|PostMapping|PutMapping|DeleteMapping).*"/>
+
+    <suppress files=".*Application\.java$" checks="MethodLength"/>
+    <suppress files=".*Application\.java$" checks="JavaNCSS"/>
+
+    <suppress files=".*config.*\.java$" checks="MagicNumber"/>
+    <suppress files=".*config.*\.java$" checks="ParameterNumber"/>
+
+    <suppress files=".*\.(java|kt|scala)$" checks="LineLength"
+              lines=".*@.*SuppressWarnings.*|.*@.*Deprecated.*|.*@.*Generated.*"/>
+
+    <suppress files=".*Test\.java$" checks=".*"/>
+    <suppress files=".*IntegrationTest\.java$" checks=".*"/>
+    <suppress files=".*E2ETest\.java$" checks=".*"/>
+
+    <suppress files="target/.*" checks=".*"/>
+    <suppress files=".*/generated/.*" checks=".*"/>
+    <suppress files=".*/generated-sources/.*" checks=".*"/>
+
+    <suppress files=".*exception.*\.java$" checks="CyclomaticComplexity"/>
+    <suppress files=".*exception.*\.java$" checks="NPathComplexity"/>
+
+    <suppress files=".*service/.*Service\.java$" checks="JavaNCSS" lines="500,1000"/>
+    <suppress files=".*service/.*Service\.java$" checks="FileLength" lines="500,1000"/>
+
+    <suppress checks="CyclomaticComplexity" files=".*" query="CyclomaticComplexity"/>
+    <suppress checks="NPathComplexity" files=".*" query="NPathComplexity"/>
+    <suppress checks="JavaNCSS" files=".*" query="JavaNCSS"/>
+</suppressions>

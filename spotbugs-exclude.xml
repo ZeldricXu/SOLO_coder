@@ -1,0 +1,127 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter xmlns="http://findbugs.sourceforge.net/filter/1.0">
+    <Match>
+        <Package name="com.nftindexer.entity"/>
+    </Match>
+
+    <Match>
+        <Package name="com.nftindexer.dto"/>
+    </Match>
+
+    <Match>
+        <Package name="com.nftindexer.mapper"/>
+    </Match>
+
+    <Match>
+        <Package name="com.nftindexer.event"/>
+    </Match>
+
+    <Match>
+        <Class name="com.nftindexer.common.ApiResponse"/>
+    </Match>
+
+    <Match>
+        <Class name="com.nftindexer.common.PageResult"/>
+    </Match>
+
+    <Match>
+        <Class name="com.nftindexer.common.TraceContext"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="HE_EQUALS_USE_HASHCODE"/>
+        <Package name="com.nftindexer.entity"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="HE_EQUALS_NO_HASHCODE"/>
+        <Package name="com.nftindexer.entity"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="DM_EXIT"/>
+        <Bug pattern="DM_RUN_FINALIZERS_ON_EXIT"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="OBL_UNSATISFIED_OBLIGATION_EXCEPTION_EDGE"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_NONNULL_PARAM_VIOLATION"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="RV_RETURN_VALUE_IGNORED"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="SIC_INNER_SHOULD_BE_STATIC_ANON"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+        <Package name="com.nftindexer.exception"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="DLS_DEAD_LOCAL_STORE"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="IMC_IMMATURE_CLASS_NO_TOSTRING"/>
+        <Package name="com.nftindexer.entity"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="IMC_IMMATURE_CLASS_NO_EQUALS"/>
+        <Package name="com.nftindexer.entity"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="CN_IDIOM_NO_SUPER_CALL"/>
+        <Package name="com.nftindexer.entity"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="SORT_SHOULD_USE_COMPARATOR"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="DP_DO_INSIDE_DO_PRIVILEGED"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="VA_FORMAT_STRING_BAD_CONVERSION"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="BC_BAD_CAST_TO_CONCRETE_COLLECTION"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="DMI_COLLECTION_OF_VERY_STRANGE_TYPE"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING"/>
+        <Package name="com.nftindexer.mapper"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*Test$"/>
+    </Match>
+</FindBugsFilter>

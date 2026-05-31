@@ -1,0 +1,363 @@
+replicaCount: 3
+
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/nftindexer/nft-indexer
+  pullPolicy: IfNotPresent
+  tag: ""
+  pullSecrets: []
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+podSecurityContext:
+  fsGroup: 1000
+  runAsNonRoot: true
+  runAsUser: 1000
+  fsGroupChangePolicy: "OnRootMismatch"
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  port: 8080
+  annotations: {}
+  labels: {}
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300s"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300s"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto $scheme;
+  hosts:
+    - host: nftindexer.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: nftindexer-tls
+      hosts:
+        - nftindexer.example.com
+
+resources:
+  limits:
+    cpu: "2"
+    memory: "2Gi"
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 60
+  timeoutSeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 30
+  timeoutSeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+  successThreshold: 1
+
+startupProbe:
+  httpGet:
+    path: /actuator/health
+    port: http
+  initialDelaySeconds: 120
+  timeoutSeconds: 5
+  periodSeconds: 10
+  failureThreshold: 30
+
+javaOpts:
+  xms: "512m"
+  xmx: "1024m"
+  maxMetaspaceSize: "256m"
+  gc:
+    collector: "G1"
+    maxGCPauseMillis: "50"
+  extraOpts: >
+    -Djava.security.egd=file:/dev/./urandom
+    -Djava.net.preferIPv4Stack=true
+    -Dfile.encoding=UTF-8
+    -XX:+UseStringDeduplication
+    -XX:+OptimizeStringConcat
+    -XX:+HeapDumpOnOutOfMemoryError
+    -XX:HeapDumpPath=/tmp/heapdump.hprof
+
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: "kubernetes"
+  - name: TZ
+    value: "Asia/Shanghai"
+  - name: JAVA_TOOL_OPTIONS
+    value: "-XX:+ExitOnOutOfMemoryError"
+  - name: MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE
+    value: "*"
+  - name: MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS
+    value: "always"
+  - name: MANAGEMENT_HEALTH_PROBES_ENABLED
+    value: "true"
+
+envFrom: []
+
+existingConfigMap: ""
+existingSecret: ""
+
+mysql:
+  enabled: true
+  architecture: standalone
+  auth:
+    rootPassword: "nftindexer-root-password"
+    database: "nft_indexer"
+    username: "nftindexer"
+    password: "nftindexer-password"
+  primary:
+    persistence:
+      enabled: true
+      size: "20Gi"
+      storageClass: ""
+    resources:
+      limits:
+        cpu: "2"
+        memory: "2Gi"
+      requests:
+        cpu: "500m"
+        memory: "1Gi"
+  secondary:
+    replicaCount: 0
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+    password: ""
+  master:
+    persistence:
+      enabled: true
+      size: "10Gi"
+      storageClass: ""
+    resources:
+      limits:
+        cpu: "1"
+        memory: "1Gi"
+      requests:
+        cpu: "250m"
+        memory: "512Mi"
+  replica:
+    replicaCount: 0
+
+externalDatabase:
+  host: ""
+  port: 3306
+  database: "nft_indexer"
+  username: ""
+  password: ""
+  existingSecret: ""
+  existingSecretKey: "mysql-password"
+
+externalRedis:
+  host: ""
+  port: 6379
+  password: ""
+  existingSecret: ""
+  existingSecretKey: "redis-password"
+
+persistence:
+  enabled: true
+  existingClaim: ""
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: "5Gi"
+  annotations: {}
+
+extraVolumes: []
+extraVolumeMounts: []
+
+nodeSelector: {}
+tolerations: []
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: nft-indexer
+          topologyKey: kubernetes.io/hostname
+
+lifecycle:
+  preStop:
+    exec:
+      command:
+        - "sh"
+        - "-c"
+        - "sleep 10"
+
+terminationGracePeriodSeconds: 60
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 25%
+    maxUnavailable: 25%
+
+minReadySeconds: 30
+revisionHistoryLimit: 10
+
+serviceMonitor:
+  enabled: true
+  namespace: ""
+  interval: "15s"
+  scrapeTimeout: "10s"
+  path: "/actuator/prometheus"
+  scheme: http
+  tlsConfig: {}
+  labels:
+    release: prometheus
+
+prometheusRule:
+  enabled: true
+  namespace: ""
+  additionalLabels: {}
+  rules:
+    - alert: NFTIndexerDown
+      expr: up{job="nft-indexer"} == 0
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "NFTIndexer instance is down"
+        description: "NFTIndexer instance {{ $labels.instance }} has been down for more than 2 minutes."
+    - alert: HighCPUUsage
+      expr: 100 - (avg by(instance) (irate(process_cpu_seconds_total{job="nft-indexer"}[5m])) * 100) > 80
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High CPU usage detected"
+        description: "CPU usage is above 80% for more than 5 minutes."
+    - alert: HighMemoryUsage
+      expr: (jvm_memory_used_bytes{job="nft-indexer",area="heap"} / jvm_memory_max_bytes{job="nft-indexer",area="heap"}) * 100 > 85
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage detected"
+        description: "Heap memory usage is above 85% for more than 5 minutes."
+    - alert: HighErrorRate
+      expr: rate(http_server_requests_seconds_count{job="nft-indexer",status=~"5.."}[5m]) / rate(http_server_requests_seconds_count{job="nft-indexer"}[5m]) > 0.05
+      for: 2m
+      labels:
+        severity: critical
+      annotations:
+        summary: "High error rate detected"
+        description: "Error rate is above 5% for more than 2 minutes."
+
+ingressRoute:
+  enabled: false
+  entryPoints:
+    - websecure
+  certResolver: "letsencrypt"
+  middlewares: []
+
+networkPolicy:
+  enabled: true
+  ingressRules:
+    from: []
+  egressRules:
+    to: []
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: ""
+
+horizontalPodAutoscaler:
+  enabled: true
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: nft-indexer
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+verticalPodAutoscaler:
+  enabled: false
+  updateMode: "Auto"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: nft-indexer
+        minAllowed:
+          cpu: "250m"
+          memory: "512Mi"
+        maxAllowed:
+          cpu: "4"
+          memory: "4Gi"
+        controlledResources: ["cpu", "memory"]

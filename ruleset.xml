@@ -1,0 +1,238 @@
+<?xml version="1.0"?>
+<ruleset name="NFTIndexer PMD Rules"
+         xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+
+    <description>
+        NFTIndexer custom PMD ruleset for code quality checks
+    </description>
+
+    <rule ref="category/java/bestpractices.xml">
+        <exclude name="GuardLogStatement"/>
+        <exclude name="LiteralsFirstInComparisons"/>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml">
+        <exclude name="LocalVariableCouldBeFinal"/>
+        <exclude name="MethodArgumentCouldBeFinal"/>
+        <exclude name="AtLeastOneConstructor"/>
+        <exclude name="OnlyOneConstructor"/>
+        <exclude name="ShortVariable"/>
+        <exclude name="ShortMethodName"/>
+        <exclude name="LongVariable"/>
+    </rule>
+
+    <rule ref="category/java/design.xml">
+        <exclude name="GodClass"/>
+        <exclude name="TooManyFields"/>
+        <exclude name="TooManyMethods"/>
+        <exclude name="NPathComplexity"/>
+        <exclude name="CyclomaticComplexity"/>
+        <exclude name="ModifiedCyclomaticComplexity"/>
+        <exclude name="StdCyclomaticComplexity"/>
+        <exclude name="UseUtilityClass"/>
+        <exclude name="AtFieldInstanceOf"/>
+        <exclude name="AvoidProtectedFieldInFinalClass"/>
+    </rule>
+
+    <rule ref="category/java/documentation.xml">
+        <exclude name="CommentRequired"/>
+        <exclude name="CommentSize"/>
+        <exclude name="UncommentedEmptyConstructor"/>
+        <exclude name="UncommentedEmptyMethodBody"/>
+    </rule>
+
+    <rule ref="category/java/errorprone.xml">
+        <exclude name="AvoidDuplicateLiterals"/>
+        <exclude name="DataflowAnomalyAnalysis"/>
+        <exclude name="NullAssignment"/>
+        <exclude name="BeanMembersShouldSerialize"/>
+        <exclude name="NonSerializableClass"/>
+        <exclude name="MissingSerialVersionUID"/>
+        <exclude name="CloseResource"/>
+        <exclude name="SystemPrintln"/>
+    </rule>
+
+    <rule ref="category/java/multithreading.xml">
+        <exclude name="AvoidSynchronizedAtMethodLevel"/>
+        <exclude name="AvoidThreadGroup"/>
+    </rule>
+
+    <rule ref="category/java/performance.xml">
+        <exclude name="AvoidInstantiatingObjectsInLoops"/>
+        <exclude name="ConsecutiveAppendsShouldReuse"/>
+        <exclude name="InefficientStringBuffering"/>
+    </rule>
+
+    <rule ref="category/java/security.xml">
+        <exclude name="AvoidFieldInjection"/>
+        <exclude name="InsecureCryptoIv"/>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml/UnusedImports"/>
+
+    <rule ref="category/java/codestyle.xml/UnnecessaryModifier">
+        <properties>
+            <property name="ignoreAnnotations"
+                      value="lombok.Data, lombok.RequiredArgsConstructor, lombok.AllArgsConstructor, lombok.NoArgsConstructor"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/errorprone.xml/AvoidCatchingNPE"/>
+
+    <rule ref="category/java/errorprone.xml/EmptyIfStmt"/>
+
+    <rule ref="category/java/errorprone.xml/EmptyWhileStmt"/>
+
+    <rule ref="category/java/errorprone.xml/EmptyTryBlock"/>
+
+    <rule ref="category/java/errorprone.xml/EmptyFinallyBlock"/>
+
+    <rule ref="category/java/errorprone.xml/EmptySwitchStmt"/>
+
+    <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidThrowingRawExceptionTypes"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidThrowingNullPointerException"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidThrowingNewInstanceOfSameException"/>
+
+    <rule ref="category/java/bestpractices.xml/UseVarargs"/>
+
+    <rule ref="category/java/bestpractices.xml/ForLoopVariableCount"/>
+
+    <rule ref="category/java/bestpractices.xml/OverrideBothEqualsAndHashcode"/>
+
+    <rule ref="category/java/design.xml/SingletonMustHaveOneConstructor"/>
+
+    <rule ref="category/java/design.xml/UseObjectForClearerAPI"/>
+
+    <rule ref="category/java/design.xml/UseAssertEqualsInsteadOfAssertTrue"/>
+
+    <rule ref="category/java/design.xml/UseAssertNullInsteadOfAssertTrue"/>
+
+    <rule ref="category/java/design.xml/UseAssertSameInsteadOfAssertTrue"/>
+
+    <rule ref="category/java/design.xml/SimplifyBooleanReturns"/>
+
+    <rule ref="category/java/design.xml/SimplifyBooleanExpressions"/>
+
+    <rule ref="category/java/design.xml/AvoidProtectedFieldInFinalClass"/>
+
+    <rule ref="category/java/design.xml/UseExplicitTypes"/>
+
+    <rule ref="category/java/codestyle.xml/AvoidDeeplyNestedIfStmts">
+        <properties>
+            <property name="problemDepth" value="4"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml/AvoidThrowingNullPointerException"/>
+
+    <rule ref="category/java/codestyle.xml/ClassNamingConventions">
+        <properties>
+            <property name="classPattern" value="[A-Z][a-zA-Z0-9]*"/>
+            <property name="interfacePattern" value="[A-Z][a-zA-Z0-9]*"/>
+            <property name="enumPattern" value="[A-Z][a-zA-Z0-9]*"/>
+            <property name="annotationPattern" value="[A-Z][a-zA-Z0-9]*"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml/FieldNamingConventions">
+        <properties>
+            <property name="publicFieldPattern" value="^[a-z][a-zA-Z0-9]*$"/>
+            <property name="protectedFieldPattern" value="^[a-z][a-zA-Z0-9]*$"/>
+            <property name="privateFieldPattern" value="^[a-z][a-zA-Z0-9]*$"/>
+            <property name="staticFieldPattern" value="^[A-Z][A-Z0-9_]*$"/>
+            <property name="finalFieldPattern" value="^[A-Z][A-Z0-9_]*$"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml/MethodNamingConventions">
+        <properties>
+            <property name="methodPattern" value="^[a-z][a-zA-Z0-9]*$"/>
+            <property name="nativePattern" value="^[a-z][a-zA-Z0-9]*$"/>
+            <property name="junit3TestPattern" value="^test[A-Z0-9_][a-zA-Z0-9_]*$"/>
+            <property name="junit4TestPattern" value="^[a-z][a-zA-Z0-9_]*$"/>
+            <property name="junit5TestPattern" value="^[a-z][a-zA-Z0-9_]*$"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/codestyle.xml/VariableNamingConventions">
+        <properties>
+            <property name="argumentPattern" value="^[a-z][a-zA-Z0-9]*$"/>
+            <property name="localPattern" value="^[a-z][a-zA-Z0-9]*$"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/errorprone.xml/CheckSkipResult">
+        <properties>
+            <property name="methods"
+                      value="java.nio.file.Files.delete, java.io.InputStream.read, java.io.Reader.read"/>
+        </properties>
+    </rule>
+
+    <rule ref="category/java/bestpractices.xml/TestClassWithoutTestCases"/>
+
+    <rule ref="category/java/bestpractices.xml/TestAssertionsInTryCatch"/>
+
+    <rule ref="category/java/bestpractices.xml/UseTryWithResources"/>
+
+    <rule ref="category/java/bestpractices.xml/AvoidMessageDigestField"/>
+
+    <rule ref="category/java/bestpractices.xml/AvoidCalendarDateCreation"/>
+
+    <rule ref="category/java/bestpractices.xml/AvoidPrintStackTrace"/>
+
+    <rule ref="category/java/bestpractices.xml/AvoidPrintln"/>
+
+    <rule ref="category/java/bestpractices.xml/PreserveStackTrace"/>
+
+    <rule ref="category/java/bestpractices.xml/UseSpecificException"/>
+
+    <rule ref="category/java/design.xml/InvalidSlf4jMessageFormat"/>
+
+    <rule ref="category/java/design.xml/SimplifiedTernary"/>
+
+    <rule ref="category/java/design.xml/AvoidUncheckedExceptionsInSignatures"/>
+
+    <rule ref="category/java/codestyle.xml/UseShortArrayInitializer"/>
+
+    <rule ref="category/java/codestyle.xml/AvoidUsingOctalValues"/>
+
+    <rule ref="category/java/codestyle.xml/UselessParentheses"/>
+
+    <rule ref="category/java/codestyle.xml/UselessQualifiedThis"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidFileStream"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidCalendar"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidUsingParallelCollectors"/>
+
+    <rule ref="category/java/errorprone.xml/ThreadPriority"/>
+
+    <rule ref="category/java/errorprone.xml/AvoidThreadLocalMemoryLeaks"/>
+
+    <rule ref="category/java/errorprone.xml/OverrideWithoutCall"/>
+
+    <rule ref="category/java/performance.xml/AvoidArrayLoops"/>
+
+    <rule ref="category/java/performance.xml/AvoidFileStreamInLoop"/>
+
+    <rule ref="category/java/performance.xml/UnnecessaryWrapperObjectCreation"/>
+
+    <rule ref="category/java/performance.xml/AddEmptyString"/>
+
+    <rule ref="category/java/performance.xml/RegexPattern"/>
+
+    <rule ref="category/java/security.xml/AvoidHardCodedCryptoKey"/>
+
+    <rule ref="category/java/security.xml/AvoidHardCodedSecret"/>
+
+    <rule ref="category/java/security.xml/InsecureCrypto"/>
+
+    <rule ref="category/java/security.xml/InsecureBeanValidation"/>
+</ruleset>

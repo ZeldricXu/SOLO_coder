@@ -1,0 +1,202 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [ main, develop, release/* ]
+    types: [ opened, synchronize, reopened, ready_for_review ]
+
+concurrency:
+  group: pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  JAVA_VERSION: '17'
+  JAVA_DISTRIBUTION: 'temurin'
+  MAVEN_OPTS: '-Xmx2048m -Dorg.slf4j.simpleLogger.showDateTime=true -Dorg.slf4j.simpleLogger.dateTimeFormat=HH:mm:ss.SSS'
+
+jobs:
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: 'maven'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Maven Enforcer
+        run: ./mvnw enforcer:enforce -B
+
+      - name: Checkstyle Analysis
+        run: ./mvnw checkstyle:check -B
+
+      - name: Compile code
+        run: ./mvnw compile test-compile -B
+
+      - name: Run Unit Tests
+        run: ./mvnw test -B -Pci
+        env:
+          SPRING_PROFILES_ACTIVE: test
+
+      - name: PMD Analysis
+        run: ./mvnw pmd:check pmd:cpd-check -B
+
+      - name: SpotBugs Analysis
+        run: ./mvnw spotbugs:check -B
+
+      - name: JaCoCo Coverage Check
+        run: ./mvnw jacoco:check -B -Pci
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+            target/checkstyle-result.xml
+            target/pmd.xml
+            target/spotbugsXml.xml
+          retention-days: 7
+
+      - name: Add coverage comment
+        if: always()
+        uses: madrapps/jacoco-report@v1.6.1
+        with:
+          paths: target/site/jacoco/jacoco.xml
+          token: ${{ secrets.GITHUB_TOKEN }}
+          min-coverage-overall: 80
+          min-coverage-changed-files: 60
+          title: 'Coverage Report'
+          update-comment: true
+
+  build:
+    name: Build & Package
+    runs-on: ubuntu-latest
+    needs: code-quality
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: 'maven'
+
+      - name: Build without tests
+        run: ./mvnw clean package -DskipTests -B -Pskip-quality
+
+      - name: Verify artifact exists
+        run: |
+          if [ ! -f target/nft-indexer-*.jar ]; then
+            echo "Artifact not found!"
+            exit 1
+          fi
+          ls -lh target/nft-indexer-*.jar
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nft-indexer-jar
+          path: target/nft-indexer-*.jar
+          retention-days: 7
+
+  docker-build:
+    name: Docker Build
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: nft-indexer-jar
+          path: target/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: nftindexer/nft-indexer:pr-${{ github.event.pull_request.number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Scan Docker image for vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: nftindexer/nft-indexer:pr-${{ github.event.pull_request.number }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          vuln-type: 'os,library'
+          severity: 'CRITICAL,HIGH'
+
+  sonar-analysis:
+    name: SonarQube Analysis
+    runs-on: ubuntu-latest
+    needs: code-quality
+    if: github.event.pull_request.draft == false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: 'maven'
+
+      - name: Run tests and collect coverage
+        run: ./mvnw clean verify -B -Pci
+        env:
+          SPRING_PROFILES_ACTIVE: test
+
+      - name: SonarQube Scan
+        uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+        with:
+          args: >
+            -Dsonar.projectKey=nft-indexer
+            -Dsonar.organization=nftindexer
+            -Dsonar.java.coveragePlugin=jacoco
+            -Dsonar.jacoco.reportPaths=target/site/jacoco/jacoco.xml
+            -Dsonar.java.binaries=target/classes
+            -Dsonar.sources=src/main/java
+            -Dsonar.tests=src/test/java
+            -Dsonar.junit.reportPaths=target/surefire-reports
+            -Dsonar.github.pullRequest=${{ github.event.pull_request.number }}
+            -Dsonar.github.repository=${{ github.repository }}
+            -Dsonar.github.oauth=${{ secrets.GITHUB_TOKEN }}

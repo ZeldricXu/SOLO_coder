@@ -1,0 +1,25 @@
+apiVersion: v2
+name: nft-indexer
+description: NFTIndexer - Cross-Chain NFT Metadata Indexing and Query Service
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.24.0-0"
+home: https://github.com/nftindexer/nft-indexer
+sources:
+  - https://github.com/nftindexer/nft-indexer
+maintainers:
+  - name: NFTIndexer Team
+    email: dev@nftindexer.io
+dependencies:
+  - name: mysql
+    version: 9.14.4
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: mysql.enabled
+  - name: redis
+    version: 18.19.2
+    repository: oci://registry-1.docker.io/bitnamicharts
+    condition: redis.enabled
+annotations:
+  category: Database
+  licenses: Apache-2.0

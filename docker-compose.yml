@@ -1,0 +1,256 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: nftindexer-mysql
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --innodb_buffer_pool_size=2G
+      - --innodb_log_file_size=256M
+      - --max_connections=500
+      - --slow_query_log=1
+      - --long_query_time=2
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-nft_indexer}
+      MYSQL_USER: ${MYSQL_USER:-nftindexer}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-nftindexer123}
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./initdb:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nftindexer-net
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: nftindexer-redis
+    command:
+      - redis-server
+      - --appendonly yes
+      - --maxmemory 1G
+      - --maxmemory-policy allkeys-lru
+      - --save 900 1
+      - --save 300 10
+      - --save 60 10000
+      - --slowlog-log-slower-than 10000
+      - --slowlog-max-len 128
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - nftindexer-net
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: nftindexer-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+      - '--storage.tsdb.retention.time=15d'
+      - '--storage.tsdb.retention.size=10GB'
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - nftindexer-net
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    container_name: nftindexer-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin123}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: "grafana-piechart-panel"
+      TZ: Asia/Shanghai
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    depends_on:
+      - prometheus
+    networks:
+      - nftindexer-net
+    restart: unless-stopped
+
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: nftindexer-loki
+    command: -config.file=/etc/loki/local-config.yaml
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "3100:3100"
+    volumes:
+      - loki_data:/loki
+      - ./monitoring/loki.yml:/etc/loki/local-config.yaml:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    networks:
+      - nftindexer-net
+    restart: unless-stopped
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BUILDKIT_INLINE_CACHE: "1"
+    image: nftindexer/nft-indexer:${APP_VERSION:-latest}
+    container_name: nftindexer-app
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-docker}
+      SPRING_R2DBC_URL: r2dbc:mysql://mysql:3306/${MYSQL_DATABASE:-nft_indexer}?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SPRING_R2DBC_USERNAME: ${MYSQL_USER:-nftindexer}
+      SPRING_R2DBC_PASSWORD: ${MYSQL_PASSWORD:-nftindexer123}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: "*"
+      MANAGEMENT_ENDPOINT_HEALTH_SHOW_DETAILS: always
+      TZ: Asia/Shanghai
+      JAVA_OPTS: >
+        -Xms512m -Xmx1024m
+        -XX:+UseG1GC
+        -XX:MaxGCPauseMillis=50
+        -Djava.security.egd=file:/dev/./urandom
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./logs:/app/logs
+      - ./config/application-docker.yml:/app/config/application-docker.yml:ro
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nftindexer-net
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "3"
+        tag: "{{.Name}}/{{.ID}}"
+
+  flyway:
+    image: flyway/flyway:10.10.0
+    container_name: nftindexer-flyway
+    command: -url=jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-nft_indexer}?useSSL=false&serverTimezone=Asia/Shanghai -user=${MYSQL_USER:-nftindexer} -password=${MYSQL_PASSWORD:-nftindexer123} -locations=filesystem:/flyway/sql -connectRetries=60 migrate
+    volumes:
+      - ./src/main/resources/db/migration:/flyway/sql
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - nftindexer-net
+    profiles:
+      - migration
+
+  sonarqube:
+    image: sonarqube:10.4.1-community
+    container_name: nftindexer-sonarqube
+    environment:
+      SONAR_JDBC_URL: jdbc:mysql://mysql:3306/sonar?useSSL=false&serverTimezone=Asia/Shanghai&characterEncoding=utf8
+      SONAR_JDBC_USERNAME: ${MYSQL_USER:-nftindexer}
+      SONAR_JDBC_PASSWORD: ${MYSQL_PASSWORD:-nftindexer123}
+      SONAR_ES_BOOTSTRAP_CHECKS_DISABLE: "true"
+      TZ: Asia/Shanghai
+    ports:
+      - "9000:9000"
+    volumes:
+      - sonarqube_data:/opt/sonarqube/data
+      - sonarqube_extensions:/opt/sonarqube/extensions
+      - sonarqube_logs:/opt/sonarqube/logs
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9000/api/system/status"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - nftindexer-net
+    profiles:
+      - sonar
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  sonarqube_data:
+    driver: local
+  sonarqube_extensions:
+    driver: local
+  sonarqube_logs:
+    driver: local
+
+networks:
+  nftindexer-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
