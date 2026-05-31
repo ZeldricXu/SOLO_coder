@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.dynamiclog</groupId>
+        <artifactId>dynamic-log-platform</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>bootstrap</artifactId>
+    <name>Bootstrap Module</name>
+    <description>启动模块 - 主应用入口</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>persistence</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>logging</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>scheduler</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>offline-cache</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>rule-engine</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>data-access</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>api-gateway</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>device-shadow</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>config-management</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>core-processing</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.dynamiclog</groupId>
+            <artifactId>notification</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
