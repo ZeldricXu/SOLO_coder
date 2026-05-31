@@ -1,0 +1,47 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: data-pipeline-platform
+
+  codec:
+    max-in-memory-size: 10MB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info, metrics, prometheus
+  endpoint:
+    health:
+      show-details: always
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+
+app:
+  jwt:
+    secret: data-pipeline-super-secret-key-for-jwt-signing-must-be-32-chars
+
+cache:
+  local:
+    maxSize: 10000
+    ttlMinutes: 10
+
+resource:
+  pool:
+    maxSize: 20
+
+scheduler:
+  threadPoolSize: 8
+
+notification:
+  queueCapacity: 10000
+
+logging:
+  level:
+    com.datapipeline: INFO
+    org.springframework.web: INFO
+
