@@ -1,0 +1,133 @@
+# Git
+.git
+.gitignore
+.gitattributes
+.github/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-wheel-metadata/
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing
+.pytest_cache/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+htmlcov/
+pytest-report.xml
+
+# Static analysis
+.mypy_cache/
+.ruff_cache/
+.pylint.d/
+.dmypy.json
+dmypy.json
+.bandit/
+.safety/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database
+*.sqlite3
+*.db
+*.sqlite
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Project specific
+data/
+tmp/
+temp/
+*.pid
+*.seed
+*.pid.lock
+
+# Celery
+celerybeat-schedule
+celerybeat.pid
+
+# Alembic versions (if using auto-generate)
+alembic/versions/*
+
+# Docker
+docker-compose.override.yml
+Dockerfile.dev
+docker-entrypoint-dev.sh
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Examples
+examples/
+
+# Tests
+tests/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.ci/
+
+# Local scripts
+*.sh
+!docker-entrypoint.sh
+*.bat
+*.cmd
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# Temporary files
+*.tmp
+*.temp

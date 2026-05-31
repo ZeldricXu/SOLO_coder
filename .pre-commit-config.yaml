@@ -1,0 +1,372 @@
+# 预提交钩子配置
+# 安装: pip install pre-commit && pre-commit install
+# 运行所有: pre-commit run --all-files
+# 更新: pre-commit autoupdate
+
+repos:
+  # ============================================
+  # 通用钩子
+  # ============================================
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+        description: 检查大文件
+      - id: check-ast
+        description: 检查Python AST语法
+      - id: check-builtin-literals
+        description: 检查内置字面值
+      - id: check-byte-order-marker
+        description: 检查BOM
+      - id: check-case-conflict
+        description: 检查文件名大小写冲突
+      - id: check-docstring-first
+        description: 检查docstring位置
+      - id: check-executables-have-shebangs
+        description: 检查可执行文件的shebang
+      - id: check-json
+        description: 检查JSON格式
+      - id: check-merge-conflict
+        description: 检查合并冲突标记
+      - id: check-shebang-scripts-are-executable
+        description: 检查shebang脚本是否可执行
+      - id: check-symlinks
+        description: 检查符号链接
+      - id: check-toml
+        description: 检查TOML格式
+      - id: check-vcs-permalinks
+        description: 检查VCS永久链接
+      - id: check-xml
+        description: 检查XML格式
+      - id: check-yaml
+        description: 检查YAML格式
+        args: [--allow-multiple-documents]
+      - id: debug-statements
+        description: 检查调试语句
+      - id: destroyed-symlinks
+        description: 检查损坏的符号链接
+      - id: detect-aws-credentials
+        description: 检测AWS凭证
+        args: [--allow-missing-credentials]
+      - id: detect-private-key
+        description: 检测私钥
+      - id: double-quote-string-fixer
+        description: 修正双引号字符串
+      - id: end-of-file-fixer
+        description: 确保文件以换行符结尾
+      - id: fix-byte-order-marker
+        description: 修复BOM
+      - id: fix-encoding-pragma
+        description: 修复编码pragma
+        args: [--remove]
+      - id: forbid-new-submodules
+        description: 禁止新的子模块
+      - id: mixed-line-ending
+        description: 统一换行符
+        args: [--fix=lf]
+      - id: name-tests-test
+        description: 检查测试文件命名
+      - id: no-commit-to-branch
+        description: 禁止直接提交到主分支
+        args: [--branch, main, --branch, master, --branch, develop]
+      - id: pretty-format-json
+        description: 格式化JSON
+        args: [--autofix, --no-sort-keys, --indent=2]
+      - id: requirements-txt-fixer
+        description: 修复requirements.txt排序
+      - id: sort-simple-yaml
+        description: 排序简单YAML
+      - id: trailing-whitespace
+        description: 移除尾部空白
+        args: [--markdown-linebreak-ext=md]
+
+  # ============================================
+  # Python代码格式化
+  # ============================================
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 23.12.1
+    hooks:
+      - id: black
+        name: black
+        description: 代码格式化
+        language_version: python3.11
+        args: [--line-length=100]
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort
+        description: 导入排序
+        args: [
+          --profile=black,
+          --line-length=100,
+          --multi-line-output=3,
+          --include-trailing-comma,
+          --force-grid-wrap=0,
+          --use-parentheses,
+        ]
+
+  # ============================================
+  # Python代码质量检查
+  # ============================================
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.14
+    hooks:
+      - id: ruff
+        name: ruff linter
+        description: Ruff代码检查
+        args: [
+          --fix,
+          --exit-zero,
+        ]
+      - id: ruff-format
+        name: ruff formatter
+        description: Ruff代码格式化
+
+  - repo: https://github.com/PyCQA/flake8
+    rev: 6.1.0
+    hooks:
+      - id: flake8
+        name: flake8
+        description: Flake8代码检查
+        additional_dependencies:
+          - flake8-bugbear==23.12.2
+          - flake8-comprehensions==3.14.0
+          - flake8-docstrings==1.7.0
+          - flake8-import-order==0.18.2
+          - flake8-type-checking==2.14.0
+        args: [
+          --max-line-length=100,
+          --max-complexity=15,
+          --extend-ignore=E501,E203,W503,W504,B905,D100,D104,S101,F401,
+        ]
+        exclude: ^tests/|^migrations/|^alembic/
+
+  # ============================================
+  # Python类型检查
+  # ============================================
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy
+        description: Mypy类型检查
+        additional_dependencies:
+          - types-redis==4.6.0.20240106
+          - types-PyYAML==6.0.12.12
+          - types-requests==2.31.0.20240106
+          - types-aiofiles==23.1.0.6
+          - pydantic==2.5.3
+          - sqlalchemy==2.0.25
+          - web3==6.15.1
+        args: [
+          --show-error-codes,
+          --show-error-context,
+          --ignore-missing-imports,
+          --disallow-untyped-defs,
+          --check-untyped-defs,
+          --warn-return-any,
+          --warn-unused-ignores,
+          --warn-redundant-casts,
+          --no-implicit-optional,
+          --strict-equality,
+        ]
+        files: ^src/
+        exclude: ^tests/|^migrations/|^alembic/
+
+  # ============================================
+  # 安全检查
+  # ============================================
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.6
+    hooks:
+      - id: bandit
+        name: bandit
+        description: Bandit安全扫描
+        args: [
+          --recursive,
+          --severity-level=medium,
+          --confidence-level=medium,
+          --skip=B101,B303,B324,
+          --format=custom,
+        ]
+        files: ^src/
+        exclude: ^tests/
+
+  # ============================================
+  # Python代码复杂度检查
+  # ============================================
+  - repo: https://github.com/pre-commit/mirrors-pylint
+    rev: v3.0.3
+    hooks:
+      - id: pylint
+        name: pylint
+        description: Pylint代码分析
+        args: [
+          --max-line-length=100,
+          --disable=C0114,C0115,C0116,C0301,C0302,C0415,R0801,R0902,R0903,R0911,R0912,R0913,R0914,R0915,W0703,W0622,W0613,W0221,W0101,W1203,E0401,E0611,E1101,
+          --enable=W0102,W0212,W0311,W0312,W0404,W0601,W0602,W0621,W0702,E0100,E0101,E0102,E0602,
+          --max-args=8,
+          --max-attributes=12,
+          --max-branches=15,
+          --max-locals=20,
+          --max-statements=60,
+          --min-public-methods=1,
+        ]
+        additional_dependencies:
+          - web3==6.15.1
+          - eth-typing==3.5.2
+          - eth-utils==4.0.0
+          - sqlalchemy==2.0.25
+          - pydantic==2.5.3
+          - fastapi==0.109.0
+        files: ^src/
+        exclude: ^tests/|^migrations/|^alembic/
+
+  # ============================================
+  # 安全漏洞扫描
+  # ============================================
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.2
+    hooks:
+      - id: python-safety-dependencies-check
+        name: safety
+        description: Safety依赖安全检查
+        files: requirements/.*\.txt$
+
+  # ============================================
+  # 代码注释和文档检查
+  # ============================================
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        name: pydocstyle
+        description: 文档字符串风格检查
+        additional_dependencies: [toml]
+        args: [
+          --convention=google,
+          --ignore=D100,D101,D102,D103,D104,D105,D106,D107,D200,D203,D204,D205,D212,D400,D401,D403,D406,D407,D408,D409,D411,D412,D413,D415,D416,D417,D418,D419,
+        ]
+        files: ^src/core/usecases/
+        exclude: ^tests/
+
+  # ============================================
+  # Docker相关检查
+  # ============================================
+  - repo: https://github.com/pryorda/dockerfilelint-precommit-hooks
+    rev: v0.1.0
+    hooks:
+      - id: dockerfilelint
+        name: dockerfilelint
+        description: Dockerfile检查
+        stages: [commit]
+
+  - repo: https://github.com/IamTheFij/docker-pre-commit
+    rev: v3.0.1
+    hooks:
+      - id: docker-compose-check
+        name: docker-compose check
+        description: Docker Compose配置验证
+
+  # ============================================
+  # YAML/JSON校验
+  # ============================================
+  - repo: https://github.com/macisamuele/language-formatters-pre-commit-hooks
+    rev: v2.12.0
+    hooks:
+      - id: pretty-format-yaml
+        name: pretty yaml
+        description: YAML格式化
+        args: [--autofix, --indent, '2', --preserve-quotes]
+        exclude: ^.github/
+
+      - id: pretty-format-toml
+        name: pretty toml
+        description: TOML格式化
+        args: [--autofix, --indent, '2']
+
+  # ============================================
+  # 提交信息检查
+  # ============================================
+  - repo: https://github.com/commitizen-tools/commitizen
+    rev: v3.14.0
+    hooks:
+      - id: commitizen
+        name: commitizen check
+        description: 提交信息规范检查
+        stages: [commit-msg]
+
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.2.0
+    hooks:
+      - id: conventional-pre-commit
+        name: conventional commit check
+        description: 常规提交规范检查
+        stages: [commit-msg]
+        args: []
+
+  # ============================================
+  # 链接检查
+  # ============================================
+  - repo: https://github.com/lyz-code/yamlfix
+    rev: 1.16.0
+    hooks:
+      - id: yamlfix
+        name: yamlfix
+        description: YAML修复和格式化
+
+  # ============================================
+  # 本地钩子
+  # ============================================
+  - repo: local
+    hooks:
+      - id: pytest-check
+        name: pytest
+        entry: pytest
+        language: system
+        pass_filenames: false
+        args: [
+          tests/,
+          -m, "not slow",
+          --tb=short,
+          -q,
+        ]
+        stages: [commit]
+        description: 运行快速测试
+
+      - id: coverage-check
+        name: coverage
+        entry: bash
+        language: system
+        pass_filenames: false
+        args: [
+          -c,
+          "pytest --cov=src --cov-report=term-missing --cov-fail-under=80 -q"
+        ]
+        stages: [push]
+        description: 代码覆盖率检查
+
+      - id: pip-audit
+        name: pip-audit
+        entry: pip-audit
+        language: system
+        pass_filenames: false
+        args: [
+          --strict,
+          --require-hashes,
+          -r,
+          requirements/prod.txt
+        ]
+        stages: [push]
+        description: Pip漏洞扫描
+
+# 全局配置
+default_stages: [commit]
+default_language_version:
+  python: python3.11
+files: ^(src|tests)/
+fail_fast: false
+minimum_pre_commit_version: 3.0.0

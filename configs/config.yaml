@@ -1,0 +1,66 @@
+app:
+  name: "blockchain-infra"
+  version: "1.0.0"
+  host: "0.0.0.0"
+  port: 8000
+  debug: false
+
+chains:
+  ethereum:
+    rpc_url: "https://eth-mainnet.g.alchemy.com/v2/demo"
+    chain_id: 1
+    name: "Ethereum Mainnet"
+  goerli:
+    rpc_url: "https://eth-goerli.g.alchemy.com/v2/demo"
+    chain_id: 5
+    name: "Ethereum Goerli"
+  polygon:
+    rpc_url: "https://polygon-rpc.com"
+    chain_id: 137
+    name: "Polygon Mainnet"
+  bsc:
+    rpc_url: "https://bsc-dataseed.binance.org"
+    chain_id: 56
+    name: "BSC Mainnet"
+
+database:
+  url: "sqlite:///./data/blockchain_infra.db"
+  echo: false
+
+redis:
+  host: "localhost"
+  port: 6379
+  db: 0
+
+celery:
+  broker_url: "redis://localhost:6379/0"
+  result_backend: "redis://localhost:6379/0"
+
+storage:
+  ipfs:
+    gateway_url: "https://ipfs.io/ipfs/"
+    api_url: "http://localhost:5001"
+  arweave:
+    gateway_url: "https://arweave.net/"
+    node_url: "https://arweave.net"
+
+gas_estimator:
+  history_blocks: 100
+  priority_fee_percentile: 60
+  max_priority_fee: 50000000000
+  gas_price_multiplier: 1.2
+
+event_listener:
+  max_retry: 3
+  retry_delay: 5
+  poll_interval: 2
+  confirmation_blocks: 12
+
+indexer:
+  batch_size: 100
+  start_block: 0
+  concurrent_workers: 4
+
+wallet:
+  hd_path: "m/44'/60'/0'/0"
+  default_chain: "ethereum"

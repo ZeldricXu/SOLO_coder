@@ -1,0 +1,235 @@
+[MASTER]
+ignore =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    env,
+    build,
+    dist,
+    .tox,
+    .pytest_cache,
+    .mypy_cache,
+    .ruff_cache,
+    migrations,
+    alembic,
+    tests,
+ignore-patterns =
+    .*test.*,
+    .*_pb2\.py$
+persistent = yes
+load-plugins =
+    pylint_google_style_guide,
+    pylint_performance,
+    pylint_async,
+    pylint_pydantic
+extension-pkg-allow-list =
+    web3,
+    eth_typing,
+    eth_utils,
+    eth_account,
+    sqlalchemy,
+    redis,
+    celery,
+    pydantic
+extension-pkg-whitelist =
+    web3,
+    eth_typing,
+    eth_utils,
+    eth_account,
+    sqlalchemy,
+    redis,
+    celery,
+    pydantic
+
+[MESSAGES CONTROL]
+disable =
+    C0114,  # missing-module-docstring
+    C0115,  # missing-class-docstring
+    C0116,  # missing-function-docstring
+    C0209,  # format-f-string
+    C0301,  # line-too-long (handled by black)
+    C0302,  # too-many-lines
+    C0303,  # trailing-whitespace (handled by black)
+    C0304,  # trailing-newlines (handled by black)
+    C0305,  # trailing-whitespace (handled by black)
+    C0325,  # superfluous-parens (handled by black)
+    C0411,  # wrong-import-order (handled by isort)
+    C0412,  # grouped-imports (handled by isort)
+    C0413,  # wrong-import-position (handled by isort)
+    C0415,  # import-outside-toplevel
+    C0501,  # line-continuation-with-leading-space (handled by black)
+    R0801,  # duplicate-code
+    R0901,  # too-many-ancestors
+    R0902,  # too-many-instance-attributes
+    R0903,  # too-few-public-methods
+    R0904,  # too-many-public-methods
+    R0911,  # too-many-return-statements
+    R0912,  # too-many-branches
+    R0913,  # too-many-arguments
+    R0914,  # too-many-locals
+    R0915,  # too-many-statements
+    R0916,  # too-many-boolean-expressions
+    R0917,  # too-many-positional-arguments
+    W0221,  # arguments-differ
+    W0231,  # super-init-not-called
+    W0237,  # redefined-argument-from-local
+    W0246,  # useless-parent-delegation
+    W0603,  # global-statement
+    W0611,  # unused-import (handled by ruff)
+    W0613,  # unused-argument
+    W0622,  # redefined-builtin
+    W0623,  # redefined-in-outer-scope
+    W0703,  # broad-except
+    W0707,  # raise-missing-from
+    W1203,  # logging-fstring-interpolation
+    W1308,  # duplicate-string-formatting-argument
+    E0401,  # import-error
+    E0611,  # no-name-in-module
+    E1101,  # no-member
+    E1120,  # no-value-for-parameter
+    E1123,  # unexpected-keyword-arg
+    E1135,  # unsupported-membership-test
+    E1136,  # unsubscriptable-object
+    E1137,  # unsupported-assignment-operation
+    E1138,  # unsupported-delete-operation
+    E1139,  # invalid-metaclass
+    E1140,  # unhashable-member
+    W0101,  # unreachable
+    C0103,  # invalid-name (we allow some naming conventions)
+    W3101,  # missing-timeout
+    W0107,  # unnecessary-pass
+    C0123,  # unidiomatic-typecheck
+enable =
+    W0102,  # dangerous-default-value
+    W0212,  # protected-access
+    W0311,  # bad-indentation
+    W0312,  # mixed-indentation
+    W0404,  # reimported
+    W0601,  # global-variable-undefined
+    W0602,  # global-variable-not-assigned
+    W0621,  # redefined-outer-name
+    W0702,  # bare-except
+    W0718,  # broad-exception-caught
+    E0100,  # syntax-error
+    E0101,  # returned-non-string
+    E0102,  # function-redefined
+    E0103,  # not-in-loop
+    E0104,  # return-outside-function
+    E0105,  # yield-outside-function
+    E0106,  # return-in-init
+    E0107,  # expected-indented-block
+    E0108,  # duplicate-argument-name
+    E0202,  # method-hidden
+    E0203,  # access-member-before-definition
+    E0211,  # method-hidden
+    E0213,  # no-self-argument
+    E0237,  # assigning-non-slot
+    E0601,  # using-constant-test
+    E0602,  # undefined-variable
+    E0701,  # bad-except-order
+    E0702,  # raising-bad-type
+    E0703,  # bad-except-order
+    E0704,  # misplace-bare-raise
+    E0710,  # raising-non-exception
+    E0711,  # notimplemented-raised
+    E0712,  # catching-non-exception
+    E1003,  # bad-first-argument-name
+
+[REPORTS]
+output-format = colorized
+include-msgs = yes
+show-source = yes
+reports = no
+score = yes
+
+[REFACTORING]
+max-nested-blocks = 5
+never-returning-functions =
+    sys.exit,
+    argparse.ArgumentParser.error,
+    pytest.fail,
+    pytest.exit,
+    raise,
+    assert False
+
+[LOGGING]
+logging-modules = logging,loguru,structlog
+logging-format-style = new
+
+[STRING]
+check-str-concat-over-line-jumps = no
+
+[DESIGN]
+max-args = 8
+max-attributes = 12
+max-bool-expr = 6
+max-branches = 15
+max-locals = 20
+max-parents = 7
+max-public-methods = 25
+max-returns = 8
+max-statements = 60
+min-public-methods = 1
+
+[FORMAT]
+max-line-length = 100
+expected-line-ending-format = LF
+indent-after-paren = 4
+indent-string = "    "
+single-line-if-stmt = no
+
+[VARIABLES]
+init-method = __init__
+dummy-variables-rgx = _+|dummy|fake|unused
+additional-builtins =
+    logger,
+    settings,
+
+[CLASSES]
+defining-attr-methods =
+    __init__,
+    __new__,
+    setUp,
+    asyncSetUp,
+    __post_init__,
+    _init_,
+valid-classmethod-first-arg = cls
+valid-metaclass-classmethod-first-arg = cls
+
+[IMPORTS]
+import-graph =
+    src.core,
+    src.api,
+    src.infrastructure,
+    src.shared
+known-third-party =
+    fastapi,
+    uvicorn,
+    web3,
+    pydantic,
+    sqlalchemy,
+    redis,
+    celery,
+    httpx,
+    aiohttp,
+    pytest,
+    pytest_asyncio
+
+[EXCEPTIONS]
+overgeneral-exceptions =
+    exceptions.Exception,
+    exceptions.BaseException,
+    builtins.Exception,
+    builtins.BaseException,
+    builtins.Warning,
+    Exception,
+    BaseException,
+    Warning
+
+[SIMILARITIES]
+min-similarity-lines = 8
+ignore-comments = yes
+ignore-docstrings = yes
+ignore-imports = no
+ignore-signatures = no

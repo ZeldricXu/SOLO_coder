@@ -1,0 +1,2 @@
+# 默认安装生产环境依赖
+-r requirements/prod.txt

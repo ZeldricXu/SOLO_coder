@@ -1,0 +1,454 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, develop, release/*]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - 'docs/**'
+      - '.github/**'
+  pull_request:
+    branches: [main, develop, release/*]
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.txt'
+      - 'docs/**'
+      - '.github/**'
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: '3.11'
+  POETRY_VERSION: '1.7.1'
+  CACHE_VERSION: 'v1'
+
+jobs:
+  # 代码质量检查
+  code-quality:
+    name: Code Quality Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: |
+            requirements/base.txt
+            requirements/dev.txt
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libffi-dev \
+            libssl-dev \
+            libgmp-dev \
+            libsecp256k1-dev
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-${{ env.CACHE_VERSION }}-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ env.CACHE_VERSION }}-pip-${{ matrix.python-version }}-
+            ${{ runner.os }}-${{ env.CACHE_VERSION }}-pip-
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements/dev.txt
+
+      - name: Run ruff linter
+        run: |
+          ruff check src/ tests/ \
+            --output-format=github \
+            --exit-zero
+
+      - name: Run ruff formatter check
+        run: |
+          ruff format src/ tests/ --check
+
+      - name: Run black formatter check
+        run: |
+          black --check --diff src/ tests/
+
+      - name: Run isort check
+        run: |
+          isort --check-only --diff src/ tests/
+
+      - name: Run flake8 linter
+        run: |
+          flake8 src/ tests/ \
+            --format=github \
+            --extend-exclude=tests/ \
+            --max-complexity=15 \
+            || true
+
+      - name: Run mypy type checker
+        run: |
+          mypy src/ \
+            --show-error-codes \
+            --show-error-context \
+            --ignore-missing-imports \
+            || true
+
+      - name: Upload linting results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linting-results-${{ matrix.python-version }}
+          path: |
+            mypy.ini
+            .flake8
+            pyproject.toml
+          retention-days: 7
+
+  # 安全扫描
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: code-quality
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install bandit safety
+
+      - name: Run Bandit security scan
+        run: |
+          bandit -r src/ \
+            -f json \
+            -o bandit-report.json \
+            -x tests,__pycache__,.venv \
+            -ll \
+            || true
+
+      - name: Run Safety dependency scan
+        run: |
+          safety check \
+            --full-report \
+            --output json \
+            > safety-report.json \
+            || true
+
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH,MEDIUM'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          exit-code: '0'
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports
+          path: |
+            bandit-report.json
+            safety-report.json
+            trivy-results.sarif
+          retention-days: 30
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+
+  # 单元测试和集成测试
+  tests:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: code-quality
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+        test-type: ['unit', 'integration']
+
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: test_db
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test_user -d test_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      BCI_DATABASE__URL: postgresql+asyncpg://test_user:test_password@localhost:5432/test_db
+      BCI_REDIS__HOST: localhost
+      BCI_REDIS__PORT: 6379
+      BCI_CELERY__BROKER_URL: redis://localhost:6379/0
+      BCI_CELERY__RESULT_BACKEND: redis://localhost:6379/0
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libffi-dev \
+            libssl-dev \
+            libgmp-dev \
+            libsecp256k1-dev \
+            postgresql-client
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-test-pip-${{ matrix.python-version }}-${{ hashFiles('requirements/*.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-test-pip-${{ matrix.python-version }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements/test.txt
+
+      - name: Wait for PostgreSQL
+        run: |
+          for i in {1..30}; do
+            if pg_isready -h localhost -U test_user -d test_db; then
+              echo "PostgreSQL is ready"
+              break
+            fi
+            echo "Waiting for PostgreSQL..."
+            sleep 1
+          done
+
+      - name: Run tests - ${{ matrix.test-type }}
+        run: |
+          pytest tests/ \
+            -m "${{ matrix.test-type }}" \
+            -v \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage-${{ matrix.python-version }}-${{ matrix.test-type }}.xml \
+            --cov-report=html:htmlcov-${{ matrix.python-version }}-${{ matrix.test-type }} \
+            --junitxml=pytest-${{ matrix.python-version }}-${{ matrix.test-type }}.xml \
+            --numprocesses=auto \
+            --reruns=2 \
+            --reruns-delay=1
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results-${{ matrix.python-version }}-${{ matrix.test-type }}
+          path: |
+            pytest-${{ matrix.python-version }}-${{ matrix.test-type }}.xml
+            coverage-${{ matrix.python-version }}-${{ matrix.test-type }}.xml
+            htmlcov-${{ matrix.python-version }}-${{ matrix.test-type }}/
+          retention-days: 30
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        if: matrix.python-version == '3.11'
+        with:
+          files: coverage-${{ matrix.python-version }}-${{ matrix.test-type }}.xml
+          flags: ${{ matrix.test-type }}
+          fail_ci_if_error: false
+
+  # 构建检查
+  build-check:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: tests
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine wheel
+
+      - name: Build package
+        run: |
+          python -m build \
+            --outdir dist/ \
+            --no-isolation
+
+      - name: Check package
+        run: |
+          twine check dist/*
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            dist/*.tar.gz
+            dist/*.whl
+          retention-days: 30
+
+  # Docker镜像构建测试
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build-check
+
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime
+          push: false
+          load: true
+          tags: |
+            localhost:5000/blockchain-infra:test
+          cache-from: type=local,src=/tmp/.buildx-cache
+          cache-to: type=local,dest=/tmp/.buildx-cache-new,mode=max
+          builder: ${{ steps.buildx.outputs.name }}
+          platforms: linux/amd64
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: localhost:5000/blockchain-infra:test
+          format: 'sarif'
+          output: 'trivy-docker-results.sarif'
+          exit-code: '0'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Docker scan results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: docker-scan-results
+          path: trivy-docker-results.sarif
+          retention-days: 30
+
+  # 汇总状态
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [code-quality, security-scan, tests, build-check, docker-build]
+    if: always()
+
+    steps:
+      - name: Check CI status
+        run: |
+          echo "CI Pipeline Completed"
+          echo "====================="
+          echo ""
+          echo "Jobs completed:"
+          echo "- Code Quality: ${{ needs.code-quality.result }}"
+          echo "- Security Scan: ${{ needs.security-scan.result }}"
+          echo "- Tests: ${{ needs.tests.result }}"
+          echo "- Build Check: ${{ needs.build-check.result }}"
+          echo "- Docker Build: ${{ needs.docker-build.result }}"
+          echo ""
+          if [[ "${{ needs.code-quality.result }}" == "success" && \
+                "${{ needs.security-scan.result }}" == "success" && \
+                "${{ needs.tests.result }}" == "success" && \
+                "${{ needs.build-check.result }}" == "success" && \
+                "${{ needs.docker-build.result }}" == "success" ]]; then
+            echo "✅ All CI checks passed!"
+            exit 0
+          else
+            echo "❌ Some CI checks failed!"
+            exit 1
+          fi

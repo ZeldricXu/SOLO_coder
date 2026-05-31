@@ -1,0 +1,51 @@
+version: '3.8'
+
+# 开发环境Docker Compose配置
+# 使用: docker-compose -f docker-compose.yml -f docker-compose.dev.yml up
+
+services:
+  api:
+    build:
+      target: development
+    volumes:
+      - ./src:/app/src:ro
+      - ./tests:/app/tests:ro
+      - ./configs:/app/configs:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+    environment:
+      - LOG_LEVEL=DEBUG
+      - BCI_APP_DEBUG=true
+    command: >
+      uvicorn src.main:app
+      --host 0.0.0.0
+      --port 8000
+      --reload
+      --reload-dir src
+      --log-level debug
+    ports:
+      - "8000:8000"
+      - "5678:5678"  # debugpy端口
+
+  worker:
+    build:
+      target: development
+    volumes:
+      - ./src:/app/src:ro
+      - ./configs:/app/configs:ro
+    environment:
+      - LOG_LEVEL=DEBUG
+    command: >
+      celery -A src.infrastructure.celery_app worker
+      --loglevel=debug
+      --concurrency=2
+      --pool=solo
+      --max-tasks-per-child=100
+
+  beat:
+    build:
+      target: development
+    volumes:
+      - ./src:/app/src:ro
+      - ./configs:/app/configs:ro
+    environment:
+      - LOG_LEVEL=DEBUG

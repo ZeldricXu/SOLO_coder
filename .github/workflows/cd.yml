@@ -1,0 +1,399 @@
+name: CD Pipeline - Deploy to Production
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
+  workflow_run:
+    workflows: ['CI Pipeline']
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      version:
+        description: 'Version tag to deploy'
+        required: true
+        default: 'latest'
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  PYTHON_VERSION: '3.11'
+  DOCKER_REGISTRY: ghcr.io
+  DOCKER_IMAGE_NAME: blockchain-infra/platform
+
+permissions:
+  contents: read
+  packages: write
+  deployments: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  # 准备部署
+  prepare-deploy:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      environment: ${{ steps.environment.outputs.environment }}
+      deploy: ${{ steps.check.outputs.deploy }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" && "${{ startsWith(github.ref, 'refs/tags/v') }}" ]]; then
+            VERSION="${GITHUB_REF#refs/tags/}"
+          elif [[ "${{ github.event.inputs.version }}" != "latest" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="$(git describe --tags --abbrev=0 || echo 'v0.0.0')"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "Deploying version: ${VERSION}"
+
+      - name: Determine environment
+        id: environment
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" ]]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ steps.version.outputs.version }}" == *"-"* ]]; then
+            ENV="staging"
+          else
+            ENV="production"
+          fi
+          echo "environment=${ENV}" >> $GITHUB_OUTPUT
+          echo "Environment: ${ENV}"
+
+      - name: Check deployment conditions
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_run" && "${{ github.event.workflow_run.conclusion }}" != "success" ]]; then
+            echo "Previous CI workflow failed, skipping deployment"
+            echo "deploy=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          echo "deploy=true" >> $GITHUB_OUTPUT
+
+  # 构建并推送Docker镜像
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: prepare-deploy
+    if: needs.prepare-deploy.outputs.deploy == 'true'
+
+    environment:
+      name: ${{ needs.prepare-deploy.outputs.environment }}
+      url: https://api.blockchain-infra.com
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.DOCKER_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        if: secrets.DOCKER_HUB_USERNAME != ''
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}
+            ${{ secrets.DOCKER_HUB_USERNAME }}/blockchain-infra
+          tags: |
+            type=semver,pattern={{version}},value=${{ needs.prepare-deploy.outputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ needs.prepare-deploy.outputs.version }}
+            type=raw,value=${{ needs.prepare-deploy.outputs.environment }}
+            type=raw,value=latest,enable=${{ needs.prepare-deploy.outputs.environment == 'production' }}
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.version=${{ needs.prepare-deploy.outputs.version }}
+            org.opencontainers.image.created={{date 'YYYY-MM-DDTHH:mm:ssZ'}}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.vendor=Blockchain Infra Team
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-deploy-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-deploy-buildx-
+            ${{ runner.os }}-buildx-
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        id: build
+        with:
+          context: .
+          file: ./Dockerfile
+          target: runtime
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: |
+            type=local,src=/tmp/.buildx-cache
+            type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:buildcache,mode=max
+          build-args: |
+            VERSION=${{ needs.prepare-deploy.outputs.version }}
+            BUILD_TIMESTAMP=${{ github.event.repository.updated_at }}
+            COMMIT_SHA=${{ github.sha }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Scan Docker image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:${{ needs.prepare-deploy.outputs.version }}
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL,HIGH'
+          timeout: '10m'
+
+      - name: Generate artifact attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-name: ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          name: Release ${{ needs.prepare-deploy.outputs.version }}
+          generate_release_notes: true
+          body: |
+            ## Docker Images
+            - `${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:${{ needs.prepare-deploy.outputs.version }}`
+            - Digest: `${{ steps.build.outputs.digest }}`
+            
+            ## Deployment
+            - Environment: ${{ needs.prepare-deploy.outputs.environment }}
+            - Build Time: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          files: |
+            pyproject.toml
+            requirements/prod.txt
+          draft: ${{ contains(needs.prepare-deploy.outputs.version, '-') }}
+          prerelease: ${{ contains(needs.prepare-deploy.outputs.version, '-') }}
+
+  # 部署到Staging
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [prepare-deploy, build-and-push]
+    if: needs.prepare-deploy.outputs.deploy == 'true' && needs.prepare-deploy.outputs.environment == 'staging'
+
+    environment:
+      name: staging
+      url: https://staging-api.blockchain-infra.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to ECS
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: deploy/ecs/staging/task-definition.json
+          service: bci-api-staging
+          cluster: blockchain-infra-cluster
+          wait-for-service-stability: true
+          wait-for-minutes: 10
+          force-new-deployment: true
+
+      - name: Kubernetes deployment
+        if: secrets.KUBECONFIG != ''
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          
+          # 部署到K8s
+          kubectl set image deployment/bci-api \
+            bci-api=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:${{ needs.prepare-deploy.outputs.version }} \
+            --namespace staging
+          
+          kubectl rollout status deployment/bci-api --namespace staging --timeout=10m
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests against staging..."
+          for i in {1..30}; do
+            if curl -f https://staging-api.blockchain-infra.com/api/v1/health; then
+              echo "Smoke test passed!"
+              break
+            fi
+            echo "Attempt $i: Waiting for service to be ready..."
+            sleep 5
+          done
+
+  # 部署到Production
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [prepare-deploy, build-and-push, deploy-staging]
+    if: needs.prepare-deploy.outputs.deploy == 'true' && needs.prepare-deploy.outputs.environment == 'production'
+    environment:
+      name: production
+      url: https://api.blockchain-infra.com
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Manual approval gate
+        uses: trstringer/manual-approval@v1
+        if: github.event.inputs.environment == 'production' || startsWith(github.ref, 'refs/tags/v')
+        with:
+          secret: ${{ secrets.GITHUB_TOKEN }}
+          approvers: ${{ secrets.PRODUCTION_APPROVERS }}
+          minimum-approvals: 2
+          issue-title: "Production deployment approval required"
+          issue-body: |
+            Please review and approve the production deployment.
+            
+            **Version**: ${{ needs.prepare-deploy.outputs.version }}
+            **Environment**: production
+            **Commit**: ${{ github.sha }}
+            
+            Please verify the staging deployment is healthy before approving.
+
+      - name: Configure AWS credentials
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy to ECS (Blue/Green)
+        if: secrets.AWS_ACCESS_KEY_ID != ''
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: deploy/ecs/production/task-definition.json
+          service: bci-api-production
+          cluster: blockchain-infra-cluster
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+          force-new-deployment: true
+
+      - name: Kubernetes deployment (Canary)
+        if: secrets.KUBECONFIG != ''
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG }}" > ~/.kube/config
+          
+          # 灰度发布 - 先部署20%流量
+          kubectl set image deployment/bci-api-primary \
+            bci-api=${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE_NAME }}:${{ needs.prepare-deploy.outputs.version }} \
+            --namespace production
+          
+          kubectl rollout status deployment/bci-api-primary --namespace production --timeout=15m
+
+      - name: Run smoke tests
+        run: |
+          echo "Running production smoke tests..."
+          for i in {1..30}; do
+            if curl -f https://api.blockchain-infra.com/api/v1/health; then
+              echo "Production smoke test passed!"
+              break
+            fi
+            echo "Attempt $i: Waiting for production service..."
+            sleep 5
+          done
+
+  # 部署后验证
+  post-deploy-verify:
+    name: Post-Deployment Verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [prepare-deploy, deploy-staging, deploy-production]
+    if: always()
+
+    steps:
+      - name: Run integration tests against deployed environment
+        run: |
+          ENV="${{ needs.prepare-deploy.outputs.environment }}"
+          if [[ "${ENV}" == "production" ]]; then
+            API_URL="https://api.blockchain-infra.com"
+          else
+            API_URL="https://staging-api.blockchain-infra.com"
+          fi
+          
+          echo "Running post-deployment verification against ${API_URL}..."
+          
+          # 健康检查
+          curl -f "${API_URL}/api/v1/health" || exit 1
+          
+          # 版本验证
+          VERSION=$(curl -s "${API_URL}/api/v1/version" | jq -r '.version')
+          echo "Deployed version: ${VERSION}"
+          echo "Expected version: ${{ needs.prepare-deploy.outputs.version }}"
+
+      - name: Send notification
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          slack-message: |
+            *Deployment ${{ needs.prepare-deploy.outputs.result == 'success' && '✅ Success' || '❌ Failed' }}*
+            
+            *Environment*: ${{ needs.prepare-deploy.outputs.environment }}
+            *Version*: ${{ needs.prepare-deploy.outputs.version }}
+            *Commit*: ${{ github.sha }}
+            *Initiator*: ${{ github.actor }}
+            *Time*: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+            
+            *Deployed to*: ${{ needs.prepare-deploy.outputs.environment == 'production' && 'https://api.blockchain-infra.com' || 'https://staging-api.blockchain-infra.com' }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
