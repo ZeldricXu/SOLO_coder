@@ -1,0 +1,73 @@
+spring:
+  application:
+    name: tx-builder
+  profiles:
+    active: dev
+
+server:
+  port: 8084
+
+tx-builder:
+  default-gas-limit: 21000
+  default-gas-price: 10000000000
+  gas-buffer-percentage: 20
+  nonce-cache-expire-minutes: 5
+  supported-chains:
+    - chain-id: "1"
+      name: "ethereum"
+      eip1559: true
+      default-rpc: "https://eth.llamarpc.com"
+    - chain-id: "11155111"
+      name: "sepolia"
+      eip1559: true
+      default-rpc: "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161"
+    - chain-id: "137"
+      name: "polygon"
+      eip1559: true
+      default-rpc: "https://polygon.llamarpc.com"
+    - chain-id: "56"
+      name: "bsc"
+      eip1559: false
+      default-rpc: "https://bsc-dataseed.binance.org"
+    - chain-id: "42161"
+      name: "arbitrum"
+      eip1559: true
+      default-rpc: "https://arbitrum.llamarpc.com"
+    - chain-id: "10"
+      name: "optimism"
+      eip1559: true
+      default-rpc: "https://optimism.llamarpc.com"
+    - chain-id: "8453"
+      name: "base"
+      eip1559: true
+      default-rpc: "https://mainnet.base.org"
+  gas-optimization:
+    slow-multiplier: 0.7
+    normal-multiplier: 1.0
+    fast-multiplier: 1.5
+    urgent-multiplier: 2.0
+    base-fee-multiplier: 1.5
+    max-fee-multiplier: 2.0
+  security:
+    enable-signature-verification: true
+    validate-address-format: true
+    min-gas-price: 1000000000
+    max-gas-price: 1000000000000
+    max-gas-limit: 10000000
+
+logging:
+  level:
+    com.web3platform.txbuilder: DEBUG
+    org.web3j: INFO
+    org.springframework: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always

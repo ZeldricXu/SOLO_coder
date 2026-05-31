@@ -1,0 +1,35 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: chain-indexer
+  profiles:
+    active: default
+  datasource:
+    url: jdbc:mysql://localhost:3306/web3platform?useSSL=false&serverTimezone=UTC&characterEncoding=utf8
+    username: root
+    password: root
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  mapper-locations: classpath:mapper/**/*.xml
+  type-aliases-package: com.web3platform.persistence.model.entity
+
+indexer:
+  batch-size: 100
+  concurrency: 4
+  retry-interval: 5000
+  max-retries: 3
+  realtime-poll-interval: 3000
+
+logging:
+  level:
+    com.web3platform.chainindexer: DEBUG
+    org.web3j: INFO

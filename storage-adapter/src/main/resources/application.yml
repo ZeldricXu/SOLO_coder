@@ -1,0 +1,6 @@
+storage:
+  ipfs-api-url: http://127.0.0.1:5001
+  arweave-gateway-url: https://arweave.net
+  chunk-size: 4194304
+  max-concurrent-uploads: 5
+  stream-buffer-size: 8192

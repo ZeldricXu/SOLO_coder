@@ -1,0 +1,49 @@
+server:
+  port: 8086
+
+spring:
+  application:
+    name: gas-estimator
+  datasource:
+    url: jdbc:mysql://localhost:3306/web3platform?useUnicode=true&characterEncoding=utf8&serverTimezone=UTC
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.web3platform.persistence.model.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+
+gas-estimator:
+  auto-collect-enabled: false
+  collect-interval-ms: 60000
+  speed-multipliers:
+    SLOW: 0.9
+    NORMAL: 1.0
+    FAST: 1.2
+    URGENT: 1.5
+  eip1559-priority-fee:
+    SLOW: 1000000000
+    NORMAL: 2000000000
+    FAST: 3000000000
+    URGENT: 5000000000
+
+chain-interaction:
+  chains:
+    - chainId: ethereum
+      rpcUrl: https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+      chainType: EVM
+    - chainId: bsc
+      rpcUrl: https://bsc-dataseed.binance.org
+      chainType: EVM
+    - chainId: polygon
+      rpcUrl: https://polygon-rpc.com
+      chainType: EVM
+
+logging:
+  level:
+    com.web3platform.gasestimator: DEBUG
+    org.web3j: INFO

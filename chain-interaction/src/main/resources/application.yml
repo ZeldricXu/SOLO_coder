@@ -1,0 +1,23 @@
+chain-interaction:
+  chains:
+    - chainId: ethereum
+      rpcUrl: https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY
+      chainType: EVM
+    - chainId: bsc
+      rpcUrl: https://bsc-dataseed.binance.org
+      chainType: EVM
+    - chainId: polygon
+      rpcUrl: https://polygon-rpc.com
+      chainType: EVM
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus,metrics
+  metrics:
+    tags:
+      application: chain-interaction
+  endpoint:
+    health:
+      show-details: always

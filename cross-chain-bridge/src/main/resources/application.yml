@@ -1,0 +1,77 @@
+cross-chain-bridge:
+  bridge:
+    private-key: ""
+    confirmations: 15
+    timeout-seconds: 3600
+
+  pool:
+    rpc-pool-max-total: 10
+    rpc-pool-max-per-route: 5
+    rpc-pool-idle-seconds: 300
+    verifier-pool-size: 5
+    verifier-pool-max-wait-ms: 5000
+    message-signer-pool-size: 3
+    connection-timeout-ms: 10000
+    read-timeout-ms: 30000
+    chain-rpc:
+      ethereum: "https://eth.llamarpc.com"
+      bsc: "https://bsc-dataseed.binance.org"
+      polygon: "https://polygon-rpc.com"
+      arbitrum: "https://arb1.arbitrum.io/rpc"
+      optimism: "https://mainnet.optimism.io"
+
+  supported-chains:
+    - source: "ethereum"
+      target: "bsc"
+      source-contract: "0xBridgeContract1"
+      target-contract: "0xBridgeContract2"
+      enabled: true
+    - source: "bsc"
+      target: "ethereum"
+      source-contract: "0xBridgeContract2"
+      target-contract: "0xBridgeContract1"
+      enabled: true
+    - source: "ethereum"
+      target: "polygon"
+      source-contract: "0xBridgeContract1"
+      target-contract: "0xBridgeContract3"
+      enabled: true
+    - source: "polygon"
+      target: "ethereum"
+      source-contract: "0xBridgeContract3"
+      target-contract: "0xBridgeContract1"
+      enabled: true
+    - source: "ethereum"
+      target: "arbitrum"
+      source-contract: "0xBridgeContract1"
+      target-contract: "0xBridgeContract4"
+      enabled: true
+    - source: "arbitrum"
+      target: "ethereum"
+      source-contract: "0xBridgeContract4"
+      target-contract: "0xBridgeContract1"
+      enabled: true
+
+  chain-rpc:
+    ethereum: "https://eth.llamarpc.com"
+    bsc: "https://bsc-dataseed.binance.org"
+    polygon: "https://polygon-rpc.com"
+    arbitrum: "https://arb1.arbitrum.io/rpc"
+    optimism: "https://mainnet.optimism.io"
+
+  proof-type:
+    ethereum: "mpt"
+    bsc: "mpt"
+    polygon: "mpt"
+    arbitrum: "mpt"
+    optimism: "mpt"
+    solana: "merkle"
+
+spring:
+  application:
+    name: cross-chain-bridge
+
+logging:
+  level:
+    com.web3platform.crosschainbridge: DEBUG
+    org.web3j: INFO
