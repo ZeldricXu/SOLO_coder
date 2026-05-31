@@ -1,0 +1,38 @@
+[package]
+name = "streamsql"
+version = "0.1.0"
+edition = "2021"
+description = "StreamSQL - 流式SQL计算执行引擎"
+authors = ["StreamSQL Team"]
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+axum = { version = "0.7", features = ["http1", "http2"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+sqlparser = "0.48"
+petgraph = "0.6"
+hashbrown = "0.14"
+tokio-util = { version = "0.7", features = ["compat"] }
+futures = "0.3"
+async-trait = "0.1"
+bytes = "1.5"
+base64 = "0.21"
+lz4 = "1.24"
+simd-json = { version = "0.13", features = ["serde_impl"] }
+regex = "1.10"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
