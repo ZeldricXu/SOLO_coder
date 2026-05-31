@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1;MODE=MySQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  flyway:
+    enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: none
+
+cdcsync:
+  vector:
+    index-base-path: /tmp/cdcsync-test/vector-indexes
+  cdc:
+    poll-interval-ms: 100
+  lifecycle:
+    scheduler-enabled: false
+  quality:
+    scheduler-enabled: false
+
+logging:
+  level:
+    root: WARN
+    com.cdcsync: INFO
