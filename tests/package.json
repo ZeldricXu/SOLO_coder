@@ -1,0 +1,23 @@
+{
+  "name": "blockchain-middleware-tests",
+  "version": "1.0.0",
+  "description": "Automated tests for blockchain middleware",
+  "scripts": {
+    "test": "jest --config jest.config.js",
+    "test:unit": "jest --testPathPattern='unit'",
+    "test:integration": "jest --testPathPattern='integration'",
+    "test:coverage": "jest --coverage",
+    "test:watch": "jest --watch"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4",
+    "@types/jest": "^29.5.12",
+    "axios": "^1.6.8",
+    "nock": "^13.5.4"
+  },
+  "dependencies": {
+    "uuid": "^9.0.1",
+    "ethers": "^6.11.1"
+  }
+}
