@@ -1,0 +1,82 @@
+{
+  "server": {
+    "port": 8080,
+    "read_timeout": 30,
+    "write_timeout": 30,
+    "mode": "debug"
+  },
+  "chains": [
+    {
+      "name": "ethereum",
+      "chain_id": 1,
+      "rpc_urls": ["http://localhost:8545", "https://mainnet.infura.io/v3/YOUR_INFURA_KEY"],
+      "ws_url": "wss://mainnet.infura.io/ws/v3/YOUR_INFURA_KEY",
+      "explorer_url": "https://etherscan.io",
+      "native_token": "ETH",
+      "confirmations": 12
+    },
+    {
+      "name": "polygon",
+      "chain_id": 137,
+      "rpc_urls": ["http://localhost:8546", "https://polygon-mainnet.infura.io/v3/YOUR_INFURA_KEY"],
+      "explorer_url": "https://polygonscan.com",
+      "native_token": "MATIC",
+      "confirmations": 12
+    },
+    {
+      "name": "bsc",
+      "chain_id": 56,
+      "rpc_urls": ["https://bsc-dataseed.binance.org"],
+      "explorer_url": "https://bscscan.com",
+      "native_token": "BNB",
+      "confirmations": 15
+    },
+    {
+      "name": "arbitrum",
+      "chain_id": 42161,
+      "rpc_urls": ["https://arb1.arbitrum.io/rpc"],
+      "explorer_url": "https://arbiscan.io",
+      "native_token": "ETH",
+      "confirmations": 6
+    },
+    {
+      "name": "optimism",
+      "chain_id": 10,
+      "rpc_urls": ["https://mainnet.optimism.io"],
+      "explorer_url": "https://optimistic.etherscan.io",
+      "native_token": "ETH",
+      "confirmations": 6
+    }
+  ],
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "user": "postgres",
+    "password": "postgres",
+    "dbname": "gas_estimator",
+    "ssl_mode": "disable"
+  },
+  "redis": {
+    "address": "localhost:6379",
+    "password": "",
+    "db": 0
+  },
+  "storage": {
+    "ipfs_endpoints": ["http://localhost:5001", "https://ipfs.infura.io:5001"],
+    "arweave_node": "https://arweave.net",
+    "timeout": 30
+  },
+  "multisig": {
+    "threshold": 2,
+    "total_signers": 3,
+    "signers": [
+      "0x1234567890123456789012345678901234567890",
+      "0x2345678901234567890123456789012345678901",
+      "0x3456789012345678901234567890123456789012"
+    ]
+  },
+  "logger": {
+    "level": "info",
+    "format": "json"
+  }
+}
