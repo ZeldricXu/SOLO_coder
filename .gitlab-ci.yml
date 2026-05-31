@@ -1,0 +1,159 @@
+variables:
+  MAVEN_OPTS: "-XX:+TieredCompilation -XX:TieredStopAtLevel=1 -Dmaven.repo.local=.m2/repository"
+  MAVEN_CLI_OPTS: "-B -e -U"
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_DRIVER: overlay2
+  IMAGE_NAME: $CI_REGISTRY_IMAGE/meshcontrol
+
+stages:
+  - build
+  - test
+  - quality
+  - security
+  - package
+  - deploy
+
+.cache: &cache
+  key:
+    files:
+      - pom.xml
+      - .mvn/wrapper/maven-wrapper.properties
+  paths:
+    - .m2/repository/
+    - target/
+    - meshcontrol-*/target/
+
+build:
+  stage: build
+  image: maven:3.9.6-eclipse-temurin-17
+  cache:
+    <<: *cache
+  script:
+    - mvn $MAVEN_CLI_OPTS clean compile -Pfast -Dmaven.test.skip=true
+  artifacts:
+    paths:
+      - target/
+      - meshcontrol-*/target/
+    expire_in: 1 week
+  tags:
+    - docker
+
+test:
+  stage: test
+  image: maven:3.9.6-eclipse-temurin-17
+  cache:
+    <<: *cache
+  services:
+    - name: mysql:8.0
+      alias: mysql
+    - name: redis:7.2-alpine
+      alias: redis
+  variables:
+    MYSQL_ROOT_PASSWORD: rootpassword
+    MYSQL_DATABASE: meshcontrol_test
+    MYSQL_USER: meshcontrol
+    MYSQL_PASSWORD: meshcontrol
+    SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/meshcontrol_test
+    SPRING_DATA_REDIS_HOST: redis
+  script:
+    - mvn $MAVEN_CLI_OPTS test -Pdev
+  artifacts:
+    reports:
+      junit:
+        - meshcontrol-*/target/surefire-reports/TEST-*.xml
+    paths:
+      - meshcontrol-*/target/surefire-reports/
+    expire_in: 1 week
+  tags:
+    - docker
+
+quality:
+  stage: quality
+  image: maven:3.9.6-eclipse-temurin-17
+  cache:
+    <<: *cache
+  script:
+    - mvn $MAVEN_CLI_OPTS verify -Pqa -DskipTests
+  artifacts:
+    paths:
+      - meshcontrol-*/target/checkstyle-result.xml
+      - meshcontrol-*/target/pmd.xml
+      - meshcontrol-*/target/spotbugsXml.xml
+      - meshcontrol-*/target/site/jacoco/
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: meshcontrol-api/target/site/jacoco/jacoco.xml
+    expire_in: 1 week
+  allow_failure: true
+  tags:
+    - docker
+  only:
+    - main
+    - develop
+    - /^release\/.*$/
+
+security:
+  stage: security
+  image: maven:3.9.6-eclipse-temurin-17
+  cache:
+    <<: *cache
+  script:
+    - mvn $MAVEN_CLI_OPTS org.owasp:dependency-check-maven:9.0.9:check -DfailBuildOnCVSS=7
+  allow_failure: true
+  tags:
+    - docker
+  only:
+    - main
+    - /^release\/.*$/
+
+package:
+  stage: package
+  image: docker:24.0
+  services:
+    - docker:24.0-dind
+  variables:
+    DOCKER_TLS_CERTDIR: "/certs"
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    - docker build -t $IMAGE_NAME:$CI_COMMIT_SHA -t $IMAGE_NAME:latest .
+    - docker push $IMAGE_NAME:$CI_COMMIT_SHA
+    - docker push $IMAGE_NAME:latest
+  tags:
+    - docker
+  only:
+    - main
+    - /^release\/.*$/
+
+deploy_staging:
+  stage: deploy
+  image: alpine/k8s:1.29.0
+  script:
+    - kubectl config use-context staging
+    - kubectl set image deployment/meshcontrol meshcontrol=$IMAGE_NAME:$CI_COMMIT_SHA -n meshcontrol
+    - kubectl rollout status deployment/meshcontrol -n meshcontrol --timeout=5m
+  environment:
+    name: staging
+    url: https://staging.meshcontrol.io
+  tags:
+    - docker
+  only:
+    - develop
+
+deploy_prod:
+  stage: deploy
+  image: alpine/k8s:1.29.0
+  script:
+    - kubectl config use-context production
+    - kubectl set image deployment/meshcontrol meshcontrol=$IMAGE_NAME:$CI_COMMIT_SHA -n meshcontrol
+    - kubectl rollout status deployment/meshcontrol -n meshcontrol --timeout=10m
+  environment:
+    name: production
+    url: https://meshcontrol.io
+  when: manual
+  tags:
+    - docker
+  only:
+    - main
+    - /^release\/.*$/

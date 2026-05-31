@@ -1,0 +1,171 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+        "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+        "https://checkstyle.org/dtds/configuration_1_3.dtd">
+
+<module name="Checker">
+    <property name="charset" value="UTF-8"/>
+    <property name="severity" value="warning"/>
+
+    <module name="NewlineAtEndOfFile"/>
+
+    <module name="FileLength">
+        <property name="max" value="500"/>
+        <property name="severity" value="warning"/>
+    </module>
+
+    <module name="FileTabCharacter">
+        <property name="eachLine" value="true"/>
+    </module>
+
+    <module name="TreeWalker">
+        <module name="ConstantName"/>
+        <module name="LocalFinalVariableName"/>
+        <module name="LocalVariableName"/>
+        <module name="MemberName"/>
+        <module name="MethodName"/>
+        <module name="PackageName"/>
+        <module name="ParameterName"/>
+        <module name="StaticVariableName"/>
+        <module name="TypeName"/>
+
+        <module name="AvoidStarImport"/>
+        <module name="IllegalImport"/>
+        <module name="RedundantImport"/>
+        <module name="UnusedImports">
+            <property name="processJavadoc" value="true"/>
+        </module>
+
+        <module name="LineLength">
+            <property name="max" value="150"/>
+            <property name="ignorePattern" value="^package.*|^import.*|a href|href|http://|https://|ftp://"/>
+        </module>
+
+        <module name="MethodLength">
+            <property name="max" value="80"/>
+            <property name="countEmpty" value="false"/>
+        </module>
+
+        <module name="ParameterNumber">
+            <property name="max" value="7"/>
+        </module>
+
+        <module name="EmptyBlock">
+            <property name="option" value="TEXT"/>
+        </module>
+
+        <module name="LeftCurly"/>
+        <module name="RightCurly"/>
+        <module name="NeedBraces"/>
+
+        <module name="WhitespaceAround">
+            <property name="allowEmptyConstructors" value="true"/>
+            <property name="allowEmptyLambdas" value="true"/>
+            <property name="allowEmptyMethods" value="true"/>
+            <property name="allowEmptyTypes" value="true"/>
+            <property name="allowEmptyLoops" value="true"/>
+        </module>
+
+        <module name="GenericWhitespace"/>
+        <module name="MethodParamPad"/>
+        <module name="NoWhitespaceAfter"/>
+        <module name="NoWhitespaceBefore"/>
+        <module name="ParenPad"/>
+        <module name="TypecastParenPad"/>
+        <module name="WhitespaceAfter"/>
+
+        <module name="SingleSpaceSeparator"/>
+        <module name="AnnotationLocation"/>
+
+        <module name="ArrayTypeStyle"/>
+        <module name="UpperEll"/>
+
+        <module name="ModifierOrder"/>
+        <module name="RedundantModifier"/>
+
+        <module name="FinalClass"/>
+        <module name="HideUtilityClassConstructor"/>
+        <module name="InterfaceIsType"/>
+        <module name="VisibilityModifier"/>
+
+        <module name="EqualsHashCode"/>
+        <module name="MissingSerialVersionUID"/>
+        <module name="NoFinalizer"/>
+        <module name="NoSunPackages"/>
+        <module name="AvoidNestedBlocks"/>
+        <module name="EmptyStatement"/>
+        <module name="EqualsAvoidNull"/>
+        <module name="FallThrough"/>
+        <module name="IllegalInstantiation"/>
+        <module name="InnerAssignment"/>
+        <module name="MagicNumber">
+            <property name="ignoreHashCodeMethod" value="true"/>
+            <property name="ignoreAnnotation" value="true"/>
+            <property name="ignoreFieldDeclaration" value="true"/>
+            <property name="ignoreConstantDeclaration" value="true"/>
+            <property name="tokens" value="NUM_DOUBLE, NUM_FLOAT, NUM_INT, NUM_LONG"/>
+        </module>
+        <module name="MissingSwitchDefault"/>
+        <module name="SimplifyBooleanExpression"/>
+        <module name="SimplifyBooleanReturn"/>
+
+        <module name="DesignForExtension"/>
+        <module name="FinalParameters"/>
+        <module name="ThrowsCount">
+            <property name="max" value="2"/>
+        </module>
+
+        <module name="CyclomaticComplexity">
+            <property name="max" value="15"/>
+            <property name="severity" value="warning"/>
+        </module>
+
+        <module name="BooleanExpressionComplexity">
+            <property name="max" value="5"/>
+        </module>
+
+        <module name="ClassDataAbstractionCoupling">
+            <property name="max" value="15"/>
+            <property name="excludedPackages" value="java.*,javax.*,org.springframework.*,lombok.*"/>
+        </module>
+
+        <module name="ClassFanOutComplexity">
+            <property name="max" value="20"/>
+            <property name="excludedPackages" value="java.*,javax.*,org.springframework.*,lombok.*"/>
+        </module>
+
+        <module name="NPathComplexity">
+            <property name="max" value="200"/>
+            <property name="severity" value="warning"/>
+        </module>
+
+        <module name="OneStatementPerLine"/>
+        <module name="UnnecessaryParentheses"/>
+        <module name="CovariantEquals"/>
+        <module name="DefaultComesLast"/>
+        <module name="ExplicitInitialization"/>
+        <module name="ForbidThrowAnonymousExceptions"/>
+        <module name="MultipleVariableDeclarations"/>
+        <module name="NestedIfDepth">
+            <property name="max" value="4"/>
+        </module>
+        <module name="NestedTryDepth">
+            <property name="max" value="3"/>
+        </module>
+        <module name="ReturnCount">
+            <property name="max" value="6"/>
+        </module>
+        <module name="StringLiteralEquality"/>
+        <module name="UnnecessaryBoxing"/>
+        <module name="UnnecessaryConcat"/>
+        <module name="ArrayTrailingComma"/>
+        <module name="UnusedLocalVariable"/>
+
+        <module name="SingleLineComment"/>
+        <module name="TodoComment">
+            <property name="format" value="TODO:|FIXME:|XXX:|HACK:"/>
+        </module>
+
+        <module name="SuppressWarnings"/>
+    </module>
+</module>

@@ -1,0 +1,55 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    monitor: 'meshcontrol-monitor'
+    environment: 'prod'
+
+rule_files:
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: 'meshcontrol-api'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['meshcontrol:8080']
+        labels:
+          service: 'meshcontrol-api'
+          group: 'application'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        regex: '(.*):8080'
+        replacement: 'meshcontrol-api'
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'jvm_|system_|tomcat_|jdbc_|http_|executor_|hikaricp_|log4j2_'
+        action: keep
+
+  - job_name: 'mysql'
+    static_configs:
+      - targets: ['mysql:9104']
+        labels:
+          service: 'mysql'
+          group: 'database'
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:9121']
+        labels:
+          service: 'redis'
+          group: 'cache'
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+          group: 'monitoring'

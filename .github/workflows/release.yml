@@ -1,0 +1,126 @@
+name: Release Pipeline
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+
+env:
+  JAVA_VERSION: '17'
+  MAVEN_VERSION: '3.9.6'
+
+jobs:
+  release:
+    name: Release Build & Deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: production
+      url: https://meshcontrol.io
+
+    permissions:
+      contents: write
+      packages: write
+      deployments: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GIT_TOKEN }}
+
+      - name: Setup Git config
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+          server-id: ossrh
+          server-username: MAVEN_USERNAME
+          server-password: MAVEN_PASSWORD
+          gpg-private-key: ${{ secrets.GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Setup Maven
+        uses: stCarolas/setup-maven@v4.5
+        with:
+          maven-version: ${{ env.MAVEN_VERSION }}
+
+      - name: Get version
+        id: version
+        run: |
+          if [ -z "${{ github.event.inputs.version }}" ]; then
+            VERSION=${{ github.event.release.tag_name }}
+          else
+            VERSION=${{ github.event.inputs.version }}
+          fi
+          VERSION=${VERSION#v}
+          echo "release_version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Update version in pom.xml
+        run: |
+          mvn versions:set -DnewVersion=${{ steps.version.outputs.release_version }}
+          mvn versions:commit
+
+      - name: Build with Maven
+        run: |
+          mvn clean deploy -B -e -Pprod \
+            -DskipTests=false \
+            -Dcheckstyle.skip=false \
+            -Dpmd.skip=false \
+            -Dspotbugs.skip=false \
+            -Djacoco.skip=false \
+            -Dmaven.javadoc.skip=false \
+            -Dmaven.source.skip=false \
+            -Dgpg.skip=false
+        env:
+          MAVEN_USERNAME: ${{ secrets.OSSRH_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.OSSRH_TOKEN }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}:${{ steps.version.outputs.release_version }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64,linux/arm64
+
+      - name: Commit version changes
+        run: |
+          git add pom.xml **/pom.xml
+          git commit -m "chore(release): version ${{ steps.version.outputs.release_version }}"
+          git push origin HEAD:main
+
+      - name: Deploy to Production
+        uses: steebchen/kubectl@v2
+        with:
+          config: ${{ secrets.KUBE_CONFIG_PROD }}
+          version: v1.29.0
+          command: |
+            set -e
+            kubectl set image deployment/meshcontrol meshcontrol=ghcr.io/${{ github.repository }}:${{ steps.version.outputs.release_version }} -n meshcontrol
+            kubectl rollout status deployment/meshcontrol -n meshcontrol --timeout=5m
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1
+        with:
+          channel-id: '#releases'
+          slack-message: "Release ${{ steps.version.outputs.release_version }} ${{ job.status }}: ${{ github.event.release.html_url }}"
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}

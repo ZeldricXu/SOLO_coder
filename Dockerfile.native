@@ -1,0 +1,72 @@
+# syntax=docker/dockerfile:1.6
+
+FROM ghcr.io/graalvm/graalvm-ce:ol9-java17-22.3.3 AS builder
+LABEL stage=builder
+
+WORKDIR /app
+
+ENV MAVEN_OPTS="-Xmx4g -XX:+TieredCompilation -XX:TieredStopAtLevel=1"
+ENV GRAALVM_HOME=/usr/lib64/graalvm
+
+RUN microdnf install -y maven gcc glibc-devel zlib-devel
+
+COPY pom.xml .
+COPY .mvn .mvn
+COPY meshcontrol-common/pom.xml ./meshcontrol-common/
+COPY meshcontrol-eventstore/pom.xml ./meshcontrol-eventstore/
+COPY meshcontrol-sidecar/pom.xml ./meshcontrol-sidecar/
+COPY meshcontrol-dns/pom.xml ./meshcontrol-dns/
+COPY meshcontrol-traffic/pom.xml ./meshcontrol-traffic/
+COPY meshcontrol-mtls/pom.xml ./meshcontrol-mtls/
+COPY meshcontrol-fault/pom.xml ./meshcontrol-fault/
+COPY meshcontrol-audit/pom.xml ./meshcontrol-audit/
+COPY meshcontrol-image/pom.xml ./meshcontrol-image/
+COPY meshcontrol-api/pom.xml ./meshcontrol-api/
+
+RUN mvn dependency:go-offline -B -e -Pprod
+
+COPY checkstyle.xml .
+COPY pmd.xml .
+COPY spotbugs-exclude.xml .
+COPY lombok.config .
+
+COPY meshcontrol-common/src ./meshcontrol-common/src
+COPY meshcontrol-eventstore/src ./meshcontrol-eventstore/src
+COPY meshcontrol-sidecar/src ./meshcontrol-sidecar/src
+COPY meshcontrol-dns/src ./meshcontrol-dns/src
+COPY meshcontrol-traffic/src ./meshcontrol-traffic/src
+COPY meshcontrol-mtls/src ./meshcontrol-mtls/src
+COPY meshcontrol-fault/src ./meshcontrol-fault/src
+COPY meshcontrol-audit/src ./meshcontrol-audit/src
+COPY meshcontrol-image/src ./meshcontrol-image/src
+COPY meshcontrol-api/src ./meshcontrol-api/src
+
+RUN mvn -Pnative native:compile -pl meshcontrol-api -am -B -e -DskipTests
+
+FROM oraclelinux:9-slim AS runtime
+LABEL org.opencontainers.image.title="MeshControl Native" \
+      org.opencontainers.image.description="Service Mesh Sidecar Management Plane (Native Image)"
+
+RUN groupadd -r meshcontrol -g 1000 \
+    && useradd -r -g meshcontrol -u 1000 -m -d /home/meshcontrol -s /bin/sh meshcontrol \
+    && microdnf install -y tzdata ca-certificates curl \
+    && microdnf clean all
+
+ENV TZ=Asia/Shanghai \
+    SPRING_PROFILES_ACTIVE=prod
+
+WORKDIR /app
+
+COPY --from=builder /app/meshcontrol-api/target/meshcontrol-api meshcontrol
+
+RUN chown -R meshcontrol:meshcontrol /app \
+    && chmod +x meshcontrol
+
+USER meshcontrol:meshcontrol
+
+EXPOSE 8080 8081
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:8080/actuator/health || exit 1
+
+ENTRYPOINT ["./meshcontrol"]
