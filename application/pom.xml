@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.chain</groupId>
+        <artifactId>infrastructure</artifactId>
+        <version>1.0.0</version>
+    </parent>
+
+    <artifactId>application</artifactId>
+    <name>Main Application</name>
+    <description>Main Spring Boot application entry point</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>common</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>persistence</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>tx-builder</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>gas-estimator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>chain-indexer</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>multisig</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>chain-adapter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>event-listener</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>storage-adapter</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>cross-chain-bridge</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.chain</groupId>
+            <artifactId>zk-verifier</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-webflux</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-prometheus</artifactId>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>
