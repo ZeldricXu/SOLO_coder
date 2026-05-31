@@ -1,0 +1,68 @@
+server:
+  port: 8080
+  mode: release
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: "${DB_HOST}"
+  port: 5432
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  dbname: llmgateway_prod
+  sslmode: verify-full
+  max_open_conns: 200
+  max_idle_conns: 50
+
+redis:
+  host: "${REDIS_HOST}"
+  port: 6379
+  password: "${REDIS_PASSWORD}"
+  db: 0
+  pool_size: 200
+
+log:
+  level: warn
+  format: json
+  output: stdout
+
+gateway:
+  providers:
+    - name: openai
+      api_key: "${OPENAI_API_KEY}"
+      base_url: https://api.openai.com/v1
+      timeout: 30s
+      max_retries: 3
+    - name: anthropic
+      api_key: "${ANTHROPIC_API_KEY}"
+      base_url: https://api.anthropic.com/v1
+      timeout: 30s
+      max_retries: 3
+
+scheduler:
+  gpu_resources:
+    - id: gpu-prod-001
+      node: prod-node-1
+      total_memory: 81920
+      available_memory: 81920
+      total_compute: 100
+      available_compute: 100
+    - id: gpu-prod-002
+      node: prod-node-2
+      total_memory: 81920
+      available_memory: 81920
+      total_compute: 100
+      available_compute: 100
+    - id: gpu-prod-003
+      node: prod-node-3
+      total_memory: 81920
+      available_memory: 81920
+      total_compute: 100
+      available_compute: 100
+  preemption_enabled: true
+  max_queue_size: 10000
+
+security:
+  secret_key: "${SECRET_KEY}"
+  rate_limit: 10000
+  rate_window: 1m

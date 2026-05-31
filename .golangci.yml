@@ -1,0 +1,102 @@
+linters-settings:
+  govet:
+    settings:
+      printf:
+        funcs:
+          - (github.com/gin-gonic/gin).Context.JSON
+  gofmt:
+    simplify: true
+  gocyclo:
+    min-complexity: 15
+  misspell:
+    locale: US
+  lll:
+    line-length: 120
+  gosimple:
+    go: "1.21"
+    checks: ["all"]
+  staticcheck:
+    go: "1.21"
+    checks: ["all"]
+  unused:
+    go: "1.21"
+  unparam:
+    check-exported: false
+  nakedret:
+    max-func-lines: 30
+  prealloc:
+    simple: true
+    range-loops: true
+    for-loops: false
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - whyNoLint
+      - dupImport
+      - appendAssign
+      - exitAfterDefer
+
+linters:
+  disable-all: true
+  enable:
+    - govet
+    - errcheck
+    - staticcheck
+    - unused
+    - gosimple
+    - gofmt
+    - goimports
+    - misspell
+    - gocyclo
+    - lll
+    - unparam
+    - nakedret
+    - prealloc
+    - gocritic
+    - ineffassign
+    - typecheck
+  fast: false
+
+issues:
+  exclude-rules:
+    - path: _test\.go
+      linters:
+        - gocyclo
+        - errcheck
+        - dupl
+        - gosec
+    - linters:
+        - lll
+      source: "^//go:generate "
+    - linters:
+        - staticcheck
+      text: "SA1019:"
+  exclude-use-default: false
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  new-from-rev: ""
+
+run:
+  timeout: 5m
+  skip-dirs:
+    - vendor
+    - .git
+    - node_modules
+    - bin
+    - dist
+  skip-files:
+    - ".*\\.pb\\.go$"
+    - ".*\\.gen\\.go$"
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+
+output:
+  format: colored-line-number
+  print-issued-lines: true
+  print-linter-name: true
+  sort-results: true

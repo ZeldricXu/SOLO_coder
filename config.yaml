@@ -1,0 +1,51 @@
+server:
+  port: 8080
+  mode: debug
+  read_timeout: 30s
+  write_timeout: 30s
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: llmgateway
+  sslmode: disable
+  max_open_conns: 100
+  max_idle_conns: 20
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+log:
+  level: info
+  format: json
+  output: stdout
+
+gateway:
+  providers:
+    - name: openai
+      api_key: ""
+      base_url: https://api.openai.com/v1
+      timeout: 30s
+      max_retries: 3
+    - name: anthropic
+      api_key: ""
+      base_url: https://api.anthropic.com/v1
+      timeout: 30s
+      max_retries: 3
+
+scheduler:
+  gpu_resources:
+    - id: gpu-001
+      node: node-1
+      total_memory: 24576
+      available_memory: 24576
+      total_compute: 100
+      available_compute: 100
+  preemption_enabled: true
+  max_queue_size: 1000
