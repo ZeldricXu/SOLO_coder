@@ -1,0 +1,63 @@
+app:
+  name: "file-storage-lifecycle"
+  version: "1.0.0"
+  environment: "development"
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+storage:
+  hot:
+    path: "./data/hot"
+    max_size_gb: 100
+  cold:
+    path: "./data/cold"
+    max_size_gb: 500
+  archive:
+    path: "./data/archive"
+    max_size_gb: 2000
+
+lifecycle:
+  hot_to_cold_days: 30
+  cold_to_archive_days: 90
+  archive_retention_days: 365
+  cleanup_interval_hours: 24
+
+database:
+  url: "sqlite:///./data/metastore.db"
+  pool_size: 10
+  max_overflow: 20
+
+cache:
+  host: "localhost"
+  port: 6379
+  db: 0
+  ttl_seconds: 3600
+
+messaging:
+  kafka:
+    bootstrap_servers: "localhost:9092"
+    topics:
+      storage_events: "storage.events"
+      lifecycle_events: "lifecycle.events"
+
+logging:
+  level: "INFO"
+  format: "json"
+  file_path: "./logs/app.log"
+  max_file_size_mb: 100
+  backup_count: 5
+
+tracing:
+  enabled: true
+  service_name: "file-storage-service"
+  endpoint: "http://localhost:4317"
+
+scheduler:
+  enabled: true
+  timezone: "Asia/Shanghai"
+
+quality:
+  check_interval_minutes: 60
+  alert_enabled: true
