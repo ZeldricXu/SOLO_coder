@@ -1,0 +1,451 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "platform-engineer"
+version = "1.0.0"
+description = "多源配置加载与动态更新的生产级平台工程SDK"
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [
+    { name = "Platform Engineering Team" }
+]
+license = { text = "MIT" }
+dependencies = [
+    "fastapi==0.110.0",
+    "uvicorn[standard]==0.29.0",
+    "pydantic==2.6.4",
+    "pydantic-settings==2.2.1",
+    "sqlalchemy[asyncio]==2.0.29",
+    "alembic==1.13.1",
+    "celery==5.3.6",
+    "redis==5.0.3",
+    "httpx==0.27.0",
+    "aiofiles==23.2.1",
+    "python-multipart==0.0.9",
+    "slowapi==0.1.9",
+    "limits==3.10.1",
+    "click==8.1.7",
+    "structlog==24.1.0",
+    "python-dateutil==2.9.0",
+    "aiosqlite==0.20.0",
+    "psycopg2-binary==2.9.9",
+    "pyyaml==6.0.1",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest==8.1.1",
+    "pytest-asyncio==0.23.5",
+    "pytest-cov==5.0.0",
+    "pytest-mock==3.14.0",
+]
+dev = [
+    "black==24.3.0",
+    "flake8==7.0.0",
+    "flake8-bugbear==24.2.6",
+    "flake8-comprehensions==3.14.0",
+    "flake8-docstrings==1.7.0",
+    "flake8-import-order==0.18.2",
+    "isort==5.13.2",
+    "mypy==1.9.0",
+    "pylint==3.1.0",
+    "bandit==1.7.8",
+    "pre-commit==3.6.2",
+]
+
+[project.scripts]
+platform-engineer = "platform_engineer.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+platform_engineer = ["**/*.py", "**/*.yaml", "**/*.yml", "**/*.json"]
+
+[tool.black]
+line-length = 100
+target-version = ["py310", "py311", "py312"]
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.hg
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | _build
+  | buck-out
+  | build
+  | dist
+  | migrations
+  | alembic
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+include_trailing_comma = true
+force_grid_wrap = 0
+use_parentheses = true
+ensure_newline_before_comments = true
+skip = ["__pycache__", ".git", ".venv", "migrations", "alembic"]
+known_first_party = ["platform_engineer"]
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+check_untyped_defs = false
+no_implicit_optional = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_no_return = true
+ignore_missing_imports = true
+follow_imports = "silent"
+show_error_codes = true
+exclude = [
+    '^tests/',
+    '^alembic/',
+    '^migrations/',
+]
+
+[tool.pylint.messages_control]
+disable = [
+    "C0114",
+    "C0115",
+    "C0116",
+    "C0301",
+    "C0302",
+    "C0303",
+    "C0325",
+    "R0801",
+    "R0901",
+    "R0902",
+    "R0903",
+    "R0904",
+    "R0911",
+    "R0912",
+    "R0913",
+    "R0914",
+    "R0915",
+    "R0916",
+    "W0212",
+    "W0221",
+    "W0231",
+    "W0233",
+    "W0511",
+    "W0603",
+    "W0613",
+    "W1203",
+    "E0401",
+    "E1101",
+    "E1129",
+]
+
+[tool.pylint.design]
+max-args = 10
+max-attributes = 20
+max-branches = 20
+max-locals = 30
+max-returns = 10
+max-statements = 60
+
+[tool.pylint.format]
+max-line-length = 100
+expected-line-ending-format = "LF"
+
+[tool.pylint.basic]
+good-names = ["i", "j", "k", "ex", "Run", "_", "id", "to", "db"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
+    "integration: marks tests as integration tests",
+    "unit: marks tests as unit tests",
+]
+
+[tool.coverage.run]
+source = ["src/platform_engineer"]
+branch = true
+parallel = true
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/alembic/*",
+    "*/migrations/*",
+    "*/__pycache__/*",
+    "*/site-packages/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "class .*\\bProtocol\\):",
+    "@(abc\\.)?abstractmethod",
+]
+ignore_errors = true
+fail_under = 70
+show_missing = true
+skip_covered = false
+
+[tool.bandit]
+exclude_dirs = [
+    "tests",
+    "migrations",
+    "alembic",
+    ".venv",
+    "__pycache__",
+]
+skips = [
+    "B101",
+    "B105",
+    "B106",
+    "B107",
+    "B301",
+    "B303",
+    "B304",
+    "B305",
+    "B306",
+    "B307",
+    "B311",
+    "B313",
+    "B314",
+    "B315",
+    "B316",
+    "B317",
+    "B318",
+    "B319",
+    "B320",
+    "B321",
+    "B322",
+    "B323",
+    "B324",
+    "B325",
+    "B326",
+    "B403",
+    "B404",
+    "B405",
+    "B410",
+    "B411",
+    "B412",
+    "B413",
+    "B501",
+    "B502",
+    "B503",
+    "B504",
+    "B505",
+    "B506",
+    "B507",
+    "B508",
+    "B509",
+    "B510",
+    "B511",
+    "B512",
+    "B513",
+    "B514",
+    "B515",
+    "B516",
+    "B517",
+    "B518",
+    "B519",
+    "B520",
+    "B521",
+    "B522",
+    "B523",
+    "B524",
+    "B525",
+    "B526",
+    "B527",
+    "B528",
+    "B529",
+    "B530",
+    "B531",
+    "B532",
+    "B533",
+    "B534",
+    "B535",
+    "B536",
+    "B537",
+    "B538",
+    "B539",
+    "B540",
+    "B541",
+    "B542",
+    "B543",
+    "B544",
+    "B545",
+    "B546",
+    "B547",
+    "B548",
+    "B549",
+    "B550",
+    "B551",
+    "B552",
+    "B553",
+    "B554",
+    "B555",
+    "B556",
+    "B557",
+    "B558",
+    "B559",
+    "B560",
+    "B561",
+    "B562",
+    "B563",
+    "B564",
+    "B565",
+    "B566",
+    "B567",
+    "B568",
+    "B569",
+    "B570",
+    "B571",
+    "B572",
+    "B573",
+    "B574",
+    "B575",
+    "B576",
+    "B577",
+    "B578",
+    "B579",
+    "B580",
+    "B581",
+    "B582",
+    "B583",
+    "B584",
+    "B585",
+    "B586",
+    "B587",
+    "B588",
+    "B589",
+    "B590",
+    "B591",
+    "B592",
+    "B593",
+    "B594",
+    "B595",
+    "B596",
+    "B597",
+    "B598",
+    "B599",
+    "B601",
+    "B602",
+    "B603",
+    "B604",
+    "B605",
+    "B606",
+    "B607",
+    "B608",
+    "B609",
+    "B610",
+    "B611",
+    "B612",
+    "B613",
+    "B614",
+    "B615",
+    "B616",
+    "B617",
+    "B618",
+    "B619",
+    "B620",
+    "B621",
+    "B622",
+    "B623",
+    "B624",
+    "B625",
+    "B626",
+    "B627",
+    "B628",
+    "B629",
+    "B630",
+    "B631",
+    "B632",
+    "B633",
+    "B634",
+    "B635",
+    "B636",
+    "B637",
+    "B638",
+    "B639",
+    "B640",
+    "B641",
+    "B642",
+    "B643",
+    "B644",
+    "B645",
+    "B646",
+    "B647",
+    "B648",
+    "B649",
+    "B650",
+    "B651",
+    "B652",
+    "B653",
+    "B654",
+    "B655",
+    "B656",
+    "B657",
+    "B658",
+    "B659",
+    "B660",
+    "B661",
+    "B662",
+    "B663",
+    "B664",
+    "B665",
+    "B666",
+    "B667",
+    "B668",
+    "B669",
+    "B670",
+    "B671",
+    "B672",
+    "B673",
+    "B674",
+    "B675",
+    "B676",
+    "B677",
+    "B678",
+    "B679",
+    "B680",
+    "B681",
+    "B682",
+    "B683",
+    "B684",
+    "B685",
+    "B686",
+    "B687",
+    "B688",
+    "B689",
+    "B690",
+    "B691",
+    "B692",
+    "B693",
+    "B694",
+    "B695",
+    "B696",
+    "B697",
+    "B698",
+    "B699",
+    "B701",
+    "B702",
+    "B703",
+]

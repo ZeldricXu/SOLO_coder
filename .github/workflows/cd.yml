@@ -1,0 +1,234 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  DOCKER_REGISTRY: ${{ secrets.DOCKER_REGISTRY || 'ghcr.io' }}
+
+jobs:
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment:
+      name: staging
+      url: ${{ steps.deploy.outputs.url }}
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'staging' ||
+      github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.head_branch == 'main'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download artifact
+        uses: dawidd6/action-download-artifact@v2
+        if: github.event_name == 'workflow_run'
+        with:
+          workflow: ci.yml
+          run_id: ${{ github.event.workflow_run.id }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.28.0"
+        if: env.KUBECONFIG != ''
+
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_STAGING }}" > $HOME/.kube/config
+        if: secrets.KUBECONFIG_STAGING != ''
+
+      - name: Deploy to Kubernetes (Staging)
+        id: deploy
+        run: |
+          export IMAGE_TAG=${GITHUB_SHA::7}
+          export IMAGE=${{ env.DOCKER_REGISTRY }}/${{ github.repository }}:${IMAGE_TAG}
+
+          echo "Deploying ${IMAGE} to staging..."
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: platform-engineer
+            namespace: staging
+            labels:
+              app: platform-engineer
+              version: ${IMAGE_TAG}
+          spec:
+            replicas: 2
+            selector:
+              matchLabels:
+                app: platform-engineer
+            template:
+              metadata:
+                labels:
+                  app: platform-engineer
+                  version: ${IMAGE_TAG}
+              spec:
+                containers:
+                - name: platform-engineer
+                  image: ${IMAGE}
+                  imagePullPolicy: Always
+                  ports:
+                  - containerPort: 8000
+                  env:
+                  - name: ENVIRONMENT
+                    value: "staging"
+                  - name: LOG_LEVEL
+                    value: "INFO"
+                  resources:
+                    limits:
+                      memory: "512Mi"
+                      cpu: "500m"
+                    requests:
+                      memory: "256Mi"
+                      cpu: "250m"
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+          EOF
+
+          echo "url=https://staging.platform-engineer.example.com" >> $GITHUB_OUTPUT
+        if: secrets.KUBECONFIG_STAGING != ''
+
+      - name: Send notification
+        run: |
+          echo "Deployment to staging completed successfully!"
+        if: success()
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ steps.deploy.outputs.url }}
+    needs: deploy-staging
+    if: |
+      github.event_name == 'workflow_dispatch' && github.event.inputs.environment == 'production' ||
+      startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: "v1.28.0"
+        if: env.KUBECONFIG != ''
+
+      - name: Configure Kubeconfig
+        run: |
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBECONFIG_PRODUCTION }}" > $HOME/.kube/config
+        if: secrets.KUBECONFIG_PRODUCTION != ''
+
+      - name: Deploy to Kubernetes (Production)
+        id: deploy
+        run: |
+          export IMAGE_TAG=${GITHUB_REF_NAME#v}
+          if [ -z "$IMAGE_TAG" ]; then
+            IMAGE_TAG=${GITHUB_SHA::7}
+          fi
+          export IMAGE=${{ env.DOCKER_REGISTRY }}/${{ github.repository }}:${IMAGE_TAG}
+
+          echo "Deploying ${IMAGE} to production..."
+
+          cat <<EOF | kubectl apply -f -
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: platform-engineer
+            namespace: production
+            labels:
+              app: platform-engineer
+              version: ${IMAGE_TAG}
+          spec:
+            replicas: 4
+            strategy:
+              type: RollingUpdate
+              rollingUpdate:
+                maxSurge: 25%
+                maxUnavailable: 25%
+            selector:
+              matchLabels:
+                app: platform-engineer
+            template:
+              metadata:
+                labels:
+                  app: platform-engineer
+                  version: ${IMAGE_TAG}
+              spec:
+                containers:
+                - name: platform-engineer
+                  image: ${IMAGE}
+                  imagePullPolicy: IfNotPresent
+                  ports:
+                  - containerPort: 8000
+                  env:
+                  - name: ENVIRONMENT
+                    value: "production"
+                  - name: LOG_LEVEL
+                    value: "WARNING"
+                  resources:
+                    limits:
+                      memory: "1Gi"
+                      cpu: "1000m"
+                    requests:
+                      memory: "512Mi"
+                      cpu: "500m"
+                  livenessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    timeoutSeconds: 5
+                    failureThreshold: 3
+                  readinessProbe:
+                    httpGet:
+                      path: /health
+                      port: 8000
+                    initialDelaySeconds: 5
+                    periodSeconds: 5
+                    timeoutSeconds: 3
+                    failureThreshold: 3
+          EOF
+
+          kubectl rollout status deployment/platform-engineer -n production --timeout=300s
+
+          echo "url=https://platform-engineer.example.com" >> $GITHUB_OUTPUT
+        if: secrets.KUBECONFIG_PRODUCTION != ''
+
+      - name: Send notification
+        run: |
+          echo "Deployment to production completed successfully!"
+        if: success()

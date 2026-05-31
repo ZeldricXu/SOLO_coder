@@ -1,0 +1,120 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      target: ${BUILD_TARGET:-production}
+    image: platform-engineer:${TAG:-latest}
+    container_name: platform-engineer-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8000}:8000"
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - PORT=8000
+      - WORKERS=${WORKERS:-2}
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///data/app.db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./traces:/app/traces
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - platform-engineer-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  redis:
+    image: redis:7-alpine
+    container_name: platform-engineer-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    networks:
+      - platform-engineer-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: platform-engineer-postgres
+    restart: unless-stopped
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-platform_engineer}
+      - POSTGRES_USER=${POSTGRES_USER:-platform}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-platform123}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - platform-engineer-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-platform} -d ${POSTGRES_DB:-platform_engineer}"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  worker:
+    build:
+      context: .
+      target: ${BUILD_TARGET:-production}
+    image: platform-engineer:${TAG:-latest}
+    container_name: platform-engineer-worker
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DATABASE_URL=${DATABASE_URL:-sqlite+aiosqlite:///data/app.db}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - platform-engineer-network
+    command: ["celery", "-A", "platform_engineer.tasks", "worker", "--loglevel=info", "--concurrency=2"]
+
+  flower:
+    build:
+      context: .
+      target: ${BUILD_TARGET:-production}
+    image: platform-engineer:${TAG:-latest}
+    container_name: platform-engineer-flower
+    restart: unless-stopped
+    ports:
+      - "${FLOWER_PORT:-5555}:5555"
+    environment:
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+    depends_on:
+      - redis
+      - worker
+    networks:
+      - platform-engineer-network
+    command: ["celery", "-A", "platform_engineer.tasks", "flower", "--port=5555"]
+
+volumes:
+  redis-data:
+  postgres-data:
+
+networks:
+  platform-engineer-network:
+    driver: bridge

@@ -1,0 +1,27 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      target: development
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+      - ./run.py:/app/run.py
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+    command: ["uvicorn", "platform_engineer.app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  worker:
+    build:
+      target: development
+    volumes:
+      - ./src:/app/src
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+
+  flower:
+    profiles:
+      - monitoring

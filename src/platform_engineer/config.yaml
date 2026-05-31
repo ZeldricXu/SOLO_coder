@@ -1,0 +1,47 @@
+app:
+  name: platform-engineer
+  version: 1.0.0
+  debug: false
+
+server:
+  host: 0.0.0.0
+  port: 8000
+  workers: 2
+
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+database:
+  url: sqlite+aiosqlite:///./data/app.db
+  pool_size: 10
+  max_overflow: 20
+
+redis:
+  url: redis://localhost:6379/0
+  max_connections: 50
+
+tracing:
+  service_name: platform-engineer
+  sample_rate: 1.0
+  max_spans_per_trace: 10000
+
+profiling:
+  enabled: false
+  cpu_sample_interval_ms: 10
+  memory_sample_interval_s: 5
+
+slo:
+  default_window_days: 30
+  default_target: 0.999
+  alert_threshold: 0.9
+
+notification:
+  default_channel: console
+  retry_attempts: 3
+  retry_backoff_factor: 2.0
+
+gateway:
+  rate_limit_requests_per_minute: 100
+  timeout_seconds: 30
+  circuit_breaker_failure_threshold: 5

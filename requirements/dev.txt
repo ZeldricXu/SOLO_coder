@@ -1,0 +1,14 @@
+-r test.txt
+
+black==24.3.0
+flake8==7.0.0
+flake8-bugbear==24.2.6
+flake8-comprehensions==3.14.0
+flake8-docstrings==1.7.0
+flake8-import-order==0.18.2
+isort==5.13.2
+mypy==1.9.0
+pylint==3.1.0
+bandit==1.7.8
+pre-commit==3.6.2
+watchdog==4.0.0

@@ -1,0 +1,20 @@
+[flake8]
+max-line-length = 100
+max-complexity = 15
+extend-ignore = E203, E501, W503, D100, D101, D102, D103, D104, D105
+exclude =
+    .git,
+    __pycache__,
+    .venv,
+    venv,
+    build,
+    dist,
+    migrations,
+    alembic,
+    .pytest_cache,
+    .mypy_cache
+per-file-ignores =
+    */__init__.py:F401
+    tests/*:D100,D101,D102
+import-order-style = google
+application-import-names = platform_engineer

@@ -1,0 +1,103 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# OS
+.DS_Store
+Thumbs.db
+*.orig
+*.rej
+*~
+
+# Git
+.gitattributes
+
+# CI
+.github/*
+!.github/workflows/
+
+# Testing
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+nosetests.xml
+
+# Profiling
+*.prof
+*.pstats
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Local data
+data/
+traces/
+*.db
+*.sqlite
+*.sqlite3
+
+# Env files
+.env
+.env.local
+.env.*.local
+.envrc
+
+# Node (if any)
+node_modules/
+package-lock.json
+yarn.lock
+
+# Docker
+.dockerignore
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea/*
+!.idea/dictionaries
+!.idea/inspectionProfiles
+
+# Project specific
+alembic/versions/*
+!alembic/versions/.gitkeep
