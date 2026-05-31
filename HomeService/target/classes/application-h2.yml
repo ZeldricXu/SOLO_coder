@@ -1,0 +1,29 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:homeservice;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+  sql:
+    init:
+      mode: always
+      data-locations: classpath:db/data-h2.sql
+
+server:
+  port: 8080
+
+logging:
+  level:
+    com.homeservice: DEBUG
