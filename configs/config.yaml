@@ -1,0 +1,52 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"
+
+log:
+  level: "info"
+  path: "./logs/app.log"
+  max_size: 100
+  max_backups: 5
+  max_age: 30
+  compress: true
+  enable_console: true
+  enable_file: true
+
+monitoring:
+  interval: 30
+
+database:
+  driver: "postgres"
+  host: "localhost"
+  port: 5432
+  name: "logrotate"
+  user: "postgres"
+  password: "password"
+  ssl_mode: "disable"
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 10
+
+scheduler:
+  max_workers: 20
+  task_timeout: 300
+
+gpu:
+  enable_preemption: true
+  preemption_threshold: 0.85
+  max_concurrent_tasks: 10
+
+document:
+  chunk_size: 512
+  chunk_overlap: 50
+  embedding_dimension: 1536
+
+rate_limit:
+  enabled: true
+  requests_per_minute: 100
+  burst: 20

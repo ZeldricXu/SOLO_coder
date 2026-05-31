@@ -1,0 +1,39 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: {{ include "hpa.apiVersion" . }}
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "logrotate.fullname" . }}
+  labels:
+    {{- include "logrotate.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "logrotate.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+  {{- if or .Values.autoscaling.scaleUpStabilizationSeconds .Values.autoscaling.scaleDownStabilizationSeconds }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.scaleUpStabilizationSeconds | default 0 }}
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds | default 300 }}
+  {{- end }}
+{{- end }}

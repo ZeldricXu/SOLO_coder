@@ -1,0 +1,133 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "release"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  trusted_proxies:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+
+log:
+  level: "warn"
+  path: "/var/log/logrotate/app.log"
+  max_size: 500
+  max_backups: 30
+  max_age: 90
+  compress: true
+  enable_console: false
+  enable_file: true
+  enable_structured: true
+  enable_sentry: true
+  sentry_dsn: "${SENTRY_DSN}"
+  sentry_environment: "production"
+  sentry_sample_rate: 0.1
+
+monitoring:
+  interval: 60
+  enable_prometheus: true
+  metrics_path: "/metrics"
+  enable_health_check: true
+  health_check_path: "/health"
+  enable_alerting: true
+  alert_manager_url: "${ALERT_MANAGER_URL}"
+
+database:
+  driver: "postgres"
+  host: "${DB_HOST}"
+  port: 5432
+  name: "logrotate_prod"
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  ssl_mode: "verify-full"
+  max_open_conns: 100
+  max_idle_conns: 50
+  conn_max_lifetime: 1800
+  enable_read_replicas: true
+  read_replicas:
+    - host: "${DB_READ_HOST_1}"
+    - host: "${DB_READ_HOST_2}"
+
+redis:
+  host: "${REDIS_HOST}"
+  port: 6379
+  password: "${REDIS_PASSWORD}"
+  db: 0
+  pool_size: 100
+  min_idle_conns: 20
+  dial_timeout: 5
+  read_timeout: 3
+  write_timeout: 3
+  enable_cluster: true
+  cluster_nodes:
+    - "${REDIS_NODE_1}"
+    - "${REDIS_NODE_2}"
+    - "${REDIS_NODE_3}"
+
+scheduler:
+  max_workers: 100
+  task_timeout: 1200
+  retry_interval: 30
+  max_retries: 3
+  enable_distributed: true
+  distributed_lock_ttl: 30
+
+gpu:
+  enable_preemption: true
+  preemption_threshold: 0.95
+  max_concurrent_tasks: 50
+  node_monitor_interval: 60
+  enable_gpu_metrics: true
+
+document:
+  chunk_size: 2048
+  chunk_overlap: 200
+  embedding_dimension: 1536
+  max_file_size: 104857600
+  enable_ocr: false
+
+rate_limit:
+  enabled: true
+  requests_per_minute: 10000
+  burst: 1000
+  key_prefix: "rate_limit:"
+  enable_distributed_rate_limit: true
+
+tracing:
+  enabled: true
+  exporter: "otlp"
+  endpoint: "${OTEL_EXPORTER_OTLP_ENDPOINT}"
+  service_name: "logrotate-production"
+  sampling_rate: 0.01
+  enable_batching: true
+  max_queue_size: 1000
+
+features:
+  enable_gpu_scheduler: true
+  enable_prompt_experiments: true
+  enable_document_pipeline: true
+  enable_metrics_export: true
+  enable_auto_scaling: true
+
+security:
+  jwt_secret: "${JWT_SECRET}"
+  jwt_expiry: 1800
+  enable_api_key: true
+  api_keys: "${API_KEYS}"
+  cors_origins:
+    - "https://*.example.com"
+    - "https://example.com"
+  enable_rate_limit: true
+  enable_waf: true
+  enable_mtls: false
+  max_request_size: 10485760
+
+auto_scaling:
+  min_replicas: 3
+  max_replicas: 20
+  target_cpu_utilization: 70
+  target_memory_utilization: 80
+  scale_up_stabilization: 120
+  scale_down_stabilization: 300

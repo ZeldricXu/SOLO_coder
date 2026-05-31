@@ -1,0 +1,202 @@
+name: CD
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '!v*-dev*'
+      - '!v*-alpha*'
+      - '!v*-beta*'
+      - '!v*-rc*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      version:
+        description: 'Version to deploy'
+        required: true
+        default: 'latest'
+
+env:
+  GO_VERSION: '1.21'
+  HELM_VERSION: 'v3.13.0'
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      environment: ${{ steps.determine-env.outputs.environment }}
+      image_tag: ${{ steps.version.outputs.image_tag }}
+    steps:
+      - name: Determine version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [ "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "image_tag=${VERSION}" >> $GITHUB_OUTPUT
+
+      - name: Determine environment
+        id: determine-env
+        run: |
+          if [ "${{ github.event.inputs.environment }}" ]; then
+            ENV="${{ github.event.inputs.environment }}"
+          elif [[ "${{ steps.version.outputs.version }}" == *"-rc"* ]]; then
+            ENV="staging"
+          else
+            ENV="production"
+          fi
+          echo "environment=${ENV}" >> $GITHUB_OUTPUT
+
+  staging-deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: prepare
+    if: ${{ needs.prepare.outputs.environment == 'staging' }}
+    environment:
+      name: staging
+      url: https://staging.logrotate.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME_STAGING }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy with Helm
+        run: |
+          helm upgrade --install logrotate ./deploy/helm/logrotate \
+            --namespace logrotate \
+            --create-namespace \
+            --values ./deploy/helm/logrotate/values.staging.yaml \
+            --set image.repository=${{ secrets.DOCKER_REGISTRY }}/logrotate \
+            --set image.tag=${{ needs.prepare.outputs.image_tag }} \
+            --wait \
+            --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/logrotate --namespace logrotate --timeout=5m
+          kubectl get pods --namespace logrotate -l app.kubernetes.io/name=logrotate
+
+      - name: Run smoke tests
+        run: |
+          echo "Running smoke tests..."
+          # Add smoke tests here
+
+  production-deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [prepare, staging-deploy]
+    if: ${{ needs.prepare.outputs.environment == 'production' }}
+    environment:
+      name: production
+      url: https://logrotate.example.com
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: 'latest'
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME_PRODUCTION }} --region ${{ secrets.AWS_REGION }}
+
+      - name: Deploy with Helm (canary)
+        run: |
+          helm upgrade --install logrotate ./deploy/helm/logrotate \
+            --namespace logrotate \
+            --create-namespace \
+            --values ./deploy/helm/logrotate/values.production.yaml \
+            --set image.repository=${{ secrets.DOCKER_REGISTRY }}/logrotate \
+            --set image.tag=${{ needs.prepare.outputs.image_tag }} \
+            --set replicaCount=2 \
+            --wait \
+            --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/logrotate --namespace logrotate --timeout=5m
+          kubectl get pods --namespace logrotate -l app.kubernetes.io/name=logrotate
+
+      - name: Scale up deployment
+        run: |
+          kubectl scale deployment logrotate --namespace logrotate --replicas=5
+
+      - name: Final verification
+        run: |
+          sleep 30
+          kubectl get pods --namespace logrotate -l app.kubernetes.io/name=logrotate
+          kubectl get services --namespace logrotate -l app.kubernetes.io/name=logrotate
+
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    needs: [staging-deploy, production-deploy]
+    if: always()
+    steps:
+      - name: Send success notification
+        if: ${{ needs.staging-deploy.result == 'success' || needs.production-deploy.result == 'success' }}
+        run: |
+          echo "✅ Deployment succeeded"
+          echo "Version: ${{ needs.prepare.outputs.version }}"
+          echo "Environment: ${{ needs.prepare.outputs.environment }}"
+
+      - name: Send failure notification
+        if: ${{ needs.staging-deploy.result == 'failure' || needs.production-deploy.result == 'failure' }}
+        run: |
+          echo "❌ Deployment failed"
+          echo "Version: ${{ needs.prepare.outputs.version }}"
+          echo "Environment: ${{ needs.prepare.outputs.environment }}"
+          exit 1

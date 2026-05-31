@@ -1,0 +1,71 @@
+replicaCount: 3
+
+image:
+  repository: registry.example.com/logrotate
+  tag: latest
+  pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  hosts:
+    - host: logrotate.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: logrotate-tls
+      hosts:
+        - logrotate.example.com
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "512Mi"
+  limits:
+    cpu: "2000m"
+    memory: "2Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+  scaleUpStabilizationSeconds: 120
+  scaleDownStabilizationSeconds: 300
+
+env:
+  - name: ENV
+    value: "production"
+  - name: CONFIG_FILE
+    value: "/app/configs/config.prod.yaml"
+  - name: LOG_PATH
+    value: "/var/log/logrotate/app.log"
+  - name: TZ
+    value: "Asia/Shanghai"
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      size: 100Gi
+  readReplicas:
+    replicaCount: 2
+
+redis:
+  enabled: true
+  architecture: replication
+  replica:
+    replicaCount: 2
+    persistence:
+      size: 50Gi
+
+prometheus:
+  enabled: true
+
+grafana:
+  enabled: true
+
+pdb:
+  enabled: true
+  minAvailable: 2

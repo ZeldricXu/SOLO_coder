@@ -1,0 +1,76 @@
+# Build artifacts
+/bin/
+/dist/
+/coverage/
+*.out
+*.test
+*.exe
+
+# Go files
+*.o
+*.a
+*.so
+*.dylib
+
+# Git
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+/logs/
+*.log
+*.log.*
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Test
+coverage.html
+
+# Vendor (if using vendor directory)
+/vendor/
+
+# Docs (if using vendor directory)
+/docs/
+
+# Test data
+/testdata/
+
+# Docker
+Dockerfile
+.dockerignore
+docker-compose.yml
+docker-compose.*.yml
+
+# CI
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+.project
+.classpath
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

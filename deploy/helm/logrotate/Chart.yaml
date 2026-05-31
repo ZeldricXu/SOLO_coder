@@ -1,0 +1,35 @@
+apiVersion: v2
+name: logrotate
+description: Log Rotation and Archiving Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.24.0-0"
+keywords:
+  - logging
+  - logrotate
+  - archiving
+  - observability
+home: https://github.com/solocoder/logrotate
+sources:
+  - https://github.com/solocoder/logrotate
+maintainers:
+  - name: SoloCoder Team
+    email: dev@solocoder.com
+dependencies:
+  - name: postgresql
+    version: "~13.4.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: "~18.17.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: prometheus
+    version: "~25.21.0"
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: prometheus.enabled
+  - name: grafana
+    version: "~7.3.0"
+    repository: https://grafana.github.io/helm-charts
+    condition: grafana.enabled

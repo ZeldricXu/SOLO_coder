@@ -1,0 +1,59 @@
+replicaCount: 2
+
+image:
+  repository: registry.example.com/logrotate
+  tag: staging
+  pullPolicy: Always
+
+ingress:
+  enabled: true
+  hosts:
+    - host: staging.logrotate.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: logrotate-staging-tls
+      hosts:
+        - staging.logrotate.example.com
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "256Mi"
+  limits:
+    cpu: "1000m"
+    memory: "1Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+env:
+  - name: ENV
+    value: "staging"
+  - name: CONFIG_FILE
+    value: "/app/configs/config.staging.yaml"
+  - name: LOG_PATH
+    value: "/var/log/logrotate/app.log"
+  - name: TZ
+    value: "Asia/Shanghai"
+
+postgresql:
+  enabled: true
+  primary:
+    persistence:
+      size: 20Gi
+  readReplicas:
+    replicaCount: 1
+
+redis:
+  enabled: true
+  replica:
+    replicaCount: 1
+
+grafana:
+  enabled: true

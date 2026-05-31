@@ -1,0 +1,102 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "release"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+  trusted_proxies:
+    - "10.0.0.0/8"
+    - "172.16.0.0/12"
+    - "192.168.0.0/16"
+
+log:
+  level: "info"
+  path: "/var/log/logrotate/app.log"
+  max_size: 200
+  max_backups: 10
+  max_age: 30
+  compress: true
+  enable_console: false
+  enable_file: true
+  enable_structured: true
+  enable_sentry: false
+  sentry_dsn: ""
+
+monitoring:
+  interval: 30
+  enable_prometheus: true
+  metrics_path: "/metrics"
+  enable_health_check: true
+  health_check_path: "/health"
+
+database:
+  driver: "postgres"
+  host: "${DB_HOST}"
+  port: 5432
+  name: "logrotate_staging"
+  user: "${DB_USER}"
+  password: "${DB_PASSWORD}"
+  ssl_mode: "require"
+  max_open_conns: 50
+  max_idle_conns: 25
+  conn_max_lifetime: 3600
+
+redis:
+  host: "${REDIS_HOST}"
+  port: 6379
+  password: "${REDIS_PASSWORD}"
+  db: 0
+  pool_size: 50
+  min_idle_conns: 10
+  dial_timeout: 5
+  read_timeout: 3
+  write_timeout: 3
+
+scheduler:
+  max_workers: 50
+  task_timeout: 600
+  retry_interval: 10
+  max_retries: 5
+
+gpu:
+  enable_preemption: true
+  preemption_threshold: 0.9
+  max_concurrent_tasks: 20
+  node_monitor_interval: 30
+
+document:
+  chunk_size: 1024
+  chunk_overlap: 100
+  embedding_dimension: 1536
+  max_file_size: 52428800
+
+rate_limit:
+  enabled: true
+  requests_per_minute: 1000
+  burst: 200
+  key_prefix: "rate_limit:"
+
+tracing:
+  enabled: true
+  exporter: "jaeger"
+  endpoint: "${JAEGER_ENDPOINT}"
+  service_name: "logrotate-staging"
+  sampling_rate: 0.1
+
+features:
+  enable_gpu_scheduler: true
+  enable_prompt_experiments: true
+  enable_document_pipeline: true
+  enable_metrics_export: true
+
+security:
+  jwt_secret: "${JWT_SECRET}"
+  jwt_expiry: 3600
+  enable_api_key: true
+  api_keys: "${API_KEYS}"
+  cors_origins:
+    - "https://*.staging.example.com"
+    - "https://staging.example.com"
+  enable_rate_limit: true
+  enable_waf: false

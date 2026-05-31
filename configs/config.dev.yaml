@@ -1,0 +1,92 @@
+server:
+  host: "0.0.0.0"
+  port: 8080
+  mode: "debug"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 60
+
+log:
+  level: "debug"
+  path: "./logs/app.log"
+  max_size: 50
+  max_backups: 3
+  max_age: 7
+  compress: true
+  enable_console: true
+  enable_file: true
+  enable_structured: true
+
+monitoring:
+  interval: 10
+  enable_prometheus: true
+  metrics_path: "/metrics"
+
+database:
+  driver: "postgres"
+  host: "localhost"
+  port: 5432
+  name: "logrotate_dev"
+  user: "postgres"
+  password: "postgres"
+  ssl_mode: "disable"
+  max_open_conns: 20
+  max_idle_conns: 10
+  conn_max_lifetime: 3600
+
+redis:
+  host: "localhost"
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 10
+  min_idle_conns: 5
+  dial_timeout: 5
+  read_timeout: 3
+  write_timeout: 3
+
+scheduler:
+  max_workers: 10
+  task_timeout: 300
+  retry_interval: 5
+  max_retries: 3
+
+gpu:
+  enable_preemption: true
+  preemption_threshold: 0.85
+  max_concurrent_tasks: 5
+  node_monitor_interval: 10
+
+document:
+  chunk_size: 512
+  chunk_overlap: 50
+  embedding_dimension: 1536
+  max_file_size: 10485760
+
+rate_limit:
+  enabled: true
+  requests_per_minute: 100
+  burst: 20
+  key_prefix: "rate_limit:"
+
+tracing:
+  enabled: false
+  exporter: "jaeger"
+  endpoint: "http://localhost:14268/api/traces"
+  service_name: "logrotate-dev"
+  sampling_rate: 1.0
+
+features:
+  enable_gpu_scheduler: false
+  enable_prompt_experiments: true
+  enable_document_pipeline: true
+  enable_metrics_export: false
+
+security:
+  jwt_secret: "dev-secret-key-change-in-production"
+  jwt_expiry: 86400
+  enable_api_key: false
+  api_keys: []
+  cors_origins:
+    - "http://localhost:*"
+    - "http://127.0.0.1:*"
