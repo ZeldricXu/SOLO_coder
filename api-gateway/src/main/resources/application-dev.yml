@@ -1,0 +1,18 @@
+spring:
+  data:
+    redis:
+      host: redis-dev
+      port: 6379
+
+jwt:
+  secret: ${JWT_SECRET:dev-secret-key}
+
+rate-limit:
+  default-limit:
+    per-minute: 500
+    per-hour: 5000
+
+logging:
+  level:
+    com.parking.platform: INFO
+    org.springframework.web: INFO

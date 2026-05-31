@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter xmlns="http://checksource.org/findbugs/filter">
+
+    <Match>
+        <Class name="~.*Application"/>
+    </Match>
+    <Match>
+        <Class name="~.*Controller"/>
+        <Bug code="EI"/>
+    </Match>
+    <Match>
+        <Class name="~.*Service"/>
+        <Bug code="EI"/>
+    </Match>
+    <Match>
+        <Class name="~.*Entity"/>
+        <Bug code="EI"/>
+    </Match>
+    <Match>
+        <Class name="~.*Dto"/>
+        <Bug code="EI"/>
+    </Match>
+    <Match>
+        <Class name="~.*DTO"/>
+        <Bug code="EI"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="SIC_INNER_SHOULD_BE_STATIC_ANON"/>
+    </Match>
+    <Match>
+        <Bug pattern="UMAC_UNCALLABLE_METHOD_OF_ANONYMOUS_CLASS"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
+        <Package name="~com\.parking\.platform\..*\.controller"/>
+    </Match>
+
+    <Match>
+        <Method name="equals"/>
+        <Bug code="EQ"/>
+    </Match>
+    <Match>
+        <Method name="hashCode"/>
+        <Bug code="HE"/>
+    </Match>
+    <Match>
+        <Method name="toString"/>
+        <Bug code="ST"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*Test"/>
+        <Bug code="DLS,DE"/>
+    </Match>
+</FindBugsFilter>

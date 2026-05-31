@@ -1,0 +1,237 @@
+version: "3.9"
+
+x-service-base: &service-base
+  restart: unless-stopped
+  networks:
+    - platform-network
+  logging:
+    driver: "json-file"
+    options:
+      max-size: "100m"
+      max-file: "10"
+  deploy:
+    resources:
+      limits:
+        cpus: '2'
+        memory: 1G
+      reservations:
+        cpus: '0.5'
+        memory: 256M
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: platform-redis
+    <<: *service-base
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+    container_name: platform-api-gateway
+    <<: *service-base
+    ports:
+      - "8080:8080"
+    depends_on:
+      - redis
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      JWT_SECRET: dev-jwt-secret-key-for-platform-development-only
+      JAVA_OPTS: -Xms256m -Xmx512m -XX:+UseG1GC
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1G
+
+  core-processor:
+    build:
+      context: ./core-processor
+      dockerfile: Dockerfile
+    container_name: platform-core-processor
+    <<: *service-base
+    ports:
+      - "8081:8081"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx768m -XX:+UseG1GC
+
+  notification-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-notification
+    <<: *service-base
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./notification-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar notification-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+
+  storage-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-storage
+    <<: *service-base
+    ports:
+      - "8083:8083"
+    volumes:
+      - ./storage-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar storage-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+
+  logging-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-logging
+    <<: *service-base
+    ports:
+      - "8084:8084"
+    volumes:
+      - ./logging-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar logging-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+
+  environment-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-environment
+    <<: *service-base
+    ports:
+      - "8085:8085"
+    volumes:
+      - ./environment-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar environment-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+
+  document-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-document
+    <<: *service-base
+    ports:
+      - "8086:8086"
+    volumes:
+      - ./document-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar document-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx1G
+
+  contract-test-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-contract
+    <<: *service-base
+    ports:
+      - "8087:8087"
+    volumes:
+      - ./contract-test-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar contract-test-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+
+  feature-flags-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-feature-flags
+    <<: *service-base
+    ports:
+      - "8088:8088"
+    volumes:
+      - ./feature-flags-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar feature-flags-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+
+  monitoring-service:
+    image: eclipse-temurin:17-jre-alpine
+    container_name: platform-monitoring
+    <<: *service-base
+    ports:
+      - "8089:8089"
+    volumes:
+      - ./monitoring-service/target:/app
+    working_dir: /app
+    command: sh -c "java $JAVA_OPTS -jar monitoring-service*.jar"
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      JAVA_OPTS: -Xms256m -Xmx512m
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: platform-prometheus
+    <<: *service-base
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./config/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=7d'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: platform-grafana
+    <<: *service-base
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./config/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./config/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+
+networks:
+  platform-network:
+    driver: bridge
+
+volumes:
+  redis-data:
+  prometheus-data:
+  grafana-data:

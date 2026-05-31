@@ -1,0 +1,63 @@
+# Default values for data-management-platform
+
+replicaCount:
+  apiGateway: 2
+  coreProcessor: 1
+  default: 1
+
+image:
+  registry: ghcr.io
+  repository: your-org
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+service:
+  type: ClusterIP
+
+resources:
+  limits:
+    cpu: 2
+    memory: 1Gi
+  requests:
+    cpu: 500m
+    memory: 256Mi
+
+redis:
+  enabled: true
+  image: redis:7-alpine
+  persistence:
+    enabled: true
+    size: 8Gi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 70
+
+ingress:
+  enabled: false
+  className: "nginx"
+  hosts:
+    - host: platform.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+spring:
+  profiles:
+    active: prod
+  redis:
+    host: redis-master
+    port: 6379
+
+jwt:
+  secret: ""
+  expiration: 43200000
+
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s

@@ -1,0 +1,31 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: notification-service
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 2
+
+notification:
+  channels:
+    email:
+      enabled: true
+      smtp-host: smtp.example.com
+    sms:
+      enabled: true
+    webhook:
+      enabled: true
+  retry:
+    max-attempts: 3
+    initial-interval: 1000
+    multiplier: 2
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

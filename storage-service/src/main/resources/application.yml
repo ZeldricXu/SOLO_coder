@@ -1,0 +1,19 @@
+server:
+  port: 8083
+spring:
+  application:
+    name: storage-service
+storage:
+  providers:
+    s3:
+      enabled: true
+      region: us-east-1
+      bucket: default-bucket
+    local:
+      enabled: true
+      base-path: ./data/storage
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

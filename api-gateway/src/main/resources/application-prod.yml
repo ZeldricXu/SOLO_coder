@@ -1,0 +1,58 @@
+server:
+  compression:
+    enabled: true
+    mime-types: text/html,text/xml,text/plain,text/css,application/javascript,application/json
+  tomcat:
+    threads:
+      max: 200
+      min-spare: 25
+    max-connections: 10000
+    accept-count: 100
+
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DB:0}
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 64
+          max-idle: 16
+          min-idle: 8
+
+jwt:
+  secret: ${JWT_SECRET}
+  expiration: 43200000
+
+rate-limit:
+  enabled: true
+  default-limit:
+    per-minute: 600
+    per-hour: 6000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    tags:
+      application: api-gateway
+      environment: prod
+
+logging:
+  level:
+    com.parking.platform: ERROR
+    org.springframework: WARN
+  pattern:
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/api-gateway.log
+    max-size: 100MB
+    max-history: 30

@@ -1,0 +1,72 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'api-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['api-gateway:8080']
+    scrape_interval: 15s
+
+  - job_name: 'core-processor'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['core-processor:8081']
+
+  - job_name: 'notification-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['notification-service:8082']
+
+  - job_name: 'storage-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['storage-service:8083']
+
+  - job_name: 'logging-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['logging-service:8084']
+
+  - job_name: 'environment-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['environment-service:8085']
+
+  - job_name: 'document-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['document-service:8086']
+
+  - job_name: 'contract-test-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['contract-test-service:8087']
+
+  - job_name: 'feature-flags-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['feature-flags-service:8088']
+
+  - job_name: 'monitoring-service'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['monitoring-service:8089']
+
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: /metrics

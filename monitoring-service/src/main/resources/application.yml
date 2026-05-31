@@ -1,0 +1,13 @@
+server:
+  port: 8089
+spring:
+  application:
+    name: monitoring-service
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,beans,env
+  metrics:
+    tags:
+      application: ${spring.application.name}

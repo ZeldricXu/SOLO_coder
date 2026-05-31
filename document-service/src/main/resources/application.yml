@@ -1,0 +1,21 @@
+server:
+  port: 8086
+spring:
+  application:
+    name: document-service
+document:
+  sources:
+    confluence:
+      enabled: false
+    github:
+      enabled: false
+    local:
+      enabled: true
+      path: ./data/docs
+  index:
+    path: ./data/lucene-index
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

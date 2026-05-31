@@ -1,0 +1,13 @@
+server:
+  port: 8088
+spring:
+  application:
+    name: feature-flags-service
+feature:
+  flags:
+    cache-ttl: 60
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

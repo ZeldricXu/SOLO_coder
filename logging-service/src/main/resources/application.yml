@@ -1,0 +1,14 @@
+server:
+  port: 8084
+spring:
+  application:
+    name: logging-service
+logging:
+  structured:
+    enabled: true
+    output-format: json
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus

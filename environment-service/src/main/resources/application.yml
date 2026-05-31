@@ -1,0 +1,19 @@
+server:
+  port: 8085
+spring:
+  application:
+    name: environment-service
+  quartz:
+    job-store-type: memory
+environment:
+  cleanup:
+    enabled: true
+    cron: "0 0 3 * * ?"
+    idle-hours: 24
+  default-ttl: 720
+  max-environments-per-user: 5
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
