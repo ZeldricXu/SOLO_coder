@@ -1,0 +1,45 @@
+# ========================================
+# 预发布环境配置
+# 用于QA测试和预发布验证
+# ========================================
+
+[server]
+port = 8080
+
+[database]
+url = "postgres://postgres:postgres@staging-db:5432/data_transformer_staging"
+pool_size = 15
+connect_timeout = 10
+
+[redis]
+url = "redis://staging-redis:6379/2"
+pool_size = 30
+
+[logging]
+level = "info"
+format = "json"
+retention_days = 7
+
+[jwt]
+secret = "${JWT_SECRET}"
+
+[rate_limit]
+per_minute = 500
+per_hour = 5000
+per_day = 50000
+
+[fault_injection]
+enabled = true
+probability = 0.02
+
+[metrics]
+export_otlp = true
+otlp_endpoint = "http://staging-otel:4317/v1/traces"
+
+[traffic_control]
+canary_enabled = true
+canary_percentage = 10
+mirroring_enabled = true
+
+[sidecar]
+injection_mode = "auto"

@@ -1,0 +1,105 @@
+# ========================================
+# 默认配置文件
+# 所有环境共享的基础配置
+# 会被特定环境配置覆盖
+# ========================================
+
+[server]
+host = "0.0.0.0"
+port = 8080
+shutdown_timeout = 30
+
+[database]
+url = "postgres://postgres:postgres@localhost:5432/data_transformer"
+pool_size = 10
+connect_timeout = 5
+idle_timeout = 300
+max_lifetime = 3600
+acquire_timeout = 10
+
+[redis]
+url = "redis://localhost:6379/0"
+pool_size = 20
+connect_timeout = 3
+idle_timeout = 300
+max_lifetime = 3600
+
+[logging]
+dir = "./logs"
+level = "info"
+format = "json"
+rotation = "daily"
+retention_days = 30
+compression = true
+ansi_colors = false
+
+[jwt]
+secret = "default-secret-change-me-please-very-long-secret-key"
+expiry_seconds = 3600
+refresh_expiry_seconds = 604800
+algorithm = "HS256"
+issuer = "data-transformer"
+audience = "api"
+
+[rate_limit]
+per_minute = 100
+per_hour = 1000
+per_day = 10000
+burst_size = 50
+
+[cache]
+ttl_seconds = 300
+max_entries = 10000
+eviction_policy = "lru"
+local_cache_enabled = true
+redis_cache_enabled = true
+
+[metrics]
+enabled = true
+port = 9090
+endpoint = "/metrics"
+histogram_buckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
+export_prometheus = true
+export_otlp = false
+otlp_endpoint = "http://localhost:4317/v1/traces"
+
+[circuit_breaker]
+failure_threshold = 0.5
+timeout_seconds = 30
+half_open_max_calls = 10
+success_threshold = 5
+
+[sidecar]
+cpu_limit = "500m"
+memory_limit = "256Mi"
+injection_mode = "manual"
+auto_restart = true
+liveness_probe_enabled = true
+readiness_probe_enabled = true
+
+[scheduler]
+enabled = true
+thread_pool_size = 4
+default_retry_count = 3
+default_retry_interval = 5
+
+[fault_injection]
+enabled = false
+probability = 0.01
+default_duration_seconds = 60
+auto_rollback = true
+rollback_timeout_seconds = 30
+
+[traffic_control]
+default_policy = "round_robin"
+canary_enabled = false
+canary_percentage = 0
+mirroring_enabled = false
+circuit_breaker_enabled = true
+
+[event_store]
+snapshot_interval = 100
+max_events_per_snapshot = 1000
+snapshot_retention_count = 5
+auto_compaction = true
+compaction_interval_seconds = 3600

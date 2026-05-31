@@ -1,0 +1,142 @@
+# ========================================
+# Prometheus 监控配置
+# ========================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    monitor: 'data-transformer-monitor'
+    environment: ${ENVIRONMENT:-development}
+
+# 告警规则
+rule_files:
+  - "rules/*.yml"
+
+# 告警管理器配置
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# 抓取配置
+scrape_configs:
+  # ---------- Prometheus 自身 ----------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  # ---------- 数据转换服务 ----------
+  - job_name: 'data-transformer'
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [production, staging]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: data-transformer
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_label_version]
+        target_label: version
+      - source_labels: [__meta_kubernetes_pod_label_track]
+        target_label: track
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod_name
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        target_label: node_name
+      - source_labels: [__meta_kubernetes_pod_ip]
+        target_label: instance
+
+  # ---------- 数据转换服务（静态配置，用于本地开发）----------
+  - job_name: 'data-transformer-local'
+    static_configs:
+      - targets: ['data-transformer:9090']
+        labels:
+          service: 'data-transformer'
+          environment: 'local'
+      - targets: ['app-dev:9090']
+        labels:
+          service: 'data-transformer'
+          environment: 'development'
+
+  # ---------- Node Exporter ----------
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+        labels:
+          service: 'node-exporter'
+
+  # ---------- cAdvisor ----------
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+        labels:
+          service: 'cadvisor'
+
+  # ---------- PostgreSQL ----------
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+        labels:
+          service: 'postgres'
+
+  # ---------- Redis ----------
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+        labels:
+          service: 'redis'
+
+  # ---------- Nginx Ingress ----------
+  - job_name: 'nginx-ingress'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names: [ingress-nginx]
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+        regex: ingress-nginx
+        action: keep
+
+  # ---------- API Server ----------
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+        namespaces:
+          names: [default]
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_service_name]
+        regex: kubernetes
+        action: keep
+
+  # ---------- 黑盒监控（HTTP/HTTPS）----------
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://api.example.com/health
+          - https://api.example.com/metrics
+        labels:
+          service: 'data-transformer'
+          endpoint: 'health-check'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115

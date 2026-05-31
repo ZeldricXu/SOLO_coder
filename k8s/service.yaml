@@ -1,0 +1,98 @@
+# ========================================
+# Kubernetes Service 配置
+# ========================================
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-transformer
+  labels:
+    app: data-transformer
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app: data-transformer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+---
+# 金丝雀版本服务
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-transformer-canary
+  labels:
+    app: data-transformer
+    track: canary
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9090"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  selector:
+    app: data-transformer
+    track: canary
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+    - name: metrics
+      port: 9090
+      targetPort: metrics
+      protocol: TCP
+---
+# 无版本服务（用于内部流量）
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-transformer-headless
+  labels:
+    app: data-transformer
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: data-transformer
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+# 负载均衡服务（用于对外暴露）
+apiVersion: v1
+kind: Service
+metadata:
+  name: data-transformer-lb
+  labels:
+    app: data-transformer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+    service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+    service.beta.kubernetes.io/aws-load-balancer-connection-idle-timeout: "60"
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app: data-transformer
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: http
+      protocol: TCP

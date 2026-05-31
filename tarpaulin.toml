@@ -1,0 +1,113 @@
+# ========================================
+# Tarpaulin 代码覆盖率配置
+# 用于 CI/CD 中的覆盖率检查和门禁
+# ========================================
+
+# 输出格式
+output-dir = "./coverage"
+output-formats = ["Html", "Json", "Lcov", "Xml"]
+
+# 是否生成彩色输出
+color = true
+
+# 是否显示详细信息
+verbose = true
+
+# 是否忽略测试代码
+ignore-tests = false
+
+# 是否忽略 doctests
+doctests = true
+
+# 测试超时时间（秒）
+test-timeout = 300
+
+# 并行运行测试
+parallel = true
+
+# 线程数
+threads = 4
+
+# 覆盖率计算类型
+# - Line: 行覆盖率
+# - Branch: 分支覆盖率
+# - Region: 区域覆盖率
+cover-types = ["Line", "Branch", "Region"]
+
+# 跳过的文件
+skip = [
+    "src/main.rs",
+    "**/tests/**",
+    "**/benches/**",
+    "**/examples/**",
+    "target/**",
+]
+
+# 包含的文件
+include = [
+    "src/**/*.rs",
+]
+
+# 不统计的属性
+exclude-attrs = [
+    "test",
+    "cfg(test)",
+    "allow(dead_code)",
+    "allow(unused)",
+]
+
+# 源代码根目录
+root = "."
+
+# 覆盖率门禁阈值
+# 必须达到这些阈值才能通过 CI
+[thresholds]
+# 总覆盖率
+line = 80.0
+branch = 70.0
+region = 75.0
+
+# 单个文件最低覆盖率
+per-file-line = 60.0
+per-file-branch = 50.0
+per-file-region = 55.0
+
+# 功能区域最低覆盖率
+[[thresholds.per-package]]
+package = "data-transformer"
+line = 80.0
+branch = 70.0
+region = 75.0
+
+# 运行环境变量
+[env]
+RUST_BACKTRACE = "1"
+RUST_LOG = "debug"
+
+# 构建选项
+[build]
+release = false
+features = []
+all-features = false
+no-default-features = false
+
+# 报告选项
+[report]
+# 生成 Markdown 报告
+markdown = true
+
+# 显示未覆盖的行
+show-misses = true
+
+# 显示未覆盖的分支
+show-branch-misses = true
+
+# 失败时返回非零退出码
+fail-under = [
+    { type = "Line", threshold = 80.0 },
+    { type = "Branch", threshold = 70.0 },
+    { type = "Region", threshold = 75.0 },
+]
+
+# 自动打开报告
+open = false

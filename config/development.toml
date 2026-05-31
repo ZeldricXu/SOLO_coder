@@ -1,0 +1,37 @@
+# ========================================
+# 开发环境配置
+# 用于本地开发和调试
+# ========================================
+
+[server]
+port = 8080
+
+[database]
+url = "postgres://postgres:postgres@localhost:5432/data_transformer_dev"
+pool_size = 5
+log_statements = true
+
+[redis]
+url = "redis://localhost:6379/1"
+pool_size = 10
+
+[logging]
+level = "debug"
+format = "pretty"
+ansi_colors = true
+compression = false
+
+[rate_limit]
+per_minute = 1000
+per_hour = 10000
+per_day = 100000
+
+[fault_injection]
+enabled = true
+probability = 0.05
+
+[metrics]
+export_otlp = false
+
+[event_store]
+auto_compaction = false

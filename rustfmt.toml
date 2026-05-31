@@ -1,0 +1,79 @@
+# ========================================
+# Rust 代码格式化配置
+# 遵循 Rust 官方最佳实践
+# ========================================
+
+# 基础配置
+edition = "2021"
+version = "Two"
+
+# 缩进与空格
+tab_spaces = 4
+indent_style = "Block"
+hard_tabs = false
+tab_spaces = 4
+
+# 换行与长度
+max_width = 120
+use_small_heuristics = "Max"
+fn_call_width = 80
+struct_lit_width = 60
+array_width = 60
+chain_width = 60
+single_line_if_else_max_width = 50
+
+# 函数与方法
+fn_args_layout = "Tall"
+fn_single_line = false
+where_single_line = false
+where_predicates_indent = 4
+
+# 结构体与枚举
+struct_field_align_threshold = 0
+enum_discrim_align_threshold = 0
+struct_variant_width = 60
+struct_variant_align_threshold = 0
+
+# 匹配表达式
+match_arm_blocks = true
+match_arm_leading_pipes = "Preserve"
+match_block_trailing_comma = true
+
+# 导入排序
+imports_granularity = "Crate"
+group_imports = "StdExternalCrate"
+imports_layout = "HorizontalVertical"
+reorder_imports = true
+reorder_modules = true
+
+# 注释
+wrap_comments = true
+normalize_comments = true
+comment_width = 100
+use_field_init_shorthand = true
+empty_item_single_line = true
+
+# 尾随逗号
+trailing_comma = "Always"
+trailing_semicolon = true
+
+# 对齐
+format_macro_matchers = true
+format_macro_bodies = true
+format_code_in_doc_comments = true
+
+# 特殊规则
+merge_derives = true
+use_try_shorthand = true
+condense_wildcard_suffices = true
+remove_nested_parens = true
+
+# 对其表达式
+overflow_delimited_expr = true
+inline_attribute_width = 80
+
+# 不格式化的文件
+ignore = [
+    "target/",
+    "**/generated.rs",
+]

@@ -1,0 +1,185 @@
+# ========================================
+# Kubernetes Ingress 配置
+# 支持金丝雀发布（基于权重）
+# ========================================
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: data-transformer
+  labels:
+    app: data-transformer
+  annotations:
+    # Nginx Ingress 配置
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    
+    # 限流配置
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-rpm: "1000"
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "2"
+    
+    # 请求体大小限制
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    
+    # 超时配置
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "30"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "30"
+    
+    # 压缩
+    nginx.ingress.kubernetes.io/enable-compression: "true"
+    nginx.ingress.kubernetes.io/gzip-types: "application/json text/plain text/css application/javascript"
+    
+    # CORS
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, PUT, POST, DELETE, PATCH, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-headers: "DNT,X-CustomHeader,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Authorization,X-API-Key"
+    
+    # 监控
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "10254"
+spec:
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: data-transformer-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: data-transformer
+                port:
+                  name: http
+---
+# 金丝雀发布 Ingress（10%流量）
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: data-transformer-canary
+  labels:
+    app: data-transformer
+    track: canary
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    
+    # 金丝雀注解：10%流量到金丝雀版本
+    nginx.ingress.kubernetes.io/canary: "true"
+    nginx.ingress.kubernetes.io/canary-weight: "10"
+    
+    # 基于Header的金丝雀路由
+    nginx.ingress.kubernetes.io/canary-by-header: "X-Canary"
+    nginx.ingress.kubernetes.io/canary-by-header-value: "true"
+    
+    # 基于Cookie的金丝雀路由
+    nginx.ingress.kubernetes.io/canary-by-cookie: "canary_enabled"
+spec:
+  tls:
+    - hosts:
+        - api.example.com
+      secretName: data-transformer-tls
+  rules:
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: data-transformer-canary
+                port:
+                  name: http
+---
+# 蓝绿部署 - 绿色版本（当前生产）
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: data-transformer-green
+  labels:
+    app: data-transformer
+    deployment: green
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - api-green.example.com
+      secretName: data-transformer-tls
+  rules:
+    - host: api-green.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: data-transformer
+                port:
+                  name: http
+---
+# 蓝绿部署 - 蓝色版本（新版本测试）
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: data-transformer-blue
+  labels:
+    app: data-transformer
+    deployment: blue
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  tls:
+    - hosts:
+        - api-blue.example.com
+      secretName: data-transformer-tls
+  rules:
+    - host: api-blue.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: data-transformer-canary
+                port:
+                  name: http
+---
+# API Gateway 内部路由
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: data-transformer-internal
+  labels:
+    app: data-transformer
+    type: internal
+  annotations:
+    kubernetes.io/ingress.class: "nginx-internal"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+spec:
+  rules:
+    - host: data-transformer.internal.example.com
+      http:
+        paths:
+          - path: /health
+            pathType: Prefix
+            backend:
+              service:
+                name: data-transformer
+                port:
+                  name: http
+          - path: /metrics
+            pathType: Prefix
+            backend:
+              service:
+                name: data-transformer
+                port:
+                  name: metrics

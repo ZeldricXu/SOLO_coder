@@ -1,0 +1,172 @@
+# ========================================
+# Clippy 静态代码检查配置
+# 所有 lint 级别说明:
+#   allow - 允许
+#   warn  - 警告（CI中不会失败）
+#   deny  - 禁止（CI中会失败）
+# ========================================
+
+# ---------- 正确性检查 (必须deny) ----------
+# 不允许 panic（除非显式 allow）
+panic_in_result_fn = "deny"
+panic_in_drop = "deny"
+unwrap_in_result = "deny"
+expect_used = "warn"
+
+# 不允许未处理的结果
+unused_results = "deny"
+
+# 不允许使用 unsafe
+unsafe_code = "deny"
+unsafe_removed_from_name = "deny"
+
+# 不允许未使用的生命周期
+unused_lifetimes = "deny"
+
+# 不允许类型转换错误
+cast_lossless = "warn"
+cast_possible_truncation = "warn"
+cast_possible_wrap = "warn"
+cast_precision_loss = "warn"
+cast_sign_loss = "warn"
+
+# 不允许显式调用 drop
+explicit_drops = "warn"
+
+# 不允许重复加载
+duplicate_item_name = "deny"
+
+# 不允许循环依赖
+module_repetition_in_path = "warn"
+
+# ---------- 性能相关 (必须deny) ----------
+# 不允许无用的 clone
+cloned_instead_of_copied = "deny"
+redundant_clone = "deny"
+unnecessary_to_owned = "warn"
+
+# 不允许低效的数据结构使用
+mut_range_bound = "warn"
+mut_mut = "warn"
+
+# 不允许不必要的分配
+box_default = "warn"
+default_constructed_unit_structs = "warn"
+
+# Vec相关优化
+vec_init_then_push = "warn"
+vec_resize_to_zero = "warn"
+
+# 字符串优化
+string_lit_as_bytes = "warn"
+inefficient_to_string = "warn"
+
+# 迭代器优化
+needless_collect = "warn"
+iter_not_returning_iterator = "warn"
+iterator_step_by_zero = "deny"
+
+# ---------- 安全性检查 (必须deny) ----------
+# 不允许可能的安全问题
+no_mangle_with_rust_abi = "deny"
+result_large_err = "warn"
+large_stack_arrays = "warn"
+
+# 不允许整数溢出（调试模式）
+arithmetic_side_effects = "warn"
+
+# 不允许浮点数比较
+float_cmp = "warn"
+float_cmp_const = "warn"
+
+# ---------- 可读性/风格 (warn级别) ----------
+# 复杂代码
+too_many_arguments = "warn"
+too_many_lines = "warn"
+cognitive_complexity = "warn"
+type_complexity = "warn"
+
+# 命名规范
+module_inception = "warn"
+non_ascii_literal = "allow"
+
+# 简化代码
+needless_pass_by_value = "warn"
+needless_borrow = "warn"
+needless_lifetimes = "warn"
+needless_return = "warn"
+needless_question_mark = "warn"
+needless_option_as_deref = "warn"
+redundant_closure = "warn"
+redundant_pattern_matching = "warn"
+redundant_field_names = "warn"
+redundant_static_lifetimes = "warn"
+
+# 匹配表达式优化
+match_same_arms = "warn"
+single_match = "warn"
+single_match_else = "warn"
+match_bool = "warn"
+
+# 使用标准库推荐方式
+manual_let_else = "warn"
+manual_slice_size_calculation = "warn"
+
+# ---------- 可维护性 (warn级别) ----------
+# 未使用的代码
+dead_code = "warn"
+unused_imports = "warn"
+unused_variables = "warn"
+unused_mut = "warn"
+unused_async = "warn"
+
+# 文档
+missing_docs = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+missing_safety_doc = "deny"
+
+# TODO/FIXME 跟踪
+todo = "allow"
+
+# ---------- 异步相关 ----------
+await_holding_lock = "deny"
+await_holding_refcell_ref = "deny"
+large_futures = "warn"
+
+# ---------- 错误处理 ----------
+# 不允许忽略错误
+map_err_ignore = "warn"
+ignored_unit_patterns = "warn"
+
+# 不允许空错误类型
+empty_docs = "warn"
+
+# ---------- 测试相关 ----------
+tests_outside_test_module = "warn"
+cargo_common_metadata = "warn"
+
+# ---------- 宏相关 ----------
+useless_attribute = "warn"
+meta_variable_misuse = "warn"
+
+[third-party]
+log = "warn"
+tokio = "warn"
+axum = "warn"
+sqlx = "warn"
+
+# ---------- 特殊规则 ----------
+# 允许 todo!() 在开发中
+# 允许 println!() 在调试中
+print_stdout = "allow"
+print_stderr = "allow"
+
+# 允许使用 dbg!()
+dbg_macro = "allow"
+
+# 允许条件编译
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(any(unix, windows))"] }
+
+# MSRV 检查
+msrv = "1.75.0"

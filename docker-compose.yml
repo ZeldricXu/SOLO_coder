@@ -1,0 +1,229 @@
+# ========================================
+# Docker Compose 配置
+# 用于本地开发和集成测试环境
+# ========================================
+
+version: "3.9"
+
+services:
+  # ---------- PostgreSQL 数据库 ----------
+  postgres:
+    image: postgres:16-alpine
+    container_name: data-transformer-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: data_transformer_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d data_transformer_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - data-transformer-net
+    restart: unless-stopped
+
+  # ---------- Redis 缓存 ----------
+  redis:
+    image: redis:7-alpine
+    container_name: data-transformer-redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "redis"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - data-transformer-net
+    restart: unless-stopped
+
+  # ---------- Prometheus 监控 ----------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: data-transformer-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - data-transformer-net
+    restart: unless-stopped
+
+  # ---------- Grafana 可视化 ----------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: data-transformer-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    depends_on:
+      - prometheus
+    networks:
+      - data-transformer-net
+    restart: unless-stopped
+
+  # ---------- OpenTelemetry Collector ----------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: data-transformer-otel
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+      - "8889:8889"
+    volumes:
+      - ./monitoring/otel-collector-config.yml:/etc/otel-collector-config.yml:ro
+    command: ["--config=/etc/otel-collector-config.yml"]
+    networks:
+      - data-transformer-net
+    restart: unless-stopped
+
+  # ---------- 应用服务（开发模式） ----------
+  app-dev:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: data-transformer-dev
+    environment:
+      RUST_ENV: development
+      RUST_LOG: debug,data_transformer=trace
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/data_transformer_dev
+      REDIS_URL: redis://:redis@redis:6379/0
+      JWT_SECRET: dev-secret-change-me-please-very-long-secret-key
+      OTLP_ENDPOINT: http://otel-collector:4317/v1/traces
+    ports:
+      - "8080:8080"
+      - "9091:9090"
+    volumes:
+      - ./src:/app/src:ro
+      - ./config:/app/config:ro
+      - ./Cargo.toml:/app/Cargo.toml:ro
+      - ./Cargo.lock:/app/Cargo.lock:ro
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-target:/app/target
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    networks:
+      - data-transformer-net
+    restart: unless-stopped
+
+  # ---------- 应用服务（生产模式） ----------
+  app:
+    build:
+      context: .
+      target: runtime
+      dockerfile: Dockerfile
+      args:
+        BUILD_PROFILE: release
+        GIT_SHA: ${GIT_SHA:-local}
+        BUILD_TIME: ${BUILD_TIME:-unknown}
+    container_name: data-transformer
+    environment:
+      RUST_ENV: production
+      RUST_LOG: info
+      DATABASE_URL: ${DATABASE_URL:-postgres://postgres:postgres@postgres:5432/data_transformer}
+      REDIS_URL: ${REDIS_URL:-redis://:redis@redis:6379/0}
+      JWT_SECRET: ${JWT_SECRET:-please-change-this-secret-key}
+      OTLP_ENDPOINT: ${OTLP_ENDPOINT:-http://otel-collector:4317/v1/traces}
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - data-transformer-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ---------- 测试服务 ----------
+  tester:
+    build:
+      context: .
+      target: tester
+      dockerfile: Dockerfile
+    container_name: data-transformer-tester
+    environment:
+      RUST_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/data_transformer_test
+      REDIS_URL: redis://:redis@redis:6379/1
+    volumes:
+      - ./coverage:/app/coverage
+      - ./test-results:/app/test-results
+      - cargo-registry:/usr/local/cargo/registry
+      - cargo-target:/app/target
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - data-transformer-net
+    command: ["cargo", "test", "--", "--nocapture"]
+
+# ---------- 网络配置 ----------
+networks:
+  data-transformer-net:
+    driver: bridge
+    name: data-transformer-net
+
+# ---------- 数据卷 ----------
+volumes:
+  postgres-data:
+    name: data-transformer-postgres-data
+  redis-data:
+    name: data-transformer-redis-data
+  prometheus-data:
+    name: data-transformer-prometheus-data
+  grafana-data:
+    name: data-transformer-grafana-data
+  cargo-registry:
+    name: data-transformer-cargo-registry
+  cargo-target:
+    name: data-transformer-cargo-target

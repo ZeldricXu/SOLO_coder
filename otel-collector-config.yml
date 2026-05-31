@@ -1,0 +1,282 @@
+# ========================================
+# OpenTelemetry Collector 配置
+# 收集、处理和导出遥测数据
+# ========================================
+
+receivers:
+  # OTLP 接收 gRPC 和 HTTP
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "https://*"
+            - "http://*"
+
+  # Prometheus 抓取
+  prometheus:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector'
+          scrape_interval: 10s
+          static_configs:
+            - targets: ['0.0.0.0:8888']
+
+  # 主机指标
+  hostmetrics:
+    collection_interval: 10s
+    scrapers:
+      cpu:
+      disk:
+      load:
+      filesystem:
+      memory:
+      network:
+      paging:
+      process:
+
+  # 日志接收
+  filelog:
+    include:
+      - /var/log/app/*.log
+      - /var/log/nginx/*.log
+    exclude:
+      - /var/log/*gz
+    poll_interval: 1s
+    start_at: beginning
+
+  # Zipkin 接收
+  zipkin:
+    endpoint: 0.0.0.0:9411
+
+  # Jaeger 接收
+  jaeger:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:14250
+      thrift_http:
+        endpoint: 0.0.0.0:14268
+
+processors:
+  # 批量处理
+  batch:
+    timeout: 10s
+    send_batch_size: 10000
+    send_batch_max_size: 100000
+
+  # 内存限制
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 25
+
+  # 概率采样
+  probabilistic_sampler:
+    hash_seed: 22
+    sampling_percentage: 15
+
+  # 尾部采样
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 100000
+    expected_new_traces_per_sec: 10000
+    policies:
+      [
+        {
+          name: errors-policy,
+          type: status_code,
+          status_code: { status_codes: [ERROR] }
+        },
+        {
+          name: slow-traces-policy,
+          type: latency,
+          latency: { threshold_ms: 1000 }
+        },
+        {
+          name: health-check-policy,
+          type: string_attribute,
+          string_attribute:
+            {
+              key: http.path,
+              values: ["/health", "/metrics"],
+              enabled_regex_matching: true,
+              invert_match: true
+            }
+        },
+        {
+          name: probabilistic-policy,
+          type: probabilistic,
+          probabilistic: { sampling_percentage: 5 }
+        }
+      ]
+
+  # 资源检测
+  resourcedetection:
+    detectors: [env, gcp, ec2, azure, docker, k8s, system]
+    timeout: 5s
+    override: false
+
+  # 资源处理器
+  resource:
+    attributes:
+      - key: deployment.environment
+        value: "${ENVIRONMENT:-production}"
+        action: upsert
+      - key: service.namespace
+        value: "data-platform"
+        action: upsert
+      - key: host.id
+        from_attribute: host.name
+        action: insert
+
+  # 指标聚合
+  metricstransform:
+    transforms:
+      - include: "http.server.duration"
+        action: update
+        aggregation_temporality: "AGGREGATION_TEMPORALITY_CUMULATIVE"
+
+  # 跨度属性处理
+  spanmetrics:
+    metrics_exporter: otlp
+    latency_histogram_buckets: [5ms, 10ms, 25ms, 50ms, 75ms, 100ms, 250ms, 500ms, 750ms, 1s, 2s, 5s, 10s]
+    dimensions:
+      - name: http.method
+      - name: http.route
+      - name: http.status_code
+      - name: service.version
+
+  # K8s 属性
+  k8sattributes:
+    auth_type: "serviceAccount"
+    passthrough: false
+    filter:
+      namespace_from_env: "POD_NAMESPACE"
+    extract:
+      metadata:
+        - k8s.pod.name
+        - k8s.pod.uid
+        - k8s.deployment.name
+        - k8s.statefulset.name
+        - k8s.daemonset.name
+        - k8s.cronjob.name
+        - k8s.job.name
+        - k8s.node.name
+        - k8s.namespace.name
+      annotations:
+        - tag_name: a1
+          key: annotation-key
+          from: pod
+      labels:
+        - tag_name: l1
+          key: app
+          from: pod
+    pod_association:
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.ip
+      - sources:
+          - from: resource_attribute
+            name: k8s.pod.uid
+      - sources:
+          - from: connection
+
+  # 属性处理
+  attributes:
+    actions:
+      - key: http.user_agent
+        action: delete
+      - key: http.request.header.authorization
+        action: delete
+
+exporters:
+  # OTLP 导出到 Prometheus
+  prometheus:
+    endpoint: "0.0.0.0:8889"
+    namespace: "data_transformer"
+    metric_expiration: 5m
+
+  # OTLP 导出到 Loki（日志）
+  loki:
+    endpoint: "http://loki:3100/loki/api/v1/push"
+    default_labels_enabled:
+      exporter: false
+      job: true
+
+  # OTLP 导出到 Jaeger（追踪）
+  otlp/jaeger:
+    endpoint: "jaeger:4317"
+    tls:
+      insecure: true
+
+  # 调试导出
+  debug:
+    verbosity: detailed
+
+  # 文件导出
+  file:
+    path: /var/log/otel/otel.json
+
+  # OTLP HTTP 导出
+  otlphttp:
+    endpoint: "https://otel-collector.example.com:4318"
+    compression: gzip
+    retry_on_failure:
+      enabled: true
+      initial_interval: 5s
+      max_interval: 30s
+      max_elapsed_time: 120s
+    sending_queue:
+      enabled: true
+      num_consumers: 10
+      queue_size: 10000
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp, jaeger, zipkin]
+      processors: [memory_limiter, k8sattributes, resource, resourcedetection, tail_sampling, batch]
+      exporters: [otlphttp, otlp/jaeger]
+
+    metrics:
+      receivers: [otlp, prometheus, hostmetrics, spanmetrics]
+      processors: [memory_limiter, k8sattributes, resource, resourcedetection, metricstransform, batch]
+      exporters: [otlphttp, prometheus]
+
+    logs:
+      receivers: [otlp, filelog]
+      processors: [memory_limiter, k8sattributes, resource, resourcedetection, attributes, batch]
+      exporters: [otlphttp, loki]
+
+  extensions:
+    health_check:
+      endpoint: 0.0.0.0:13133
+    pprof:
+      endpoint: 0.0.0.0:1777
+    zpages:
+      endpoint: 0.0.0.0:55679
+    memory_ballast:
+      size_mib: 512
+
+  telemetry:
+    logs:
+      level: "info"
+      encoding: "json"
+      development: false
+      disable_caller: false
+      disable_stacktrace: false
+      initial_fields:
+        service.name: "otel-collector"
+    metrics:
+      address: 0.0.0.0:8888
+      level: detailed
+
+extensions:
+  health_check:
+  pprof:
+  zpages:
+  memory_ballast:
+    size_mib: 512

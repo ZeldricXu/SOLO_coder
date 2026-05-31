@@ -1,0 +1,235 @@
+# ========================================
+# Prometheus 告警规则配置
+# ========================================
+
+groups:
+  # ---------- 服务可用性告警 ----------
+  - name: service_availability
+    rules:
+      - alert: ServiceDown
+        expr: up{job="data-transformer"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: availability
+        annotations:
+          summary: "数据转换服务不可用"
+          description: "服务 {{ $labels.instance }} 在 {{ $labels.namespace }} 命名空间已宕机超过1分钟"
+          runbook: "docs/runbooks/service-down.md"
+
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{job="data-transformer",status=~"5.."}[5m]) / rate(http_requests_total{job="data-transformer"}[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          category: availability
+        annotations:
+          summary: "错误率过高 (>5%)"
+          description: "服务 {{ $labels.instance }} 5分钟内错误率达到 {{ $value | humanizePercentage }}"
+          runbook: "docs/runbooks/high-error-rate.md"
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.99, rate(http_request_duration_seconds_bucket{job="data-transformer"}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "请求延迟过高 (P99 > 1s)"
+          description: "服务 {{ $labels.instance }} P99延迟达到 {{ $value | humanizeDuration }}"
+
+  # ---------- 资源使用告警 ----------
+  - name: resource_usage
+    rules:
+      - alert: HighCPUUsage
+        expr: 100 - (avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "CPU使用率过高 (>80%)"
+          description: "节点 {{ $labels.instance }} CPU使用率达到 {{ $value | humanizePercentage }}"
+
+      - alert: HighMemoryUsage
+        expr: (1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes)) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "内存使用率过高 (>85%)"
+          description: "节点 {{ $labels.instance }} 内存使用率达到 {{ $value | humanizePercentage }}"
+
+      - alert: HighDiskUsage
+        expr: 100 - (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 > 85
+        for: 10m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "磁盘使用率过高 (>85%)"
+          description: "节点 {{ $labels.instance }} 磁盘使用率达到 {{ $value | humanizePercentage }}"
+
+      - alert: PodHighCPUUsage
+        expr: sum(rate(container_cpu_usage_seconds_total{pod=~"data-transformer-.*"}[5m])) by (pod) / sum(kube_pod_container_resource_limits_cpu_cores{pod=~"data-transformer-.*"}) by (pod) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "Pod CPU使用率过高 (>80%)"
+          description: "Pod {{ $labels.pod }} CPU使用率达到 {{ $value | humanizePercentage }}"
+
+      - alert: PodHighMemoryUsage
+        expr: sum(container_memory_working_set_bytes{pod=~"data-transformer-.*"}) by (pod) / sum(kube_pod_container_resource_limits_memory_bytes{pod=~"data-transformer-.*"}) by (pod) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+          category: resource
+        annotations:
+          summary: "Pod内存使用率过高 (>85%)"
+          description: "Pod {{ $labels.pod }} 内存使用率达到 {{ $value | humanizePercentage }}"
+
+  # ---------- 业务指标告警 ----------
+  - name: business_metrics
+    rules:
+      - alert: LowThroughput
+        expr: rate(http_requests_total{job="data-transformer"}[5m]) < 10
+        for: 10m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "流量过低"
+          description: "服务请求量异常低，当前5分钟平均QPS为 {{ $value | humanize }}"
+
+      - alert: High4xxRate
+        expr: rate(http_requests_total{job="data-transformer",status=~"4.."}[5m]) / rate(http_requests_total{job="data-transformer"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "客户端错误率过高 (>10%)"
+          description: "4xx错误率达到 {{ $value | humanizePercentage }}，可能存在API误用"
+
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state{job="data-transformer"} == 1
+        for: 1m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "熔断器已打开"
+          description: "服务 {{ $labels.instance }} 熔断器已打开，正在进行降级处理"
+
+      - alert: CacheHitRateLow
+        expr: rate(cache_hits_total{job="data-transformer"}[5m]) / (rate(cache_hits_total{job="data-transformer"}[5m]) + rate(cache_misses_total{job="data-transformer"}[5m])) < 0.7
+        for: 10m
+        labels:
+          severity: warning
+          category: business
+        annotations:
+          summary: "缓存命中率过低 (<70%)"
+          description: "缓存命中率为 {{ $value | humanizePercentage }}，请检查缓存策略"
+
+  # ---------- 数据库告警 ----------
+  - name: database
+    rules:
+      - alert: PostgresDown
+        expr: pg_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "PostgreSQL数据库不可用"
+          description: "PostgreSQL实例 {{ $labels.instance }} 已宕机"
+
+      - alert: PostgresHighConnections
+        expr: pg_stat_database_numbackends > 80
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "PostgreSQL连接数过高 (>80)"
+          description: "数据库连接数达到 {{ $value }}，请检查连接池配置"
+
+      - alert: PostgresSlowQueries
+        expr: rate(pg_stat_statements_total_time_seconds_sum[5m]) / rate(pg_stat_statements_total_time_seconds_count[5m]) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "PostgreSQL慢查询过多"
+          description: "平均查询时间超过500ms"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: database
+        annotations:
+          summary: "Redis不可用"
+          description: "Redis实例 {{ $labels.instance }} 已宕机"
+
+      - alert: RedisHighMemoryUsage
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Redis内存使用率过高 (>90%)"
+          description: "Redis内存使用率达到 {{ $value | humanizePercentage }}，可能触发数据淘汰"
+
+  # ---------- 调度任务告警 ----------
+  - name: scheduler
+    rules:
+      - alert: ScheduledTaskFailed
+        expr: scheduler_task_failures_total{job="data-transformer"} > 0
+        for: 0m
+        labels:
+          severity: warning
+          category: scheduler
+        annotations:
+          summary: "定时任务执行失败"
+          description: "任务 {{ $labels.task_name }} 执行失败，错误: {{ $labels.error }}"
+
+      - alert: ScheduledTaskOverdue
+        expr: scheduler_task_overdue{job="data-transformer"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          category: scheduler
+        annotations:
+          summary: "定时任务执行超时"
+          description: "任务 {{ $labels.task_name }} 执行已超时"
+
+  # ---------- 金丝雀发布告警 ----------
+  - name: canary
+    rules:
+      - alert: CanaryErrorRateHigh
+        expr: rate(http_requests_total{job="data-transformer",track="canary",status=~"5.."}[5m]) / rate(http_requests_total{job="data-transformer",track="canary"}[5m]) > 0.03
+        for: 3m
+        labels:
+          severity: critical
+          category: canary
+        annotations:
+          summary: "金丝雀版本错误率过高 (>3%)"
+          description: "金丝雀版本错误率达到 {{ $value | humanizePercentage }}，建议立即回滚"
+          action: "立即将金丝雀流量降至0%，检查错误日志"
+
+      - alert: CanaryLatencyHigh
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket{job="data-transformer",track="canary"}[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          category: canary
+        annotations:
+          summary: "金丝雀版本延迟过高 (P95 > 2s)"
+          description: "金丝雀版本P95延迟为 {{ $value | humanizeDuration }}，比稳定版高50%以上"

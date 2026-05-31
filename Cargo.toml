@@ -1,0 +1,103 @@
+[package]
+name = "data-transformer"
+version = "0.1.0"
+edition = "2021"
+description = "数据转换与标准化中间件"
+license = "MIT"
+repository = "https://github.com/solocoder/data-transformer"
+readme = "README.md"
+rust-version = "1.75.0"
+
+[dependencies]
+tokio = { version = "=1.35.1", features = ["full"] }
+axum = { version = "=0.7.4", features = ["json", "http1", "http2"] }
+serde = { version = "=1.0.196", features = ["derive", "rc"] }
+serde_json = "=1.0.113"
+sqlx = { version = "=0.7.3", features = ["runtime-tokio", "postgres", "chrono", "uuid", "json", "macros"] }
+redis = { version = "=0.24.0", features = ["tokio-comp", "connection-manager", "streams"] }
+bb8 = "=0.8.1"
+bb8-redis = "=0.14.0"
+tracing = "=0.1.40"
+tracing-subscriber = { version = "=0.3.18", features = ["env-filter", "json", "time", "registry"] }
+tracing-appender = "=0.2.3"
+opentelemetry = { version = "=0.22.0", features = ["trace", "metrics", "rt-tokio"] }
+opentelemetry-otlp = "=0.15.0"
+opentelemetry-semantic-conventions = "=0.14.0"
+chrono = { version = "=0.4.32", features = ["serde", "clock", "std"] }
+uuid = { version = "=1.6.1", features = ["v4", "serde", "fast-rng"] }
+thiserror = "=1.0.56"
+anyhow = "=1.0.79"
+parking_lot = "=0.12.1"
+dashmap = "=5.5.3"
+once_cell = "=1.19.0"
+regex = "=1.10.3"
+reqwest = { version = "=0.12.0", features = ["json", "stream", "gzip", "brotli", "deflate"] }
+jsonwebtoken = "=9.2.0"
+argon2 = "=0.5.3"
+rand = "=0.8.5"
+tower = { version = "=0.4.13", features = ["util", "timeout", "rate-limit", "load-shed"] }
+tower-http = { version = "=0.5.1", features = ["cors", "compression", "trace", "request-id", "catch-panic"] }
+governor = { version = "=0.6.0", features = ["jitter", "clock", "std"] }
+scheduler = "=0.2.1"
+cron = "=0.12.1"
+job_scheduler = "=1.3.3"
+tarpc = { version = "=0.34.0", features = ["serde"] }
+async-trait = "=0.1.77"
+bytes = "=1.5.0"
+futures = "=0.3.30"
+pin-project-lite = "=0.2.13"
+hmac = "=0.12.1"
+sha2 = "=0.10.8"
+base64 = "=0.22.0"
+flate2 = "=1.0.28"
+config = { version = "=0.14.0", features = ["toml", "env", "json"] }
+dotenvy = "=0.15.7"
+
+[dev-dependencies]
+tokio-test = "=0.4.3"
+tempfile = "=3.10.0"
+proptest = "=1.4.0"
+criterion = { version = "=0.5.1", features = ["html_reports"] }
+test-case = "=3.3.1"
+mockall = "=0.12.1"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+overflow-checks = false
+rpath = false
+incremental = false
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+[profile.test]
+opt-level = 1
+debug = true
+
+[profile.bench]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+[workspace]
+members = []
+
+[features]
+default = []
+tls = ["reqwest/tls-rustls", "sqlx/tls-rustls"]
+otlp = ["opentelemetry-otlp"]
+jemalloc = []
+
+[package.metadata]
+msrv = "1.75.0"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

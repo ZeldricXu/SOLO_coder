@@ -1,0 +1,64 @@
+# ========================================
+# Kubernetes ConfigMap 配置
+# 存储非敏感配置数据
+# ========================================
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: data-transformer-config
+  labels:
+    app: data-transformer
+data:
+  # 运行环境
+  RUST_ENV: "production"
+  RUST_LOG: "info"
+  RUST_BACKTRACE: "1"
+  
+  # 服务配置
+  SERVER_HOST: "0.0.0.0"
+  SERVER_PORT: "8080"
+  
+  # 配置目录
+  CONFIG_DIR: "/app/config"
+  
+  # OpenTelemetry
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.observability:4317"
+  OTEL_SERVICE_NAME: "data-transformer"
+  OTEL_RESOURCE_ATTRIBUTES: "service.name=data-transformer,service.version=${VERSION}"
+  
+  # 日志
+  LOG_DIR: "/var/log/data-transformer"
+  LOG_FORMAT: "json"
+  LOG_ROTATION: "daily"
+  LOG_RETENTION_DAYS: "30"
+  
+  # 限流
+  RATE_LIMIT_PER_MINUTE: "1000"
+  RATE_LIMIT_PER_HOUR: "10000"
+  RATE_LIMIT_PER_DAY: "100000"
+  
+  # 缓存
+  CACHE_TTL_SECONDS: "300"
+  CACHE_MAX_ENTRIES: "100000"
+  
+  # 熔断器
+  CIRCUIT_BREAKER_FAILURE_THRESHOLD: "0.3"
+  CIRCUIT_BREAKER_TIMEOUT_SECONDS: "60"
+  
+  # JWT
+  JWT_EXPIRY_SECONDS: "1800"
+  JWT_REFRESH_EXPIRY_SECONDS: "86400"
+  JWT_ALGORITHM: "HS256"
+  JWT_ISSUER: "data-transformer"
+  JWT_AUDIENCE: "api"
+  
+  # Sidecar
+  SIDECAR_CPU_LIMIT: "250m"
+  SIDECAR_MEMORY_LIMIT: "128Mi"
+  SIDECAR_INJECTION_MODE: "auto"
+  
+  # 监控
+  METRICS_ENABLED: "true"
+  METRICS_ENDPOINT: "/metrics"
+  METRICS_PORT: "9090"

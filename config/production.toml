@@ -1,0 +1,79 @@
+# ========================================
+# 生产环境配置
+# 用于线上正式运行
+# ========================================
+
+[server]
+port = 8080
+shutdown_timeout = 60
+
+[database]
+url = "${DATABASE_URL}"
+pool_size = 30
+connect_timeout = 15
+idle_timeout = 600
+max_lifetime = 7200
+acquire_timeout = 30
+
+[redis]
+url = "${REDIS_URL}"
+pool_size = 50
+connect_timeout = 5
+idle_timeout = 600
+max_lifetime = 7200
+
+[logging]
+dir = "/var/log/data-transformer"
+level = "warn"
+format = "json"
+retention_days = 90
+compression = true
+
+[jwt]
+secret = "${JWT_SECRET}"
+expiry_seconds = 1800
+refresh_expiry_seconds = 86400
+
+[rate_limit]
+per_minute = 1000
+per_hour = 10000
+per_day = 100000
+burst_size = 200
+
+[cache]
+ttl_seconds = 600
+max_entries = 100000
+
+[metrics]
+enabled = true
+export_otlp = true
+otlp_endpoint = "${OTLP_ENDPOINT}"
+
+[circuit_breaker]
+failure_threshold = 0.3
+timeout_seconds = 60
+half_open_max_calls = 5
+
+[sidecar]
+cpu_limit = "250m"
+memory_limit = "128Mi"
+injection_mode = "auto"
+
+[scheduler]
+thread_pool_size = 8
+
+[fault_injection]
+enabled = false
+
+[traffic_control]
+canary_enabled = true
+canary_percentage = 5
+mirroring_enabled = true
+circuit_breaker_enabled = true
+
+[event_store]
+snapshot_interval = 500
+max_events_per_snapshot = 5000
+snapshot_retention_count = 10
+auto_compaction = true
+compaction_interval_seconds = 7200
