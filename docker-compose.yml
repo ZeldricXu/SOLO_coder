@@ -1,0 +1,190 @@
+version: "3.8"
+
+services:
+  # ========================================
+  # 主应用服务
+  # ========================================
+  app:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: ticket-routing-app
+    ports:
+      - "8000:8000"
+      - "9090:9090"
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ticket_routing_dev
+      - SYNC_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ticket_routing_dev
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=dev-secret-key-change-in-production
+    volumes:
+      - .:/app
+      - ./dev_app.db:/app/dev_app.db
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket-routing-network
+    restart: unless-stopped
+
+  # ========================================
+  # PostgreSQL 数据库
+  # ========================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: ticket-routing-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_DB=ticket_routing_dev
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ticket_routing_dev"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ticket-routing-network
+    restart: unless-stopped
+
+  # ========================================
+  # Redis 缓存
+  # ========================================
+  redis:
+    image: redis:7-alpine
+    container_name: ticket-routing-redis
+    ports:
+      - "6379:6379"
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes",
+        "--requirepass",
+        "dev-redis-password",
+      ]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "dev-redis-password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ticket-routing-network
+    restart: unless-stopped
+
+  # ========================================
+  # Celery Worker
+  # ========================================
+  celery-worker:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: ticket-routing-celery
+    command: poetry run celery -A app.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ticket_routing_dev
+      - SYNC_DATABASE_URL=postgresql://postgres:postgres@postgres:5432/ticket_routing_dev
+      - REDIS_URL=redis://:dev-redis-password@redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket-routing-network
+    restart: unless-stopped
+
+  # ========================================
+  # Celery Beat（定时任务）
+  # ========================================
+  celery-beat:
+    build:
+      context: .
+      target: development
+      dockerfile: Dockerfile
+    container_name: ticket-routing-celery-beat
+    command: poetry run celery -A app.celery_app beat --loglevel=info
+    environment:
+      - APP_ENV=development
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@postgres:5432/ticket_routing_dev
+      - REDIS_URL=redis://:dev-redis-password@redis:6379/0
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket-routing-network
+    restart: unless-stopped
+
+  # ========================================
+  # pgAdmin（数据库管理）
+  # ========================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: ticket-routing-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin123
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - ticket-routing-network
+    restart: unless-stopped
+
+  # ========================================
+  # Redis Commander（Redis 管理）
+  # ========================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: ticket-routing-redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379:0:dev-redis-password
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - ticket-routing-network
+    restart: unless-stopped
+
+# ========================================
+# 数据卷
+# ========================================
+volumes:
+  postgres-data:
+  redis-data:
+  pgadmin-data:
+
+# ========================================
+# 网络
+# ========================================
+networks:
+  ticket-routing-network:
+    driver: bridge

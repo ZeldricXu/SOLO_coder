@@ -1,0 +1,96 @@
+[tool.poetry]
+name = "ticket-routing-system"
+version = "1.0.0"
+description = "基于技能匹配与负载均衡的工单路由分配系统"
+authors = ["Dev Team"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+fastapi = "^0.109.0"
+uvicorn = "^0.27.0"
+pydantic = "^2.5.0"
+pydantic-settings = "^2.1.0"
+sqlalchemy = "^2.0.25"
+alembic = "^1.13.0"
+celery = "^5.3.4"
+redis = "^5.0.1"
+python-dotenv = "^1.0.0"
+aiosqlite = "^0.20.0"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short --cov=modules/ticket_assignment --cov=modules/multitenant --cov=modules/approval_engine --cov=core --cov=app --cov-report=term-missing --cov-report=xml:coverage.xml --cov-report=html:htmlcov"
+cov_fail_under = 80
+cov_branch = true
+cov_source = ["modules/ticket_assignment", "modules/multitenant", "modules/approval_engine", "core", "app"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+pytest-asyncio = "^0.23.0"
+pytest-cov = "^4.1.0"
+httpx = "^0.26.0"
+ruff = "^0.4.0"
+mypy = "^1.10.0"
+pre-commit = "^3.7.0"
+bump2version = "^1.0.1"
+types-redis = "^4.6.0"
+types-python-dateutil = "^2.9.0"
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "N", "B", "A", "C4", "SIM"]
+ignore = ["E501", "UP006", "UP045", "UP035"]
+fixable = ["I", "UP", "F"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S311", "E501"]
+"app/*" = ["E501"]
+"modules/*" = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "core", "modules", "models", "tests"]
+lines-after-imports = 2
+lines-between-types = 1
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.mypy]
+python_version = "3.10"
+ignore_missing_imports = true
+disallow_untyped_defs = false
+warn_return_any = false
+warn_unused_ignores = true
+no_implicit_optional = true
+strict_optional = true
+show_error_codes = true
+show_error_context = true
+plugins = ["pydantic.mypy"]
+exclude = ["tests/"]
+
+[tool.bumpversion]
+current_version = "1.0.0"
+commit = true
+tag = true
+parse = "(?P<major>\\d+)\\.(?P<minor>\\d+)\\.(?P<patch>\\d+)"
+serialize = ["{major}.{minor}.{patch}"]
+message = "Bump version: {current_version} → {new_version}"
+
+[tool."bumpversion:file:pyproject.toml"]
+search = "version = \"{current_version}\""
+replace = "version = \"{new_version}\""
+
+[tool."bumpversion:file:app/main.py"]
+search = "version = \"{current_version}\","
+replace = "version = \"{new_version}\","
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

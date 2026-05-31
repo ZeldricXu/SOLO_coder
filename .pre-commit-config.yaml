@@ -1,0 +1,59 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-merge-conflict
+      - id: detect-private-key
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.0
+    hooks:
+      - id: ruff
+        name: ruff-lint
+        args: ["--fix"]
+      - id: ruff-format
+        name: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.10.0
+    hooks:
+      - id: mypy
+        name: mypy-type-check
+        args: ["--config-file=pyproject.toml"]
+        additional_dependencies:
+          - types-redis
+          - types-python-dateutil
+          - pydantic[mypy]
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort-sort-imports
+        args: ["--profile", "black"]
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest-unit-tests
+        entry: python -m pytest tests/ -v --tb=short --cov-fail-under=80 --cov=app --cov=core --cov=modules
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
+
+  - repo: local
+    hooks:
+      - id: pytest-cov
+        name: pytest-coverage-check
+        entry: python -m pytest tests/ --cov=app --cov=core --cov=modules --cov-fail-under=80 --cov-report=term-missing
+        language: system
+        types: [python]
+        pass_filenames: false
+        stages: [pre-push]
