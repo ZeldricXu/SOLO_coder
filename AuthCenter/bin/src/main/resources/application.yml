@@ -1,0 +1,71 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: authcenter
+  
+  datasource:
+    url: jdbc:h2:mem:authcenter;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+  
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  
+  redis:
+    host: localhost
+    port: 6379
+    timeout: 10000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-wait: -1ms
+        max-idle: 8
+        min-idle: 0
+
+jwt:
+  secret: authcenter-secret-key-for-jwt-token-generation-2026
+  expiration: 7200000
+  refresh-expiration: 2592000000
+
+mfa:
+  sms:
+    expiration: 300000
+    code-length: 6
+  email:
+    expiration: 300000
+  use-queue: true
+  task:
+    max-retry: 3
+    retry-delay: 30000
+    timeout: 120000
+  worker:
+    enabled: true
+    threads: 2
+    poll-interval: 1000
+
+session:
+  max-duration: 7200000
+
+security:
+  policy:
+    max-failed-login: 5
+    lock-duration: 300000
+    admin-lock-duration: 1800000
+    admin-max-failed-login: 3
+    password-min-length: 8
+    password-require-complex: true
+    session-ip-check: true
+    session-device-check: true
