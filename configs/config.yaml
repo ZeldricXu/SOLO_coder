@@ -1,0 +1,31 @@
+server:
+  port: 8080
+
+database:
+  dsn: "taskmanager.db"
+
+storage:
+  base_path: "./data/storage"
+
+scheduler:
+  enabled: true
+
+notifier:
+  channels:
+    email:
+      smtp_host: "smtp.example.com"
+      smtp_port: 587
+    sms:
+      provider: "twilio"
+    webhook:
+      url: "http://localhost:8080/webhook"
+
+tracing:
+  sampling:
+    type: "tail"
+    rate: 0.1
+    max_duration: "10s"
+    max_traces: 1000
+
+log:
+  level: "info"
