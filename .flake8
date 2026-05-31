@@ -1,0 +1,21 @@
+[flake8]
+max-line-length = 100
+max-complexity = 12
+extend-ignore = E203, E501, W503, B905
+per-file-ignores =
+    tests/*: S101
+    streamsql/workers/*: S308
+    streamsql/modules/*/capture.py: S308
+exclude =
+    .git,
+    .venv,
+    __pycache__,
+    *.pyc,
+    .pytest_cache,
+    .mypy_cache,
+    .ruff_cache,
+    build,
+    dist,
+    htmlcov,
+    docs,
+    migrations

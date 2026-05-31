@@ -1,0 +1,26 @@
+# Global owners
+*       @streamsql-team/core
+
+# Core module
+/streamsql/core/                  @streamsql-team/core
+/streamsql/api/                   @streamsql-team/api
+
+# Feature modules
+/streamsql/modules/metadata_crawler/     @streamsql-team/metadata
+/streamsql/modules/cdc_capture/          @streamsql-team/cdc
+/streamsql/modules/streaming_query/      @streamsql-team/query
+/streamsql/modules/vector_index/         @streamsql-team/vector
+/streamsql/modules/lifecycle_manager/    @streamsql-team/lifecycle
+/streamsql/modules/data_lineage/         @streamsql-team/lineage
+/streamsql/modules/timeseries_compression/  @streamsql-team/timeseries
+/streamsql/modules/data_quality/         @streamsql-team/quality
+
+# Infrastructure
+/Dockerfile                        @streamsql-team/devops
+/docker-compose.yml                @streamsql-team/devops
+/.github/workflows/                @streamsql-team/devops
+
+# Configuration
+/Makefile                          @streamsql-team/devops
+/pyproject.toml                    @streamsql-team/core
+/requirements*.txt                 @streamsql-team/core

@@ -1,0 +1,148 @@
+version: '3.8'
+
+x-logging: &logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+    tag: "{{.Name}}"
+
+x-restart: &restart
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: streamsql-postgres
+    environment:
+      POSTGRES_DB: streamsql
+      POSTGRES_USER: streamsql
+      POSTGRES_PASSWORD: streamsql_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U streamsql"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: *restart
+    <<: *logging
+
+  redis:
+    image: redis:7-alpine
+    container_name: streamsql-redis
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "redis_password"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis_password", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    <<: *restart
+    <<: *logging
+
+  app:
+    build:
+      context: .
+      target: runtime
+    container_name: streamsql-api
+    environment:
+      APP_ENV: production
+      APP_DEBUG: "false"
+      DATABASE_URL: postgresql+asyncpg://streamsql:streamsql_password@postgres:5432/streamsql
+      REDIS_URL: redis://:redis_password@redis:6379/0
+      CELERY_BROKER_URL: redis://:redis_password@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:redis_password@redis:6379/2
+      SECRET_KEY: ${SECRET_KEY:-change-me-in-production}
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    <<: *restart
+    <<: *logging
+
+  worker:
+    build:
+      context: .
+      target: worker
+    container_name: streamsql-worker
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://streamsql:streamsql_password@postgres:5432/streamsql
+      REDIS_URL: redis://:redis_password@redis:6379/0
+      CELERY_BROKER_URL: redis://:redis_password@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:redis_password@redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+    <<: *restart
+    <<: *logging
+
+  celery-beat:
+    build:
+      context: .
+      target: worker
+    container_name: streamsql-beat
+    command: ["celery", "-A", "streamsql.workers.celery_app", "beat", "--loglevel=info", "--schedule=/app/data/celerybeat-schedule"]
+    environment:
+      APP_ENV: production
+      DATABASE_URL: postgresql+asyncpg://streamsql:streamsql_password@postgres:5432/streamsql
+      REDIS_URL: redis://:redis_password@redis:6379/0
+      CELERY_BROKER_URL: redis://:redis_password@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:redis_password@redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./config:/app/config
+      - ./data:/app/data
+      - ./logs:/app/logs
+    <<: *restart
+    <<: *logging
+
+  flower:
+    build:
+      context: .
+      target: worker
+    container_name: streamsql-flower
+    command: ["celery", "-A", "streamsql.workers.celery_app", "flower", "--port=5555"]
+    environment:
+      CELERY_BROKER_URL: redis://:redis_password@redis:6379/1
+      CELERY_RESULT_BACKEND: redis://:redis_password@redis:6379/2
+    ports:
+      - "5555:5555"
+    depends_on:
+      redis:
+        condition: service_healthy
+    <<: *restart
+    <<: *logging
+
+volumes:
+  postgres_data:
+  redis_data:

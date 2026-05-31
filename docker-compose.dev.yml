@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: streamsql-dev-postgres
+    environment:
+      POSTGRES_DB: streamsql_dev
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: streamsql-dev-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_dev_data:/data
+
+  app:
+    build:
+      context: .
+      target: dev
+    container_name: streamsql-dev-api
+    environment:
+      APP_ENV: development
+      APP_DEBUG: "true"
+      DATABASE_URL: postgresql+asyncpg://dev:dev_password@postgres:5432/streamsql_dev
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    command: uvicorn streamsql.main:app --reload --host 0.0.0.0 --port 8000
+
+  worker:
+    build:
+      context: .
+      target: dev
+    container_name: streamsql-dev-worker
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://dev:dev_password@postgres:5432/streamsql_dev
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    volumes:
+      - .:/app
+    depends_on:
+      - postgres
+      - redis
+    command: celery -A streamsql.workers.celery_app worker --loglevel=debug --concurrency=2
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:

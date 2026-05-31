@@ -1,0 +1,48 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "streamsql-team"
+    labels:
+      - "dependencies"
+      - "python"
+    allow:
+      - dependency-type: "production"
+      - dependency-type: "development"
+    ignore:
+      - dependency-name: "pytest"
+        versions: ["8.x"]
+      - dependency-name: "black"
+        versions: ["24.x"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "streamsql-team"
+    labels:
+      - "dependencies"
+      - "github-actions"
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "streamsql-team"
+    labels:
+      - "dependencies"
+      - "docker"

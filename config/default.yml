@@ -1,0 +1,35 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+database:
+  url: "sqlite:///./streamsql.db"
+  echo: false
+
+redis:
+  url: "redis://localhost:6379/0"
+
+celery:
+  broker_url: "redis://localhost:6379/1"
+  result_backend: "redis://localhost:6379/2"
+
+modules:
+  metadata_crawler:
+    scan_interval: 3600
+    sample_size: 100
+    timeout: 30
+  cdc_capture:
+    batch_size: 1000
+    retry_attempts: 3
+  streaming_query:
+    optimize_enabled: true
+  vector_index:
+    default_dimension: 1536
+    index_type: "hnsw"
+  lifecycle_manager:
+    hot_threshold_days: 7
+    cold_threshold_days: 30
+    archive_threshold_days: 90
+  data_quality:
+    check_interval: 300
+    alert_threshold: 0.05
