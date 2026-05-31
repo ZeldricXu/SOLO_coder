@@ -1,0 +1,161 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Address {
+  id              String   @id @default(cuid())
+  address         String   @unique
+  chainId         Int
+  derivationPath  String
+  walletType      String
+  label           String?
+  metadata        Json?
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  transactions    Transaction[]
+  
+  @@unique([address, chainId])
+  @@index([chainId])
+  @@index([label])
+}
+
+model CrossChainTransfer {
+  id              String   @id @default(cuid())
+  sourceChainId   Int
+  targetChainId   Int
+  sourceAddress   String
+  targetAddress   String
+  amount          String
+  tokenAddress    String?
+  status          String   @default("PENDING")
+  sourceTxHash    String?  @unique
+  targetTxHash    String?  @unique
+  messageHash     String?  @unique
+  signatures      Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([sourceChainId, status])
+  @@index([targetChainId, status])
+}
+
+model MultisigProposal {
+  id              String   @id @default(cuid())
+  walletId        String
+  chainId         Int
+  nonce           Int
+  type            String
+  data            Json
+  threshold       Int
+  requiredSigners Int
+  signatures      Json
+  status          String   @default("PENDING")
+  executedTxHash  String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@unique([walletId, chainId, nonce])
+  @@index([walletId])
+  @@index([status])
+}
+
+model StorageItem {
+  id              String   @id @default(cuid())
+  cid             String   @unique
+  contentType     String
+  size            BigInt
+  storageNetwork  String   // ipfs, arweave, etc.
+  isPinned        Boolean  @default(true)
+  metadata        Json?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  @@index([storageNetwork])
+  @@index([isPinned])
+}
+
+model Transaction {
+  id              String   @id @default(cuid())
+  chainId         Int
+  from            String
+  to              String
+  value           String
+  data            String?
+  gasPrice        String?
+  gasLimit        String
+  nonce           Int
+  status          String   @default("PENDING")
+  txHash          String?  @unique
+  blockNumber     BigInt?
+  errorMessage    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  address         Address  @relation(fields: [from], references: [address])
+  
+  @@index([chainId, status])
+  @@index([from])
+  @@index([txHash])
+}
+
+model ChainConfig {
+  id              String   @id @default(cuid())
+  chainId         Int      @unique
+  name            String
+  rpcUrl          String
+  explorerUrl     String?
+  nativeCurrency  Json
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model GasHistory {
+  id              String   @id @default(cuid())
+  chainId         Int
+  blockNumber     BigInt
+  timestamp       DateTime
+  lowGasPrice     String
+  averageGasPrice String
+  highGasPrice    String
+  baseFee         String?
+  priorityFee     String?
+  gasUsed         BigInt
+  blockGasLimit   BigInt
+  
+  @@index([chainId, timestamp])
+}
+
+model BlockIndex {
+  id              String   @id @default(cuid())
+  chainId         Int
+  blockNumber     BigInt
+  blockHash       String   @unique
+  timestamp       DateTime
+  transactions    Int
+  gasUsed         BigInt
+  gasLimit        BigInt
+  rawData         Json
+  
+  @@unique([chainId, blockNumber])
+  @@index([chainId, timestamp])
+}
+
+model AddressTag {
+  id              String   @id @default(cuid())
+  addressId       String
+  tag             String
+  createdAt       DateTime @default(now())
+  
+  @@unique([addressId, tag])
+}
