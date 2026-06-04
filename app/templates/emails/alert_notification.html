@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>运维告警通知</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: #f5f7fa;
+            margin: 0;
+            padding: 20px;
+        }
+        .email-container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            overflow: hidden;
+        }
+        .email-header {
+            padding: 24px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .alert-level {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 12px;
+        }
+        .alert-level-P0 { background: #ef4444; }
+        .alert-level-P1 { background: #f97316; }
+        .alert-level-P2 { background: #f59e0b; }
+        .alert-level-P3 { background: #3b82f6; }
+        .email-header h1 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        .email-body {
+            padding: 24px;
+        }
+        .alert-summary {
+            background: #f8fafc;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .alert-summary p {
+            margin: 8px 0;
+            color: #475569;
+            font-size: 14px;
+        }
+        .alert-summary strong {
+            color: #1e293b;
+        }
+        .metrics-snapshot {
+            margin-bottom: 20px;
+        }
+        .metrics-snapshot h3 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .metric-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .metric-item {
+            background: #f1f5f9;
+            border-radius: 6px;
+            padding: 12px;
+        }
+        .metric-label {
+            font-size: 12px;
+            color: #64748b;
+            margin-bottom: 4px;
+        }
+        .metric-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .metric-value.critical { color: #ef4444; }
+        .metric-value.warning { color: #f97316; }
+        .action-buttons {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .action-btn {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            text-align: center;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .btn-ack {
+            background: #10b981;
+            color: white;
+        }
+        .btn-silence {
+            background: #6366f1;
+            color: white;
+        }
+        .btn-escalate {
+            background: #ef4444;
+            color: white;
+        }
+        .email-footer {
+            padding: 16px 24px;
+            background: #f8fafc;
+            border-top: 1px solid #e2e8f0;
+            font-size: 12px;
+            color: #94a3b8;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        <div class="email-header">
+            <span class="alert-level alert-level-{{ alert.level }}">{{ alert.level }}</span>
+            <h1>运维告警通知</h1>
+        </div>
+        <div class="email-body">
+            <div class="alert-summary">
+                <p><strong>告警名称：</strong>{{ alert.rule_name }}</p>
+                <p><strong>告警内容：</strong>{{ alert.message }}</p>
+                <p><strong>触发时间：</strong>{{ alert.triggered_at.strftime('%Y-%m-%d %H:%M:%S') }}</p>
+                <p><strong>告警状态：</strong><span style="color: #ef4444;">🔴 触发中</span></p>
+            </div>
+
+            {% if metrics %}
+            <div class="metrics-snapshot">
+                <h3>📊 当前指标快照</h3>
+                <div class="metric-grid">
+                    {% for key, value in metrics.items() %}
+                    <div class="metric-item">
+                        <div class="metric-label">{{ key | replace('_', ' ') | title }}</div>
+                        <div class="metric-value {% if value > 80 and 'usage' in key %}critical{% elif value > 60 and 'usage' in key %}warning{% endif %}">
+                            {% if value is number %}
+                                {% if value is float %}
+                                    {{ '%.2f' | format(value) }}
+                                {% else %}
+                                    {{ value }}
+                                {% endif %}
+                            {% else %}
+                                {{ value }}
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="action-buttons">
+                <a href="{{ base_url }}/alerts?ack={{ alert.id }}" class="action-btn btn-ack">
+                    ✅ 确认告警
+                </a>
+                <a href="{{ base_url }}/alerts?silence={{ alert.id }}" class="action-btn btn-silence">
+                    ⏸️ 静默1小时
+                </a>
+                <a href="{{ base_url }}/alerts?escalate={{ alert.id }}" class="action-btn btn-escalate">
+                    ⬆️ 升级告警
+                </a>
+            </div>
+        </div>
+        <div class="email-footer">
+            此邮件由运维监控大盘自动发送，请勿直接回复。
+            <br>
+            <a href="{{ base_url }}" style="color: #6366f1; text-decoration: none;">访问监控大盘</a>
+        </div>
+    </div>
+</body>
+</html>

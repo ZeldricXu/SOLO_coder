@@ -1,0 +1,84 @@
+{% if sqls %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="database" width="16" height="16"></i>
+            慢SQL列表 ({{ sqls | length }})
+        </h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>表名</th>
+                    <th>SQL语句</th>
+                    <th>平均耗时</th>
+                    <th>执行次数</th>
+                    <th>最近出现</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sql in sqls %}
+                <tr>
+                    <td><code style="font-family: var(--font-mono); font-size: 11px;">{{ sql.fingerprint }}</code></td>
+                    <td><span class="health-status healthy" style="font-size: 11px;">{{ sql.table_name or '未知' }}</span></td>
+                    <td style="max-width: 400px;">
+                        <code style="font-family: var(--font-mono); font-size: 11px; color: var(--text-secondary); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            {{ sql.sql_text | truncate(80) }}
+                        </code>
+                    </td>
+                    <td>
+                        <span class="metric-value {% if sql.avg_duration_ms > 500 %}critical{% elif sql.avg_duration_ms > 200 %}warn{% endif %}">
+                            {{ '%.0f' | format(sql.avg_duration_ms) }}ms
+                        </span>
+                    </td>
+                    <td>{{ '{:,}'.format(sql.exec_count) }}</td>
+                    <td>{{ sql.last_seen.strftime('%m-%d %H:%M') }}</td>
+                    <td>
+                        <button class="btn btn-primary btn-sm" onclick="showExplain({{ sql.id }})">
+                            <i data-lucide="search" width="12" height="12"></i>
+                            分析
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if stats.by_table %}
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="bar-chart-3" width="16" height="16"></i>
+            按表统计
+        </h3>
+    </div>
+    <div class="grid-container grid-cols-4">
+        {% for table, data in stats.by_table.items() %}
+        <div class="metric-item" style="padding: 16px;">
+            <div class="metric-label" style="font-size: 13px; margin-bottom: 8px;">
+                <i data-lucide="table" width="14" height="14" style="vertical-align: middle; margin-right: 4px;"></i>
+                {{ table }}
+            </div>
+            <div class="metric-value" style="font-size: 20px;">{{ '{:,}'.format(data.count) }} 次</div>
+            <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+                平均: {{ '%.0f' | format(data.avg_duration) }}ms
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">
+        <i data-lucide="check-circle" width="48" height="48" style="color: var(--accent-green);"></i>
+    </div>
+    <div class="empty-state-text">暂无慢SQL记录</div>
+</div>
+{% endif %}

@@ -1,0 +1,13 @@
+---
+# Ansible Vault - 敏感配置
+# 使用 ansible-vault encrypt group_vars/vault.yml 加密
+
+vault_mysql_root_password: "your_secure_mysql_root_password"
+vault_mysql_password: "your_secure_mysql_password"
+
+vault_dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=your_token"
+vault_wechat_webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your_key"
+
+vault_smtp_password: "your_smtp_password"
+
+vault_elasticsearch_password: "your_elastic_password"

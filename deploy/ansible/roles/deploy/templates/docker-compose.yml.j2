@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: monitor-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: {{ mysql_root_password }}
+      MYSQL_DATABASE: {{ mysql_database }}
+      MYSQL_USER: {{ mysql_user }}
+      MYSQL_PASSWORD: {{ mysql_password }}
+    volumes:
+      - {{ data_dir }}/mysql:/var/lib/mysql
+    ports:
+      - "{{ mysql_port }}:3306"
+    command: --default-authentication-plugin=mysql_native_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p{{ mysql_root_password }}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - monitor-network
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: monitor-elasticsearch
+    restart: unless-stopped
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms{{ es_heap_size }} -Xmx{{ es_heap_size }}"
+      - cluster.name={{ es_cluster_name }}
+    volumes:
+      - {{ data_dir }}/elasticsearch:/usr/share/elasticsearch/data
+    ports:
+      - "{{ es_port }}:9200"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q 'green\\|yellow'"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - monitor-network
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: monitor-prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - {{ data_dir }}/prometheus:/prometheus
+    ports:
+      - "{{ prometheus_port }}:9090"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time={{ prometheus_retention_days }}d'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - monitor-network
+
+  monitor-dashboard:
+    image: {{ image_name }}:{{ image_tag }}
+    container_name: monitor-dashboard
+    restart: unless-stopped
+    env_file:
+      - ./.env
+    ports:
+      - "{{ monitor_dashboard_port }}:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - monitor-network
+
+volumes:
+  mysql_data:
+    driver: local
+  es_data:
+    driver: local
+  prometheus_data:
+    driver: local
+
+networks:
+  monitor-network:
+    driver: bridge

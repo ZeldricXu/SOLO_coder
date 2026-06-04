@@ -1,0 +1,77 @@
+{% if assets %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="server" width="16" height="16"></i>
+            资产列表 ({{ assets | length }})
+        </h3>
+    </div>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>名称</th>
+                    <th>类型</th>
+                    <th>IP地址</th>
+                    <th>端口</th>
+                    <th>版本</th>
+                    <th>负责人</th>
+                    <th>状态</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for asset in assets %}
+                <tr>
+                    <td style="font-weight: 500;">
+                        <i data-lucide="{% if asset.category == 'server' %}server{% elif asset.category == 'database' %}database{% elif asset.category == 'cache' %}database{% elif asset.category == 'mq' %}git-commit{% else %}box{% endif %}"
+                           width="14" height="14" style="vertical-align: middle; margin-right: 6px; color: var(--accent-blue);"></i>
+                        {{ asset.name }}
+                    </td>
+                    <td>
+                        <span class="health-status info" style="font-size: 11px;">
+                            {% set cat_names = {'server': '服务器', 'database': '数据库', 'cache': '缓存', 'mq': '消息队列', 'load_balancer': '负载均衡', 'storage': '存储', 'network': '网络设备'} %}
+                            {{ cat_names.get(asset.category, asset.category) }}
+                        </span>
+                    </td>
+                    <td><code style="font-family: var(--font-mono);">{{ asset.ip or '-' }}</code></td>
+                    <td>{{ asset.port or '-' }}</td>
+                    <td>{{ asset.version or '-' }}</td>
+                    <td>
+                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                            <span style="width: 24px; height: 24px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 600; color: white;">
+                                {{ asset.owner[0] if asset.owner else '?' }}
+                            </span>
+                            {{ asset.owner or '-' }}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="health-status {{ asset.status }}">
+                            <span class="health-status-dot"></span>
+                            {% if asset.status == 'normal' %}正常{% elif asset.status == 'warning' %}警告{% elif asset.status == 'critical' %}故障{% elif asset.status == 'maintenance' %}维护中{% else %}未知{% endif %}
+                        </span>
+                    </td>
+                    <td>
+                        <button class="btn btn-ghost btn-sm" onclick="showChanges({{ asset.id }})">
+                            <i data-lucide="history" width="12" height="12"></i>
+                            变更
+                        </button>
+                        <button class="btn btn-ghost btn-sm">
+                            <i data-lucide="edit-2" width="12" height="12"></i>
+                            编辑
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon">
+        <i data-lucide="box" width="48" height="48"></i>
+    </div>
+    <div class="empty-state-text">暂无资产记录</div>
+</div>
+{% endif %}

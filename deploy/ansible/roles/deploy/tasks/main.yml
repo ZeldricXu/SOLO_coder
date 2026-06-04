@@ -1,0 +1,90 @@
+---
+- name: 初始化部署目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0755"
+  loop:
+    - "{{ app_dir }}"
+    - "{{ data_dir }}"
+    - "{{ log_dir }}"
+    - "{{ data_dir }}/mysql"
+    - "{{ data_dir }}/elasticsearch"
+    - "{{ data_dir }}/prometheus"
+
+- name: 复制 docker-compose.yml
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ app_dir }}/docker-compose.yml"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0644"
+
+- name: 复制 .env 文件
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0600"
+
+- name: 复制 prometheus.yml
+  ansible.builtin.template:
+    src: prometheus.yml.j2
+    dest: "{{ app_dir }}/prometheus.yml"
+    owner: "{{ deploy_user }}"
+    group: "{{ deploy_group }}"
+    mode: "0644"
+
+- name: 登录 Harbor 镜像仓库
+  community.docker.docker_login:
+    registry_url: "{{ harbor_registry }}"
+    username: "{{ harbor_username }}"
+    password: "{{ harbor_password }}"
+    reauthorize: true
+
+- name: 拉取最新镜像
+  community.docker.docker_image:
+    name: "{{ image_name }}:{{ image_tag }}"
+    source: pull
+    force_source: true
+
+- name: 停止旧的容器
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    state: absent
+    remove_orphans: true
+
+- name: 启动服务
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    state: present
+    pull: never
+    wait: true
+    wait_timeout: 120
+
+- name: 等待服务健康检查
+  ansible.builtin.uri:
+    url: "http://localhost:{{ monitor_dashboard_port }}/api/healthz"
+    method: GET
+    status_code: 200
+  register: health_check
+  until: health_check.status == 200
+  retries: 30
+  delay: 5
+
+- name: 清理旧镜像
+  community.docker.docker_prune:
+    images: true
+    images_filters:
+      dangling: false
+    containers: true
+    networks: true
+    volumes: false
+    builder_cache: true
+
+- name: 发送部署通知
+  ansible.builtin.debug:
+    msg: "部署完成！服务运行在 http://{{ inventory_hostname }}:{{ monitor_dashboard_port }}"

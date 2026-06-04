@@ -1,0 +1,63 @@
+{% if logs %}
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="list" width="16" height="16"></i>
+            搜索结果
+            <span style="font-size: 12px; color: var(--text-muted); margin-left: 8px; font-weight: 400;">
+                共 {{ '{:,}'.format(total) }} 条记录
+            </span>
+        </h3>
+        <div style="display: flex; gap: 16px; font-size: 12px;">
+            {% for level, count in aggregations.by_level.items() %}
+            <span>
+                <span class="alert-badge {% if level in ['ERROR','FATAL'] %}P0{% elif level == 'WARN' %}P2{% else %}P3{% endif %}">{{ level }}</span>
+                {{ '{:,}'.format(count) }}
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div style="max-height: 600px; overflow-y: auto;">
+        {% for log in logs %}
+        <div class="log-entry {{ log.level }}">
+            <div class="log-header">
+                <span class="log-level">{{ log.level }}</span>
+                <span><i data-lucide="server" width="11" height="11"></i> {{ log.service }}</span>
+                <span><i data-lucide="clock" width="11" height="11"></i> {{ log.timestamp }}</span>
+                <span><i data-lucide="hash" width="11" height="11"></i> {{ log.trace_id }}</span>
+                <span><i data-lucide="monitor" width="11" height="11"></i> {{ log.host }}</span>
+            </div>
+            <div class="log-message">
+                {{ log.message | safe }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="pagination">
+        <button class="page-btn" onclick="searchLogs({{ page - 1 }})" {% if page == 1 %}disabled{% endif %}>
+            <i data-lucide="chevron-left" width="14" height="14"></i>
+            上一页
+        </button>
+        {% for p in range(1, total_pages + 1) %}
+            {% if p <= 3 or p >= total_pages - 2 or (p >= page - 1 and p <= page + 1) %}
+            <button class="page-btn {% if p == page %}active{% endif %}" onclick="searchLogs({{ p }})">{{ p }}</button>
+            {% elif p == 4 or p == total_pages - 3 %}
+            <span style="padding: 6px 8px; color: var(--text-muted);">...</span>
+            {% endif %}
+        {% endfor %}
+        <button class="page-btn" onclick="searchLogs({{ page + 1 }})" {% if page == total_pages %}disabled{% endif %}>
+            下一页
+            <i data-lucide="chevron-right" width="14" height="14"></i>
+        </button>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<div class="empty-state">
+    <div class="empty-state-icon"><i data-lucide="search-x" width="48" height="48"></i></div>
+    <div class="empty-state-text">未找到匹配的日志记录</div>
+</div>
+{% endif %}

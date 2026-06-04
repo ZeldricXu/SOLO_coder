@@ -1,0 +1,70 @@
+<div class="grid-container grid-cols-3">
+    {% for service in services %}
+    <div class="card health-card {{ service.status }}" id="health-card-{{ service.id }}">
+        <button class="pin-btn tooltip" data-tooltip="Pin到首页"
+            data-component-type="health_summary"
+            data-component-key="{{ service.id }}">
+            <i data-lucide="pin" width="14" height="14"></i>
+        </button>
+
+        <div class="card-header" onclick="toggleServiceTimeline({{ service.id }})" style="cursor: pointer;">
+            <h3 class="card-title">
+                <i data-lucide="{% if service.service_type == 'microservice' %}server{% elif service.service_type == 'database' %}database{% elif service.service_type == 'cache' %}database{% elif service.service_type == 'mq' %}git-commit{% endif %}"
+                   width="16" height="16"></i>
+                {{ service.name }}
+                <i data-lucide="chevron-down" width="14" height="14" id="timeline-icon-{{ service.id }}"
+                   style="margin-left: 8px; transition: transform 0.3s;"></i>
+            </h3>
+            <span class="health-status {{ service.status }}">
+                <span class="health-status-dot"></span>
+                {% if service.status == 'healthy' %}正常{% elif service.status == 'warning' %}告警{% elif service.status == 'critical' %}故障{% else %}未知{% endif %}
+            </span>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted); margin-bottom: 8px;">
+            <span>{{ service.service_type }}</span>
+            <span>响应: <span class="metric-value {% if service.last_check and service.last_check %}{{ service.last_check }}{% else %}--{% endif %}</span>
+        </div>
+
+        <div class="service-metrics">
+            <div class="metric-item">
+                <div class="metric-label">检查间隔</div>
+                <div class="metric-value">{{ service.check_interval }}s</div>
+            </div>
+            <div class="metric-item">
+                <div class="metric-label">上次检查</div>
+                <div class="metric-value">
+                    {% if service.last_check %}
+                        {{ service.last_check.strftime('%H:%M:%S') }}
+                    {% else %}
+                        --
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div id="timeline-container-{{ service.id }}" style="display: none;"
+             hx-get="/api/health/partial/timeline/{{ service.id }}"
+             hx-trigger="timelineToggle from:#health-card-{{ service.id }}"
+             hx-swap="innerHTML">
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+function toggleServiceTimeline(serviceId) {
+    const container = document.getElementById(`timeline-container-${serviceId}`);
+    const icon = document.getElementById(`timeline-icon-${serviceId}`);
+    const card = document.getElementById(`health-card-${serviceId}`);
+
+    if (container.style.display === 'none') {
+        container.style.display = 'block';
+        icon.style.transform = 'rotate(180deg)';
+        card.dispatchEvent(new CustomEvent('timelineToggle'));
+    } else {
+        container.style.display = 'none';
+        icon.style.transform = 'rotate(0deg)';
+    }
+}
+</script>

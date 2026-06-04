@@ -1,0 +1,62 @@
+---
+- name: 部署运维监控大盘
+  hosts: monitor_servers
+  gather_facts: true
+  become: true
+
+  pre_tasks:
+    - name: 检查Docker是否已安装
+      ansible.builtin.command: docker --version
+      register: docker_version
+      changed_when: false
+      ignore_errors: true
+
+    - name: 安装Docker和Docker Compose
+      when: docker_version.failed
+      block:
+        - name: 安装Docker依赖
+          ansible.builtin.apt:
+            name:
+              - apt-transport-https
+              - ca-certificates
+              - curl
+              - gnupg
+              - lsb-release
+            state: present
+            update_cache: true
+
+        - name: 添加Docker GPG密钥
+          ansible.builtin.apt_key:
+            url: https://download.docker.com/linux/debian/gpg
+            state: present
+
+        - name: 添加Docker仓库
+          ansible.builtin.apt_repository:
+            repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+            state: present
+
+        - name: 安装Docker CE
+          ansible.builtin.apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+              - docker-compose-plugin
+            state: present
+            update_cache: true
+
+        - name: 将部署用户添加到docker组
+          ansible.builtin.user:
+            name: "{{ deploy_user }}"
+            groups: docker
+            append: true
+
+    - name: 安装Python Docker依赖
+      ansible.builtin.pip:
+        name:
+          - docker
+          - docker-compose
+        state: present
+
+  roles:
+    - deploy

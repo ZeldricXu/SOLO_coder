@@ -1,0 +1,61 @@
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="server" width="16" height="16"></i>
+            {{ service.name }} - 详细信息
+        </h3>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('service-detail-modal').style.display='none'">
+            <i data-lucide="x" width="14" height="14"></i>
+            关闭
+        </button>
+    </div>
+
+    <div class="grid-container grid-cols-2" style="gap: 24px;">
+        <div>
+            <div class="service-metrics" style="grid-template-columns: 1fr;">
+                {% for key, value in details.items() %}
+                    {% if key != 'checked_at' and key != 'service_type' %}
+                    <div class="metric-item">
+                        <div class="metric-label">{{ key | replace('_', ' ') | title }}</div>
+                        <div class="metric-value {% if 'error' in key or 'rate' in key and value > 1 %}critical{% endif %}">
+                            {% if value is number %}
+                                {% if value is float %}
+                                    {{ '%.2f' | format(value) }}
+                                {% else %}
+                                    {{ value }}
+                                {% endif %}
+                            {% else %}
+                                {{ value }}
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+
+        <div>
+            <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em;">最近检查记录</h4>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>时间</th>
+                            <th>状态</th>
+                            <th>响应时间</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for check in recent_checks %}
+                        <tr>
+                            <td>{{ check.checked_at.strftime('%H:%M:%S') }}</td>
+                            <td><span class="health-status {{ check.status }}"><span class="health-status-dot"></span>{% if check.status == 'healthy' %}正常{% elif check.status == 'warning' %}告警{% else %}故障{% endif %}</span></td>
+                            <td><code style="font-family: var(--font-mono);">{{ check.response_time_ms }}ms</code></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>

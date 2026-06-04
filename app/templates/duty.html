@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+
+{% block title %}值班排班 - 运维监控大盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">值班排班与交接</h1>
+    <p class="page-subtitle">管理值班排班，支持临时换班，自动生成交接报告</p>
+</div>
+
+<div class="grid-container grid-cols-3" style="margin-bottom: 24px;">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i data-lucide="clock" width="16" height="16" style="color: var(--accent-blue);"></i>
+                当前值班
+            </h3>
+        </div>
+        {% if current_duty %}
+        <div style="text-align: center; padding: 20px 0;">
+            <div style="width: 80px; height: 80px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border-radius: 50%; margin: 0 auto 16px; display: flex; align-items: center; justify-content: center; font-size: 32px; font-weight: 700; color: white; box-shadow: var(--shadow-glow-red);">
+                {{ current_duty.real_name[0] }}
+            </div>
+            <div style="font-size: 18px; font-weight: 600; margin-bottom: 4px;">{{ current_duty.real_name }}</div>
+            <div style="color: var(--text-secondary); font-size: 13px; margin-bottom: 12px;">
+                <span class="alert-badge {% if current_duty.shift_type == 'day' %}P3{% else %}P2{% endif %}" style="margin-right: 8px;">{{ current_duty.shift_name }}</span>
+                {{ current_duty.phone }}
+            </div>
+            <button class="btn btn-primary btn-sm">
+                <i data-lucide="phone" width="14" height="14"></i>
+                联系值班
+            </button>
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon"><i data-lucide="user-x" width="48" height="48"></i></div>
+            <div class="empty-state-text">暂无值班安排</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i data-lucide="calendar" width="16" height="16" style="color: var(--accent-green);"></i>
+                今日值班
+            </h3>
+        </div>
+        {% if today_duty %}
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            {% for duty in today_duty %}
+            <div class="duty-shift {{ duty.shift_type }}">
+                <span>
+                    <span style="width: 36px; height: 36px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple)); border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 600; color: white; margin-right: 8px;">
+                        {{ duty.real_name[0] }}
+                    </span>
+                    <strong>{{ duty.real_name }}</strong>
+                </span>
+                <span style="font-size: 12px; color: var(--text-muted);">{{ duty.shift_name }}</span>
+            </div>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-state">
+            <div class="empty-state-icon"><i data-lucide="calendar-x" width="48" height="48"></i></div>
+            <div class="empty-state-text">今日暂无排班</div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i data-lucide="file-text" width="16" height="16" style="color: var(--accent-yellow);"></i>
+                快捷操作
+            </h3>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px 0;">
+            <button class="btn btn-secondary" style="justify-content: flex-start;">
+                <i data-lucide="plus" width="16" height="16"></i>
+                新增排班
+            </button>
+            <button class="btn btn-secondary" style="justify-content: flex-start;">
+                <i data-lucide="refresh-cw" width="16" height="16"></i>
+                临时换班
+            </button>
+            <button class="btn btn-primary" onclick="generateHandover()">
+                <i data-lucide="send" width="16" height="16"></i>
+                生成交接报告
+            </button>
+            <button class="btn btn-secondary" style="justify-content: flex-start;"
+                    hx-get="/api/duty/partial/week-calendar"
+                    hx-target="#calendar-container"
+                    hx-swap="innerHTML">
+                <i data-lucide="calendar-days" width="16" height="16"></i>
+                刷新排班表
+            </button>
+        </div>
+    </div>
+</div>
+
+<div id="calendar-container"
+     hx-get="/api/duty/partial/week-calendar"
+     hx-trigger="load">
+    <div class="skeleton" style="height: 200px;"></div>
+</div>
+
+<div id="handover-modal" style="display: none; margin-top: 24px;"></div>
+
+<div class="card" style="margin-top: 24px;">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="history" width="16" height="16"></i>
+            历史交接报告
+        </h3>
+    </div>
+    {% if reports %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>交班人</th>
+                    <th>接班人</th>
+                    <th>交接时间</th>
+                    <th>内容摘要</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                <tr>
+                    <td>#{{ report.id }}</td>
+                    <td>{{ report.from_user }}</td>
+                    <td>{{ report.to_user }}</td>
+                    <td>{{ report.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td style="max-width: 400px;">{{ report.content_summary }}</td>
+                    <td>
+                        <button class="btn btn-ghost btn-sm" onclick="showHandoverReport({{ report.id }})">
+                            <i data-lucide="eye" width="12" height="12"></i>
+                            查看
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon"><i data-lucide="file-text" width="48" height="48"></i></div>
+        <div class="empty-state-text">暂无交接报告</div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function generateHandover() {
+    if (!confirm('确定要生成当前班次的交接报告吗？')) return;
+
+    htmx.ajax('POST', '/api/duty/handover', {
+        params: {
+            from_user_id: {{ current_duty.user_id if current_duty else 1 }},
+            to_user_id: 2,
+            schedule_id: {{ current_duty.schedule_id if current_duty else 'null' }}
+        },
+        onComplete: function(resp) {
+            const report = JSON.parse(resp.xhr.responseText);
+            showHandoverReport(report.report.id);
+            showToast('交接报告已生成！', 'success');
+        }
+    });
+}
+
+function showHandoverReport(reportId) {
+    const modal = document.getElementById('handover-modal');
+    modal.style.display = 'block';
+    modal.innerHTML = '<div class="card skeleton" style="height: 400px;"></div>';
+
+    htmx.ajax('GET', `/api/duty/partial/handover/${reportId}`, {
+        target: '#handover-modal',
+        swap: 'innerHTML'
+    });
+
+    document.getElementById('handover-modal').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+{% endblock %}

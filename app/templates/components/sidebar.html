@@ -1,0 +1,75 @@
+<aside class="sidebar">
+    <nav class="nav-section">
+        <div class="nav-title">监控中心</div>
+        <a href="/" class="nav-item {% if active_tab == 'home' %}active{% endif %}">
+            <i data-lucide="layout-dashboard" class="nav-icon"></i>
+            <span>首页视图</span>
+        </a>
+        <a href="/health" class="nav-item {% if active_tab == 'health' %}active{% endif %}">
+            <i data-lucide="heart-pulse" class="nav-icon"></i>
+            <span>服务健康</span>
+        </a>
+        <a href="/metrics" class="nav-item {% if active_tab == 'metrics' %}active{% endif %}">
+            <i data-lucide="trending-up" class="nav-icon"></i>
+            <span>指标监控</span>
+        </a>
+        <a href="/alerts" class="nav-item {% if active_tab == 'alerts' %}active{% endif %}">
+            <i data-lucide="alert-triangle" class="nav-icon"></i>
+            <span>告警中心</span>
+            <span class="nav-badge" id="alert-count">3</span>
+        </a>
+    </nav>
+
+    <nav class="nav-section">
+        <div class="nav-title">数据分析</div>
+        <a href="/slow-sql" class="nav-item {% if active_tab == 'slow_sql' %}active{% endif %}">
+            <i data-lucide="database" class="nav-icon"></i>
+            <span>慢SQL分析</span>
+        </a>
+        <a href="/logs" class="nav-item {% if active_tab == 'logs' %}active{% endif %}">
+            <i data-lucide="search" class="nav-icon"></i>
+            <span>日志搜索</span>
+        </a>
+    </nav>
+
+    <nav class="nav-section">
+        <div class="nav-title">运营管理</div>
+        <a href="/assets" class="nav-item {% if active_tab == 'assets' %}active{% endif %}">
+            <i data-lucide="server" class="nav-icon"></i>
+            <span>资产管理</span>
+        </a>
+        <a href="/duty" class="nav-item {% if active_tab == 'duty' %}active{% endif %}">
+            <i data-lucide="users" class="nav-icon"></i>
+            <span>值班排班</span>
+        </a>
+    </nav>
+
+    <nav class="nav-section">
+        <div class="nav-title">个人中心</div>
+        <a href="/settings" class="nav-item {% if active_tab == 'settings' %}active{% endif %}">
+            <i data-lucide="settings" class="nav-icon"></i>
+            <span>系统设置</span>
+        </a>
+    </nav>
+</aside>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    function updateAlertCount() {
+        fetch('/api/alerts/summary')
+            .then(res => res.json())
+            .then(data => {
+                const count = data.summary.firing || 0;
+                const badge = document.getElementById('alert-count');
+                if (badge) {
+                    badge.textContent = count;
+                    badge.style.display = count > 0 ? 'inline-block' : 'none';
+                }
+            })
+            .catch(err => console.error('Failed to update alert count:', err));
+    }
+
+    updateAlertCount();
+    setInterval(updateAlertCount, 60000);
+});
+</script>

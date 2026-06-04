@@ -1,0 +1,32 @@
+{% if data.top_sqls %}
+<div style="max-height: 220px; overflow-y: auto;">
+    {% for sql in data.top_sqls[:5] %}
+    <div class="log-entry" style="margin-bottom: 6px; padding: 8px 10px;">
+        <div class="log-header" style="font-size: 10px;">
+            <span class="log-level" style="font-size: 10px;">
+                <span class="metric-value {% if sql.avg_duration_ms > 500 %}critical{% elif sql.avg_duration_ms > 200 %}warn{% endif %}">
+                    {{ '%.0f' | format(sql.avg_duration_ms) }}ms
+                </span>
+            </span>
+            <span><i data-lucide="table" width="9" height="9"></i> {{ sql.table_name }}</span>
+            <span><i data-lucide="hash" width="9" height="9"></i> {{ '{:,}'.format(sql.exec_count) }}</span>
+        </div>
+        <div class="log-message" style="font-size: 11px;">
+            {{ sql.sql_text | truncate(50) }}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<div style="margin-top: 8px; text-align: center;">
+    <a href="/slow-sql" class="btn btn-ghost btn-sm">
+        查看全部 <i data-lucide="chevron-right" width="12" height="12"></i>
+    </a>
+</div>
+{% else %}
+<div class="empty-state" style="padding: 20px 10px;">
+    <div class="empty-state-icon" style="font-size: 24px;">
+        <i data-lucide="database" width="24" height="24" style="color: var(--accent-green);"></i>
+    </div>
+    <div class="empty-state-text" style="font-size: 12px;">暂无慢SQL记录</div>
+</div>
+{% endif %}

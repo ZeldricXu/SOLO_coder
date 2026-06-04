@@ -1,0 +1,52 @@
+---
+# 全局配置
+project_name: "ops-monitor-dashboard"
+environment: "production"
+deploy_user: "deploy"
+deploy_group: "deploy"
+app_dir: "/opt/{{ project_name }}"
+data_dir: "/data/{{ project_name }}"
+log_dir: "/var/log/{{ project_name }}"
+
+# Docker 配置
+docker_version: "24.0"
+docker_compose_version: "2.23.0"
+harbor_registry: "harbor.example.com"
+harbor_project: "ops-monitor"
+image_name: "{{ harbor_registry }}/{{ harbor_project }}/monitor-dashboard"
+image_tag: "latest"
+
+# 网络配置
+monitor_dashboard_port: "8080"
+mysql_port: "3306"
+es_port: "9200"
+prometheus_port: "9090"
+
+# 数据库配置
+mysql_root_password: "{{ vault_mysql_root_password }}"
+mysql_database: "monitor"
+mysql_user: "monitor"
+mysql_password: "{{ vault_mysql_password }}"
+
+# Elasticsearch配置
+es_heap_size: "2g"
+es_cluster_name: "monitor-cluster"
+
+# Prometheus配置
+prometheus_retention_days: "15"
+
+# 告警通知配置
+dingtalk_webhook: "{{ vault_dingtalk_webhook }}"
+wechat_webhook: "{{ vault_wechat_webhook }}"
+smtp_host: "smtp.example.com"
+smtp_port: "587"
+smtp_username: "alert@example.com"
+smtp_password: "{{ vault_smtp_password }}"
+smtp_from_email: "alert@example.com"
+smtp_to_emails: "ops@example.com"
+smtp_cc_emails: "manager@example.com"
+
+# 服务配置
+workers: "4"
+health_check_interval: "30"
+alert_evaluate_interval: "60"

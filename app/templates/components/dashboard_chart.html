@@ -1,0 +1,9 @@
+<div class="chart-container" style="height: 200px; margin-bottom: 8px;">
+    <canvas id="home-chart-{{ comp.id }}" class="chart-canvas"
+            data-chart-data='{{ data | tojson }}'></canvas>
+</div>
+<div style="text-align: center;">
+    <a href="/metrics?metric={{ comp.component_key }}" class="btn btn-ghost btn-sm">
+        查看详情 <i data-lucide="chevron-right" width="12" height="12"></i>
+    </a>
+</div>

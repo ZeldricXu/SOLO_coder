@@ -1,0 +1,26 @@
+<div id="pinned-container">
+    {% if pinned_components %}
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i data-lucide="pin" width="16" height="16"></i>
+                已Pin组件 ({{ pinned_components | length }})
+            </h3>
+        </div>
+        <div class="grid-container grid-cols-3">
+            {% for pc in pinned_components %}
+            <div class="metric-item" style="padding: 16px;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                    <div>
+                        <i data-lucide="{{ pc.config.icon }}" width="16" height="16" style="color: var(--accent-blue); margin-right: 6px;"></i>
+                        <strong>{{ pc.config.title }}</strong>
+                    </div>
+                    <span class="health-status {{ pc.config.color }}">{{ pc.position + 1 }}</span>
+                </div>
+                <div style="font-size: 12px; color: var(--text-muted);">{{ pc.config.description }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>

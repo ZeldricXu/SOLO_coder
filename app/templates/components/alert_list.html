@@ -1,0 +1,31 @@
+{% if alerts %}
+    {% for alert in alerts %}
+    <div class="alert-item {{ alert.status }}">
+        <span class="alert-badge {{ alert.level }}" style="flex-shrink: 0;">{{ alert.level }}</span>
+        <div class="alert-content">
+            <div class="alert-title">
+                {{ alert.message }}
+            </div>
+            <div class="alert-meta">
+                <span><i data-lucide="clock" width="12" height="12"></i> {{ alert.triggered_at.strftime('%Y-%m-%d %H:%M:%S') }}</span>
+                {% if alert.ack_user_id %}
+                    <span><i data-lucide="user" width="12" height="12"></i> 已确认</span>
+                {% endif %}
+            </div>
+        </div>
+        <div style="display: flex; gap: 8px; flex-shrink: 0;">
+            {% if alert.status == 'firing' %}
+                <button class="btn btn-warning btn-sm" onclick="ackAlert({{ alert.id }})">确认</button>
+                <button class="btn btn-success btn-sm" onclick="resolveAlert({{ alert.id }})">解决</button>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+{% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <i data-lucide="check-circle" width="48" height="48" style="color: var(--accent-green);"></i>
+        </div>
+        <div class="empty-state-text">暂无告警记录</div>
+    </div>
+{% endif %}

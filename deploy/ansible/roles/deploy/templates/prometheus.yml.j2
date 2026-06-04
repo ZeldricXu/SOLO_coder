@@ -1,0 +1,38 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'ops-monitor'
+    environment: '{{ environment }}'
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+rule_files: []
+
+scrape_configs:
+  - job_name: 'monitor-dashboard'
+    scrape_interval: 15s
+    metrics_path: '/internal/metrics'
+    static_configs:
+      - targets: ['monitor-dashboard:8080']
+        labels:
+          service: 'monitor-dashboard'
+          environment: '{{ environment }}'
+
+  - job_name: 'prometheus'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['localhost:9090']
+        labels:
+          service: 'prometheus'
+
+  - job_name: 'elasticsearch'
+    scrape_interval: 30s
+    metrics_path: '/_prometheus/metrics'
+    static_configs:
+      - targets: ['elasticsearch:9200']
+        labels:
+          service: 'elasticsearch'

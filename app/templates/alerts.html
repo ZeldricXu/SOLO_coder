@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}告警中心 - 运维监控大盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">告警中心</h1>
+    <p class="page-subtitle">统一管理告警规则和处理告警事件</p>
+</div>
+
+<div class="summary-stats">
+    <div class="stat-card">
+        <div class="stat-value critical">{{ summary.firing }}</div>
+        <div class="stat-label">触发中</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value warning">{{ summary.acknowledged }}</div>
+        <div class="stat-label">已确认</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value healthy">{{ summary.resolved }}</div>
+        <div class="stat-label">已解决</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value info">{{ rules | length }}</div>
+        <div class="stat-label">告警规则</div>
+    </div>
+</div>
+
+<div class="tabs">
+    <div class="tab {% if not current_status or current_status == 'firing' %}active{% endif %}"
+         hx-get="/api/alerts/partial/list?status=firing"
+         hx-target="#alert-list"
+         hx-swap="innerHTML">
+        <i data-lucide="alert-circle" width="14" height="14"></i>
+        触发中 ({{ summary.firing }})
+    </div>
+    <div class="tab {% if current_status == 'acknowledged' %}active{% endif %}"
+         hx-get="/api/alerts/partial/list?status=acknowledged"
+         hx-target="#alert-list"
+         hx-swap="innerHTML">
+        <i data-lucide="clock" width="14" height="14"></i>
+        已确认 ({{ summary.acknowledged }})
+    </div>
+    <div class="tab {% if current_status == 'resolved' %}active{% endif %}"
+         hx-get="/api/alerts/partial/list?status=resolved"
+         hx-target="#alert-list"
+         hx-swap="innerHTML">
+        <i data-lucide="check-circle" width="14" height="14"></i>
+        已解决 ({{ summary.resolved }})
+    </div>
+    <div class="tab"
+         onclick="showRules()">
+        <i data-lucide="settings" width="14" height="14"></i>
+        规则管理
+    </div>
+</div>
+
+<div id="alert-list"
+     hx-get="/api/alerts/partial/list?status=firing"
+     hx-trigger="load">
+    <div class="skeleton" style="height: 200px;"></div>
+</div>
+
+<div id="rules-panel" style="display: none; margin-top: 24px;">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i data-lucide="file-text" width="16" height="16"></i>
+                告警规则列表
+            </h3>
+            <button class="btn btn-primary btn-sm">
+                <i data-lucide="plus" width="14" height="14"></i>
+                新建规则
+            </button>
+        </div>
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>规则名称</th>
+                        <th>级别</th>
+                        <th>条件表达式</th>
+                        <th>窗口</th>
+                        <th>通知渠道</th>
+                        <th>状态</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for rule in rules %}
+                    <tr>
+                        <td style="font-weight: 500;">{{ rule.name }}</td>
+                        <td><span class="alert-badge {{ rule.level }}">{{ rule.level }}</span></td>
+                        <td><code style="font-family: var(--font-mono); font-size: 11px;">{{ rule.condition_expr }}</code></td>
+                        <td>{{ rule.window_seconds }}秒</td>
+                        <td>{{ rule.notification_channels }}</td>
+                        <td>
+                            {% if rule.enabled %}
+                                <span class="health-status healthy"><span class="health-status-dot"></span>启用</span>
+                            {% else %}
+                                <span class="health-status unknown"><span class="health-status-dot"></span>禁用</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-ghost btn-sm">编辑</button>
+                            <button class="btn btn-ghost btn-sm"
+                                    hx-post="/api/alerts/trigger"
+                                    hx-vals='{"rule_id": {{ rule.id }}, "message": "手动测试告警"}'
+                                    hx-confirm="确定要手动触发测试告警吗？">测试</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+function showRules() {
+    const alertList = document.getElementById('alert-list');
+    const rulesPanel = document.getElementById('rules-panel');
+    const tabs = document.querySelectorAll('.tab');
+
+    tabs.forEach(tab => tab.classList.remove('active'));
+    event.target.classList.add('active');
+
+    alertList.style.display = 'none';
+    rulesPanel.style.display = 'block';
+}
+
+document.querySelectorAll('.tab').forEach(tab => {
+    if (!tab.onclick) {
+        tab.addEventListener('click', function() {
+            if (!this.getAttribute('hx-get')) {
+                document.getElementById('alert-list').style.display = 'block';
+                document.getElementById('rules-panel').style.display = 'none';
+            }
+        });
+    }
+});
+
+function ackAlert(alertId) {
+    htmx.ajax('POST', `/api/alerts/ack/${alertId}`, {
+        params: { user_id: 1 },
+        onComplete: function() {
+            location.reload();
+        }
+    });
+}
+
+function resolveAlert(alertId) {
+    htmx.ajax('POST', `/api/alerts/resolve/${alertId}`, {
+        params: { user_id: 1 },
+        onComplete: function() {
+            location.reload();
+        }
+    });
+}
+</script>
+{% endblock %}

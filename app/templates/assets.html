@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+
+{% block title %}资产管理 - 运维监控大盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">资产配置管理</h1>
+    <p class="page-subtitle">统一管理所有服务器、数据库、中间件资产，追踪变更记录</p>
+</div>
+
+<div class="summary-stats">
+    <div class="stat-card">
+        <div class="stat-value info">{{ summary.total }}</div>
+        <div class="stat-label">资产总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value healthy">{{ summary.by_status.normal }}</div>
+        <div class="stat-label">运行正常</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value warning">{{ summary.by_status.warning }}</div>
+        <div class="stat-label">警告</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value critical">{{ summary.by_status.critical }}</div>
+        <div class="stat-label">故障</div>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <div class="tabs" style="margin-bottom: 0; border-bottom: none;">
+        <div class="tab {% if not current_category %}active{% endif %}"
+             onclick="filterByCategory('')">
+            <i data-lucide="layers" width="14" height="14"></i>
+            全部 ({{ summary.total }})
+        </div>
+        {% for cat in categories %}
+        <div class="tab {% if current_category == cat.category %}active{% endif %}"
+             onclick="filterByCategory('{{ cat.category }}')">
+            <i data-lucide="{% if cat.category == 'server' %}server{% elif cat.category == 'database' %}database{% elif cat.category == 'cache' %}database{% elif cat.category == 'mq' %}git-commit{% else %}box{% endif %}" width="14" height="14"></i>
+            {{ cat.display_name }} ({{ cat.total }})
+        </div>
+        {% endfor %}
+    </div>
+
+    <input type="text" class="input" placeholder="搜索IP或名称..."
+           onkeyup="searchAssets(this.value)" style="flex: 1; max-width: 300px;">
+
+    <button class="btn btn-primary">
+        <i data-lucide="plus" width="14" height="14"></i>
+        新增资产
+    </button>
+</div>
+
+<div id="assets-list"
+     hx-get="/api/assets/partial/list?category={{ current_category }}"
+     hx-trigger="load">
+    <div class="skeleton" style="height: 300px;"></div>
+</div>
+
+<div id="changes-modal" style="display: none; margin-top: 24px;"></div>
+
+<script>
+function filterByCategory(category) {
+    htmx.ajax('GET', `/api/assets/partial/list?category=${category}`, {
+        target: '#assets-list',
+        swap: 'innerHTML'
+    });
+
+    document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+    event.target.classList.add('active');
+
+    history.pushState({}, '', `/assets?category=${category}`);
+}
+
+function searchAssets(keyword) {
+    const category = '{{ current_category }}';
+    htmx.ajax('GET', `/api/assets/partial/list?category=${category}`, {
+        target: '#assets-list',
+        swap: 'innerHTML'
+    });
+}
+
+function showChanges(assetId) {
+    const modal = document.getElementById('changes-modal');
+    modal.style.display = 'block';
+    modal.innerHTML = '<div class="card skeleton" style="height: 300px;"></div>';
+
+    htmx.ajax('GET', `/api/assets/partial/changes/${assetId}`, {
+        target: '#changes-modal',
+        swap: 'innerHTML'
+    });
+}
+</script>
+{% endblock %}

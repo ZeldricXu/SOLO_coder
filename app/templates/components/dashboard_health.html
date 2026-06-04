@@ -1,0 +1,24 @@
+<div class="summary-stats" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 0; gap: 8px;">
+    <div class="stat-card" style="padding: 12px;">
+        <div class="stat-value info" style="font-size: 24px;">{{ data.total }}</div>
+        <div class="stat-label" style="font-size: 10px;">服务总数</div>
+    </div>
+    <div class="stat-card" style="padding: 12px;">
+        <div class="stat-value healthy" style="font-size: 24px;">{{ data.healthy }}</div>
+        <div class="stat-label" style="font-size: 10px;">正常</div>
+    </div>
+    <div class="stat-card" style="padding: 12px;">
+        <div class="stat-value warning" style="font-size: 24px;">{{ data.warning }}</div>
+        <div class="stat-label" style="font-size: 10px;">告警</div>
+    </div>
+    <div class="stat-card" style="padding: 12px;">
+        <div class="stat-value critical" style="font-size: 24px;">{{ data.critical }}</div>
+        <div class="stat-label" style="font-size: 10px;">故障</div>
+    </div>
+</div>
+
+<div style="margin-top: 12px; text-align: center;">
+    <a href="/health" class="btn btn-ghost btn-sm">
+        查看全部 <i data-lucide="chevron-right" width="12" height="12"></i>
+    </a>
+</div>

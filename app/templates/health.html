@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}服务健康 - 运维监控大盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">服务健康面板</h1>
+    <p class="page-subtitle">实时监控所有服务的健康状态，每30秒自动刷新</p>
+</div>
+
+<div class="summary-stats">
+    <div class="stat-card">
+        <div class="stat-value info">{{ summary.total }}</div>
+        <div class="stat-label">服务总数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value healthy">{{ summary.healthy }}</div>
+        <div class="stat-label">运行正常</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value warning">{{ summary.warning }}</div>
+        <div class="stat-label">性能告警</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value critical">{{ summary.critical }}</div>
+        <div class="stat-label">严重故障</div>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <button class="btn btn-primary"
+            hx-get="/api/health/check"
+            hx-target="#health-cards"
+            hx-swap="innerHTML"
+            data-refresh-btn>
+        <i data-lucide="refresh-cw" width="14" height="14"></i>
+        立即检查
+    </button>
+    <button class="btn btn-secondary"
+            hx-get="/api/health/partial/cards"
+            hx-target="#health-cards"
+            hx-swap="innerHTML"
+            hx-trigger="every 30s">
+        <span class="htmx-indicator">⟳</span>
+        自动刷新中
+    </button>
+    <select class="select" onchange="filterServices(this.value)">
+        <option value="all">全部状态</option>
+        <option value="healthy">正常</option>
+        <option value="warning">告警</option>
+        <option value="critical">故障</option>
+    </select>
+</div>
+
+<div id="health-cards"
+     hx-get="/api/health/partial/cards"
+     hx-trigger="load"
+     data-auto-refresh="30000"
+     data-refresh-url="/api/health/partial/cards">
+    <div class="grid-container grid-cols-3">
+        <div class="card skeleton" style="height: 150px;"></div>
+        <div class="card skeleton" style="height: 150px;"></div>
+        <div class="card skeleton" style="height: 150px;"></div>
+    </div>
+</div>
+
+<div id="service-detail-modal" style="display: none; margin-top: 24px;"></div>
+
+<script>
+function filterServices(status) {
+    const cards = document.querySelectorAll('.health-card');
+    cards.forEach(card => {
+        if (status === 'all' || card.classList.contains(status)) {
+            card.style.display = 'block';
+        } else {
+            card.style.display = 'none';
+        }
+    });
+}
+
+function showServiceDetail(serviceId) {
+    const modal = document.getElementById('service-detail-modal');
+    modal.style.display = 'block';
+    modal.innerHTML = '<div class="card skeleton" style="height: 300px;"></div>';
+
+    htmx.ajax('GET', `/api/health/partial/service/${serviceId}`, {
+        target: '#service-detail-modal',
+        swap: 'innerHTML'
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,35 @@
+<div class="summary-stats" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 12px; gap: 6px;">
+    <div class="stat-card" style="padding: 10px;">
+        <div class="stat-value info" style="font-size: 20px;">{{ data.total }}</div>
+        <div class="stat-label" style="font-size: 9px;">资产总数</div>
+    </div>
+    <div class="stat-card" style="padding: 10px;">
+        <div class="stat-value healthy" style="font-size: 20px;">{{ data.by_status.normal }}</div>
+        <div class="stat-label" style="font-size: 9px;">正常</div>
+    </div>
+    <div class="stat-card" style="padding: 10px;">
+        <div class="stat-value warning" style="font-size: 20px;">{{ data.by_status.warning }}</div>
+        <div class="stat-label" style="font-size: 9px;">警告</div>
+    </div>
+    <div class="stat-card" style="padding: 10px;">
+        <div class="stat-value critical" style="font-size: 20px;">{{ data.by_status.critical }}</div>
+        <div class="stat-label" style="font-size: 9px;">故障</div>
+    </div>
+</div>
+
+{% if data.by_category %}
+<div style="display: flex; flex-direction: column; gap: 4px; max-height: 100px; overflow-y: auto;">
+    {% for cat in data.by_category %}
+    <div style="display: flex; justify-content: space-between; align-items: center; font-size: 11px; padding: 4px 8px; background: var(--bg-tertiary); border-radius: 4px;">
+        <span style="color: var(--text-secondary);">{{ cat.display_name }}</span>
+        <span style="font-family: var(--font-mono); font-weight: 600;">{{ cat.total }}</span>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<div style="margin-top: 10px; text-align: center;">
+    <a href="/assets" class="btn btn-ghost btn-sm">
+        查看全部 <i data-lucide="chevron-right" width="12" height="12"></i>
+    </a>
+</div>

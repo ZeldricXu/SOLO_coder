@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}慢SQL分析 - 运维监控大盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">慢SQL分析</h1>
+    <p class="page-subtitle">采集并分析慢查询SQL，按查询指纹聚合统计，提供执行计划解析</p>
+</div>
+
+<div class="summary-stats">
+    <div class="stat-card">
+        <div class="stat-value info">{{ stats.total_slow_sqls }}</div>
+        <div class="stat-label">慢SQL种类</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value warning">{{ '{:,}'.format(stats.total_executions) }}</div>
+        <div class="stat-label">总执行次数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value critical">{{ stats.by_table | length }}</div>
+        <div class="stat-label">涉及表数</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-value info">{{ stats.top_10 | length }}</div>
+        <div class="stat-label">Top 10慢SQL</div>
+    </div>
+</div>
+
+<div class="filter-bar">
+    <select class="select" onchange="filterByTable(this.value)">
+        <option value="">所有表</option>
+        {% for table in tables %}
+        <option value="{{ table }}" {% if current_table == table %}selected{% endif %}>{{ table }}</option>
+        {% endfor %}
+    </select>
+
+    <select class="select" onchange="sortList(this.value)">
+        <option value="last_seen" {% if current_sort == 'last_seen' %}selected{% endif %}>最近出现</option>
+        <option value="duration" {% if current_sort == 'duration' %}selected{% endif %}>平均耗时</option>
+        <option value="exec_count" {% if current_sort == 'exec_count' %}selected{% endif %}>执行次数</option>
+        <option value="first_seen" {% if current_sort == 'first_seen' %}selected{% endif %}>首次出现</option>
+    </select>
+
+    <button class="btn btn-secondary"
+            hx-get="/api/slow-sql/partial/list?table_name={{ current_table }}&sort_by={{ current_sort }}"
+            hx-target="#sql-list"
+            hx-swap="innerHTML">
+        <i data-lucide="refresh-cw" width="14" height="14"></i>
+        刷新
+    </button>
+</div>
+
+<div id="sql-list"
+     hx-get="/api/slow-sql/partial/list?table_name={{ current_table }}&sort_by={{ current_sort }}"
+     hx-trigger="load">
+    <div class="skeleton" style="height: 300px;"></div>
+</div>
+
+<div id="explain-modal" style="display: none; margin-top: 24px;"></div>
+
+<script>
+function filterByTable(table) {
+    const sortBy = document.querySelector('select[onchange^="sortList"]').value;
+    htmx.ajax('GET', `/api/slow-sql/partial/list?table_name=${table}&sort_by=${sortBy}`, {
+        target: '#sql-list',
+        swap: 'innerHTML'
+    });
+    history.pushState({}, '', `/slow-sql?table=${table}&sort_by=${sortBy}`);
+}
+
+function sortList(sortBy) {
+    const table = document.querySelector('select[onchange^="filterByTable"]').value;
+    htmx.ajax('GET', `/api/slow-sql/partial/list?table_name=${table}&sort_by=${sortBy}`, {
+        target: '#sql-list',
+        swap: 'innerHTML'
+    });
+    history.pushState({}, '', `/slow-sql?table=${table}&sort_by=${sortBy}`);
+}
+
+function showExplain(sqlId) {
+    const modal = document.getElementById('explain-modal');
+    modal.style.display = 'block';
+    modal.innerHTML = '<div class="card skeleton" style="height: 300px;"></div>';
+
+    htmx.ajax('GET', `/api/slow-sql/partial/explain/${sqlId}`, {
+        target: '#explain-modal',
+        swap: 'innerHTML'
+    });
+}
+</script>
+{% endblock %}

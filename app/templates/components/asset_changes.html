@@ -1,0 +1,63 @@
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="history" width="16" height="16"></i>
+            {{ asset.name }} - 变更历史
+        </h3>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('changes-modal').style.display='none'">
+            <i data-lucide="x" width="14" height="14"></i>
+            关闭
+        </button>
+    </div>
+
+    {% if changes %}
+    <div style="position: relative;">
+        <div style="position: absolute; left: 20px; top: 0; bottom: 0; width: 2px; background: var(--border-color);"></div>
+
+        {% for change in changes %}
+        <div style="position: relative; padding: 16px 16px 16px 60px; border-bottom: 1px solid var(--border-color);">
+            <div style="position: absolute; left: 12px; top: 20px; width: 18px; height: 18px; background: var(--accent-blue); border-radius: 50%; border: 3px solid var(--bg-card);"></div>
+
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                <div>
+                    <strong style="color: var(--text-primary);">
+                        <i data-lucide="edit-3" width="14" height="14" style="vertical-align: middle; margin-right: 4px; color: var(--accent-yellow);"></i>
+                        {{ change.field_name }}
+                    </strong>
+                </div>
+                <span style="font-size: 12px; color: var(--text-muted);">
+                    {{ change.changed_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                </span>
+            </div>
+
+            <div style="display: flex; gap: 24px; font-size: 13px;">
+                <div style="flex: 1;">
+                    <span style="color: var(--text-muted);">原值: </span>
+                    <span style="font-family: var(--font-mono); color: var(--status-critical);">
+                        {{ change.old_value or '-' }}
+                    </span>
+                </div>
+                <div style="flex: 1;">
+                    <span style="color: var(--text-muted);">新值: </span>
+                    <span style="font-family: var(--font-mono); color: var(--status-healthy);">
+                        {{ change.new_value or '-' }}
+                    </span>
+                </div>
+            </div>
+
+            <div style="margin-top: 8px; font-size: 12px; color: var(--text-muted);">
+                <i data-lucide="user" width="12" height="12" style="vertical-align: middle;"></i>
+                操作人: {{ '系统' if not change.operator_id else '管理员 #' ~ change.operator_id }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">
+            <i data-lucide="check-circle" width="48" height="48" style="color: var(--accent-green);"></i>
+        </div>
+        <div class="empty-state-text">暂无变更记录</div>
+    </div>
+    {% endif %}
+</div>

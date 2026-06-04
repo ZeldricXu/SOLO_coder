@@ -1,0 +1,27 @@
+{% if data.alerts %}
+    {% for alert in data.alerts[:5] %}
+    <div class="alert-item {{ alert.status }}" style="padding: 10px 12px; margin-bottom: 6px;">
+        <span class="alert-badge {{ alert.level }}" style="flex-shrink: 0; font-size: 10px;">{{ alert.level }}</span>
+        <div class="alert-content" style="flex: 1; min-width: 0;">
+            <div class="alert-title" style="font-size: 12px; margin-bottom: 2px;">
+                {{ alert.message | truncate(40) }}
+            </div>
+            <div class="alert-meta" style="font-size: 10px;">
+                <span>{{ alert.triggered_at.strftime('%H:%M') }}</span>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    <div style="margin-top: 8px; text-align: center;">
+        <a href="/alerts" class="btn btn-ghost btn-sm">
+            查看全部 ({{ data.count }}) <i data-lucide="chevron-right" width="12" height="12"></i>
+        </a>
+    </div>
+{% else %}
+<div class="empty-state" style="padding: 20px 10px;">
+    <div class="empty-state-icon" style="font-size: 24px;">
+        <i data-lucide="check-circle" width="24" height="24" style="color: var(--accent-green);"></i>
+    </div>
+    <div class="empty-state-text" style="font-size: 12px;">暂无告警，系统运行正常</div>
+</div>
+{% endif %}

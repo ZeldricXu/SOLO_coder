@@ -1,0 +1,93 @@
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="search" width="16" height="16"></i>
+            SQL执行计划分析
+        </h3>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('explain-modal').style.display='none'">
+            <i data-lucide="x" width="14" height="14"></i>
+            关闭
+        </button>
+    </div>
+
+    <div class="grid-container grid-cols-2" style="gap: 24px;">
+        <div>
+            <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em;">SQL语句</h4>
+            <pre class="sql-code"><code class="language-sql">{{ sql.sql_text }}</code></pre>
+
+            <div class="service-metrics" style="grid-template-columns: repeat(4, 1fr); margin-top: 16px;">
+                <div class="metric-item">
+                    <div class="metric-label">平均耗时</div>
+                    <div class="metric-value {% if sql.avg_duration_ms > 500 %}critical{% elif sql.avg_duration_ms > 200 %}warn{% endif %}">
+                        {{ '%.0f' | format(sql.avg_duration_ms) }}ms
+                    </div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">执行次数</div>
+                    <div class="metric-value">{{ '{:,}'.format(sql.exec_count) }}</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">首次出现</div>
+                    <div class="metric-value">{{ sql.first_seen.strftime('%Y-%m-%d') }}</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">最近出现</div>
+                    <div class="metric-value">{{ sql.last_seen.strftime('%Y-%m-%d') }}</div>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em;">执行计划</h4>
+            {% if explain.plan_json %}
+                <pre class="sql-code">{{ explain.plan_json }}</pre>
+            {% else %}
+                <div class="sql-explain">
+                    <table style="margin-bottom: 0;">
+                        <thead>
+                            <tr>
+                                <th>id</th>
+                                <th>select_type</th>
+                                <th>table</th>
+                                <th>type</th>
+                                <th>key</th>
+                                <th>rows</th>
+                                <th>Extra</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% set plan = explain.plan_json | fromjson if explain.plan_json is string else {} %}
+                            {% if plan.id %}
+                            <tr>
+                                <td>{{ plan.id }}</td>
+                                <td>{{ plan.select_type }}</td>
+                                <td>{{ plan.table }}</td>
+                                <td><span class="alert-badge {% if plan.type == 'ALL' %}P0{% elif plan.type == 'range' %}P2{% else %}P3{% endif %}">{{ plan.type }}</span></td>
+                                <td><code style="font-family: var(--font-mono); font-size: 11px;">{{ plan.key or '-' }}</code></td>
+                                <td>{{ '{:,}'.format(plan.rows) }}</td>
+                                <td style="font-size: 11px;">{{ plan.Extra or '-' }}</td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="7" style="text-align: center; color: var(--text-muted);">
+                                    暂无执行计划数据（Mock模式）
+                                </td>
+                            </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
+                </div>
+            {% endif %}
+
+            <div class="sql-explain-analysis">
+                <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em;">
+                    <i data-lucide="lightbulb" width="14" height="14" style="vertical-align: middle; margin-right: 4px; color: var(--accent-yellow);"></i>
+                    分析建议
+                </h4>
+                <div style="line-height: 1.8; font-size: 13px; color: var(--text-secondary);">
+                    {{ explain.analysis | safe }}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

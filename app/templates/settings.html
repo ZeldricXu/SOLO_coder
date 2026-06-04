@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+
+{% block title %}系统设置 - 运维监控大盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">个人设置</h1>
+    <p class="page-subtitle">自定义面板布局和系统偏好设置</p>
+</div>
+
+<div class="grid-container grid-cols-2">
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i data-lucide="layout" width="16" height="16" style="color: var(--accent-blue);"></i>
+                面板布局设置
+            </h3>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 16px;">
+            <div>
+                <label style="display: block; margin-bottom: 8px; font-size: 13px; color: var(--text-secondary);">
+                    首页网格列数
+                </label>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn {% if layout.grid_cols == 2 %}btn-primary{% else %}btn-secondary{% endif %}"
+                            onclick="setGridCols(2)">2列</button>
+                    <button class="btn {% if layout.grid_cols == 3 %}btn-primary{% else %}btn-secondary{% endif %}"
+                            onclick="setGridCols(3)">3列</button>
+                    <button class="btn {% if layout.grid_cols == 4 %}btn-primary{% else %}btn-secondary{% endif %}"
+                            onclick="setGridCols(4)">4列</button>
+                </div>
+            </div>
+
+            <div>
+                <label style="display: block; margin-bottom: 8px; font-size: 13px; color: var(--text-secondary);">
+                    主题
+                </label>
+                <select class="select" onchange="setTheme(this.value)">
+                    <option value="dark" {% if layout.theme == 'dark' %}selected{% endif %}>深色模式</option>
+                    <option value="light" {% if layout.theme == 'light' %}selected{% endif %}>浅色模式</option>
+                </select>
+            </div>
+
+            <div>
+                <label style="display: block; margin-bottom: 8px; font-size: 13px; color: var(--text-secondary);">
+                    自动刷新间隔（秒）
+                </label>
+                <select class="select" onchange="setRefreshInterval(this.value)">
+                    <option value="15" {% if layout.refresh_interval == 15 %}selected{% endif %}>15秒</option>
+                    <option value="30" {% if layout.refresh_interval == 30 %}selected{% endif %}>30秒</option>
+                    <option value="60" {% if layout.refresh_interval == 60 %}selected{% endif %}>1分钟</option>
+                    <option value="300" {% if layout.refresh_interval == 300 %}selected{% endif %}>5分钟</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">
+                <i data-lucide="bell" width="16" height="16" style="color: var(--accent-yellow);"></i>
+                通知设置
+            </h3>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                <input type="checkbox" checked style="width: 18px; height: 18px;">
+                <div>
+                    <div style="font-weight: 500;">钉钉告警通知</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">接收P1-P3级别的告警通知</div>
+                </div>
+            </label>
+
+            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                <input type="checkbox" checked style="width: 18px; height: 18px;">
+                <div>
+                    <div style="font-weight: 500;">企业微信通知</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">企业微信机器人推送告警</div>
+                </div>
+            </label>
+
+            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                <input type="checkbox" checked style="width: 18px; height: 18px;">
+                <div>
+                    <div style="font-weight: 500;">P0级别电话通知</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">紧急故障时自动拨打值班电话</div>
+                </div>
+            </label>
+
+            <label style="display: flex; align-items: center; gap: 12px; cursor: pointer;">
+                <input type="checkbox" style="width: 18px; height: 18px;">
+                <div>
+                    <div style="font-weight: 500;">邮件通知</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">每日汇总报告邮件推送</div>
+                </div>
+            </label>
+        </div>
+    </div>
+</div>
+
+<div class="card" style="margin-top: 20px;">
+    <div class="card-header">
+        <h3 class="card-title">
+            <i data-lucide="pin" width="16" height="16" style="color: var(--accent-yellow);"></i>
+            首页Pin管理
+            <span style="font-size: 12px; color: var(--text-muted); margin-left: 8px; font-weight: 400;">
+                已Pin {{ pinned_components | length }} 个组件
+            </span>
+        </h3>
+    </div>
+
+    <div class="grid-container grid-cols-4" style="margin-bottom: 20px;">
+        {% for comp in available_components %}
+        <div class="metric-item draggable" style="padding: 16px;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="{{ comp.icon }}" width="18" height="18" style="color: var(--accent-blue);"></i>
+                    <strong style="font-size: 13px;">{{ comp.title }}</strong>
+                </div>
+                <button class="pin-btn pinned" style="opacity: 1; position: static;"
+                        onclick="togglePin('{{ comp.type }}', '{{ comp.key }}', this)">
+                    <i data-lucide="pin" width="14" height="14"></i>
+                </button>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted); line-height: 1.5;">
+                {{ comp.description }}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if pinned_components %}
+    <h4 style="margin-bottom: 12px; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em;">
+        <i data-lucide="check-circle" width="14" height="14" style="vertical-align: middle; color: var(--accent-green);"></i>
+        已Pin到首页的组件
+    </h4>
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th>位置</th>
+                    <th>组件类型</th>
+                    <th>组件Key</th>
+                    <th>标题</th>
+                    <th>操作</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pc in pinned_components %}
+                <tr>
+                    <td>{{ pc.position + 1 }}</td>
+                    <td><code style="font-family: var(--font-mono); font-size: 11px;">{{ pc.component_type }}</code></td>
+                    <td><code style="font-family: var(--font-mono); font-size: 11px;">{{ pc.component_key }}</code></td>
+                    <td>{{ pc.config.title }}</td>
+                    <td>
+                        <button class="btn btn-danger btn-sm" onclick="unpinComponent({{ pc.id }})">
+                            <i data-lucide="trash-2" width="12" height="12"></i>
+                            移除
+                        </button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+function setGridCols(cols) {
+    htmx.ajax('POST', '/api/preferences/layout', {
+        params: { layout: { grid_cols: cols } },
+        onComplete: function() {
+            location.reload();
+        }
+    });
+}
+
+function setTheme(theme) {
+    htmx.ajax('POST', '/api/preferences/layout', {
+        params: { layout: { theme: theme } },
+        onComplete: function() {
+            showToast('主题设置已保存', 'success');
+        }
+    });
+}
+
+function setRefreshInterval(interval) {
+    htmx.ajax('POST', '/api/preferences/layout', {
+        params: { layout: { refresh_interval: parseInt(interval) } },
+        onComplete: function() {
+            showToast('刷新间隔已更新', 'success');
+        }
+    });
+}
+
+function togglePin(type, key, btn) {
+    const isPinned = btn.classList.contains('pinned');
+
+    if (isPinned) {
+        const pc = {{ pinned_components | tojson }};
+        const found = pc.find(p => p.component_type === type && p.component_key === key);
+        if (found) {
+            unpinComponent(found.id);
+        }
+    } else {
+        htmx.ajax('POST', '/api/preferences/pinned', {
+            params: {
+                component_type: type,
+                component_key: key,
+                position: {{ pinned_components | length }}
+            },
+            onComplete: function() {
+                btn.classList.add('pinned');
+                showToast('已Pin到首页', 'success');
+                setTimeout(() => location.reload(), 500);
+            }
+        });
+    }
+}
+
+function unpinComponent(id) {
+    if (!confirm('确定要移除这个Pin吗？')) return;
+
+    htmx.ajax('DELETE', `/api/preferences/pinned/${id}`, {
+        onComplete: function() {
+            showToast('已从首页移除', 'info');
+            setTimeout(() => location.reload(), 500);
+        }
+    });
+}
+</script>
+{% endblock %}

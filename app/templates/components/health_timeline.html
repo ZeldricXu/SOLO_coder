@@ -1,0 +1,100 @@
+<div class="health-timeline" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h4 style="margin: 0; color: var(--text-secondary); font-size: 13px; text-transform: uppercase; letter-spacing: 0.03em;">
+            <i data-lucide="clock" width="14" height="14" style="vertical-align: middle; margin-right: 4px;"></i>
+            过去1小时状态变化
+        </h4>
+        <span style="font-size: 12px; color: var(--text-muted);">共 {{ checks|length }} 次检查</span>
+    </div>
+
+    {% if checks %}
+    <div class="timeline-container" style="position: relative; height: 60px; display: flex; align-items: center; padding: 0 8px;">
+        <div style="position: absolute; left: 8px; right: 8px; height: 2px; background: var(--border-color); top: 50%; transform: translateY(-50%);"></div>
+
+        <div style="display: flex; justify-content: space-between; width: 100%; position: relative; z-index: 1;">
+            {% for check in checks %}
+            <div class="timeline-point tooltip-wrapper"
+                 style="position: relative;"
+                 data-tooltip="{{ check.checked_at.strftime('%H:%M:%S') }}{% if check.response_time_ms %} - {{ check.response_time_ms }}ms{% endif %}">
+                <div class="timeline-dot {{ check.status }}"
+                     style="width: 12px; height: 12px; border-radius: 50%; cursor: pointer; transition: all 0.2s; border: 2px solid var(--bg-primary);"
+                     title="{{ check.checked_at.strftime('%Y-%m-%d %H:%M:%S') }}{% if check.response_time_ms %}&#10;响应时间: {{ check.response_time_ms }}ms{% endif %}">
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <div style="display: flex; justify-content: space-between; margin-top: 8px; font-size: 11px; color: var(--text-muted);">
+        <span>{{ checks[0].checked_at.strftime('%H:%M') }}</span>
+        <span>{{ checks[-1].checked_at.strftime('%H:%M') }}</span>
+    </div>
+
+    <div style="display: flex; gap: 16px; margin-top: 12px; font-size: 12px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="width: 10px; height: 10px; border-radius: 50%; background: var(--status-healthy);"></div>
+            <span style="color: var(--text-muted);">正常</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="width: 10px; height: 10px; border-radius: 50%; background: var(--status-warning);"></div>
+            <span style="color: var(--text-muted);">告警</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 6px;">
+            <div style="width: 10px; height: 10px; border-radius: 50%; background: var(--status-critical);"></div>
+            <span style="color: var(--text-muted);">故障</span>
+        </div>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 24px; color: var(--text-muted); font-size: 13px;">
+        <i data-lucide="inbox" width="32" height="32" style="margin-bottom: 8px; opacity: 0.5;"></i>
+        <br>暂无历史检查数据
+    </div>
+    {% endif %}
+</div>
+
+<style>
+    .timeline-dot.healthy {
+        background: var(--status-healthy);
+        box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+    }
+    .timeline-dot.warning {
+        background: var(--status-warning);
+        box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
+    }
+    .timeline-dot.critical {
+        background: var(--status-critical);
+        box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+    }
+    .timeline-dot:hover {
+        transform: scale(1.3);
+    }
+    .timeline-point {
+        flex-shrink: 0;
+    }
+    .tooltip-wrapper {
+        position: relative;
+    }
+    .tooltip-wrapper::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        bottom: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 11px;
+        white-space: nowrap;
+        opacity: 0;
+        visibility: hidden;
+        transition: all 0.2s;
+        pointer-events: none;
+        z-index: 100;
+        margin-bottom: 4px;
+    }
+    .tooltip-wrapper:hover::after {
+        opacity: 1;
+        visibility: visible;
+    }
+</style>

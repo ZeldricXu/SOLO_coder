@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}指标监控 - 运维监控大盘{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1 class="page-title">时序指标监控</h1>
+    <p class="page-subtitle">从Prometheus获取实时监控指标，展示最近24小时趋势</p>
+</div>
+
+<div class="filter-bar">
+    <div class="tabs" style="margin-bottom: 0; border-bottom: none;">
+        {% for metric in available_metrics %}
+        <button class="tab {% if current_metric == metric.name %}active{% endif %}"
+                onclick="switchMetric('{{ metric.name }}')">
+            <i data-lucide="{% if metric.name == 'cpu_usage' %}cpu{% elif metric.name == 'memory_usage' %}hard-drive{% elif metric.name == 'qps' %}zap{% elif metric.name == 'disk_usage' %}hard-drive{% elif metric.name == 'network_traffic' %}wifi{% elif metric.name == 'error_rate' %}alert-circle{% else %}activity{% endif %}" width="14" height="14"></i>
+            {{ metric.display_name }}
+        </button>
+        {% endfor %}
+    </div>
+
+    <select class="select" onchange="changeHours(this.value)">
+        <option value="1" {% if hours == 1 %}selected{% endif %}>最近1小时</option>
+        <option value="6" {% if hours == 6 %}selected{% endif %}>最近6小时</option>
+        <option value="24" {% if hours == 24 %}selected{% endif %}>最近24小时</option>
+        <option value="72" {% if hours == 72 %}selected{% endif %}>最近3天</option>
+        <option value="168" {% if hours == 168 %}selected{% endif %}>最近7天</option>
+    </select>
+
+    <button class="btn btn-secondary"
+            onclick="reloadCurrentChart()"
+            data-refresh-btn>
+        <i data-lucide="refresh-cw" width="14" height="14"></i>
+        刷新图表
+    </button>
+</div>
+
+<div id="chart-container"
+     hx-get="/api/metrics/partial/chart/{{ current_metric }}?hours={{ hours }}"
+     hx-trigger="load">
+    <div class="card">
+        <div class="skeleton" style="height: 300px;"></div>
+    </div>
+</div>
+
+<script>
+let currentMetric = '{{ current_metric }}';
+let currentHours = {{ hours }};
+
+function switchMetric(metric) {
+    currentMetric = metric;
+    loadChart();
+}
+
+function changeHours(hours) {
+    currentHours = hours;
+    loadChart();
+}
+
+function loadChart() {
+    const btn = event.target;
+    if (btn) {
+        btn.innerHTML = '<span class="htmx-indicator">⟳</span> 加载中...';
+        btn.disabled = true;
+    }
+
+    htmx.ajax('GET', `/api/metrics/partial/chart/${currentMetric}?hours=${currentHours}`, {
+        target: '#chart-container',
+        swap: 'innerHTML',
+        onComplete: function() {
+            if (btn) {
+                btn.innerHTML = '<i data-lucide="refresh-cw" width="14" height="14"></i> 刷新图表';
+                btn.disabled = false;
+                btn.onclick = reloadCurrentChart;
+            }
+            history.pushState({}, '', `/metrics?metric=${currentMetric}&hours=${currentHours}`);
+        }
+    });
+}
+
+function reloadCurrentChart() {
+    loadChart();
+}
+</script>
+{% endblock %}
