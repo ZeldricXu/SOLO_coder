@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+package registry;
+
+option go_package = "github.com/distributed-task-scheduler/proto";
+
+message RegisterWorkerRequest {
+    string id = 1;
+    string namespace = 2;
+    string hostname = 3;
+    string grpc_addr = 4;
+    string http_addr = 5;
+    repeated string capabilities = 6;
+    int32 max_load = 7;
+}
+
+message RegisterWorkerResponse {
+    string worker_id = 1;
+    string status = 2;
+}
+
+message DeregisterWorkerRequest {
+    string worker_id = 1;
+}
+
+message DeregisterWorkerResponse {
+    bool success = 1;
+}
+
+message HeartbeatRequest {
+    string worker_id = 1;
+    int32 current_load = 2;
+}
+
+message HeartbeatResponse {
+    bool success = 1;
+    string status = 2;
+}
+
+message ListWorkersRequest {
+    string namespace = 1;
+    bool healthy_only = 2;
+}
+
+message WorkerInfo {
+    string id = 1;
+    string namespace = 2;
+    string hostname = 3;
+    string grpc_addr = 4;
+    string http_addr = 5;
+    string status = 6;
+    int64 last_heartbeat = 7;
+    int32 current_load = 8;
+    int32 max_load = 9;
+    repeated string capabilities = 10;
+}
+
+message ListWorkersResponse {
+    repeated WorkerInfo workers = 1;
+}
+
+message GetWorkerRequest {
+    string worker_id = 1;
+}
+
+message GetWorkerResponse {
+    WorkerInfo worker = 1;
+}
+
+service RegistryService {
+    rpc RegisterWorker(RegisterWorkerRequest) returns (RegisterWorkerResponse);
+    rpc DeregisterWorker(DeregisterWorkerRequest) returns (DeregisterWorkerResponse);
+    rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+    rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+    rpc GetWorker(GetWorkerRequest) returns (GetWorkerResponse);
+}

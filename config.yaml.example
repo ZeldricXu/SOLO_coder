@@ -1,0 +1,45 @@
+server:
+  http_addr: ":8080"
+  grpc_addr: ":9090"
+  node_id: "node-1"
+
+database:
+  host: "localhost"
+  port: 5432
+  user: "postgres"
+  password: "postgres"
+  dbname: "task_scheduler"
+  sslmode: "disable"
+
+redis:
+  addr: "localhost:6379"
+  password: ""
+  db: 0
+  pool_size: 10
+
+scheduler:
+  shard_count: 32
+  trigger_interval: 1s
+  task_scan_interval: 5s
+  lock_ttl: 30s
+
+executor:
+  max_concurrency: 100
+  worker_pool_size: 10
+  task_timeout: 30m
+  graceful_shutdown_timeout: 60s
+  isolation_strategy: "namespace"
+
+registry:
+  health_check_interval: 5s
+  unhealthy_threshold: 3
+  auto_remove_interval: 30s
+
+tracing:
+  enabled: false
+  endpoint: "localhost:4318"
+  service_name: "task-scheduler"
+
+auth:
+  jwt_secret: "your-secret-key-here"
+  admin_token: "admin-token"
