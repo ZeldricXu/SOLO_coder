@@ -1,0 +1,78 @@
+{
+  "version": "1.0",
+  "description": "CCP4 monomer library conventions - element-pair-specific bond distance thresholds (angstroms)",
+  "defaults": {
+    "tolerance": 1.2,
+    "fallbackRadius": 1.5,
+    "maxBondDistance": 2.5
+  },
+  "elementRadii": {
+    "H": 0.31,
+    "C": 0.76,
+    "N": 0.71,
+    "O": 0.66,
+    "F": 0.57,
+    "P": 1.07,
+    "S": 1.05,
+    "Cl": 1.02,
+    "Fe": 1.32,
+    "Zn": 1.22,
+    "Cu": 1.32,
+    "Mg": 1.41,
+    "Ca": 1.76,
+    "Na": 1.66,
+    "K": 2.03,
+    "Mn": 1.39,
+    "Co": 1.26,
+    "Ni": 1.24,
+    "Cd": 1.44,
+    "Hg": 1.32,
+    "Se": 1.20,
+    "Br": 1.20,
+    "I": 1.39
+  },
+  "pairSpecificThresholds": {
+    "S-S": { "distance": 2.1, "tolerance": 1.15, "description": "Disulfide bridge" },
+    "Fe-N": { "distance": 2.3, "tolerance": 1.3, "description": "Heme iron-nitrogen coordination" },
+    "Fe-O": { "distance": 2.2, "tolerance": 1.3, "description": "Iron-oxygen coordination" },
+    "Zn-N": { "distance": 2.1, "tolerance": 1.25, "description": "Zinc-nitrogen coordination" },
+    "Zn-O": { "distance": 2.0, "tolerance": 1.25, "description": "Zinc-oxygen coordination" },
+    "Zn-S": { "distance": 2.3, "tolerance": 1.25, "description": "Zinc-sulfur coordination" },
+    "Mg-O": { "distance": 2.1, "tolerance": 1.3, "description": "Magnesium-oxygen coordination" },
+    "Ca-O": { "distance": 2.4, "tolerance": 1.3, "description": "Calcium-oxygen coordination" },
+    "Cu-N": { "distance": 2.0, "tolerance": 1.25, "description": "Copper-nitrogen coordination" },
+    "Cu-O": { "distance": 1.95, "tolerance": 1.25, "description": "Copper-oxygen coordination" },
+    "Cu-S": { "distance": 2.25, "tolerance": 1.25, "description": "Copper-sulfur coordination" },
+    "Mn-O": { "distance": 2.1, "tolerance": 1.3, "description": "Manganese-oxygen coordination" },
+    "Co-N": { "distance": 2.0, "tolerance": 1.25, "description": "Cobalt-nitrogen coordination" },
+    "Ni-N": { "distance": 1.95, "tolerance": 1.25, "description": "Nickel-nitrogen coordination" },
+    "Na-O": { "distance": 2.4, "tolerance": 1.3, "description": "Sodium-oxygen coordination" },
+    "K-O": { "distance": 2.8, "tolerance": 1.3, "description": "Potassium-oxygen coordination" },
+    "N-H": { "distance": 1.05, "tolerance": 1.15, "description": "Amine N-H bond" },
+    "O-H": { "distance": 0.96, "tolerance": 1.15, "description": "Hydroxyl O-H bond" },
+    "P-O": { "distance": 1.6, "tolerance": 1.2, "description": "Phosphate P-O bond" },
+    "P-S": { "distance": 2.0, "tolerance": 1.2, "description": "Phosphorothioate P-S bond" }
+  },
+  "specialBondTypes": {
+    "hydrogenBond": {
+      "enabled": true,
+      "donorElements": ["N", "O", "S"],
+      "acceptorElements": ["N", "O", "S"],
+      "maxDistance": 3.5,
+      "minAngle": 120,
+      "tolerance": 1.15
+    },
+    "halogenBond": {
+      "enabled": false,
+      "donorElements": ["Cl", "Br", "I"],
+      "acceptorElements": ["N", "O", "S"],
+      "maxDistance": 4.0,
+      "tolerance": 1.15
+    },
+    "piStacking": {
+      "enabled": false,
+      "maxDistance": 5.0,
+      "tolerance": 1.15
+    }
+  }
+}
