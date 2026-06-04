@@ -1,0 +1,7 @@
+[
+  {"id":"sample-1","timestamp":"2025-06-02T12:00:00Z","source":"tcp","host":"10.0.0.1","level":"ERROR","message":"connection refused","fields":{"service":"api"},"raw":"{\"level\":\"ERROR\",\"message\":\"connection refused\"}"},
+  {"id":"sample-2","timestamp":"2025-06-02T12:00:01Z","source":"http","host":"10.0.0.2","level":"INFO","message":"request completed","fields":{"status":"200"},"raw":"request completed"},
+  {"id":"sample-3","timestamp":"2025-06-02T12:00:02Z","source":"udp","host":"10.0.0.1","level":"WARN","message":"401 Unauthorized from 10.0.0.1","fields":{"client_ip":"10.0.0.1"},"raw":"401 Unauthorized from 10.0.0.1"},
+  {"id":"sample-4","timestamp":"2025-06-02T12:00:03Z","source":"fluent-bit","host":"10.0.0.3","level":"ERROR","message":"timeout waiting for response","fields":{},"raw":"timeout waiting for response"},
+  {"id":"sample-5","timestamp":"2025-06-02T12:00:04Z","source":"filebeat","host":"10.0.0.4","level":"DEBUG","message":"heartbeat ok","fields":{},"raw":"heartbeat ok"}
+]

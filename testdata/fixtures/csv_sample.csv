@@ -1,0 +1,4 @@
+timestamp,level,host,message
+2025-06-02T12:00:00Z,ERROR,10.0.0.1,connection refused
+2025-06-02T12:00:01Z,INFO,10.0.0.2,request completed
+2025-06-02T12:00:02Z,WARN,10.0.0.1,disk usage high
