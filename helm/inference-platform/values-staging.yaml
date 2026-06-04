@@ -1,0 +1,73 @@
+replicaCount: 2
+
+env:
+  APP_ENV: staging
+  DB_SSLMODE: require
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-staging"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    - host: inference-platform.staging.your-company.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: inference-platform-tls
+      hosts:
+        - inference-platform.staging.your-company.com
+
+config:
+  triton:
+    modelRepositoryPath: "s3://inference-models-staging"
+  orchestrator:
+    minReplicas: 1
+    maxReplicas: 20
+
+tritonInstances:
+  enabled: true
+  instances:
+    - name: resnet50
+      replicas: 2
+      gpu:
+        enabled: true
+        count: 1
+      resources:
+        limits:
+          cpu: "4"
+          memory: "16Gi"
+        requests:
+          cpu: "2"
+          memory: "8Gi"
+      persistence:
+        enabled: true
+        size: "100Gi"
+        storageClass: "gp2"
+
+    - name: bert-base
+      replicas: 2
+      gpu:
+        enabled: true
+        count: 1
+      resources:
+        limits:
+          cpu: "8"
+          memory: "32Gi"
+        requests:
+          cpu: "4"
+          memory: "16Gi"
+      persistence:
+        enabled: true
+        size: "200Gi"
+        storageClass: "gp2"

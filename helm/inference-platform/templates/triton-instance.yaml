@@ -1,0 +1,146 @@
+{{- if .Values.tritonInstances.enabled }}
+{{- range $instance := .Values.tritonInstances.instances }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "inference-platform.fullname" $ }}-triton-{{ $instance.name }}
+  labels:
+    {{- include "inference-platform.labels" $ | nindent 4 }}
+    app: triton-server
+    model: {{ $instance.name }}
+spec:
+  replicas: {{ $instance.replicas | default 1 }}
+  selector:
+    matchLabels:
+      {{- include "inference-platform.selectorLabels" $ | nindent 6 }}
+      app: triton-server
+      model: {{ $instance.name }}
+  template:
+    metadata:
+      labels:
+        {{- include "inference-platform.selectorLabels" $ | nindent 8 }}
+        app: triton-server
+        model: {{ $instance.name }}
+    spec:
+      affinity:
+        {{- if $instance.gpu.enabled }}
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: nvidia.com/gpu.present
+                operator: In
+                values:
+                - "true"
+        {{- end }}
+      containers:
+        - name: triton
+          image: {{ $instance.image | default "nvcr.io/nvidia/tritonserver:24.01-py3" }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+            - name: grpc
+              containerPort: 8001
+              protocol: TCP
+            - name: metrics
+              containerPort: 8002
+              protocol: TCP
+          args:
+            - tritonserver
+            - --model-repository={{ $instance.modelRepository | default "/models" }}
+            - --strict-model-config=false
+            - --allow-grpc=true
+            - --allow-http=true
+            - --allow-metrics=true
+          {{- if $instance.gpu.enabled }}
+          resources:
+            limits:
+              nvidia.com/gpu: {{ $instance.gpu.count | default 1 }}
+              cpu: {{ $instance.resources.limits.cpu | default "4" }}
+              memory: {{ $instance.resources.limits.memory | default "16Gi" }}
+            requests:
+              cpu: {{ $instance.resources.requests.cpu | default "2" }}
+              memory: {{ $instance.resources.requests.memory | default "8Gi" }}
+          {{- else }}
+          env:
+            - name: CUDA_VISIBLE_DEVICES
+              value: "-1"
+          {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /v2/health/live
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /v2/health/ready
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - name: model-store
+              mountPath: /models
+      volumes:
+        - name: model-store
+          {{- if $instance.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "inference-platform.fullname" $ }}-triton-{{ $instance.name }}
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "inference-platform.fullname" $ }}-triton-{{ $instance.name }}
+  labels:
+    {{- include "inference-platform.labels" $ | nindent 4 }}
+    app: triton-server
+    model: {{ $instance.name }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+    - port: 8001
+      targetPort: grpc
+      protocol: TCP
+      name: grpc
+    - port: 8002
+      targetPort: metrics
+      protocol: TCP
+      name: metrics
+  selector:
+    {{- include "inference-platform.selectorLabels" $ | nindent 4 }}
+    app: triton-server
+    model: {{ $instance.name }}
+{{- if $instance.persistence.enabled }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "inference-platform.fullname" $ }}-triton-{{ $instance.name }}
+  labels:
+    {{- include "inference-platform.labels" $ | nindent 4 }}
+spec:
+  accessModes:
+    - {{ $instance.persistence.accessMode | default "ReadWriteOnce" }}
+  resources:
+    requests:
+      storage: {{ $instance.persistence.size | default "100Gi" }}
+  {{- if $instance.persistence.storageClass }}
+  storageClassName: {{ $instance.persistence.storageClass }}
+  {{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

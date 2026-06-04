@@ -1,0 +1,24 @@
+apiVersion: v2
+name: inference-platform
+description: Model Inference Platform for Enterprise AI
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+
+keywords:
+  - inference
+  - mlops
+  - ai
+  - triton
+  - kubernetes
+
+home: https://github.com/your-org/inference-platform
+
+sources:
+  - https://github.com/your-org/inference-platform
+
+maintainers:
+  - name: MLOps Team
+    email: mlops@your-company.com
+
+icon: https://your-company.com/logo.png

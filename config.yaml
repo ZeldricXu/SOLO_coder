@@ -1,0 +1,49 @@
+server:
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+  jwt_secret: "your-secret-key-change-in-production"
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: inference_platform
+  sslmode: disable
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+
+triton:
+  grpc_host: localhost
+  grpc_port: 8001
+  http_port: 8000
+  model_repository_path: "./model-store"
+
+orchestrator:
+  min_replicas: 1
+  max_replicas: 10
+  scale_up_threshold: 0.8
+  scale_down_threshold: 0.2
+  scale_up_delay: 60s
+  scale_down_delay: 300s
+  gpu_memory_threshold: 0.9
+  queue_depth_threshold: 10
+
+batcher:
+  max_batch_size: 32
+  batch_window: 5ms
+  max_queue_size: 1000
+
+monitoring:
+  prometheus_port: 9090
+  trace_enabled: true
+  log_level: info
+
+tenant:
+  default_gpu_quota: 2.0
+  default_gpu_min: 0.5

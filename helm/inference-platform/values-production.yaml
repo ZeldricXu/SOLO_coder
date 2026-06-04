@@ -1,0 +1,110 @@
+replicaCount: 4
+
+env:
+  APP_ENV: production
+  DB_SSLMODE: require
+
+autoscaling:
+  enabled: true
+  minReplicas: 4
+  maxReplicas: 20
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 75
+
+resources:
+  limits:
+    cpu: "4"
+    memory: "8Gi"
+  requests:
+    cpu: "1"
+    memory: "2Gi"
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/whitelist-source-range: "10.0.0.0/8,192.168.0.0/16"
+  hosts:
+    - host: inference-platform.your-company.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: inference-platform-tls
+      hosts:
+        - inference-platform.your-company.com
+
+config:
+  triton:
+    modelRepositoryPath: "s3://inference-models-production"
+  orchestrator:
+    minReplicas: 2
+    maxReplicas: 50
+
+tritonInstances:
+  enabled: true
+  instances:
+    - name: resnet50-production
+      replicas: 4
+      gpu:
+        enabled: true
+        count: 1
+      resources:
+        limits:
+          cpu: "8"
+          memory: "32Gi"
+        requests:
+          cpu: "4"
+          memory: "16Gi"
+      persistence:
+        enabled: true
+        size: "200Gi"
+        storageClass: "gp3"
+
+    - name: bert-large-production
+      replicas: 4
+      gpu:
+        enabled: true
+        count: 1
+      resources:
+        limits:
+          cpu: "16"
+          memory: "64Gi"
+        requests:
+          cpu: "8"
+          memory: "32Gi"
+      persistence:
+        enabled: true
+        size: "500Gi"
+        storageClass: "gp3"
+
+    - name: llm-vicuna-7b
+      replicas: 2
+      gpu:
+        enabled: true
+        count: 2
+      resources:
+        limits:
+          cpu: "16"
+          memory: "128Gi"
+        requests:
+          cpu: "8"
+          memory: "64Gi"
+      persistence:
+        enabled: true
+        size: "1Ti"
+        storageClass: "gp3"
+
+nodeSelector:
+  node-role.kubernetes.io/inference: "true"
+
+tolerations:
+  - key: "inference"
+    operator: "Equal"
+    value: "true"
+    effect: "NoSchedule"

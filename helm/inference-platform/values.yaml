@@ -1,0 +1,146 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/your-org/inference-platform
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  automount: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+  readOnlyRootFilesystem: true
+  runAsNonRoot: true
+  runAsUser: 1000
+
+service:
+  type: ClusterIP
+  port: 8080
+  grpcPort: 8001
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: inference-platform.your-company.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  limits:
+    cpu: "2"
+    memory: "4Gi"
+  requests:
+    cpu: "500m"
+    memory: "1Gi"
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  targetMemoryUtilizationPercentage: 80
+
+livenessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /health
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+env:
+  APP_ENV: production
+  DB_SSLMODE: require
+
+envFrom:
+  - secretRef:
+      name: inference-platform-secrets
+
+config:
+  server:
+    port: 8080
+    readTimeout: "30s"
+    writeTimeout: "30s"
+
+  orchestrator:
+    runtimeMode: kubernetes
+    tritonImage: nvcr.io/nvidia/tritonserver:24.01-py3
+    minReplicas: 1
+    maxReplicas: 50
+    healthCheckInterval: "3s"
+    healthCheckInference: true
+
+  monitoring:
+    prometheusPort: 9090
+    logLevel: "info"
+
+  triton:
+    modelRepositoryPath: "s3://inference-models-production"
+
+database:
+  host: postgres
+  port: 5432
+  name: inference_platform
+
+redis:
+  host: redis
+  port: 6379
+  db: 0
+
+tritonInstances:
+  enabled: true
+  instances: []
+
+persistence:
+  enabled: false
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: "10Gi"
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - inference-platform
+          topologyKey: kubernetes.io/hostname
