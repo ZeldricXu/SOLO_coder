@@ -1,0 +1,89 @@
+name: Nightly Build
+
+on:
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-nightly:
+    name: Nightly Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.0-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      
+      - name: Build release
+        run: cargo build --release --verbose
+      
+      - name: Package nightly
+        run: |
+          mkdir -p nightly
+          
+          # Create version info
+          echo "Nightly build $(date +%Y-%m-%d)" > nightly/VERSION.txt
+          git log --oneline -n 20 >> nightly/VERSION.txt
+      
+      - name: Package Linux
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          cp target/release/marknote nightly/
+          cd nightly && tar -czf MarkNote-nightly-linux-x86_64.tar.gz marknote VERSION.txt
+      
+      - name: Package Windows
+        if: matrix.os == 'windows-latest'
+        run: |
+          Copy-Item target/release/marknote.exe nightly/
+          Compress-Archive -Path nightly/marknote.exe, nightly/VERSION.txt -DestinationPath nightly/MarkNote-nightly-windows-x64.zip
+      
+      - name: Package macOS
+        if: matrix.os == 'macos-latest'
+        run: |
+          cp target/release/marknote nightly/
+          cd nightly && tar -czf MarkNote-nightly-macos-universal.tar.gz marknote VERSION.txt
+      
+      - name: Upload nightly artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-${{ matrix.os }}
+          path: nightly/MarkNote-nightly-*
+      
+      - name: Update nightly release
+        uses: andelf/nightly-release@main
+        if: github.ref == 'refs/heads/main'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: nightly
+          name: 'Nightly Build'
+          prerelease: true
+          body: |
+            This is a nightly build of MarkNote.
+            
+            **⚠️ Note:** This is an automated nightly build and may contain bugs. Use at your own risk.
+            
+            Build date: ${{ github.event.head_commit.timestamp || 'N/A' }}
+            Commit: ${{ github.sha }}
+          files: |
+            nightly/MarkNote-nightly-*
