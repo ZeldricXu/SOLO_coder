@@ -1,0 +1,47 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../../base
+
+namespace: battle-platform-dev
+
+patches:
+- target:
+    kind: Deployment
+    name: battle-platform
+  patch: |
+    - op: replace
+      path: /spec/replicas
+      value: 1
+    - op: replace
+      path: /spec/template/spec/containers/0/env/0/value
+      value: "dev"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/cpu
+      value: "500m"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/requests/memory
+      value: "2Gi"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/cpu
+      value: "2"
+    - op: replace
+      path: /spec/template/spec/containers/0/resources/limits/memory
+      value: "4Gi"
+
+configMapGenerator:
+- name: battle-platform-config
+  behavior: merge
+  literals:
+  - SPRING_PROFILES_ACTIVE=dev
+
+secretGenerator:
+- name: battle-platform-secret
+  behavior: merge
+  literals:
+  - SPRING_DATASOURCE_URL=jdbc:mysql://localhost:3306/battle_platform_dev?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+  - SPRING_DATASOURCE_USERNAME=root
+  - SPRING_DATASOURCE_PASSWORD=dev123456
+  - SPRING_REDIS_HOST=localhost
+  - SPRING_REDIS_PASSWORD=""

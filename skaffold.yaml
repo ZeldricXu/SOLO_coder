@@ -1,0 +1,80 @@
+apiVersion: skaffold/v4beta9
+kind: Config
+metadata:
+  name: battle-platform
+
+build:
+  artifacts:
+  - image: battle-platform
+    docker:
+      dockerfile: Dockerfile
+      buildArgs:
+        JRE_VERSION: "21"
+
+profiles:
+- name: dev
+  activation:
+  - command: dev
+  build:
+    artifacts:
+    - image: battle-platform
+      docker:
+        dockerfile: Dockerfile
+      sync:
+        manual:
+        - src: "src/main/java/**/*.java"
+          dest: /app/src/main/java
+          strip: src/main/java
+        - src: "src/main/resources/**"
+          dest: /app/src/main/resources
+          strip: src/main/resources
+  deploy:
+    kustomize:
+      paths:
+      - k8s/overlays/dev
+  portForward:
+  - resourceType: deployment
+    resourceName: battle-platform
+    namespace: battle-platform-dev
+    port: 8080
+    localPort: 8080
+  - resourceType: deployment
+    resourceName: battle-platform
+    namespace: battle-platform-dev
+    port: 9090
+    localPort: 9090
+
+- name: staging
+  activation:
+  - command: run
+    env: SKAFFOLD_PROFILE=staging
+  build:
+    artifacts:
+    - image: harbor.example.com/battle-platform/battle-platform
+      docker:
+        dockerfile: Dockerfile
+    tagPolicy:
+      gitCommit:
+        variant: AbbrevCommitSha
+    registry:
+      insecure: false
+  deploy:
+    kustomize:
+      paths:
+      - k8s/overlays/staging
+
+- name: prod
+  build:
+    artifacts:
+    - image: harbor.example.com/battle-platform/battle-platform
+      docker:
+        dockerfile: Dockerfile
+    tagPolicy:
+      gitCommit:
+        variant: AbbrevCommitSha
+    registry:
+      insecure: false
+  deploy:
+    kustomize:
+      paths:
+      - k8s/overlays/prod

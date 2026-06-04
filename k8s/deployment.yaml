@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: battle-platform
+  namespace: battle-platform
+  labels:
+    app: battle-platform
+    env: prod
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: battle-platform
+  template:
+    metadata:
+      labels:
+        app: battle-platform
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/actuator/prometheus"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      serviceAccountName: battle-platform
+      containers:
+      - name: battle-platform
+        image: harbor.example.com/battle-platform/battle-platform:latest
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        - name: netty
+          containerPort: 9090
+          protocol: TCP
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "prod"
+        - name: JAVA_OPTS
+          value: "-server -Xms2g -Xmx4g -XX:+UseG1GC -XX:MaxGCPauseMillis=100 -Xlog:gc*,gc+age=trace,safepoint:file=/dev/stdout:utctime,level,tags -XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/data/logs/heapdump.hprof -Djava.net.preferIPv4Stack=true -Dio.netty.epoll.nativeEpoll=true"
+        envFrom:
+        - secretRef:
+            name: battle-platform-secret
+        - configMapRef:
+            name: battle-platform-config
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+          limits:
+            cpu: "4"
+            memory: "6Gi"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: logs
+          mountPath: /data/logs
+        - name: replays
+          mountPath: /data/replays
+        - name: config
+          mountPath: /app/config
+        lifecycle:
+          preStop:
+            exec:
+              command:
+              - /bin/sh
+              - -c
+              - "sleep 15"
+      volumes:
+      - name: logs
+        emptyDir: {}
+      - name: replays
+        emptyDir: {}
+      - name: config
+        configMap:
+          name: battle-platform-config
+      imagePullSecrets:
+      - name: harbor-pull-secret
+      terminationGracePeriodSeconds: 60

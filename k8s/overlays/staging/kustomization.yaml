@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- ../../base
+
+namespace: battle-platform-staging
+
+patches:
+- target:
+    kind: Deployment
+    name: battle-platform
+  patch: |
+    - op: replace
+      path: /spec/replicas
+      value: 2
+    - op: replace
+      path: /spec/template/spec/containers/0/env/0/value
+      value: "staging"
+    - op: replace
+      path: /spec/template/spec/containers/0/image
+      value: "harbor.example.com/battle-platform/battle-platform:latest"
+
+configMapGenerator:
+- name: battle-platform-config
+  behavior: merge
+  literals:
+  - SPRING_PROFILES_ACTIVE=staging

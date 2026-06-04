@@ -1,0 +1,56 @@
+server:
+  port: 0
+
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/battle_platform_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: test
+    password: test
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+netty:
+  server:
+    port: 0
+
+influxdb:
+  url: http://localhost:9999
+  token: test-token
+  org: test-org
+  bucket: test-bucket
+
+battle:
+  matching:
+    tick-interval-ms: 500
+    max-wait-time-ms: 60000
+    rating-bracket-size: 200
+    wait-time-weight: 0.5
+  battlefield:
+    max-players: 200
+    move-sync-fps: 20
+    aoi-grid-size: 100
+    idle-timeout-ms: 300000
+  score:
+    kill-base: 100
+    assist-base: 50
+    capture-base: 200
+    streak-bonus-threshold: 3
+    streak-multiplier: 0.5
+  leaderboard:
+    snapshot-interval-cron: "0 0 * * * *"
+  replay:
+    storage-path: ./test-replays
+    event-buffer-size: 65536
+  reward:
+    max-retry: 3
+    retry-delay-ms: 1000
+  anticheat:
+    headshot-rate-threshold: 0.7
+    speed-hack-threshold: 15.0
+    same-ip-player-limit: 3

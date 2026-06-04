@@ -1,0 +1,112 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cross-server-battle-platform
+  profiles:
+    active: dev
+
+  datasource:
+    url: jdbc:mysql://localhost:3306/battle_platform_dev?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: root
+    password: dev123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=5000,expireAfterWrite=300s
+
+netty:
+  server:
+    port: 9090
+    boss-threads: 2
+    worker-threads: 0
+    so-backlog: 1024
+    so-keepalive: true
+    tcp-nodelay: true
+
+battle:
+  matching:
+    tick-interval-ms: 500
+    max-wait-time-ms: 120000
+    rating-bracket-size: 200
+    wait-time-weight: 0.5
+  battlefield:
+    max-players: 200
+    move-sync-fps: 20
+    aoi-grid-size: 100
+    idle-timeout-ms: 300000
+    aoi-optimization-enabled: false
+  score:
+    kill-base: 100
+    assist-base: 50
+    capture-base: 200
+    streak-bonus-threshold: 3
+    streak-multiplier: 0.5
+  leaderboard:
+    snapshot-interval-cron: "0 */5 * * * *"
+  replay:
+    storage-path: ./replays-dev
+    event-buffer-size: 65536
+  reward:
+    max-retry: 3
+    retry-delay-ms: 5000
+  anticheat:
+    headshot-rate-threshold: 0.7
+    speed-hack-threshold: 15.0
+    same-ip-player-limit: 3
+    enabled: false
+
+influxdb:
+  url: http://localhost:8086
+  token: my-influxdb-token-dev
+  org: battle-platform-dev
+  bucket: battle-events-dev
+
+logging:
+  level:
+    root: DEBUG
+    com.battle.platform: DEBUG
+    io.netty: DEBUG
+    org.springframework.web: DEBUG
+    org.hibernate.SQL: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: ./logs/battle-platform-dev.log
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,loggers,heapdump
+  endpoint:
+    health:
+      show-details: always

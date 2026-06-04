@@ -1,0 +1,132 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: cross-server-battle-platform
+  profiles:
+    active: prod
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 20
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: false
+        jdbc.batch_size: 100
+        order_inserts: true
+        order_updates: true
+
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST}
+      port: ${SPRING_REDIS_PORT:6379}
+      password: ${SPRING_REDIS_PASSWORD}
+      database: 0
+      timeout: 5000
+      lettuce:
+        pool:
+          max-active: 100
+          max-idle: 50
+          min-idle: 20
+          max-wait: 3000
+
+  cache:
+    type: caffeine
+    caffeine:
+      spec: maximumSize=50000,expireAfterWrite=300s
+
+netty:
+  server:
+    port: 9090
+    boss-threads: 4
+    worker-threads: 16
+    so-backlog: 4096
+    so-keepalive: true
+    tcp-nodelay: true
+    so-sndbuf: 1048576
+    so-rcvbuf: 1048576
+
+battle:
+  matching:
+    tick-interval-ms: 200
+    max-wait-time-ms: 120000
+    rating-bracket-size: 200
+    wait-time-weight: 0.5
+  battlefield:
+    max-players: 200
+    move-sync-fps: 20
+    aoi-grid-size: 50
+    idle-timeout-ms: 300000
+    aoi-optimization-enabled: true
+  score:
+    kill-base: 100
+    assist-base: 50
+    capture-base: 200
+    streak-bonus-threshold: 3
+    streak-multiplier: 0.5
+  leaderboard:
+    snapshot-interval-cron: "0 */30 * * * *"
+  replay:
+    storage-path: /data/replays
+    event-buffer-size: 131072
+  reward:
+    max-retry: 3
+    retry-delay-ms: 5000
+  anticheat:
+    headshot-rate-threshold: 0.7
+    speed-hack-threshold: 15.0
+    same-ip-player-limit: 3
+    enabled: true
+
+influxdb:
+  url: ${INFLUXDB_URL}
+  token: ${INFLUXDB_TOKEN}
+  org: ${INFLUXDB_ORG}
+  bucket: ${INFLUXDB_BUCKET}
+
+logging:
+  level:
+    root: INFO
+    com.battle.platform: INFO
+    io.netty: WARN
+    org.springframework.web: WARN
+    org.hibernate.SQL: WARN
+  pattern:
+    console: "{%d{yyyy-MM-dd HH:mm:ss.SSS},%thread,%-5level,%logger{36},%msg}%n"
+  file:
+    name: /data/logs/battle-platform.log
+    max-size: 500MB
+    max-history: 30
+    total-size-cap: 10GB
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+    tags:
+      application: ${spring.application.name}
+      environment: prod
