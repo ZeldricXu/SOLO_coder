@@ -1,0 +1,335 @@
+name: Recommendation Engine CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  PYTHON_VERSION: "3.12"
+  POETRY_VERSION: "1.7.1"
+
+jobs:
+  lint:
+    name: Lint (Ruff + MyPy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install ruff==0.6.9 mypy==1.11.2 types-redis==4.6.0.20240425 types-httpx==0.27.0.20240609
+
+      - name: Run Ruff lint
+        run: ruff check recommendation_engine/ config/ tests/
+
+      - name: Run MyPy type check
+        run: mypy recommendation_engine/ config/ --strict --ignore-missing-imports
+
+  test:
+    name: Unit & Integration Tests
+    runs-on: ubuntu-latest
+    needs: lint
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: recommendation_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      zookeeper:
+        image: confluentinc/cp-zookeeper:7.5.0
+        env:
+          ZOOKEEPER_CLIENT_PORT: 2181
+          ZOOKEEPER_TICK_TIME: 2000
+        ports:
+          - 2181:2181
+
+      kafka:
+        image: confluentinc/cp-kafka:7.5.0
+        env:
+          KAFKA_BROKER_ID: 1
+          KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "kafka-topics --bootstrap-server localhost:9092 --list"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 10
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Create data directory
+        run: mkdir -p data logs
+
+      - name: Run unit tests
+        env:
+          ENVIRONMENT: development
+          PG_HOST: localhost
+          PG_PORT: 5432
+          PG_USER: postgres
+          PG_PASSWORD: postgres
+          PG_DATABASE: recommendation_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+        run: python -m pytest tests/unit/ tests/concurrent/ -v --tb=short --cov=recommendation_engine --cov-report=xml
+
+      - name: Run integration tests
+        if: success()
+        env:
+          ENVIRONMENT: development
+          PG_HOST: localhost
+          PG_PORT: 5432
+          PG_USER: postgres
+          PG_PASSWORD: postgres
+          PG_DATABASE: recommendation_test
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+        run: python -m pytest tests/integration/ -v --tb=short
+
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        with:
+          file: ./coverage.xml
+          fail_ci_if_error: false
+
+  train-e2e:
+    name: End-to-End Training Pipeline
+    runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: recommendation_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Create data directory
+        run: mkdir -p data logs
+
+      - name: Run E2E training test
+        env:
+          ENVIRONMENT: staging
+          PG_HOST: localhost
+          PG_PORT: 5432
+          PG_USER: postgres
+          PG_PASSWORD: postgres
+          PG_DATABASE: recommendation_e2e
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+        run: |
+          python -c "
+          import asyncio
+          import numpy as np
+          from recommendation_engine.collaborative_filter.als_trainer import ALSTrainer
+          from recommendation_engine.collaborative_filter import CollaborativeFilter
+          from recommendation_engine.infrastructure.redis_client import RedisClient
+
+          np.random.seed(42)
+
+          print('=== Step 1: Generate fixture dataset ===')
+          n_users = 100
+          n_items = 200
+          user_ids = [f'user_{i}' for i in range(n_users)]
+          item_ids = [f'item_{i}' for i in range(n_items)]
+          interactions = []
+          for uid in user_ids:
+              for _ in range(np.random.randint(5, 30)):
+                  iid = np.random.choice(item_ids)
+                  weight = np.random.uniform(1.0, 5.0)
+                  interactions.append((uid, iid, weight))
+          print(f'Generated {len(interactions)} interactions')
+
+          print('=== Step 2: Train ALS model ===')
+          trainer = ALSTrainer(factors=32, iterations=10, regularization=0.01)
+          trainer.train(interactions)
+          print(f'Trained: {len(trainer._user_id_map)} users, {len(trainer._item_id_map)} items')
+
+          print('=== Step 3: Export model ===')
+          model_path = './data/als_e2e_test.npz'
+          trainer.save_model(model_path)
+          print(f'Model saved to {model_path}')
+
+          print('=== Step 4: Load model ===')
+          trainer2 = ALSTrainer(factors=32)
+          trainer2.load_model(model_path)
+          print(f'Loaded: {len(trainer2._user_id_map)} users, {len(trainer2._item_id_map)} items')
+
+          print('=== Step 5: Generate recommendations ===')
+          test_user = user_ids[0]
+          recommendations = trainer2.recommend(test_user, top_k=10)
+          print(f'Recommendations for {test_user}: {len(recommendations)} items')
+          for rank, (iid, score) in enumerate(recommendations[:5], 1):
+              print(f'  {rank}. {iid}: score={score:.4f}')
+
+          print('=== Step 6: Verify recommendation quality ===')
+          assert len(recommendations) == 10, 'Should return exactly 10 recommendations'
+          assert all(-1.0 <= score <= 1.0 for _, score in recommendations), 'Scores should be in [-1, 1]'
+          scores = [s for _, s in recommendations]
+          assert scores == sorted(scores, reverse=True), 'Recommendations should be sorted by score'
+
+          print('=== E2E Training Pipeline PASSED! ===')
+          "
+
+  docker-build:
+    name: Build & Push Docker Image
+    runs-on: ubuntu-latest
+    needs: [lint, test, train-e2e]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  format-check:
+    name: Format Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Ruff
+        run: pip install ruff==0.6.9
+
+      - name: Check formatting
+        run: ruff format --check recommendation_engine/ config/ tests/
