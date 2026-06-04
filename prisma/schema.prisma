@@ -1,0 +1,480 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pg_trgm, vector]
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum SpaceVisibility {
+  PRIVATE
+  PUBLIC
+}
+
+enum ExternalSource {
+  FEISHU
+  NOTION
+  CONFLUENCE
+  GITHUB_WIKI
+  INTERNAL
+}
+
+enum ReferenceType {
+  LINK
+  CONTENT_SIMILAR
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  CHANGES_REQUESTED
+}
+
+enum SyncStatus {
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  email     String   @unique
+  password  String
+  avatar    String?
+  role      String   @default("USER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  spaces           Space[]           @relation("SpaceCreator")
+  spaceMembers     SpaceMember[]
+  shareLinks       ShareLink[]       @relation("ShareLinkCreator")
+  spaceShareLinks  SpaceShareLink[]  @relation("SpaceShareLinkCreator")
+  documents        Document[]        @relation("DocumentCreator")
+  documentTags     DocumentTag[]     @relation("DocumentTagAssigner")
+  comments         Comment[]         @relation("CommentAuthor")
+  resolvedComments Comment[]         @relation("CommentResolver")
+  reviews          Review[]          @relation("ReviewAuthor")
+  reviewers        Reviewer[]
+  documentVersions DocumentVersion[] @relation("VersionCreator")
+  DocumentViewLog  DocumentViewLog[]
+  AiQaSession      AiQaSession[]
+
+  @@index([email])
+  @@index([createdAt])
+}
+
+model Space {
+  id           String          @id @default(uuid())
+  name         String
+  description  String?
+  icon         String?
+  color        String?
+  visibility   SpaceVisibility @default(PRIVATE)
+  passwordHash String?
+  aiQaEnabled  Boolean         @default(false)
+  createdById  String
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  createdBy       User              @relation("SpaceCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  members         SpaceMember[]
+  shareLinks      ShareLink[]
+  documents       Document[]
+  tags            Tag[]
+  syncConfigs     SyncConfig[]
+  spaceShareLinks SpaceShareLink[]
+  DocumentViewLog DocumentViewLog[]
+  AiQaSession     AiQaSession[]
+
+  @@index([createdById])
+  @@index([visibility])
+  @@index([createdAt])
+  @@index([name])
+}
+
+model SpaceMember {
+  id       String   @id @default(uuid())
+  spaceId  String
+  userId   String
+  role     Role     @default(VIEWER)
+  joinedAt DateTime @default(now())
+
+  space Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([spaceId, userId])
+  @@index([spaceId])
+  @@index([userId])
+  @@index([role])
+}
+
+model ShareLink {
+  id          String    @id @default(uuid())
+  spaceId     String
+  documentId  String?
+  token       String    @unique
+  expiresAt   DateTime?
+  canEdit     Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  createdById String
+
+  space     Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  document  Document? @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("ShareLinkCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([spaceId])
+  @@index([documentId])
+  @@index([expiresAt])
+}
+
+model SpaceShareLink {
+  id          String    @id @default(uuid())
+  spaceId     String
+  token       String    @unique
+  password    String?
+  expiresAt   DateTime?
+  role        Role      @default(VIEWER)
+  createdAt   DateTime  @default(now())
+  createdById String
+
+  space     Space @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdBy User  @relation("SpaceShareLinkCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([spaceId])
+  @@index([expiresAt])
+}
+
+model Document {
+  id             String                   @id @default(uuid())
+  spaceId        String
+  title          String
+  content        String?                  @db.Text
+  contentHtml    String?                  @db.Text
+  yjsState       String?                  @db.Text
+  searchVector   Unsupported("tsvector")?
+  tokens         String?                  @db.Text
+  tokenVector    Unsupported("tsvector")?
+  tfidfVector    Unsupported("vector")?
+  wordCount      Int?
+  externalId     String?
+  externalSource ExternalSource?          @default(INTERNAL)
+  lastSyncedAt   DateTime?
+  ocrText        String?                  @db.Text
+  ocrProcessedAt DateTime?
+  createdById    String
+  parentId       String?
+  path           String?
+  version        Int                      @default(1)
+  isArchived     Boolean                  @default(false)
+  metadata       Json?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  deletedAt      DateTime?
+
+  space            Space               @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  createdBy        User                @relation("DocumentCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  parent           Document?           @relation("DocumentParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children         Document[]          @relation("DocumentParent")
+  versions         DocumentVersion[]
+  shareLinks       ShareLink[]
+  documentTags     DocumentTag[]
+  sourceReferences DocumentReference[] @relation("SourceReference")
+  targetReferences DocumentReference[] @relation("TargetReference")
+  knowledgeNodes   KnowledgeNode[]
+  comments         Comment[]
+  reviews          Review[]
+  ImageOcrRecord   ImageOcrRecord[]
+  DocumentViewLog  DocumentViewLog[]
+
+  @@index([spaceId])
+  @@index([createdById])
+  @@index([externalSource])
+  @@index([parentId])
+  @@index([isArchived])
+  @@index([createdAt])
+  @@index([updatedAt])
+  @@index([title])
+  @@index([path])
+  @@index([externalId, externalSource])
+}
+
+model DocumentVersion {
+  id            String   @id @default(uuid())
+  documentId    String
+  title         String
+  content       String   @db.Text
+  contentHtml   String?  @db.Text
+  version       Int
+  createdById   String
+  createdAt     DateTime @default(now())
+  changeSummary String?
+
+  document  Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("VersionCreator", fields: [createdById], references: [id], onDelete: Cascade)
+  comments  Comment[]
+  reviews   Review[]
+
+  @@unique([documentId, version])
+  @@index([documentId])
+  @@index([createdById])
+  @@index([createdAt])
+}
+
+model Tag {
+  id              String   @id @default(uuid())
+  name            String
+  color           String?
+  spaceId         String
+  isAutoGenerated Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  space        Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  documentTags DocumentTag[]
+
+  @@unique([spaceId, name])
+  @@index([spaceId])
+  @@index([name])
+}
+
+model DocumentTag {
+  id           String   @id @default(uuid())
+  documentId   String
+  tagId        String
+  assignedAt   DateTime @default(now())
+  assignedById String
+
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  assignedBy User     @relation("DocumentTagAssigner", fields: [assignedById], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, tagId])
+  @@index([documentId])
+  @@index([tagId])
+}
+
+model DocumentReference {
+  id               String        @id @default(uuid())
+  sourceDocumentId String
+  targetDocumentId String
+  referenceType    ReferenceType @default(LINK)
+  similarityScore  Float?
+  createdAt        DateTime      @default(now())
+
+  sourceDocument Document @relation("SourceReference", fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+  targetDocument Document @relation("TargetReference", fields: [targetDocumentId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceDocumentId, targetDocumentId, referenceType])
+  @@index([sourceDocumentId])
+  @@index([targetDocumentId])
+  @@index([referenceType])
+}
+
+model KnowledgeNode {
+  id         String                 @id @default(uuid())
+  documentId String
+  embedding  Unsupported("vector")?
+  createdAt  DateTime               @default(now())
+  updatedAt  DateTime               @updatedAt
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([createdAt])
+}
+
+model Comment {
+  id           String    @id @default(uuid())
+  documentId   String
+  versionId    String?
+  authorId     String
+  content      String    @db.Text
+  position     Json?
+  isResolved   Boolean   @default(false)
+  resolvedAt   DateTime?
+  resolvedById String?
+  parentId     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  document   Document         @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version    DocumentVersion? @relation(fields: [versionId], references: [id], onDelete: SetNull)
+  author     User             @relation("CommentAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  resolvedBy User?            @relation("CommentResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  parent     Comment?         @relation("CommentParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children   Comment[]        @relation("CommentParent")
+
+  @@index([documentId])
+  @@index([versionId])
+  @@index([authorId])
+  @@index([isResolved])
+  @@index([parentId])
+  @@index([createdAt])
+}
+
+model Review {
+  id         String       @id @default(uuid())
+  documentId String
+  versionId  String
+  authorId   String
+  status     ReviewStatus @default(PENDING)
+  comment    String?      @db.Text
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  document  Document        @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  version   DocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  author    User            @relation("ReviewAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  reviewers Reviewer[]
+
+  @@index([documentId])
+  @@index([versionId])
+  @@index([authorId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Reviewer {
+  id         String       @id @default(uuid())
+  reviewId   String
+  userId     String
+  status     ReviewStatus @default(PENDING)
+  comment    String?      @db.Text
+  reviewedAt DateTime?
+
+  review Review @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([reviewId, userId])
+  @@index([reviewId])
+  @@index([userId])
+  @@index([status])
+}
+
+model SyncConfig {
+  id                  String         @id @default(uuid())
+  spaceId             String
+  sourceType          ExternalSource
+  config              Json
+  cursor              Json?
+  lastSyncAt          DateTime?
+  nextSyncAt          DateTime?
+  syncIntervalMinutes Int            @default(60)
+  isEnabled           Boolean        @default(true)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  space    Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  syncLogs SyncLog[]
+
+  @@index([spaceId])
+  @@index([sourceType])
+  @@index([isEnabled])
+  @@index([nextSyncAt])
+}
+
+model SyncLog {
+  id            String     @id @default(uuid())
+  syncConfigId  String
+  status        SyncStatus
+  recordsSynced Int        @default(0)
+  recordsFailed Int        @default(0)
+  errorMessage  String?    @db.Text
+  startedAt     DateTime   @default(now())
+  completedAt   DateTime?
+
+  syncConfig SyncConfig @relation(fields: [syncConfigId], references: [id], onDelete: Cascade)
+
+  @@index([syncConfigId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+model ImageOcrRecord {
+  id           String   @id @default(uuid())
+  documentId   String
+  imageUrl     String
+  imageHash    String?
+  ocrText      String   @db.Text
+  confidence   Float?
+  language     String?
+  processedAt  DateTime @default(now())
+  errorMessage String?
+  isProcessed  Boolean  @default(false)
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([imageUrl])
+  @@index([processedAt])
+  @@index([isProcessed])
+}
+
+model DocumentViewLog {
+  id         String   @id @default(uuid())
+  documentId String
+  userId     String
+  spaceId    String
+  viewedAt   DateTime @default(now())
+  durationMs Int?
+  ipAddress  String?
+  userAgent  String?
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  space    Space    @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([userId])
+  @@index([spaceId])
+  @@index([viewedAt])
+  @@index([documentId, userId])
+}
+
+enum AiQaMessageRole {
+  USER
+  ASSISTANT
+}
+
+model AiQaSession {
+  id        String   @id @default(uuid())
+  spaceId   String
+  userId    String
+  title     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  space    Space         @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  user     User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages AiQaMessage[]
+
+  @@index([spaceId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model AiQaMessage {
+  id               String          @id @default(uuid())
+  sessionId        String
+  role             AiQaMessageRole
+  content          String          @db.Text
+  referencedDocIds String[]
+  createdAt        DateTime        @default(now())
+
+  session AiQaSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@index([createdAt])
+}
