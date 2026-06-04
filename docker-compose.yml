@@ -1,0 +1,176 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cicd-postgres
+    environment:
+      POSTGRES_DB: cicd
+      POSTGRES_USER: cicd
+      POSTGRES_PASSWORD: cicd123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cicd"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cicd-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: cicd-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --requirepass cicd123 --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cicd-network
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: cicd-influxdb
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: admin123456
+      DOCKER_INFLUXDB_INIT_ORG: cicd
+      DOCKER_INFLUXDB_INIT_BUCKET: cicd_metrics
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: cicd-token-123456
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - cicd-network
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    container_name: cicd-grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - influxdb
+    networks:
+      - cicd-network
+
+  cicd-server:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.server
+    container_name: cicd-server
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/cicd
+      SPRING_DATASOURCE_USERNAME: cicd
+      SPRING_DATASOURCE_PASSWORD: cicd123
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: cicd123
+      INFLUXDB_URL: http://influxdb:8086
+      INFLUXDB_TOKEN: cicd-token-123456
+      INFLUXDB_ORG: cicd
+      INFLUXDB_BUCKET: cicd_metrics
+      JWT_SECRET: c1cd2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d
+      GRPC_PORT: 50051
+    ports:
+      - "8080:8080"
+      - "50051:50051"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./data:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    networks:
+      - cicd-network
+
+  cicd-web:
+    build:
+      context: ./cicd-web
+      dockerfile: ../deploy/docker/Dockerfile.web
+    container_name: cicd-web
+    ports:
+      - "80:80"
+    depends_on:
+      - cicd-server
+    networks:
+      - cicd-network
+
+  cicd-runner-1:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.runner
+    container_name: cicd-runner-1
+    environment:
+      CICD_SERVER_HOST: cicd-server
+      CICD_SERVER_PORT: 50051
+      CICD_RUNNER_NAME: docker-runner-1
+      CICD_RUNNER_TOKEN: cicd-runner-default-token-123456
+      CICD_RUNNER_TAGS: docker,java,node,python
+      CICD_RUNNER_MAX_CONCURRENT: 2
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner-workspace-1:/workspace
+    depends_on:
+      - cicd-server
+    networks:
+      - cicd-network
+
+  cicd-runner-2:
+    build:
+      context: .
+      dockerfile: deploy/docker/Dockerfile.runner
+    container_name: cicd-runner-2
+    environment:
+      CICD_SERVER_HOST: cicd-server
+      CICD_SERVER_PORT: 50051
+      CICD_RUNNER_NAME: docker-runner-2
+      CICD_RUNNER_TOKEN: cicd-runner-default-token-123456
+      CICD_RUNNER_TAGS: docker,go,k8s
+      CICD_RUNNER_MAX_CONCURRENT: 2
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - runner-workspace-2:/workspace
+    depends_on:
+      - cicd-server
+    networks:
+      - cicd-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  influxdb-data:
+  grafana-data:
+  runner-workspace-1:
+  runner-workspace-2:
+
+networks:
+  cicd-network:
+    driver: bridge

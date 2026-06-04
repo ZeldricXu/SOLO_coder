@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-alert-rules
+  namespace: cicd
+data:
+  cicd-alerts.yml: |
+    groups:
+    - name: cicd_alerts
+      rules:
+      - alert: CICDQueueDepthHigh
+        expr: cicd_jobs_queued > 10
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CI/CD job queue depth is high"
+          description: "Queue has {{ $value }} jobs waiting. Consider adding more runners."
+
+      - alert: CICDSuccessRateLow
+        expr: |
+          (
+            sum(rate(cicd_pipelines_success_total[5m]))
+            /
+            sum(rate(cicd_pipelines_triggered_total[5m]))
+          ) < 0.9
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "CI/CD pipeline success rate below 90%"
+          description: "Current success rate is {{ $value | humanizePercentage }}. Investigate build failures."
+
+      - alert: CICDRunnerHeartbeatTimeout
+        expr: |
+          (
+            cicd_runners_total - cicd_runners_active
+          ) / cicd_runners_total > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Over 10% of runners have heartbeat timeout"
+          description: "{{ $value | humanizePercentage }} of runners are offline. Check runner health."
+
+      - alert: CICDServerHighMemory
+        expr: jvm_memory_used_bytes{area="heap"} / jvm_memory_max_bytes{area="heap"} > 0.85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "CI/CD server heap usage above 85%"
+          description: "Heap usage is {{ $value | humanizePercentage }}. Consider increasing memory."
+
+      - alert: CICDNoActiveRunners
+        expr: cicd_runners_active == 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No active CI/CD runners"
+          description: "All runners are offline. No jobs can be executed."
+
+      - alert: CICDLongRunningJob
+        expr: cicd_jobs_running > 50
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusually high number of running jobs"
+          description: "{{ $value }} jobs are currently running. Check for stuck jobs."

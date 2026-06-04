@@ -1,0 +1,15 @@
+{{- if .Values.persistence.workspace.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "cicd-runner.fullname" . }}-workspace
+  labels:
+    {{- include "cicd-runner.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: {{ .Values.persistence.workspace.storageClassName }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.workspace.size }}
+{{- end }}

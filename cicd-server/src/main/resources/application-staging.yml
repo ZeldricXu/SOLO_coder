@@ -1,0 +1,47 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/cicd}
+    username: ${SPRING_DATASOURCE_USERNAME:cicd}
+    password: ${SPRING_DATASOURCE_PASSWORD:}
+    hikari:
+      maximum-pool-size: 15
+      minimum-idle: 5
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:redis}
+      port: ${SPRING_REDIS_PORT:6379}
+      password: ${SPRING_REDIS_PASSWORD:}
+
+grpc:
+  server:
+    port: ${GRPC_SERVER_PORT:9090}
+
+influxdb:
+  url: ${INFLUXDB_URL:http://influxdb:8086}
+  token: ${INFLUXDB_TOKEN:}
+  org: ${INFLUXDB_ORG:cicd}
+  bucket: ${INFLUXDB_BUCKET:cicd_metrics}
+
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration: 86400000
+
+logging:
+  level:
+    com.cicd: INFO
+
+flyway:
+  enabled: true
+  locations: classpath:db/migration
+  baseline-on-migrate: true
+
+artifact:
+  retention:
+    days-retain-all: 30
+    days-retain-latest: 60
+    latest-count: 3

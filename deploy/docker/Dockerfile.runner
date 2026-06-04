@@ -1,0 +1,38 @@
+FROM maven:3.9.6-eclipse-temurin-21 AS builder
+
+WORKDIR /app
+
+COPY pom.xml .
+COPY cicd-common/pom.xml ./cicd-common/
+COPY cicd-runner/pom.xml ./cicd-runner/
+
+RUN mvn dependency:go-offline -B
+
+COPY cicd-common/src ./cicd-common/src
+COPY cicd-runner/src ./cicd-runner/src
+COPY cicd-runner/src/main/proto ./cicd-runner/src/main/proto
+
+RUN mvn clean package -pl cicd-runner -am -DskipTests -q
+
+FROM eclipse-temurin:21-jre-alpine
+
+RUN apk add --no-cache \
+    git \
+    curl \
+    docker-cli \
+    kubectl \
+    tzdata \
+    bash
+
+ENV TZ=Asia/Shanghai
+
+WORKDIR /app
+
+COPY --from=builder /app/cicd-runner/target/cicd-runner-*.jar app.jar
+
+RUN addgroup -S cicd && adduser -S cicd -G cicd
+USER cicd
+
+WORKDIR /workspace
+
+ENTRYPOINT ["java", "-jar", "/app/app.jar"]

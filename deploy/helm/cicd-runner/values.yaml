@@ -1,0 +1,56 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/example/cicd-runner
+  pullPolicy: IfNotPresent
+  tag: "1.0.0"
+
+runner:
+  name: ""
+  tags: "default,docker,k8s"
+  concurrentJobs: 2
+  workDir: /app/workspace
+
+grpc:
+  host: cicd-server
+  port: 9090
+
+registrationToken:
+  secretName: cicd-secrets
+  secretKey: runner-registration-token
+
+dockerSocket:
+  enabled: true
+  hostPath: /var/run/docker.sock
+
+kaniko:
+  enabled: false
+
+kubeconfig:
+  enabled: false
+  secretName: runner-kubeconfig
+
+resources:
+  requests:
+    cpu: 1000m
+    memory: 1Gi
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: false
+
+securityContext: {}
+
+persistence:
+  workspace:
+    enabled: true
+    size: 10Gi
+    storageClassName: standard
+
+extraEnv: []

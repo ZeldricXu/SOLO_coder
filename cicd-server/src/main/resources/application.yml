@@ -1,0 +1,109 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api
+
+spring:
+  application:
+    name: cicd-server
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/cicd_platform
+    username: cicd
+    password: cicd123
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 10
+          min-idle: 5
+
+  quartz:
+    job-store-type: jdbc
+    jdbc:
+      initialize-schema: never
+    properties:
+      org:
+        quartz:
+          scheduler:
+            instanceName: CICDScheduler
+            instanceId: AUTO
+          jobStore:
+            class: org.springframework.scheduling.quartz.LocalDataSourceJobStore
+            driverDelegateClass: org.quartz.impl.jdbcjobstore.PostgreSQLDelegate
+            useProperties: true
+            misfireThreshold: 60000
+            clusterCheckinInterval: 20000
+            isClustered: true
+          threadPool:
+            class: org.quartz.simpl.SimpleThreadPool
+            threadCount: 20
+            threadPriority: 5
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  websocket:
+    broker:
+      enabled: true
+
+grpc:
+  server:
+    port: 50051
+
+influxdb:
+  url: http://localhost:8086
+  token: my-token
+  org: cicd
+  bucket: cicd_metrics
+
+artifact:
+  retention:
+    days-retain-all: 30
+    days-retain-latest: 90
+    latest-count: 3
+
+security:
+  jwt:
+    secret: your-super-secret-key-that-is-at-least-256-bits-long
+    expiration: 86400000
+    refresh-expiration: 604800000
+
+logging:
+  level:
+    com.cicd: INFO
+    org.springframework.security: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always

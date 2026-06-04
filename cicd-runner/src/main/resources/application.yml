@@ -1,0 +1,15 @@
+runner:
+  name: ${RUNNER_NAME:default-runner}
+  token: ${RUNNER_TOKEN:}
+  server:
+    host: ${SERVER_HOST:localhost}
+    port: ${SERVER_PORT:50051}
+  tags: ${RUNNER_TAGS:}
+  working-dir: ${RUNNER_WORKING_DIR:/opt/cicd-runner}
+  heartbeat-interval: ${HEARTBEAT_INTERVAL:30}
+
+logging:
+  level:
+    com.cicd.runner: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"

@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: influxdb-pvc
+  namespace: cicd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: influxdb
+  namespace: cicd
+  labels:
+    app: influxdb
+spec:
+  serviceName: influxdb
+  replicas: 1
+  selector:
+    matchLabels:
+      app: influxdb
+  template:
+    metadata:
+      labels:
+        app: influxdb
+    spec:
+      containers:
+        - name: influxdb
+          image: influxdb:2.7-alpine
+          ports:
+            - containerPort: 8086
+          env:
+            - name: DOCKER_INFLUXDB_INIT_MODE
+              value: setup
+            - name: DOCKER_INFLUXDB_INIT_USERNAME
+              value: admin
+            - name: DOCKER_INFLUXDB_INIT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-secrets
+                  key: influxdb-password
+            - name: DOCKER_INFLUXDB_INIT_ORG
+              value: cicd
+            - name: DOCKER_INFLUXDB_INIT_BUCKET
+              value: cicd_metrics
+            - name: DOCKER_INFLUXDB_INIT_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-secrets
+                  key: influxdb-token
+          volumeMounts:
+            - name: influxdb-data
+              mountPath: /var/lib/influxdb2
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+      volumes:
+        - name: influxdb-data
+          persistentVolumeClaim:
+            claimName: influxdb-pvc
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: influxdb
+  namespace: cicd
+  labels:
+    app: influxdb
+spec:
+  ports:
+    - port: 8086
+      targetPort: 8086
+  selector:
+    app: influxdb

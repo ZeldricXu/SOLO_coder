@@ -1,0 +1,40 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:cicd_test;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+        dialect: org.hibernate.dialect.H2Dialect
+  redis:
+    host: localhost
+    port: 6379
+    password:
+  sql:
+    init:
+      mode: never
+
+influxdb:
+  url: http://localhost:8086
+  token: test-token
+  org: cicd
+  bucket: cicd_metrics
+
+grpc:
+  server:
+    port: 9090
+
+jwt:
+  secret: test-secret-key-for-jwt-token-please-change-in-production
+  expiration: 86400000
+
+logging:
+  level:
+    com.cicd: INFO
+    org.springframework: WARN

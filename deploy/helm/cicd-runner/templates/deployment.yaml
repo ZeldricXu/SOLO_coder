@@ -1,0 +1,113 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cicd-runner.fullname" . }}
+  labels:
+    {{- include "cicd-runner.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cicd-runner.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cicd-runner.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/pvc.yaml") . | sha256sum }}
+    spec:
+      {{- if .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          {{- if .Values.securityContext }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- end }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: RUNNER_NAME
+              {{- if .Values.runner.name }}
+              value: {{ .Values.runner.name | quote }}
+              {{- else }}
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+              {{- end }}
+            - name: RUNNER_TAGS
+              value: {{ .Values.runner.tags | quote }}
+            - name: GRPC_SERVER_HOST
+              value: {{ .Values.grpc.host | quote }}
+            - name: GRPC_SERVER_PORT
+              value: {{ .Values.grpc.port | quote }}
+            - name: RUNNER_WORK_DIR
+              value: {{ .Values.runner.workDir | quote }}
+            - name: RUNNER_CONCURRENT_JOBS
+              value: {{ .Values.runner.concurrentJobs | quote }}
+            - name: RUNNER_REGISTRATION_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.registrationToken.secretName }}
+                  key: {{ .Values.registrationToken.secretKey }}
+            {{- range .Values.extraEnv }}
+            - name: {{ .name }}
+              value: {{ .value | quote }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: workspace
+              mountPath: {{ .Values.runner.workDir }}
+            {{- if .Values.dockerSocket.enabled }}
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+            {{- end }}
+            {{- if .Values.kubeconfig.enabled }}
+            - name: kubeconfig
+              mountPath: /root/.kube/config
+              subPath: config
+              readOnly: true
+            {{- end }}
+        {{- if .Values.kaniko.enabled }}
+        - name: kaniko
+          image: gcr.io/kaniko-project/executor:latest
+          imagePullPolicy: IfNotPresent
+          volumeMounts:
+            - name: workspace
+              mountPath: {{ .Values.runner.workDir }}
+        {{- end }}
+      volumes:
+        - name: workspace
+          {{- if .Values.persistence.workspace.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ include "cicd-runner.fullname" . }}-workspace
+          {{- else }}
+          emptyDir: {}
+          {{- end }}
+        {{- if .Values.dockerSocket.enabled }}
+        - name: docker-sock
+          hostPath:
+            path: {{ .Values.dockerSocket.hostPath }}
+            type: Socket
+        {{- end }}
+        {{- if .Values.kubeconfig.enabled }}
+        - name: kubeconfig
+          secret:
+            secretName: {{ .Values.kubeconfig.secretName }}
+            optional: true
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

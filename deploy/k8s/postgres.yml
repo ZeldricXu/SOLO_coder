@@ -1,0 +1,103 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: cicd
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: cicd
+data:
+  init.sql: |
+    -- CI/CD Platform Database Initialization Script
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+
+    -- Create enum types
+    CREATE TYPE pipeline_status AS ENUM ('PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED');
+    CREATE TYPE step_type AS ENUM ('SCRIPT', 'DOCKER', 'PUSH', 'DEPLOY', 'KUBECTL', 'CALL_WEBHOOK', 'APPROVAL');
+    CREATE TYPE deployment_strategy AS ENUM ('ROLLING', 'BLUE_GREEN', 'CANARY');
+    CREATE TYPE trigger_type AS ENUM ('MANUAL', 'WEBHOOK', 'SCHEDULED', 'APPROVAL');
+    CREATE TYPE role_type AS ENUM ('PLATFORM_ADMIN', 'PROJECT_OWNER', 'DEVELOPER', 'VIEWER');
+    CREATE TYPE notification_channel AS ENUM ('DINGTALK', 'FEISHU', 'WECOM', 'EMAIL', 'SLACK');
+    CREATE TYPE artifact_type AS ENUM ('JAR', 'WAR', 'DOCKER', 'NPM', 'ZIP', 'OTHER');
+    CREATE TYPE approval_mode AS ENUM ('ALL', 'ANY');
+    CREATE TYPE approval_status AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED');
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: cicd
+  labels:
+    app: postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: cicd
+            - name: POSTGRES_USER
+              value: cicd
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cicd-secrets
+                  key: postgres-password
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: init-script
+              mountPath: /docker-entrypoint-initdb.d
+          resources:
+            requests:
+              cpu: 500m
+              memory: 512Mi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: init-script
+          configMap:
+            name: postgres-init
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: cicd
+  labels:
+    app: postgres
+spec:
+  ports:
+    - port: 5432
+      targetPort: 5432
+  selector:
+    app: postgres

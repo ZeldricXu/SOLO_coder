@@ -1,0 +1,181 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis
+  namespace: cicd
+  labels:
+    app: redis
+    role: master
+spec:
+  serviceName: redis
+  replicas: 3
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - redis
+              topologyKey: kubernetes.io/hostname
+      initContainers:
+      - name: sentinel-config-init
+        image: redis:7-alpine
+        command:
+        - sh
+        - -c
+        - |
+          cat > /sentinel-conf/sentinel.conf <<EOF
+          sentinel monitor mymaster redis-0.redis 6379 2
+          sentinel down-after-milliseconds mymaster 10000
+          sentinel failover-timeout mymaster 30000
+          sentinel parallel-syncs mymaster 1
+          sentinel auth-pass mymaster ${REDIS_PASSWORD}
+          EOF
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cicd-secrets
+              key: redis-password
+        volumeMounts:
+        - name: sentinel-conf
+          mountPath: /sentinel-conf
+      containers:
+      - name: redis
+        image: redis:7-alpine
+        command:
+        - sh
+        - -c
+        - |
+          redis-server --requirepass "$REDIS_PASSWORD" --appendonly yes --slave-announce-ip $(hostname).redis.cicd.svc.cluster.local
+        env:
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: cicd-secrets
+              key: redis-password
+        ports:
+        - containerPort: 6379
+          name: redis
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -a "$REDIS_PASSWORD" ping | grep PONG
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -a "$REDIS_PASSWORD" ping | grep PONG
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: redis-data
+          mountPath: /data
+      - name: sentinel
+        image: redis:7-alpine
+        command:
+        - sh
+        - -c
+        - |
+          redis-server /sentinel-conf/sentinel.conf --sentinel
+        ports:
+        - containerPort: 26379
+          name: sentinel
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        livenessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -p 26379 ping | grep PONG
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          exec:
+            command:
+            - sh
+            - -c
+            - redis-cli -p 26379 ping | grep PONG
+          initialDelaySeconds: 5
+          periodSeconds: 5
+        volumeMounts:
+        - name: sentinel-conf
+          mountPath: /sentinel-conf
+      volumes:
+      - name: sentinel-conf
+        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: redis-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: cicd
+  labels:
+    app: redis
+    role: master
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 6379
+    targetPort: 6379
+    name: redis
+  clusterIP: None
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-sentinel
+  namespace: cicd
+  labels:
+    app: redis
+spec:
+  selector:
+    app: redis
+  ports:
+  - port: 26379
+    targetPort: 26379
+    name: sentinel

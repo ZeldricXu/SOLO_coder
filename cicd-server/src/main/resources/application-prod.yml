@@ -1,0 +1,90 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:redis}
+      port: ${SPRING_REDIS_PORT:6379}
+      password: ${SPRING_REDIS_PASSWORD}
+      lettuce:
+        pool:
+          max-active: 30
+          max-idle: 15
+          min-idle: 5
+  quartz:
+    job-store-type: jdbc
+    properties:
+      org:
+        quartz:
+          jobStore:
+            isClustered: true
+            clusterCheckinInterval: 10000
+          threadPool:
+            threadCount: 30
+
+grpc:
+  server:
+    port: ${GRPC_SERVER_PORT:9090}
+  security:
+    mtls:
+      enabled: ${GRPC_MTLS_ENABLED:false}
+      key-store-path: ${GRPC_MTLS_KEYSTORE_PATH:}
+      key-store-password: ${GRPC_MTLS_KEYSTORE_PASSWORD:}
+      trust-store-path: ${GRPC_MTLS_TRUSTSTORE_PATH:}
+      trust-store-password: ${GRPC_MTLS_TRUSTSTORE_PASSWORD:}
+
+runner:
+  registration:
+    require-token: true
+    auto-approve: false
+    max-runners-per-project: 50
+
+influxdb:
+  url: ${INFLUXDB_URL}
+  token: ${INFLUXDB_TOKEN}
+  org: ${INFLUXDB_ORG:cicd}
+  bucket: ${INFLUXDB_BUCKET:cicd_metrics}
+
+security:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration: ${JWT_EXPIRATION:86400000}
+    refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000}
+
+logging:
+  level:
+    com.cicd: WARN
+    org.springframework: WARN
+  file:
+    name: /app/logs/cicd-server.log
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 3GB
+
+flyway:
+  enabled: true
+  locations: classpath:db/migration
+  baseline-on-migrate: true
+
+artifact:
+  retention:
+    days-retain-all: ${ARTIFACT_RETAIN_ALL_DAYS:30}
+    days-retain-latest: ${ARTIFACT_RETAIN_LATEST_DAYS:90}
+    latest-count: ${ARTIFACT_LATEST_COUNT:3}
