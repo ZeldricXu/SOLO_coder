@@ -1,0 +1,11 @@
+apiVersion: v2
+name: stream-server
+description: Stream processing server for log pipeline
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+sources:
+  - https://github.com/your-org/log-pipeline
+maintainers:
+  - name: Platform Team
+    email: platform@example.com

@@ -1,0 +1,42 @@
+# syntax=docker/dockerfile:1.6
+
+FROM rust:1.78-alpine AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache musl-dev perl make sqlite-dev
+
+COPY Cargo.toml Cargo.lock ./
+COPY common ./common
+COPY stream-processing ./stream-processing
+COPY anomaly-detection ./anomaly-detection
+COPY timeseries-store ./timeseries-store
+COPY alert-manager ./alert-manager
+COPY query-api ./query-api
+COPY log-pattern-mining ./log-pattern-mining
+COPY service-topology ./service-topology
+
+RUN cargo build --release -p stream-processing
+RUN cargo build --release -p alert-manager
+RUN cargo build --release -p query-api
+RUN cargo build --release -p timeseries-store
+
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata sqlite-libs
+
+COPY --from=builder /app/target/release/stream-processing /usr/local/bin/stream-processing
+COPY --from=builder /app/target/release/alert-manager /usr/local/bin/alert-manager
+COPY --from=builder /app/target/release/query-api /usr/local/bin/query-api
+COPY --from=builder /app/target/release/timeseries-store /usr/local/bin/timeseries-store
+
+RUN addgroup -S stream-server && adduser -S stream-server -G stream-server
+
+USER stream-server
+
+WORKDIR /app
+
+EXPOSE 8080 9090 9091 9092
+
+ENTRYPOINT ["/usr/local/bin/stream-processing"]
+CMD ["--config", "/etc/stream-server/config.toml"]

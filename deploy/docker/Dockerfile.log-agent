@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1.6
+
+FROM rust:1.78-alpine AS builder
+
+WORKDIR /app
+
+RUN apk add --no-cache musl-dev perl make
+
+COPY Cargo.toml Cargo.lock ./
+COPY common ./common
+COPY log-agent ./log-agent
+
+RUN cargo build --release -p log-agent
+
+FROM alpine:3.19
+
+RUN apk add --no-cache ca-certificates tzdata
+
+COPY --from=builder /app/target/release/log-agent /usr/local/bin/log-agent
+
+RUN addgroup -S log-agent && adduser -S log-agent -G log-agent
+
+USER log-agent
+
+WORKDIR /var/log
+
+ENTRYPOINT ["/usr/local/bin/log-agent"]
+CMD ["--config", "/etc/log-agent/config.toml"]

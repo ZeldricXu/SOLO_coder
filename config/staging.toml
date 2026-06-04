@@ -1,0 +1,55 @@
+[agent]
+downstream_url = "http://stream-server.staging.svc.cluster.local:8080/api/v1/logs"
+batch_size = 200
+flush_interval_ms = 500
+channel_buffer_size = 20000
+
+[agent.kafka]
+brokers = ["kafka-0.kafka.staging.svc.cluster.local:9092", "kafka-1.kafka.staging.svc.cluster.local:9092"]
+topic = "logs-staging"
+group_id = "log-pipeline-staging"
+partitions = 6
+
+[agent.kubernetes]
+enabled = true
+node_name = "${NODE_NAME}"
+pod_log_dir = "/var/log/pods"
+api_enrichment = true
+
+[agent.metrics]
+host = "0.0.0.0"
+port = 9091
+path = "/metrics"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+channel_capacity = 5000
+sqlite_path = "/data/pipeline.db"
+compaction_enabled = true
+
+[server.kafka]
+brokers = ["kafka-0.kafka.staging.svc.cluster.local:9092", "kafka-1.kafka.staging.svc.cluster.local:9092"]
+topic = "logs-staging"
+group_id = "log-pipeline-staging"
+partitions = 6
+
+[server.elasticsearch]
+urls = ["http://elasticsearch.staging.svc.cluster.local:9200"]
+index_prefix = "logs-staging"
+batch_size = 2000
+flush_interval_ms = 3000
+
+[server.alerting]
+dingtalk_webhook = "${ALERT_DINGTALK_WEBHOOK}"
+dedup_window_secs = 300
+
+[server.alerting.llm_root_cause]
+api_url = "https://api.openai.com/v1/chat/completions"
+model = "gpt-4"
+timeout_secs = 30
+
+[server.metrics]
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"

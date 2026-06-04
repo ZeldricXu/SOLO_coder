@@ -1,0 +1,58 @@
+[agent]
+downstream_url = "http://stream-server.prod.svc.cluster.local:8080/api/v1/logs"
+batch_size = 500
+flush_interval_ms = 200
+channel_buffer_size = 50000
+
+[agent.kafka]
+brokers = ["kafka-0.kafka.prod.svc.cluster.local:9092", "kafka-1.kafka.prod.svc.cluster.local:9092", "kafka-2.kafka.prod.svc.cluster.local:9092"]
+topic = "logs-production"
+group_id = "log-pipeline-production"
+partitions = 12
+
+[agent.kubernetes]
+enabled = true
+node_name = "${NODE_NAME}"
+pod_log_dir = "/var/log/pods"
+api_enrichment = true
+
+[agent.metrics]
+host = "0.0.0.0"
+port = 9091
+path = "/metrics"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+channel_capacity = 10000
+sqlite_path = "/data/pipeline.db"
+compaction_enabled = true
+
+[server.kafka]
+brokers = ["kafka-0.kafka.prod.svc.cluster.local:9092", "kafka-1.kafka.prod.svc.cluster.local:9092", "kafka-2.kafka.prod.svc.cluster.local:9092"]
+topic = "logs-production"
+group_id = "log-pipeline-production"
+partitions = 12
+
+[server.elasticsearch]
+urls = ["http://elasticsearch.prod.svc.cluster.local:9200"]
+username = "${ELASTICSEARCH_USERNAME}"
+password = "${ELASTICSEARCH_PASSWORD}"
+index_prefix = "logs-production"
+batch_size = 5000
+flush_interval_ms = 1000
+
+[server.alerting]
+dingtalk_webhook = "${ALERT_DINGTALK_WEBHOOK}"
+dedup_window_secs = 600
+
+[server.alerting.llm_root_cause]
+api_url = "https://api.openai.com/v1/chat/completions"
+api_key = "${OPENAI_API_KEY}"
+model = "gpt-4"
+timeout_secs = 30
+
+[server.metrics]
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"

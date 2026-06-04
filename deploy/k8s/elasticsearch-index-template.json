@@ -1,0 +1,106 @@
+{
+  "index_patterns": ["logs-*"],
+  "priority": 500,
+  "template": {
+    "settings": {
+      "number_of_shards": 6,
+      "number_of_replicas": 1,
+      "refresh_interval": "5s",
+      "index.codec": "best_compression",
+      "index.routing.allocation.total_shards_per_node": 2,
+      "index.lifecycle.name": "logs-lifecycle",
+      "index.lifecycle.rollover_alias": "logs-production"
+    },
+    "mappings": {
+      "dynamic_templates": [
+        {
+          "labels": {
+            "path_match": "labels.*",
+            "mapping": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        },
+        {
+          "tags": {
+            "path_match": "tags",
+            "mapping": {
+              "type": "keyword",
+              "ignore_above": 256
+            }
+          }
+        }
+      ],
+      "properties": {
+        "timestamp": {
+          "type": "date",
+          "format": "strict_date_optional_time||epoch_millis"
+        },
+        "hostname": {
+          "type": "keyword",
+          "ignore_above": 256
+        },
+        "service_name": {
+          "type": "keyword",
+          "ignore_above": 256
+        },
+        "level": {
+          "type": "keyword",
+          "ignore_above": 32
+        },
+        "message": {
+          "type": "text",
+          "analyzer": "standard",
+          "fields": {
+            "raw": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "pattern_id": {
+          "type": "keyword",
+          "ignore_above": 64
+        },
+        "pattern_template": {
+          "type": "text",
+          "index": false
+        },
+        "kubernetes": {
+          "properties": {
+            "namespace": {
+              "type": "keyword",
+              "ignore_above": 256
+            },
+            "pod_name": {
+              "type": "keyword",
+              "ignore_above": 256
+            },
+            "container_name": {
+              "type": "keyword",
+              "ignore_above": 256
+            },
+            "pod_ip": {
+              "type": "ip"
+            },
+            "labels": {
+              "type": "object",
+              "dynamic": true
+            }
+          }
+        },
+        "anomaly_score": {
+          "type": "float"
+        },
+        "is_anomaly": {
+          "type": "boolean"
+        },
+        "correlation_id": {
+          "type": "keyword",
+          "ignore_above": 64
+        }
+      }
+    }
+  }
+}

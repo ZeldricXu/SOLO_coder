@@ -1,0 +1,41 @@
+[agent]
+batch_size = 100
+flush_interval_ms = 1000
+channel_buffer_size = 10000
+
+[agent.metrics]
+host = "0.0.0.0"
+port = 9091
+path = "/metrics"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+channel_capacity = 1000
+sqlite_path = "/data/pipeline.db"
+compaction_enabled = true
+
+[server.kafka]
+brokers = ["localhost:9092"]
+topic = "logs"
+group_id = "log-pipeline"
+partitions = 12
+
+[server.elasticsearch]
+urls = ["http://localhost:9200"]
+index_prefix = "logs"
+batch_size = 1000
+flush_interval_ms = 5000
+
+[server.alerting]
+dedup_window_secs = 300
+
+[server.alerting.llm_root_cause]
+api_url = "https://api.openai.com/v1/chat/completions"
+model = "gpt-4"
+timeout_secs = 30
+
+[server.metrics]
+host = "0.0.0.0"
+port = 9090
+path = "/metrics"

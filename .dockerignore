@@ -1,0 +1,13 @@
+target
+**/target
+.git
+.github
+**/*.md
+**/node_modules
+frontend
+deploy
+config
+*.log
+.DS_Store
+.vscode
+.idea

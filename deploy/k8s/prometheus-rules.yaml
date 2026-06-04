@@ -1,0 +1,103 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: log-pipeline-rules
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  groups:
+    - name: log-pipeline
+      rules:
+        - alert: LogAgentNotRunning
+          expr: up{job="log-agent"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Log Agent is not running on {{ $labels.kubernetes_node }}"
+            description: "Log Agent on node {{ $labels.kubernetes_node }} has been down for more than 5 minutes."
+            runbook_url: "https://wiki.example.com/runbooks/log-agent-down"
+
+        - alert: LogAgentHighErrorRate
+          expr: rate(log_agent_errors_total[5m]) > 10
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High error rate on Log Agent {{ $labels.kubernetes_node }}"
+            description: "Log Agent error rate is {{ $value }} errors/sec for more than 2 minutes."
+
+        - alert: LogAgentHighBacklog
+          expr: log_agent_channel_backlog > 10000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High channel backlog on Log Agent {{ $labels.kubernetes_node }}"
+            description: "Log Agent channel backlog is {{ $value }} for more than 5 minutes. Downstream may be slow."
+
+        - alert: StreamServerNotRunning
+          expr: up{job="stream-server"} == 0
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "Stream Server {{ $labels.pod }} is not running"
+            description: "Stream Server has been down for more than 5 minutes."
+            runbook_url: "https://wiki.example.com/runbooks/stream-server-down"
+
+        - alert: StreamServerHighLatency
+          expr: histogram_quantile(0.95, rate(stream_processing_latency_seconds_bucket[5m])) > 1
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High processing latency on Stream Server {{ $labels.pod }}"
+            description: "95th percentile processing latency is {{ $value }}s for more than 2 minutes."
+
+        - alert: StreamServerHighBacklog
+          expr: stream_pipeline_channel_backlog > 5000
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High channel backlog on Stream Server {{ $labels.pod }}"
+            description: "Pipeline channel backlog is {{ $value }} for more than 5 minutes. May need to scale out."
+
+        - alert: StreamServerLowThroughput
+          expr: rate(stream_processing_events_total[10m]) < 10 and rate(stream_processing_events_total[10m]) offset 1h > 100
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Throughput drop detected on Stream Server {{ $labels.pod }}"
+            description: "Processing throughput dropped significantly. Current: {{ $value }} events/sec."
+
+        - alert: KafkaConsumerLag
+          expr: kafka_consumergroup_lag{group="log-pipeline-production"} > 100000
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: "High Kafka consumer lag for log pipeline"
+            description: "Consumer lag is {{ $value }} messages. Pipeline is falling behind."
+            runbook_url: "https://wiki.example.com/runbooks/kafka-lag-high"
+
+        - alert: ElasticsearchIndexingErrors
+          expr: rate(elasticsearch_indexing_errors_total[5m]) > 5
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "High Elasticsearch indexing errors"
+            description: "Elasticsearch indexing error rate is {{ $value }}/sec for more than 2 minutes."
+
+        - alert: TooManyAlerts
+          expr: increase(alerts_triggered_total[10m]) > 100
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Alert storm detected"
+            description: "More than 100 alerts triggered in the last 10 minutes. Check system health."

@@ -1,0 +1,98 @@
+nameOverride: ""
+fullnameOverride: ""
+
+image:
+  repository: ghcr.io/your-org/log-pipeline-log-agent
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/port: "9091"
+  prometheus.io/path: "/metrics"
+
+podSecurityContext:
+  runAsUser: 0
+  fsGroup: 0
+
+securityContext:
+  privileged: true
+
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+nodeSelector: {}
+
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    effect: NoSchedule
+  - key: node-role.kubernetes.io/master
+    effect: NoSchedule
+
+affinity: {}
+
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 1
+
+volumes:
+  - name: varlog
+    hostPath:
+      path: /var/log
+  - name: varlibdockercontainers
+    hostPath:
+      path: /var/lib/docker/containers
+  - name: config
+    configMap:
+      name: log-agent-config
+
+volumeMounts:
+  - name: varlog
+    mountPath: /var/log
+    readOnly: true
+  - name: varlibdockercontainers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+  - name: config
+    mountPath: /etc/log-agent
+
+service:
+  type: ClusterIP
+  port: 9091
+  targetPort: 9091
+
+serviceMonitor:
+  enabled: true
+  namespace: monitoring
+  interval: 30s
+  scrapeTimeout: 10s
+  labels:
+    release: prometheus
+
+config:
+  env: production
+  agent:
+    downstream_url: "http://stream-server.default.svc.cluster.local:8080/api/v1/logs"
+    batch_size: 500
+    flush_interval_ms: 200
+    channel_buffer_size: 50000
+    kubernetes:
+      enabled: true
+      api_enrichment: true
+    metrics:
+      host: "0.0.0.0"
+      port: 9091
+      path: "/metrics"
