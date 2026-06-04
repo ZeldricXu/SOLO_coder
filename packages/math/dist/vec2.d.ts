@@ -1,0 +1,30 @@
+import { Vec2 } from '@physics-sim/shared';
+export declare function add(a: Vec2, b: Vec2): Vec2;
+export declare function sub(a: Vec2, b: Vec2): Vec2;
+export declare function mul(v: Vec2, s: number): Vec2;
+export declare function div(v: Vec2, s: number): Vec2;
+export declare function dot(a: Vec2, b: Vec2): number;
+export declare function cross(a: Vec2, b: Vec2): number;
+export declare function length(v: Vec2): number;
+export declare function lengthSq(v: Vec2): number;
+export declare function normalize(v: Vec2): Vec2;
+export declare function distance(a: Vec2, b: Vec2): number;
+export declare function distanceSq(a: Vec2, b: Vec2): number;
+export declare function negate(v: Vec2): Vec2;
+export declare function lerp(a: Vec2, b: Vec2, t: number): Vec2;
+export declare const Vec2Ops: {
+    add: typeof add;
+    sub: typeof sub;
+    mul: typeof mul;
+    div: typeof div;
+    dot: typeof dot;
+    cross: typeof cross;
+    length: typeof length;
+    lengthSq: typeof lengthSq;
+    normalize: typeof normalize;
+    distance: typeof distance;
+    distanceSq: typeof distanceSq;
+    negate: typeof negate;
+    lerp: typeof lerp;
+};
+//# sourceMappingURL=vec2.d.ts.map

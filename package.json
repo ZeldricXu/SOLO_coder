@@ -1,0 +1,18 @@
+{
+  "name": "physics-sim-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web-based physics simulation platform for education and research",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build:all": "npm run build --workspace=@physics-sim/shared && npm run build --workspace=@physics-sim/math && npm run build --workspace=@physics-sim/physics && npm run build --workspace=@physics-sim/backend && npm run build --workspace=@physics-sim/frontend",
+    "dev:backend": "npm run dev --workspace=@physics-sim/backend",
+    "dev:frontend": "npm run dev --workspace=@physics-sim/frontend",
+    "test": "npm run test --workspaces"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

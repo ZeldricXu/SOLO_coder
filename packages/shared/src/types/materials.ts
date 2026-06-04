@@ -1,0 +1,99 @@
+export interface Material {
+  id: string;
+  name: string;
+  density: number;
+  youngsModulus: number;
+  poissonRatio: number;
+  thermalConductivity: number;
+  specificHeat: number;
+  electricalConductivity: number;
+  magneticPermeability: number;
+  color: string;
+}
+
+export const MATERIALS: Record<string, Material> = {
+  steel: {
+    id: 'steel',
+    name: 'Steel',
+    density: 7850,
+    youngsModulus: 200e9,
+    poissonRatio: 0.3,
+    thermalConductivity: 50,
+    specificHeat: 450,
+    electricalConductivity: 5.96e7,
+    magneticPermeability: 1.26e-4,
+    color: '#808080',
+  },
+  aluminum: {
+    id: 'aluminum',
+    name: 'Aluminum',
+    density: 2700,
+    youngsModulus: 70e9,
+    poissonRatio: 0.33,
+    thermalConductivity: 237,
+    specificHeat: 900,
+    electricalConductivity: 3.77e7,
+    magneticPermeability: 1.26e-6,
+    color: '#C0C0C0',
+  },
+  copper: {
+    id: 'copper',
+    name: 'Copper',
+    density: 8960,
+    youngsModulus: 110e9,
+    poissonRatio: 0.34,
+    thermalConductivity: 401,
+    specificHeat: 385,
+    electricalConductivity: 5.96e7,
+    magneticPermeability: 1.26e-6,
+    color: '#B87333',
+  },
+  wood: {
+    id: 'wood',
+    name: 'Wood',
+    density: 700,
+    youngsModulus: 10e9,
+    poissonRatio: 0.3,
+    thermalConductivity: 0.12,
+    specificHeat: 1700,
+    electricalConductivity: 1e-12,
+    magneticPermeability: 1.26e-6,
+    color: '#8B4513',
+  },
+  rubber: {
+    id: 'rubber',
+    name: 'Rubber',
+    density: 1100,
+    youngsModulus: 0.01e9,
+    poissonRatio: 0.48,
+    thermalConductivity: 0.15,
+    specificHeat: 2000,
+    electricalConductivity: 1e-14,
+    magneticPermeability: 1.26e-6,
+    color: '#2F4F4F',
+  },
+  glass: {
+    id: 'glass',
+    name: 'Glass',
+    density: 2500,
+    youngsModulus: 70e9,
+    poissonRatio: 0.22,
+    thermalConductivity: 1.0,
+    specificHeat: 840,
+    electricalConductivity: 1e-12,
+    magneticPermeability: 1.26e-6,
+    color: '#E0FFFF',
+  },
+  air: {
+    id: 'air',
+    name: 'Air',
+    density: 1.2,
+    youngsModulus: 0,
+    poissonRatio: 0,
+    thermalConductivity: 0.026,
+    specificHeat: 1005,
+    electricalConductivity: 1e-15,
+    magneticPermeability: 1.26e-6,
+    color: '#FFFFFF',
+  },
+};

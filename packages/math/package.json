@@ -1,0 +1,22 @@
+{
+  "name": "@physics-sim/math",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsc -p tsconfig.json -w",
+    "test": "jest --config jest.config.cjs"
+  },
+  "dependencies": {
+    "@physics-sim/shared": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.11",
+    "typescript": "^5.2.0"
+  }
+}
