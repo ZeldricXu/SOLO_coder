@@ -1,0 +1,49 @@
+spring:
+  application:
+    name: protein-viewer
+  servlet:
+    multipart:
+      max-file-size: 500MB
+      max-request-size: 500MB
+  datasource:
+    url: jdbc:postgresql://localhost:5432/protein_viewer
+    username: postgres
+    password: postgres
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        show_sql: true
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket: protein-files
+
+logging:
+  level:
+    root: DEBUG
+    com.proteinviewer: DEBUG
+    org.springframework.web: DEBUG
+
+cors:
+  allowed-origins:
+    - http://localhost:3000
+    - http://localhost:5173
+    - http://127.0.0.1:3000
+    - http://127.0.0.1:5173
+  allowed-methods: GET,POST,PUT,DELETE,OPTIONS,PATCH
+  allowed-headers: "*"
+  allow-credentials: true
+
+server:
+  port: 8080
+
+batch:
+  task:
+    concurrency-limit: 3
+  result:
+    retention-days: 30

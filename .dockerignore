@@ -1,0 +1,17 @@
+**/node_modules
+**/target
+**/.git
+**/.gitignore
+**/.idea
+**/*.md
+**/Dockerfile
+**/docker-compose.yml
+**/.env
+**/.env.*
+**/*.log
+**/.DS_Store
+backend/src/test
+frontend/e2e
+frontend/e2e-results
+frontend/node_modules
+frontend/dist

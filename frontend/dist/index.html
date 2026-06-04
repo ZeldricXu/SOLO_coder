@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Protein 3D Structure Viewer</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: #0a0e17; color: #e0e6ed; overflow: hidden; }
+    #app { display: flex; height: 100vh; width: 100vw; }
+    #sidebar { width: 320px; min-width: 320px; background: #111827; border-right: 1px solid #1e293b; display: flex; flex-direction: column; overflow-y: auto; z-index: 10; }
+    #sidebar::-webkit-scrollbar { width: 6px; }
+    #sidebar::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    #sidebar::-webkit-scrollbar-track { background: transparent; }
+    #viewer-container { flex: 1; position: relative; }
+    #viewer-canvas { width: 100%; height: 100%; display: block; }
+    .panel { padding: 16px; border-bottom: 1px solid #1e293b; }
+    .panel-title { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #60a5fa; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+    .panel-title::before { content: ''; width: 3px; height: 14px; background: #60a5fa; border-radius: 2px; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 14px; border-radius: 6px; border: 1px solid #334155; background: #1e293b; color: #e0e6ed; font-size: 13px; cursor: pointer; transition: all 0.2s; width: 100%; margin-bottom: 6px; }
+    .btn:hover { background: #334155; border-color: #475569; }
+    .btn-primary { background: #2563eb; border-color: #3b82f6; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-danger { background: #991b1b; border-color: #dc2626; }
+    .btn-danger:hover { background: #7f1d1d; }
+    .btn-success { background: #166534; border-color: #22c55e; }
+    .btn-success:hover { background: #14532d; }
+    .input-group { margin-bottom: 8px; }
+    .input-group label { display: block; font-size: 11px; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .input-group input, .input-group select { width: 100%; padding: 7px 10px; border-radius: 5px; border: 1px solid #334155; background: #0f172a; color: #e0e6ed; font-size: 13px; }
+    .input-group input:focus, .input-group select:focus { outline: none; border-color: #3b82f6; }
+    .info-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 6px; padding: 10px; margin-bottom: 8px; font-size: 12px; }
+    .info-card .label { color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .info-card .value { color: #f1f5f9; font-weight: 600; margin-top: 2px; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; margin: 2px; }
+    .tag-hbond { background: #164e63; color: #22d3ee; }
+    .tag-hydrophobic { background: #365314; color: #a3e635; }
+    .tag-saltbridge { background: #7c2d12; color: #fb923c; }
+    .tag-pipistack { background: #581c87; color: #c084fc; }
+    .warning-item { background: #422006; border: 1px solid #92400e; border-radius: 5px; padding: 8px; margin-bottom: 4px; font-size: 11px; }
+    .warning-item .line { color: #fbbf24; font-weight: 700; }
+    .overlay-panel { position: absolute; top: 12px; right: 12px; background: rgba(17, 24, 39, 0.92); backdrop-filter: blur(8px); border: 1px solid #1e293b; border-radius: 8px; padding: 12px; min-width: 200px; z-index: 20; }
+    .overlay-panel h4 { font-size: 12px; color: #60a5fa; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .overlay-panel .stat { display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 4px; }
+    .overlay-panel .stat .num { color: #f1f5f9; font-weight: 600; }
+    .toolbar { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 4px; background: rgba(17, 24, 39, 0.92); backdrop-filter: blur(8px); border: 1px solid #1e293b; border-radius: 8px; padding: 6px; z-index: 20; }
+    .toolbar .btn { width: auto; margin: 0; padding: 6px 12px; font-size: 12px; white-space: nowrap; }
+    .toolbar .btn.active { background: #2563eb; border-color: #3b82f6; }
+    .upload-zone { border: 2px dashed #334155; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .upload-zone:hover { border-color: #3b82f6; background: rgba(37, 99, 235, 0.05); }
+    .upload-zone.dragover { border-color: #22c55e; background: rgba(34, 197, 94, 0.05); }
+    .comment-marker { position: absolute; width: 24px; height: 24px; border-radius: 50%; background: #f59e0b; border: 2px solid #fbbf24; cursor: pointer; z-index: 30; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: #000; transform: translate(-50%, -50%); box-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+    .comment-popup { position: absolute; background: #1e293b; border: 1px solid #334155; border-radius: 8px; padding: 12px; min-width: 200px; max-width: 300px; z-index: 40; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+    .comment-popup .author { font-size: 11px; color: #60a5fa; font-weight: 600; }
+    .comment-popup .text { font-size: 12px; margin-top: 4px; line-height: 1.4; }
+    .rmsd-legend { position: absolute; bottom: 60px; right: 12px; background: rgba(17,24,39,0.92); border: 1px solid #1e293b; border-radius: 6px; padding: 8px; z-index: 20; }
+    .rmsd-legend .bar { height: 12px; border-radius: 3px; background: linear-gradient(to right, #3b82f6, #eab308, #ef4444); margin-bottom: 4px; }
+    .rmsd-legend .labels { display: flex; justify-content: space-between; font-size: 10px; color: #94a3b8; }
+    .structure-list-item { display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 5px; cursor: pointer; transition: background 0.2s; margin-bottom: 4px; }
+    .structure-list-item:hover { background: #1e293b; }
+    .structure-list-item.selected { background: #1e3a5f; border: 1px solid #2563eb; }
+    .structure-list-item .struct-name { font-size: 13px; font-weight: 500; }
+    .structure-list-item .struct-meta { font-size: 10px; color: #64748b; }
+    .checkbox-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 12px; cursor: pointer; }
+    .checkbox-row input[type="checkbox"] { accent-color: #3b82f6; }
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 100; display: flex; align-items: center; justify-content: center; }
+    .modal { background: #111827; border: 1px solid #334155; border-radius: 12px; padding: 24px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; }
+    .modal h3 { font-size: 16px; margin-bottom: 16px; color: #60a5fa; }
+    .table-container { overflow-x: auto; }
+    .table-container table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .table-container th { background: #1e293b; padding: 8px; text-align: left; font-weight: 600; color: #94a3b8; border-bottom: 1px solid #334155; }
+    .table-container td { padding: 6px 8px; border-bottom: 1px solid #1e293b; }
+    .heatmap-cell { width: 40px; height: 28px; text-align: center; font-weight: 600; font-size: 11px; }
+  </style>
+  <script type="module" crossorigin src="/assets/index-CvplFjm-.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div id="sidebar">
+      <div class="panel">
+        <div class="panel-title">Protein Structure Viewer</div>
+        <div class="upload-zone" id="upload-zone">
+          <div style="font-size: 28px; margin-bottom: 6px;">🧬</div>
+          <div style="font-size: 13px; font-weight: 600; margin-bottom: 4px;">Drop PDB file here</div>
+          <div style="font-size: 11px; color: #64748b;">or click to browse</div>
+          <input type="file" id="file-input" accept=".pdb" style="display: none;" />
+        </div>
+      </div>
+      <div class="panel" id="structure-info-panel" style="display:none;">
+        <div class="panel-title">Structure Info</div>
+        <div id="structure-info"></div>
+      </div>
+      <div class="panel" id="validation-panel" style="display:none;">
+        <div class="panel-title">Validation Warnings</div>
+        <div id="validation-warnings"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Render Mode</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button class="btn active" data-mode="ball-stick" onclick="setRenderMode('ball-stick')">Ball & Stick</button>
+          <button class="btn" data-mode="spacefill" onclick="setRenderMode('spacefill')">Spacefill</button>
+          <button class="btn" data-mode="wireframe" onclick="setRenderMode('wireframe')">Wireframe</button>
+          <button class="btn" data-mode="cartoon" onclick="setRenderMode('cartoon')">Cartoon</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Color Scheme</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;">
+          <button class="btn active" data-color="element" onclick="setColorScheme('element')">By Element</button>
+          <button class="btn" data-color="chain" onclick="setColorScheme('chain')">By Chain</button>
+          <button class="btn" data-color="residue" onclick="setColorScheme('residue')">By Residue</button>
+          <button class="btn" data-color="bfactor" onclick="setColorScheme('bfactor')">B-Factor</button>
+          <button class="btn" data-color="hydrophobicity" onclick="setColorScheme('hydrophobicity')">Hydrophobicity</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Display Options</div>
+        <label class="checkbox-row"><input type="checkbox" id="show-atoms" checked onchange="toggleDisplay('atoms')"/> Atoms</label>
+        <label class="checkbox-row"><input type="checkbox" id="show-bonds" checked onchange="toggleDisplay('bonds')"/> Bonds</label>
+        <label class="checkbox-row"><input type="checkbox" id="show-surface" onchange="toggleDisplay('surface')"/> Molecular Surface</label>
+        <label class="checkbox-row"><input type="checkbox" id="show-electrostatic" onchange="toggleDisplay('electrostatic')"/> Electrostatic Potential</label>
+        <label class="checkbox-row"><input type="checkbox" id="show-hbonds" onchange="toggleDisplay('hbonds')"/> Hydrogen Bonds</label>
+        <label class="checkbox-row"><input type="checkbox" id="show-labels" checked onchange="toggleDisplay('labels')"/> Residue Labels</label>
+        <label class="checkbox-row"><input type="checkbox" id="show-annotations" checked onchange="toggleDisplay('annotations')"/> Annotations</label>
+      </div>
+      <div class="panel" id="atom-info-panel" style="display:none;">
+        <div class="panel-title">Atom Info</div>
+        <div id="atom-info"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Analysis Tools</div>
+        <div class="input-group">
+          <label>Tool</label>
+          <select id="analysis-tool">
+            <option value="distance">Distance (2 atoms)</option>
+            <option value="angle">Angle (3 atoms)</option>
+            <option value="interactions">Interaction Analysis</option>
+          </select>
+        </div>
+        <div id="tool-params">
+          <div class="input-group"><label>Atom 1 Serial</label><input type="number" id="param-atom1" /></div>
+          <div class="input-group"><label>Atom 2 Serial</label><input type="number" id="param-atom2" /></div>
+        </div>
+        <button class="btn btn-primary" onclick="runAnalysis()">Run Analysis</button>
+        <div id="analysis-result" style="margin-top:8px;"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Structure Alignment</div>
+        <div class="input-group"><label>Reference Structure ID</label><input type="number" id="align-ref" /></div>
+        <div class="input-group"><label>Mobile Structure ID</label><input type="number" id="align-mobile" /></div>
+        <button class="btn btn-primary" onclick="runAlignment()">Align Structures</button>
+        <div id="alignment-result" style="margin-top:8px;"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Annotations</div>
+        <div class="input-group"><label>Type</label><select id="ann-type"><option value="domain">Functional Domain</option><option value="mutation">Mutation Site</option><option value="pocket">Binding Pocket</option><option value="active">Active Site</option></select></div>
+        <div class="input-group"><label>Label</label><input type="text" id="ann-label" placeholder="Annotation label" /></div>
+        <div class="input-group"><label>Description</label><input type="text" id="ann-desc" placeholder="Description" /></div>
+        <button class="btn btn-success" onclick="addAnnotation()">Add Annotation</button>
+        <div id="annotation-list" style="margin-top:8px;"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Share & Collaborate</div>
+        <button class="btn" onclick="shareSnapshot()">📷 Share Snapshot</button>
+        <div id="share-link" style="margin-top:6px;"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-title">Batch Analysis</div>
+        <div class="input-group"><label>Structure IDs (comma separated)</label><input type="text" id="batch-ids" placeholder="1,2,3" /></div>
+        <button class="btn btn-primary" onclick="runBatchAnalysis()">Run Batch Analysis</button>
+        <div id="batch-result" style="margin-top:8px;"></div>
+      </div>
+    </div>
+    <div id="viewer-container">
+      <canvas id="viewer-canvas"></canvas>
+      <div class="overlay-panel" id="stats-panel" style="display:none;">
+        <h4>Structure Stats</h4>
+        <div id="stats-content"></div>
+      </div>
+      <div class="toolbar">
+        <button class="btn" onclick="resetCamera()" title="Reset view">⟲ Reset</button>
+        <button class="btn" onclick="centerView()" title="Center">⊕ Center</button>
+        <button class="btn" onclick="toggleAutoRotate()" title="Auto-rotate">↻ Rotate</button>
+        <button class="btn" onclick="captureScreenshot()" title="Screenshot">📷</button>
+        <button class="btn" onclick="addCommentMode()" title="Add comment">💬 Comment</button>
+      </div>
+      <div class="rmsd-legend" id="rmsd-legend" style="display:none;">
+        <div class="bar"></div>
+        <div class="labels"><span>0.0 Å</span><span>RMSD</span><span>5.0+ Å</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="modal-root"></div>
+</body>
+</html>
