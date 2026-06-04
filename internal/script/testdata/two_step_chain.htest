@@ -1,0 +1,36 @@
+name: Two Step Chain Test
+description: POST to create, then GET to verify
+
+variables:
+  resource_id:
+    value: ""
+
+steps:
+  - name: Create Resource
+    protocol: rest
+    request:
+      method: POST
+      url: "{{.base_url}}/resources"
+      headers:
+        Content-Type: application/json
+      body: '{"name":"test-item"}'
+    extract:
+      resource_id:
+        from: body
+        jsonpath: "$.id"
+    assert:
+      - type: status
+        expected: 201
+      - type: json
+        jsonpath: "$.name"
+        expected: "test-item"
+        operator: eq
+
+  - name: Get Resource
+    protocol: rest
+    request:
+      method: GET
+      url: "{{.base_url}}/resources/${resource_id}"
+    assert:
+      - type: status
+        expected: 200

@@ -1,0 +1,26 @@
+default_env: dev
+
+settings:
+  timeout: 30
+  tls_skip_verify: false
+  output_format: pretty
+
+environments:
+  dev:
+    base_url: "http://localhost:8080"
+    headers: {}
+    variables:
+      db: "dev_db"
+  staging:
+    base_url: "https://staging.api.example.com"
+    headers:
+      X-Env: "staging"
+    variables:
+      db: "staging_db"
+  prod:
+    base_url: "https://api.example.com"
+    headers: {}
+    variables: {}
+
+variables:
+  app: "htest"

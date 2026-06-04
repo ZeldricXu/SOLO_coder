@@ -1,0 +1,12 @@
+name: Single Step Test
+description: Single REST request with status assertion
+
+steps:
+  - name: Health Check
+    protocol: rest
+    request:
+      method: GET
+      url: "{{.base_url}}/health"
+    assert:
+      - type: status
+        expected: 200

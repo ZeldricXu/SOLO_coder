@@ -1,0 +1,15 @@
+name: Loop Test
+description: Loop with incrementing parameter
+
+steps:
+  - name: Loop Request
+    protocol: rest
+    request:
+      method: GET
+      url: "{{.base_url}}/items"
+    loop:
+      count: 3
+      interval: 10ms
+    assert:
+      - type: status
+        expected: 200

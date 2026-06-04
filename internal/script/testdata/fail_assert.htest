@@ -1,0 +1,12 @@
+name: Fail Assert Test
+description: Assert status 200 but server returns 500
+
+steps:
+  - name: Will Fail
+    protocol: rest
+    request:
+      method: GET
+      url: "{{.base_url}}/error"
+    assert:
+      - type: status
+        expected: 200

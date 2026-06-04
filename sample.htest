@@ -1,0 +1,116 @@
+name: Sample API Test Suite
+description: Example demonstrating multi-step API testing with htest
+
+variables:
+  base_url:
+    value: "{{.BaseURL}}"
+  token:
+    value: ""
+
+steps:
+  - name: Login
+    protocol: rest
+    request:
+      method: POST
+      url: "{{.base_url}}/api/login"
+      headers:
+        Content-Type: application/json
+      body: |
+        {
+          "username": "admin",
+          "password": "password123"
+        }
+    extract:
+      token:
+        from: body
+        jsonpath: "$.data.token"
+    assert:
+      - type: status
+        expected: 200
+      - type: json
+        jsonpath: "$.success"
+        expected: true
+        operator: eq
+
+  - name: Get User Info
+    protocol: rest
+    request:
+      method: GET
+      url: "{{.base_url}}/api/users/me"
+      headers:
+        Authorization: "Bearer {{.token}}"
+    extract:
+      user_id:
+        from: body
+        jsonpath: "$.data.id"
+      username:
+        from: body
+        jsonpath: "$.data.username"
+    assert:
+      - type: status
+        expected: 200
+      - type: json
+        jsonpath: "$.data.username"
+        expected: "admin"
+        operator: eq
+
+  - name: Create Resource
+    protocol: rest
+    request:
+      method: POST
+      url: "{{.base_url}}/api/resources"
+      headers:
+        Authorization: "Bearer {{.token}}"
+        Content-Type: application/json
+      body: |
+        {
+          "name": "test-resource-{{.user_id}}",
+          "owner": "{{.username}}"
+        }
+    extract:
+      resource_id:
+        from: body
+        jsonpath: "$.data.id"
+    assert:
+      - type: status
+        expected: 201
+      - type: json
+        jsonpath: "$.data.owner"
+        expected: "{{.username}}"
+        operator: eq
+
+  - name: Delay after creation
+    delay: 500ms
+
+  - name: Get Created Resource
+    protocol: rest
+    request:
+      method: GET
+      url: "{{.base_url}}/api/resources/{{.resource_id}}"
+      headers:
+        Authorization: "Bearer {{.token}}"
+    assert:
+      - type: status
+        expected: 200
+      - type: json
+        jsonpath: "$.data.id"
+        expected: "{{.resource_id}}"
+        operator: eq
+      - type: json
+        jsonpath: "$.data.name"
+        expected: "test-resource-{{.user_id}}"
+        operator: eq
+
+  - name: Loop Example - Retry 3 times
+    protocol: rest
+    request:
+      method: GET
+      url: "{{.base_url}}/api/resources/1"
+      headers:
+        Authorization: "Bearer {{.token}}"
+    loop:
+      count: 3
+      interval: 1s
+    assert:
+      - type: status
+        expected: 200
