@@ -1,0 +1,120 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "devkit-cli"
+version = "1.0.0"
+description = "Developer Command Line Toolkit - 一站式开发者工具箱"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+authors = [
+    { name = "DevKit Team", email = "devkit@example.com" }
+]
+maintainers = [
+    { name = "DevKit Team", email = "devkit@example.com" }
+]
+keywords = ["cli", "developer-tools", "productivity", "json", "crypto", "network"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Build Tools",
+    "Topic :: Utilities",
+]
+
+dependencies = [
+    "click>=8.1,<9.0",
+    "PyYAML>=6.0,<7.0",
+    "toml>=0.10.2,<0.11.0",
+    "colorama>=0.4.6,<0.5.0",
+    "Pygments>=2.15.0,<3.0.0",
+    "requests>=2.31.0,<3.0.0",
+    "chardet>=5.2.0,<6.0.0",
+    "python-dateutil>=2.8.2,<3.0.0",
+    "croniter>=1.4.1,<2.0.0",
+    "bcrypt>=4.0.1,<5.0.0",
+    "cryptography>=41.0.0,<43.0.0",
+    "PyJWT>=2.8.0,<3.0.0",
+    "dnspython>=2.4.0,<3.0.0",
+    "websockets>=12.0.0,<14.0.0",
+    "gitpython>=3.1.40,<4.0.0",
+    "jsondiff>=2.0.0,<3.0.0",
+    "pytz>=2023.3,<2025.0",
+    "Jinja2>=3.1.0,<4.0.0",
+    "keyring>=24.0.0,<26.0.0",
+]
+
+[project.optional-dependencies]
+db = [
+    "pymysql>=1.1.0,<2.0.0",
+    "psycopg2-binary>=2.9.0,<3.0.0",
+]
+sysmon = [
+    "psutil>=5.9.0,<6.0.0",
+    "rich>=13.0.0,<14.0.0",
+]
+openapi = [
+    "openapi-core>=0.18.0,<0.20.0",
+]
+dev = [
+    "pytest>=7.0.0,<9.0.0",
+    "pytest-cov>=4.0.0,<5.0.0",
+    "ruff>=0.1.0,<0.5.0",
+    "mypy>=1.5.0,<2.0.0",
+    "twine>=4.0.0,<6.0.0",
+    "build>=1.0.0,<2.0.0",
+    "types-requests>=2.31.0",
+    "types-PyYAML>=6.0.0",
+]
+all = [
+    "devkit-cli[db]",
+    "devkit-cli[sysmon]",
+    "devkit-cli[openapi]",
+]
+
+[project.scripts]
+devkit = "devkit.cli:cli"
+
+[project.urls]
+Homepage = "https://github.com/devkit-cli/devkit"
+Repository = "https://github.com/devkit-cli/devkit"
+BugTracker = "https://github.com/devkit-cli/devkit/issues"
+Documentation = "https://github.com/devkit-cli/devkit#readme"
+
+[tool.setuptools]
+packages = ["devkit", "devkit.commands", "devkit.core"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+devkit = ["data/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py38"
+select = ["E", "F", "W", "I", "N", "UP"]
+ignore = ["E501", "W291", "W293"]
+
+[tool.ruff.per-file-ignores]
+"__init__.py" = ["F401"]
+"tests/*" = ["S101", "S311"]
+
+[tool.mypy]
+python_version = "3.8"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+ignore_missing_imports = true
