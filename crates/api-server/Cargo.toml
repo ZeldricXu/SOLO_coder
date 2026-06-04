@@ -1,0 +1,25 @@
+[package]
+name = "api-server"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+common = { path = "../common" }
+node-manager = { path = "../node-manager" }
+scheduler = { path = "../scheduler" }
+cache-engine = { path = "../cache-engine" }
+monitoring = { path = "../monitoring" }
+config-manager = { path = "../config-manager" }
+tls-manager = { path = "../tls-manager" }
+smart-preheat = { path = "../smart-preheat" }
+hierarchical-cache = { path = "../hierarchical-cache" }
+ab-testing = { path = "../ab-testing" }
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+thiserror = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+axum = { version = "0.6", features = ["json"] }

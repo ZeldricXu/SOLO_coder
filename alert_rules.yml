@@ -1,0 +1,46 @@
+groups:
+  - name: cdn_alerts
+    rules:
+      - alert: NodeOffline
+        expr: cdn_nodes_online < cdn_nodes_total * 0.9
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: "CDN node offline"
+          description: "{{ $value }} nodes are offline for more than 30 seconds"
+
+      - alert: HighBandwidthUtilization
+        expr: cdn_bandwidth_utilization > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Bandwidth utilization over 80%"
+          description: "Current utilization: {{ $value | humanizePercentage }}"
+
+      - alert: LowCacheHitRate
+        expr: cdn_cache_hit_rate < 0.7
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Cache hit rate below 70%"
+          description: "Current hit rate: {{ $value | humanizePercentage }}"
+
+      - alert: HighSchedulingLatency
+        expr: cdn_scheduling_latency_p99 > 10000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Scheduling latency P99 over 10ms"
+          description: "Current P99: {{ $value }}μs"
+
+      - alert: HighErrorRate
+        expr: rate(cdn_requests_failed_total[5m]) / rate(cdn_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Error rate above 5%"

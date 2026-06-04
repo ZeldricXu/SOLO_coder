@@ -1,0 +1,59 @@
+[package]
+name = "cdn-edge-system"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [
+    "crates/common",
+    "crates/node-manager",
+    "crates/scheduler",
+    "crates/cache-engine",
+    "crates/content-delivery",
+    "crates/monitoring",
+    "crates/config-manager",
+    "crates/tls-manager",
+    "crates/api-server",
+    "crates/smart-preheat",
+    "crates/hierarchical-cache",
+    "crates/ab-testing",
+]
+
+[dependencies]
+common = { path = "crates/common" }
+node-manager = { path = "crates/node-manager" }
+scheduler = { path = "crates/scheduler" }
+cache-engine = { path = "crates/cache-engine" }
+content-delivery = { path = "crates/content-delivery" }
+monitoring = { path = "crates/monitoring" }
+config-manager = { path = "crates/config-manager" }
+tls-manager = { path = "crates/tls-manager" }
+api-server = { path = "crates/api-server" }
+smart-preheat = { path = "crates/smart-preheat" }
+hierarchical-cache = { path = "crates/hierarchical-cache" }
+ab-testing = { path = "crates/ab-testing" }
+
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4.0", features = ["derive"] }
+reqwest = { version = "0.11", features = ["json"] }
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+sqlx = { version = "0.7", features = ["postgres", "runtime-tokio-native-tls", "chrono", "uuid"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[[bin]]
+name = "cdn-center"
+path = "src/bin/cdn-center.rs"
+
+[[bin]]
+name = "cdn-edge"
+path = "src/bin/cdn-edge.rs"
+
+[[bin]]
+name = "migrate"
+path = "src/bin/migrate.rs"
