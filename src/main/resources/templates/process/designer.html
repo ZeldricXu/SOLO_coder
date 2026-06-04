@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>流程设计器 - FlowPlatform</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+        .node-item { transition: all 0.15s ease; }
+        .node-item:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.08); transform: translateY(-1px); }
+        .svg-node { cursor: move; }
+        .svg-node:hover rect { filter: brightness(0.95); }
+        .port { cursor: crosshair; }
+        .port:hover { r: 6; fill: #6366f1; }
+    </style>
+</head>
+<body class="h-screen bg-gray-50 flex flex-col overflow-hidden" x-data="processDesigner()" x-init="init()">
+
+    <div class="h-14 bg-white border-b border-gray-200 flex items-center justify-between px-4 shrink-0">
+        <div class="flex items-center space-x-4">
+            <a href="/process" class="p-2 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors" title="返回">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            </a>
+            <div class="h-6 w-px bg-gray-200"></div>
+            <input type="text" x-model="processName" placeholder="请输入流程名称"
+                   class="text-sm font-medium text-gray-800 border-0 border-b border-transparent focus:border-indigo-500 focus:ring-0 px-1 py-0.5 w-56 placeholder-gray-400 bg-transparent">
+            <div class="h-6 w-px bg-gray-200"></div>
+            <select x-model="formId" class="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                <option value="">关联表单</option>
+                <template x-for="f in forms" :key="f.id">
+                    <option :value="f.id" x-text="f.formName"></option>
+                </template>
+            </select>
+            <select x-model="category" class="text-sm border border-gray-200 rounded-lg px-2 py-1 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                <option value="">选择分类</option>
+                <option value="请假">请假</option>
+                <option value="报销">报销</option>
+                <option value="采购">采购</option>
+                <option value="入职">入职</option>
+                <option value="通用">通用</option>
+            </select>
+        </div>
+        <div class="flex items-center space-x-2">
+            <button @click="previewProcess" class="inline-flex items-center px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg>
+                预览
+            </button>
+            <button @click="clearCanvas" class="inline-flex items-center px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 bg-white hover:bg-gray-50 border border-gray-300 rounded-lg transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+                清空
+            </button>
+            <button @click="saveProcess" class="inline-flex items-center px-4 py-1.5 text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+                保存
+            </button>
+        </div>
+    </div>
+
+    <div class="flex flex-1 overflow-hidden">
+
+        <div class="w-56 bg-white border-r border-gray-200 flex flex-col shrink-0 overflow-hidden">
+            <div class="px-4 py-3 border-b border-gray-100">
+                <h3 class="text-sm font-semibold text-gray-700">流程节点</h3>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 space-y-1.5">
+                <template x-for="nt in nodeTypes" :key="nt.type">
+                    <div class="node-item flex items-center px-3 py-2.5 bg-gray-50 hover:bg-indigo-50 border border-gray-200 hover:border-indigo-300 rounded-lg cursor-pointer select-none"
+                         @click="addNode(nt.type)" :title="nt.name">
+                        <svg class="w-5 h-5 text-gray-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <template x-if="nt.type==='approval'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></template>
+                            <template x-if="nt.type==='condition'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6"/></template>
+                            <template x-if="nt.type==='parallel'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></template>
+                            <template x-if="nt.type==='cc'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/></template>
+                            <template x-if="nt.type==='delay'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></template>
+                            <template x-if="nt.type==='auto'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></template>
+                            <template x-if="nt.type==='end'"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"/></template>
+                        </svg>
+                        <span class="ml-2 text-sm text-gray-700" x-text="nt.name"></span>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div class="flex-1 relative overflow-hidden bg-gray-100" @mousemove="onCanvasMouseMove($event)" @mouseup="onCanvasMouseUp($event)" @contextmenu.prevent="onCanvasContextMenu($event)">
+            <svg class="w-full h-full" :viewBox="viewBox.x+' '+viewBox.y+' '+viewBox.w+' '+viewBox.h" @click.left="onCanvasClick($event)" @wheel.prevent="onCanvasWheel($event)">
+                <defs>
+                    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto" fill="#6366f1">
+                        <polygon points="0 0, 10 3.5, 0 7"/>
+                    </marker>
+                    <marker id="arrowhead-preview" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto" fill="#a5b4fc">
+                        <polygon points="0 0, 10 3.5, 0 7"/>
+                    </marker>
+                </defs>
+                <g>
+                    <template x-for="edge in edges" :key="edge.id">
+                        <path :d="calcEdgePath(edge)" fill="none" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)" class="cursor-pointer" @click.stop="selectEdge(edge.id)"/>
+                    </template>
+                    <line x-show="connecting" :x1="connecting?getNodePortX(connecting.fromId,connecting.fromPort):0" :y1="connecting?getNodePortY(connecting.fromId,connecting.fromPort):0" :x2="connecting?mouseX:0" :y2="connecting?mouseY:0" stroke="#a5b4fc" stroke-width="2" stroke-dasharray="6,3" marker-end="url(#arrowhead-preview)"/>
+                </g>
+                <g>
+                    <template x-for="node in nodes" :key="node.id">
+                        <g class="svg-node" @mousedown.stop="onNodeMouseDown(node.id,$event)" @dblclick.stop="startEditNode(node.id)" @contextmenu.prevent.stop="onNodeContextMenu(node.id,$event)">
+                            <rect :x="node.x" :y="node.y" :width="nodeWidth" :height="nodeHeight" rx="8" :fill="getNodeColor(node.type)" :stroke="selectedNodeId===node.id?'#4f46e5':'#d1d5db'" :stroke-width="selectedNodeId===node.id?2.5:1.5"/>
+                            <text :x="node.x+nodeWidth/2" :y="node.y+nodeHeight/2+1" text-anchor="middle" dominant-baseline="middle" :fill="node.type==='start'?'#fff':node.type==='end'?'#fff':'#374151'" font-size="13" font-weight="500" x-show="editingNodeId!==node.id" x-text="node.name"></text>
+                            <foreignObject :x="node.x+8" :y="node.y+10" :width="nodeWidth-16" :height="nodeHeight-20" x-show="editingNodeId===node.id">
+                                <input type="text" x-model="node.name" @keydown.enter="editingNodeId=null" @blur="editingNodeId=null" xmlns="http://www.w3.org/1999/xhtml" class="w-full px-1 py-0.5 text-sm border border-indigo-400 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500" x-init="$el.focus()"/>
+                            </foreignObject>
+                            <circle x-show="node.type!=='start'" class="port" :cx="node.x+nodeWidth/2" :cy="node.y" r="4" fill="white" stroke="#6366f1" stroke-width="2" @mousedown.stop="startConnect(node.id,'top')" @mouseup.stop="finishConnect(node.id,'top')"/>
+                            <circle class="port" :cx="node.x+nodeWidth/2" :cy="node.y+nodeHeight" r="4" fill="white" stroke="#6366f1" stroke-width="2" x-show="node.type!=='end'" @mousedown.stop="startConnect(node.id,'bottom')" @mouseup.stop="finishConnect(node.id,'bottom')"/>
+                            <circle class="port" :cx="node.x" :cy="node.y+nodeHeight/2" r="4" fill="white" stroke="#6366f1" stroke-width="2" x-show="node.type!=='start'&&node.type!=='end'" @mousedown.stop="startConnect(node.id,'left')" @mouseup.stop="finishConnect(node.id,'left')"/>
+                            <circle class="port" :cx="node.x+nodeWidth" :cy="node.y+nodeHeight/2" r="4" fill="white" stroke="#6366f1" stroke-width="2" x-show="node.type!=='start'&&node.type!=='end'" @mousedown.stop="startConnect(node.id,'right')" @mouseup.stop="finishConnect(node.id,'right')"/>
+                        </g>
+                    </template>
+                </g>
+            </svg>
+            <div class="absolute bottom-4 right-4 flex items-center space-x-1 bg-white rounded-lg shadow border border-gray-200 px-2 py-1">
+                <button @click="zoomIn" class="p-1 text-gray-500 hover:text-indigo-600 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/></svg>
+                </button>
+                <span class="text-xs text-gray-500 min-w-[3rem] text-center" x-text="Math.round(1200/viewBox.w*100)+'%'"></span>
+                <button @click="zoomOut" class="p-1 text-gray-500 hover:text-indigo-600 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 12H6"/></svg>
+                </button>
+                <button @click="resetView" class="p-1 text-gray-500 hover:text-indigo-600 transition-colors" title="重置视图">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                </button>
+            </div>
+        </div>
+
+        <div class="w-80 bg-white border-l border-gray-200 flex flex-col shrink-0 overflow-hidden" x-show="selectedNode" x-cloak>
+            <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <h3 class="text-sm font-semibold text-gray-700">节点属性</h3>
+                <button @click="selectedNodeId=null" class="text-gray-400 hover:text-gray-600 transition-colors">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-5" x-show="selectedNode">
+                <div>
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">基础属性</p>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">节点名称</label>
+                            <input type="text" x-model="selectedNode.name" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">节点ID</label>
+                            <input type="text" x-model="selectedNode.id" disabled class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-400 font-mono">
+                        </div>
+                    </div>
+                </div>
+                <div x-show="selectedNode?.type==='approval'">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">审批设置</p>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">审批人类型</label>
+                            <select x-model="selectedNode.properties.approverType" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                                <option value="specified">指定人员</option>
+                                <option value="role">指定角色</option>
+                                <option value="dept_head">部门主管</option>
+                                <option value="initiator_head">发起人主管</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">审批人</label>
+                            <input type="text" x-model="selectedNode.properties.approvers" placeholder="选择审批人" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">会签方式</label>
+                            <select x-model="selectedNode.properties.signType" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                                <option value="or">或签（任一人通过）</option>
+                                <option value="and">会签（全部通过）</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">审批超时（天）</label>
+                            <input type="number" x-model.number="selectedNode.properties.timeout" min="0" placeholder="0表示不限" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                <div x-show="selectedNode?.type==='condition'">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">条件设置</p>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">分支名称</label>
+                            <input type="text" x-model="selectedNode.properties.branchName" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">条件表达式</label>
+                            <textarea x-model="selectedNode.properties.expression" rows="3" placeholder="例: ${amount} > 1000" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div x-show="selectedNode?.type==='cc'">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">抄送设置</p>
+                    <div>
+                        <label class="block text-xs font-medium text-gray-600 mb-1">抄送人</label>
+                        <input type="text" x-model="selectedNode.properties.ccUsers" placeholder="选择抄送人" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    </div>
+                </div>
+                <div x-show="selectedNode?.type==='delay'">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">延时设置</p>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">延时类型</label>
+                            <select x-model="selectedNode.properties.delayType" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                                <option value="fixed">固定时间</option>
+                                <option value="relative">相对时间</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">延时时长（小时）</label>
+                            <input type="number" x-model.number="selectedNode.properties.delayDuration" min="0" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                    </div>
+                </div>
+                <div x-show="selectedNode?.type==='auto'">
+                    <p class="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">自动任务</p>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">任务类型</label>
+                            <select x-model="selectedNode.properties.taskType" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                                <option value="notify">发送通知</option>
+                                <option value="update">更新数据</option>
+                                <option value="api">调用接口</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-600 mb-1">任务配置</label>
+                            <textarea x-model="selectedNode.properties.taskConfig" rows="3" placeholder="JSON配置" class="w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="contextMenu" x-cloak class="fixed z-50 bg-white rounded-lg shadow-lg border border-gray-200 py-1 min-w-[140px]"
+         :style="'left:'+contextMenu?.x+'px;top:'+contextMenu?.y+'px'" @click.away="contextMenu=null">
+        <button @click="editContextNode(); contextMenu=null" class="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center">
+            <svg class="w-4 h-4 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            编辑属性
+        </button>
+        <button @click="deleteNode(contextMenu?.nodeId); contextMenu=null" class="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center" x-show="contextMenu?.nodeType!=='start'">
+            <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            删除节点
+        </button>
+    </div>
+
+    <script th:inline="javascript">
+        var processId = /*[[${process?.id}]]*/ null;
+        var processNameInit = /*[[${process?.processName}]]*/ '';
+        var processKeyInit = /*[[${process?.processKey}]]*/ '';
+        var formIdInit = /*[[${process?.formId}]]*/ null;
+        var categoryInit = /*[[${process?.category}]]*/ '';
+        var processDataInit = /*[[${process?.processData}]]*/ '';
+        var formsData = /*[[${forms}]]*/ [];
+
+        function processDesigner() {
+            return {
+                processId: processId,
+                processName: processNameInit || '',
+                processKey: processKeyInit || '',
+                formId: formIdInit || '',
+                category: categoryInit || '',
+                forms: formsData || [],
+                nodes: [],
+                edges: [],
+                selectedNodeId: null,
+                selectedEdgeId: null,
+                connecting: null,
+                dragging: null,
+                editingNodeId: null,
+                contextMenu: null,
+                mouseX: 0, mouseY: 0,
+                viewBox: {x:0, y:0, w:1200, h:800},
+                nodeWidth: 180, nodeHeight: 52,
+                nodeCounter: 0,
+                nodeTypes: [
+                    {type:'approval', name:'审批节点'},
+                    {type:'condition', name:'条件分支'},
+                    {type:'parallel', name:'并行会签'},
+                    {type:'cc', name:'抄送节点'},
+                    {type:'delay', name:'延时节点'},
+                    {type:'auto', name:'自动任务'},
+                    {type:'end', name:'结束节点'}
+                ],
+                init() {
+                    if (processDataInit) {
+                        try {
+                            var data = JSON.parse(processDataInit);
+                            if (data.nodes) this.nodes = data.nodes;
+                            if (data.edges) this.edges = data.edges;
+                            this.nodeCounter = this.nodes.length;
+                        } catch(e) { console.error('Parse error:', e); }
+                    }
+                    if (!this.nodes.find(function(n){return n.type==='start';})) {
+                        this.nodes.unshift({id:'start', type:'start', name:'开始', x:510, y:40, properties:{}});
+                    }
+                },
+                get selectedNode() {
+                    var self = this;
+                    return self.nodes.find(function(n){return n.id===self.selectedNodeId;}) || null;
+                },
+                getNodeColor(type) {
+                    var colors = {start:'#4f46e5', approval:'#2563eb', condition:'#d97706', parallel:'#7c3aed', cc:'#059669', delay:'#ea580c', auto:'#6b7280', end:'#dc2626'};
+                    return colors[type] || '#6b7280';
+                },
+                addNode(type) {
+                    this.nodeCounter++;
+                    var names = {approval:'审批节点', condition:'条件分支', parallel:'并行会签', cc:'抄送节点', delay:'延时节点', auto:'自动任务', end:'结束节点'};
+                    var lastNode = this.nodes[this.nodes.length - 1];
+                    var x = 510, y = lastNode ? lastNode.y + 100 : 140;
+                    var props = {};
+                    if (type === 'approval') props = {approverType:'specified', approvers:'', signType:'or', timeout:0};
+                    else if (type === 'condition') props = {branchName:'', expression:''};
+                    else if (type === 'cc') props = {ccUsers:''};
+                    else if (type === 'delay') props = {delayType:'fixed', delayDuration:0};
+                    else if (type === 'auto') props = {taskType:'notify', taskConfig:''};
+                    this.nodes.push({id:'node_'+this.nodeCounter+'_'+Date.now(), type:type, name:names[type]||type, x:x, y:y, properties:props});
+                },
+                selectNode(id) { this.selectedNodeId = id; this.selectedEdgeId = null; },
+                selectEdge(id) { this.selectedEdgeId = id; this.selectedNodeId = null; },
+                deleteNode(id) {
+                    if (id === 'start') return;
+                    var idx = this.nodes.findIndex(function(n){return n.id===id;});
+                    if (idx > -1) { this.nodes.splice(idx, 1); this.edges = this.edges.filter(function(e){return e.source!==id && e.target!==id;}); if (this.selectedNodeId===id) this.selectedNodeId=null; }
+                },
+                startEditNode(id) { this.editingNodeId = id; this.selectedNodeId = id; },
+                editContextNode() { if(this.contextMenu) { this.selectedNodeId = this.contextMenu.nodeId; this.editingNodeId = this.contextMenu.nodeId; } },
+                startConnect(nodeId, port) { this.connecting = {fromId:nodeId, fromPort:port}; },
+                finishConnect(nodeId, port) {
+                    if (this.connecting && this.connecting.fromId !== nodeId) {
+                        var exists = this.edges.some(function(e){return e.source===this.connecting.fromId && e.target===nodeId;}.bind(this));
+                        if (!exists) { this.edges.push({id:'edge_'+Date.now(), source:this.connecting.fromId, target:nodeId, sourcePort:this.connecting.fromPort, targetPort:port}); }
+                    }
+                    this.connecting = null;
+                },
+                getNodePortX(nodeId, port) {
+                    var n = this.nodes.find(function(n){return n.id===nodeId;});
+                    if (!n) return 0;
+                    if (port==='top'||port==='bottom') return n.x + this.nodeWidth/2;
+                    if (port==='left') return n.x;
+                    if (port==='right') return n.x + this.nodeWidth;
+                    return n.x + this.nodeWidth/2;
+                },
+                getNodePortY(nodeId, port) {
+                    var n = this.nodes.find(function(n){return n.id===nodeId;});
+                    if (!n) return 0;
+                    if (port==='top') return n.y;
+                    if (port==='bottom') return n.y + this.nodeHeight;
+                    if (port==='left'||port==='right') return n.y + this.nodeHeight/2;
+                    return n.y + this.nodeHeight/2;
+                },
+                calcEdgePath(edge) {
+                    var sx = this.getNodePortX(edge.source, 'bottom'), sy = this.getNodePortY(edge.source, 'bottom');
+                    var tx = this.getNodePortX(edge.target, 'top'), ty = this.getNodePortY(edge.target, 'top');
+                    var my = (sy + ty) / 2;
+                    return 'M '+sx+' '+sy+' C '+sx+' '+my+', '+tx+' '+my+', '+tx+' '+ty;
+                },
+                onNodeMouseDown(nodeId, e) {
+                    if (this.connecting) return;
+                    this.selectedNodeId = nodeId;
+                    var n = this.nodes.find(function(n){return n.id===nodeId;});
+                    var svgEl = e.target.closest('svg');
+                    var pt = svgEl.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+                    var svgPt = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+                    this.dragging = {nodeId:nodeId, offsetX:svgPt.x - n.x, offsetY:svgPt.y - n.y};
+                },
+                onCanvasMouseMove(e) {
+                    var svgEl = e.target.closest('svg');
+                    if (!svgEl) return;
+                    var pt = svgEl.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+                    var svgPt = pt.matrixTransform(svgEl.getScreenCTM().inverse());
+                    this.mouseX = svgPt.x; this.mouseY = svgPt.y;
+                    if (this.dragging) {
+                        var n = this.nodes.find(function(n){return n.id===this.dragging.nodeId;}.bind(this));
+                        if (n) { n.x = svgPt.x - this.dragging.offsetX; n.y = svgPt.y - this.dragging.offsetY; }
+                    }
+                },
+                onCanvasMouseUp() { this.dragging = null; },
+                onCanvasClick(e) { if (e.target.tagName === 'svg' || e.target.tagName === 'rect' && e.target.getAttribute('fill')==='none') { this.selectedNodeId = null; this.selectedEdgeId = null; this.connecting = null; } },
+                onCanvasWheel(e) { var scale = e.deltaY > 0 ? 1.1 : 0.9; this.viewBox.w = Math.max(400, Math.min(3000, this.viewBox.w * scale)); this.viewBox.h = Math.max(300, Math.min(2000, this.viewBox.h * scale)); },
+                onCanvasContextMenu(e) { this.contextMenu = {x:e.clientX, y:e.clientY, nodeId:null, nodeType:null}; },
+                onNodeContextMenu(nodeId, e) { this.contextMenu = {x:e.clientX, y:e.clientY, nodeId:nodeId, nodeType:this.nodes.find(function(n){return n.id===nodeId;})?.type}; this.selectedNodeId = nodeId; },
+                zoomIn() { this.viewBox.w = Math.max(400, this.viewBox.w * 0.9); this.viewBox.h = Math.max(300, this.viewBox.h * 0.9); },
+                zoomOut() { this.viewBox.w = Math.min(3000, this.viewBox.w * 1.1); this.viewBox.h = Math.min(2000, this.viewBox.h * 1.1); },
+                resetView() { this.viewBox = {x:0, y:0, w:1200, h:800}; },
+                clearCanvas() {
+                    if (this.nodes.length <= 1) return;
+                    if (confirm('确定要清空画布吗？此操作不可撤销。')) {
+                        this.nodes = this.nodes.filter(function(n){return n.type==='start';});
+                        this.edges = []; this.selectedNodeId = null; this.nodeCounter = 0;
+                    }
+                },
+                previewProcess() {
+                    var data = {nodes:this.nodes, edges:this.edges};
+                    localStorage.setItem('processPreview', JSON.stringify(data));
+                    window.open('/process/view/preview', '_blank');
+                },
+                buildProcessData() {
+                    return {nodes:JSON.parse(JSON.stringify(this.nodes)), edges:JSON.parse(JSON.stringify(this.edges))};
+                },
+                saveProcess() {
+                    if (!this.processName.trim()) { alert('请输入流程名称'); return; }
+                    if (!this.processKey.trim()) { this.processKey = 'process_' + Date.now(); }
+                    var payload = {
+                        id: this.processId,
+                        processName: this.processName,
+                        processKey: this.processKey,
+                        formId: this.formId || null,
+                        category: this.category,
+                        processData: JSON.stringify(this.buildProcessData())
+                    };
+                    fetch('/process/save', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+                    .then(function(res){return res.json();})
+                    .then(function(data){
+                        if(data.code===200){if(!payload.id&&data.data)payload.id=data.data;alert('保存成功');window.location.href='/process';}
+                        else{alert('保存失败: '+(data.msg||'未知错误'));}
+                    })
+                    .catch(function(err){alert('保存失败: '+err.message);});
+                }
+            };
+        }
+    </script>
+
+</body>
+</html>

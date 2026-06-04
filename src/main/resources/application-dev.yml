@@ -1,0 +1,21 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://localhost:3306/flow_platform_dev?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:root}
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST:localhost}
+      port: ${SPRING_REDIS_PORT:6379}
+  thymeleaf:
+    cache: false
+  cache:
+    type: none
+
+logging:
+  level:
+    com.flowplatform: debug
+    org.springframework.web: debug
+
+flow-platform:
+  encryption-key: ${FLOW_PLATFORM_ENCRYPTION_KEY:dev-only-key-do-not-use-in-prod}

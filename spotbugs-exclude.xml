@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+    <Match>
+        <Package name="com.flowplatform.entity"/>
+    </Match>
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2, EI_EXPOSE_REP, EC_BAD_COMPARE_TO"/>
+    </Match>
+    <Match>
+        <Source name="~.*Test.*"/>
+    </Match>
+</FindBugsFilter>

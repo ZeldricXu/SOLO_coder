@@ -1,0 +1,15 @@
+{
+  "name": "flow-platform-frontend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "build:css": "tailwindcss -i src/input.css -o ../src/main/resources/static/css/output.css --minify",
+    "build:vendor": "node build-vendor.js",
+    "build": "npm run build:css && npm run build:vendor",
+    "watch:css": "tailwindcss -i src/input.css -o ../src/main/resources/static/css/output.css --watch"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.1",
+    "esbuild": "^0.20.0"
+  }
+}

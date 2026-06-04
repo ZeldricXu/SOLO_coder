@@ -1,0 +1,65 @@
+server:
+  port: 8080
+  address: 0.0.0.0
+  shutdown: graceful
+
+spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 30s
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME}
+    password: ${SPRING_DATASOURCE_PASSWORD}
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+  data:
+    redis:
+      host: ${SPRING_REDIS_HOST}
+      port: ${SPRING_REDIS_PORT}
+      password: ${SPRING_REDIS_PASSWORD}
+      lettuce:
+        pool:
+          max-active: 24
+          max-idle: 12
+          min-idle: 6
+  thymeleaf:
+    cache: true
+  cache:
+    type: redis
+  flyway:
+    enabled: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+  server:
+    port: 8081
+
+logging:
+  level:
+    com.flowplatform: warn
+    org.springframework: error
+  file:
+    name: /var/log/flow-platform/application.log
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+      total-size-cap: 5GB
+
+flow-platform:
+  wechat-webhook: ${FLOW_PLATFORM_WECHAT_WEBHOOK:}
+  encryption-key: ${FLOW_PLATFORM_ENCRYPTION_KEY}
+  upload-path: ${FLOW_PLATFORM_UPLOAD_PATH:/data/flow-platform/uploads}

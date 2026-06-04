@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>部门管理</title>
+</head>
+<body>
+<div layout:fragment="content" x-data="{
+    treeData: [],
+    selectedDept: null,
+    expandedNodes: [],
+    deptForm: { deptName: '', deptCode: '', leader: '', parentId: 0, sortOrder: 0, status: 1 },
+    isCreating: false,
+    init() {
+        this.loadRootNodes();
+    },
+    async loadRootNodes() {
+        const resp = await fetch('/permission/api/dept-tree');
+        const data = await resp.json();
+        this.treeData = data.map(d => ({ ...d, _loaded: false, _expanded: false, children: [] }));
+    },
+    async toggleExpand(dept) {
+        if (dept._expanded) {
+            dept._expanded = false;
+            return;
+        }
+        dept._expanded = true;
+        if (!dept._loaded) {
+            const resp = await fetch('/permission/api/dept-tree?parentId=' + dept.id);
+            const children = await resp.json();
+            dept.children = children.map(c => ({ ...c, _loaded: false, _expanded: false, children: [] }));
+            dept._loaded = true;
+        }
+    },
+    selectDept(dept) {
+        this.selectedDept = dept;
+        this.deptForm = {
+            id: dept.id,
+            deptName: dept.deptName,
+            deptCode: dept.deptCode,
+            leader: dept.leader,
+            parentId: dept.parentId,
+            sortOrder: dept.sortOrder,
+            status: dept.status
+        };
+        this.isCreating = false;
+    },
+    openCreateChild() {
+        if (!this.selectedDept) return;
+        this.isCreating = true;
+        this.deptForm = { deptName: '', deptCode: '', leader: '', parentId: this.selectedDept.id, sortOrder: 0, status: 1 };
+    },
+    openCreateRoot() {
+        this.isCreating = true;
+        this.deptForm = { deptName: '', deptCode: '', leader: '', parentId: 0, sortOrder: 0, status: 1 };
+    },
+    saveDept() {
+        const params = new URLSearchParams();
+        Object.keys(this.deptForm).forEach(k => { if (this.deptForm[k] !== null && this.deptForm[k] !== '') params.append(k, this.deptForm[k]); });
+        fetch('/permission/dept/save', { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: params })
+            .then(r => r.json()).then(d => {
+                if (d.code === 200) { window.location.reload(); } else { alert(d.msg); }
+            });
+    },
+    deleteDept(id) {
+        if (!confirm('确定要删除该部门吗？删除后不可恢复。')) return;
+        fetch('/permission/dept/delete/' + id, { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} })
+            .then(r => r.json()).then(d => { if (d.code === 200) window.location.reload(); else alert(d.msg); });
+    }
+}">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">权限管理</h1>
+            <p class="text-gray-500 mt-1">管理用户、角色与部门</p>
+        </div>
+    </div>
+
+    <div class="mb-6 border-b border-gray-200">
+        <nav class="flex space-x-8" aria-label="Tabs">
+            <a href="/permission/users"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                用户管理
+            </a>
+            <a href="/permission/roles"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                角色管理
+            </a>
+            <a href="/permission/departments"
+               class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                部门管理
+            </a>
+        </nav>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="lg:col-span-1 bg-white rounded-xl shadow-sm border border-gray-200">
+            <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <h3 class="text-base font-semibold text-gray-900">部门架构</h3>
+                <button @click="openCreateRoot()"
+                        class="inline-flex items-center px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-medium rounded-lg transition-colors">
+                    <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                    </svg>
+                    新增根部门
+                </button>
+            </div>
+            <div class="p-4 max-h-[600px] overflow-y-auto">
+                <template x-if="treeData.length > 0">
+                    <div>
+                        <template x-for="node in treeData" :key="node.id">
+                            <div class="mb-1">
+                                <div class="flex items-center group cursor-pointer rounded-lg px-2 py-2 hover:bg-gray-50 transition-colors"
+                                     :class="selectedDept && selectedDept.id === node.id ? 'bg-indigo-50 border border-indigo-200' : ''"
+                                     @click="selectDept(node)">
+                                    <button @click.stop="toggleExpand(node)"
+                                            class="w-5 h-5 flex items-center justify-center mr-1 text-gray-400 hover:text-gray-600">
+                                        <svg x-show="!node._expanded" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                        </svg>
+                                        <svg x-show="node._expanded" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                                        </svg>
+                                    </button>
+                                    <div class="w-6 h-6 bg-indigo-100 rounded flex items-center justify-center mr-2 shrink-0">
+                                        <svg class="w-3.5 h-3.5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                                        </svg>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <p class="text-sm font-medium text-gray-900 truncate" x-text="node.deptName">部门名称</p>
+                                        <p class="text-xs text-gray-400" x-show="node.leader" x-text="'负责人: ' + node.leader">负责人</p>
+                                    </div>
+                                </div>
+                                <div x-show="node._expanded && node.children" class="ml-6 mt-1">
+                                    <template x-for="child in node.children" :key="child.id">
+                                        <div class="mb-1">
+                                            <div class="flex items-center group cursor-pointer rounded-lg px-2 py-2 hover:bg-gray-50 transition-colors"
+                                                 :class="selectedDept && selectedDept.id === child.id ? 'bg-indigo-50 border border-indigo-200' : ''"
+                                                 @click="selectDept(child)">
+                                                <button @click.stop="toggleExpand(child)"
+                                                        class="w-5 h-5 flex items-center justify-center mr-1 text-gray-400 hover:text-gray-600">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/>
+                                                    </svg>
+                                                </button>
+                                                <div class="w-6 h-6 bg-gray-100 rounded flex items-center justify-center mr-2 shrink-0">
+                                                    <svg class="w-3.5 h-3.5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                                                    </svg>
+                                                </div>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-sm font-medium text-gray-900 truncate" x-text="child.deptName">子部门</p>
+                                                    <p class="text-xs text-gray-400" x-show="child.leader" x-text="'负责人: ' + child.leader">负责人</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+                </template>
+                <template x-if="treeData.length === 0">
+                    <div class="text-center py-8">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                        <p class="text-sm text-gray-400">暂无部门数据</p>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200" x-show="selectedDept || isCreating">
+                <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                    <h3 class="text-base font-semibold text-gray-900" x-text="isCreating ? '新增部门' : '部门详情'">部门详情</h3>
+                    <div x-show="selectedDept && !isCreating" class="flex items-center space-x-2">
+                        <button @click="openCreateChild()"
+                                class="inline-flex items-center px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-medium rounded-lg transition-colors">
+                            <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                            </svg>
+                            新增子部门
+                        </button>
+                    </div>
+                </div>
+                <div class="p-6 space-y-4">
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">部门名称</label>
+                            <input type="text" x-model="deptForm.deptName"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">部门编码</label>
+                            <input type="text" x-model="deptForm.deptCode"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">负责人</label>
+                            <input type="text" x-model="deptForm.leader"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">排序</label>
+                            <input type="number" x-model="deptForm.sortOrder"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                            <select x-model="deptForm.status"
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                                <option value="1">启用</option>
+                                <option value="0">禁用</option>
+                            </select>
+                        </div>
+                        <div x-show="deptForm.parentId && deptForm.parentId > 0">
+                            <label class="block text-sm font-medium text-gray-700 mb-1">上级部门</label>
+                            <input type="text" :value="selectedDept ? selectedDept.deptName : '根部门'" disabled
+                                   class="w-full px-4 py-2 border border-gray-200 bg-gray-50 rounded-lg text-sm text-gray-500">
+                        </div>
+                    </div>
+                    <div class="flex items-center justify-end space-x-3 pt-4 border-t border-gray-200">
+                        <button x-show="selectedDept && !isCreating" @click="deleteDept(selectedDept.id)"
+                                class="px-4 py-2 text-sm text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors">
+                            删除部门
+                        </button>
+                        <div class="flex-1"></div>
+                        <button x-show="isCreating" @click="isCreating = false"
+                                class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">取消</button>
+                        <button @click="saveDept()"
+                                class="px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200" x-show="!selectedDept && !isCreating">
+                <div class="text-center py-16">
+                    <svg class="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                    </svg>
+                    <p class="text-gray-500 font-medium">请选择左侧部门查看详情</p>
+                    <p class="text-sm text-gray-400 mt-1">点击部门名称即可编辑部门信息</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>待办事项</title>
+</head>
+<body>
+<div layout:fragment="content" x-data="{
+    selectedTasks: [],
+    toggleAll() {
+        if (this.selectedTasks.length === document.querySelectorAll('.task-checkbox').length) {
+            this.selectedTasks = [];
+        } else {
+            this.selectedTasks = [...document.querySelectorAll('.task-checkbox')].map(cb => cb.value);
+        }
+    },
+    toggleTask(id) {
+        let idx = this.selectedTasks.indexOf(id);
+        if (idx > -1) { this.selectedTasks.splice(idx, 1); } else { this.selectedTasks.push(id); }
+    },
+    batchApprove() {
+        if (this.selectedTasks.length === 0) { alert('请选择要审批的任务'); return; }
+        fetch('/approval/batchApprove', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+            body: JSON.stringify({taskIds: this.selectedTasks.map(Number), comment: ''})
+        }).then(r => r.json()).then(data => {
+            if (data.code === 200) { window.location.reload(); } else { alert(data.msg); }
+        });
+    }
+}">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">审批中心</h1>
+            <p class="text-gray-500 mt-1">处理待办审批任务</p>
+        </div>
+    </div>
+
+    <div class="mb-6 border-b border-gray-200">
+        <nav class="flex space-x-8" aria-label="Tabs">
+            <a href="/approval/pending"
+               class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                待办事项
+            </a>
+            <a href="/approval/completed"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                已办事项
+            </a>
+            <a href="/approval/initiated"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                已发起
+            </a>
+        </nav>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+        <form method="get" action="/approval/pending" class="p-4 flex flex-wrap items-center gap-4">
+            <div class="flex-1 min-w-[200px]">
+                <input type="text" name="keyword" th:value="${keyword}" placeholder="搜索申请人或流程名称..."
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+            </div>
+            <div class="w-48">
+                <select name="processType" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white">
+                    <option value="">全部流程</option>
+                    <option value="请假" th:selected="${processType == '请假'}">请假</option>
+                    <option value="报销" th:selected="${processType == '报销'}">报销</option>
+                    <option value="采购" th:selected="${processType == '采购'}">采购</option>
+                    <option value="入职" th:selected="${processType == '入职'}">入职</option>
+                </select>
+            </div>
+            <div class="w-40">
+                <input type="date" name="startDate" th:value="${startDate}"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+            </div>
+            <div class="w-40">
+                <input type="date" name="endDate" th:value="${endDate}"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+                搜索
+            </button>
+        </form>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="px-6 py-3 border-b border-gray-200 flex items-center justify-between bg-gray-50">
+            <div class="flex items-center space-x-3">
+                <input type="checkbox" @change="toggleAll()"
+                       :checked="selectedTasks.length === document.querySelectorAll('.task-checkbox').length && document.querySelectorAll('.task-checkbox').length > 0"
+                       class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                <span class="text-sm text-gray-600">全选</span>
+            </div>
+            <button @click="batchApprove()"
+                    :disabled="selectedTasks.length === 0"
+                    :class="selectedTasks.length === 0 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-indigo-700'"
+                    class="inline-flex items-center px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                批量审批
+            </button>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                <tr class="bg-gray-50 border-b border-gray-200">
+                    <th class="px-6 py-3 text-left w-10"></th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">申请人</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">流程名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">当前节点</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">接收时间</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">剩余时间</th>
+                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                <tr th:each="task : ${tasks}" class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4">
+                        <input type="checkbox" class="task-checkbox w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500"
+                               :value="'__TASK_ID_PLACEHOLDER__'"
+                               th:attr="value=${task.id}"
+                               @change="toggleTask(String([[${task.id}]]))"
+                               :checked="selectedTasks.includes(String([[${task.id}]]))">
+                    </td>
+                    <td class="px-6 py-4">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                                <span class="text-xs font-medium text-indigo-600" th:text="${#strings.substring(task.processName ?: 'U', 0, 1)}">U</span>
+                            </div>
+                            <span class="text-sm font-medium text-gray-900" th:text="${task.processName ?: '-'}">申请人</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4">
+                        <a th:href="@{/approval/detail/{id}(id=${task.instanceId})}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800" th:text="${task.instanceTitle ?: '-'}">流程名称</a>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800" th:text="${task.nodeName}">当前节点</span>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-500" th:text="${#temporals.format(task.createTime, 'yyyy-MM-dd HH:mm')}">2025-01-01</td>
+                    <td class="px-6 py-4">
+                        <span class="text-sm text-amber-600 font-medium" th:if="${task.dueDate != null}">
+                            <span th:text="${#temporals.until(task.dueDate, #temporals.createNow()).days} + '天'">3天</span>
+                        </span>
+                        <span class="text-sm text-gray-400" th:if="${task.dueDate == null}">-</span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex items-center justify-end space-x-2">
+                            <button th:attr="hx-post=@{/approval/approve/{id}(id=${task.id})}"
+                                    hx-include="#comment-__${task.id}__"
+                                    hx-target="closest tr" hx-swap="outerHTML swap:0.5s"
+                                    class="inline-flex items-center px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-medium rounded-lg transition-colors">
+                                同意
+                            </button>
+                            <button th:attr="hx-post=@{/approval/reject/{id}(id=${task.id})}"
+                                    hx-target="closest tr" hx-swap="outerHTML swap:0.5s"
+                                    hx-confirm="确定要拒绝此审批吗？"
+                                    class="inline-flex items-center px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium rounded-lg transition-colors">
+                                拒绝
+                            </button>
+                            <button th:attr="hx-post=@{/approval/return/{id}(id=${task.id})}"
+                                    hx-target="closest tr" hx-swap="outerHTML swap:0.5s"
+                                    hx-confirm="确定要退回此审批吗？"
+                                    class="inline-flex items-center px-3 py-1.5 bg-yellow-50 hover:bg-yellow-100 text-yellow-700 text-xs font-medium rounded-lg transition-colors">
+                                退回
+                            </button>
+                            <a th:href="@{/approval/detail/{id}(id=${task.instanceId})}"
+                               class="inline-flex items-center px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-medium rounded-lg transition-colors">
+                                详情
+                            </a>
+                            <button @click="$dispatch('open-transfer', {taskId: [[${task.id}]]})"
+                                    class="inline-flex items-center px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded-lg transition-colors">
+                                转交
+                            </button>
+                            <button @click="$dispatch('open-addsign', {taskId: [[${task.id}]]})"
+                                    class="inline-flex items-center px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium rounded-lg transition-colors">
+                                加签
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <tr th:if="${tasks.isEmpty()}">
+                    <td colspan="7" class="px-6 py-12 text-center">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        <p class="text-sm text-gray-400">暂无待办事项</p>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div x-data="{ open: false, taskId: null, users: [] }"
+         @open-transfer.window="open = true; taskId = $event.detail.taskId; loadUsers()"
+         x-show="open" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">转交任务</h3>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">选择转交人</label>
+                <select x-model="selectedUserId" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">请选择</option>
+                    <template x-for="u in users" :key="u.id">
+                        <option :value="u.id" x-text="(u.realName || u.username)"></option>
+                    </template>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">转交说明</label>
+                <textarea x-model="comment" rows="3" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="请输入转交说明..."></textarea>
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button @click="open = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">取消</button>
+                <button @click="doTransfer()" class="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors">确认转交</button>
+            </div>
+            <script>
+                function loadUsers() { fetch('/api/users/list').then(r=>r.json()).then(d=>{ if(d.code===200) this.users=d.data; }.bind(this)); }
+                function doTransfer() {
+                    if (!this.selectedUserId) { alert('请选择转交人'); return; }
+                    const params = new URLSearchParams(); params.append('toUserId', this.selectedUserId); params.append('comment', this.comment||'');
+                    fetch('/approval/transfer/'+this.taskId, {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:params})
+                        .then(r=>r.json()).then(d=>{ if(d.code===200){this.open=false;window.location.reload();}else{alert(d.msg);} });
+                }
+            </script>
+        </div>
+    </div>
+
+    <div x-data="{ open: false, taskId: null, users: [] }"
+         @open-addsign.window="open = true; taskId = $event.detail.taskId; fetchUsers()"
+         x-show="open" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">加签审批</h3>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">选择加签人</label>
+                <select x-model="selectedUserId" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                    <option value="">请选择</option>
+                    <template x-for="u in users" :key="u.id">
+                        <option :value="u.id" x-text="(u.realName || u.username)"></option>
+                    </template>
+                </select>
+            </div>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">加签说明</label>
+                <textarea x-model="comment" rows="3" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500" placeholder="请输入加签说明..."></textarea>
+            </div>
+            <div class="flex justify-end space-x-3">
+                <button @click="open = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">取消</button>
+                <button @click="doAddSign()" class="px-4 py-2 text-sm text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors">确认加签</button>
+            </div>
+            <script>
+                function fetchUsers() { fetch('/api/users/list').then(r=>r.json()).then(d=>{ if(d.code===200) this.users=d.data; }.bind(this)); }
+                function doAddSign() {
+                    if (!this.selectedUserId) { alert('请选择加签人'); return; }
+                    const params = new URLSearchParams(); params.append('userId', this.selectedUserId); params.append('comment', this.comment||'');
+                    fetch('/approval/addSign/'+this.taskId, {method:'POST', headers:{'X-Requested-With':'XMLHttpRequest'}, body:params})
+                        .then(r=>r.json()).then(d=>{ if(d.code===200){this.open=false;window.location.reload();}else{alert(d.msg);} });
+                }
+            </script>
+        </div>
+    </div>
+</div>
+</body>
+</html>

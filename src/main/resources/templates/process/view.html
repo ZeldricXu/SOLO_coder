@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>流程预览</title>
+</head>
+<body>
+<div layout:fragment="content">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900" th:text="${process.processName}">流程名称</h1>
+            <p class="text-gray-500 mt-1" th:if="${process.processDesc}" th:text="${process.processDesc}">流程描述</p>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span th:if="${process.status == 1}" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">已发布</span>
+            <span th:if="${process.status != 1}" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">未发布</span>
+            <a th:href="@{/process/edit/{id}(id=${process.id})}"
+               class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                编辑
+            </a>
+            <a href="/process"
+               class="inline-flex items-center px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                返回列表
+            </a>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-6">
+        <div class="px-6 py-4 border-b border-gray-200 bg-gray-50">
+            <div class="flex items-center space-x-6 text-sm">
+                <div>
+                    <span class="text-gray-400">流程Key:</span>
+                    <span class="text-gray-700 font-mono ml-1" th:text="${process.processKey}">-</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">关联表单:</span>
+                    <span class="text-gray-700 ml-1" th:text="${process.formName ?: '未关联'}">-</span>
+                </div>
+                <div>
+                    <span class="text-gray-400">分类:</span>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 ml-1" th:text="${process.category ?: '未分类'}">-</span>
+                </div>
+            </div>
+        </div>
+
+        <div x-data="processViewer()" x-init="init()" class="relative">
+            <svg class="w-full" style="min-height:500px;" viewBox="0 0 1200 800">
+                <defs>
+                    <marker id="arrowhead-view" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto" fill="#6366f1">
+                        <polygon points="0 0, 10 3.5, 0 7"/>
+                    </marker>
+                </defs>
+                <g>
+                    <template x-for="edge in edges" :key="edge.id">
+                        <path :d="calcEdgePath(edge)" fill="none" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead-view)"/>
+                    </template>
+                </g>
+                <g>
+                    <template x-for="node in nodes" :key="node.id">
+                        <g>
+                            <rect :x="node.x" :y="node.y" width="180" height="52" rx="8" :fill="getNodeColor(node.type)" stroke="#d1d5db" stroke-width="1.5"/>
+                            <text :x="node.x+90" :y="node.y+26+1" text-anchor="middle" dominant-baseline="middle"
+                                  :fill="node.type==='start'||node.type==='end'?'#fff':'#374151'" font-size="13" font-weight="500" x-text="node.name"></text>
+                        </g>
+                    </template>
+                </g>
+                <g x-show="nodes.length===0">
+                    <text x="600" y="400" text-anchor="middle" fill="#9ca3af" font-size="14">暂无流程节点数据</text>
+                </g>
+            </svg>
+        </div>
+    </div>
+    <script th:inline="javascript">
+        var processDataView = /*[[${process?.processData}]]*/ '{}';
+
+        function processViewer() {
+            return {
+                nodes: [],
+                edges: [],
+                init() {
+                    try {
+                        var data = JSON.parse(processDataView);
+                        if (data.nodes) this.nodes = data.nodes;
+                        if (data.edges) this.edges = data.edges;
+                    } catch(e) {
+                        this.nodes = [];
+                        this.edges = [];
+                    }
+                },
+                getNodeColor(type) {
+                    var colors = {start:'#4f46e5', approval:'#2563eb', condition:'#d97706', parallel:'#7c3aed', cc:'#059669', delay:'#ea580c', auto:'#6b7280', end:'#dc2626'};
+                    return colors[type] || '#6b7280';
+                },
+                calcEdgePath(edge) {
+                    var sourceNode = this.nodes.find(function(n){return n.id===edge.source;});
+                    var targetNode = this.nodes.find(function(n){return n.id===edge.target;});
+                    if (!sourceNode || !targetNode) return '';
+                    var sx = sourceNode.x + 90, sy = sourceNode.y + 52;
+                    var tx = targetNode.x + 90, ty = targetNode.y;
+                    var my = (sy + ty) / 2;
+                    return 'M '+sx+' '+sy+' C '+sx+' '+my+', '+tx+' '+my+', '+tx+' '+ty;
+                }
+            };
+        }
+    </script>
+</div>
+</body>
+</html>

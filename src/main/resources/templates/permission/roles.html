@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>角色管理</title>
+</head>
+<body>
+<div layout:fragment="content" x-data="{
+    showRoleModal: false,
+    showPermModal: false,
+    editingRole: null,
+    selectedRoleId: null,
+    permissions: [],
+    selectedPermIds: [],
+    roleForm: { roleCode: '', roleName: '', description: '', status: 1 },
+    openCreateRole() {
+        this.editingRole = null;
+        this.roleForm = { roleCode: '', roleName: '', description: '', status: 1 };
+        this.showRoleModal = true;
+    },
+    openEditRole(role) {
+        this.editingRole = role;
+        this.roleForm = { id: role.id, roleCode: role.roleCode, roleName: role.roleName, description: role.description, status: role.status };
+        this.showRoleModal = true;
+    },
+    saveRole() {
+        const params = new URLSearchParams();
+        Object.keys(this.roleForm).forEach(k => { if (this.roleForm[k] !== null && this.roleForm[k] !== '') params.append(k, this.roleForm[k]); });
+        if (this.editingRole) params.append('id', this.editingRole.id);
+        fetch('/permission/role/save', { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: params })
+            .then(r => r.json()).then(d => { if (d.code === 200) { this.showRoleModal = false; window.location.reload(); } else { alert(d.msg); } });
+    },
+    deleteRole(id) {
+        if (!confirm('确定要删除该角色吗？')) return;
+        fetch('/permission/role/delete/' + id, { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} })
+            .then(r => r.json()).then(d => { if (d.code === 200) window.location.reload(); else alert(d.msg); });
+    },
+    openAssignPerm(role) {
+        this.selectedRoleId = role.id;
+        this.selectedPermIds = [];
+        this.showPermModal = true;
+        fetch('/permission/api/permissions').then(r => r.json()).then(data => {
+            this.permissions = data || [];
+        });
+    },
+    savePermissions() {
+        fetch('/permission/role/assign-permissions', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest'},
+            body: JSON.stringify({ roleId: this.selectedRoleId, permIds: this.selectedPermIds })
+        }).then(r => r.json()).then(d => {
+            if (d.code === 200) { this.showPermModal = false; window.location.reload(); } else { alert(d.msg); }
+        });
+    },
+    togglePerm(permId) {
+        let idx = this.selectedPermIds.indexOf(permId);
+        if (idx > -1) { this.selectedPermIds.splice(idx, 1); } else { this.selectedPermIds.push(permId); }
+    },
+    togglePermWithChildren(perm) {
+        let idx = this.selectedPermIds.indexOf(perm.id);
+        if (idx > -1) {
+            this.selectedPermIds = this.selectedPermIds.filter(id => id !== perm.id);
+            if (perm.children) perm.children.forEach(c => { this.selectedPermIds = this.selectedPermIds.filter(id => id !== c.id); });
+        } else {
+            this.selectedPermIds.push(perm.id);
+            if (perm.children) perm.children.forEach(c => { if (!this.selectedPermIds.includes(c.id)) this.selectedPermIds.push(c.id); });
+        }
+    }
+}">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">权限管理</h1>
+            <p class="text-gray-500 mt-1">管理用户、角色与部门</p>
+        </div>
+    </div>
+
+    <div class="mb-6 border-b border-gray-200">
+        <nav class="flex space-x-8" aria-label="Tabs">
+            <a href="/permission/users"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                用户管理
+            </a>
+            <a href="/permission/roles"
+               class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                角色管理
+            </a>
+            <a href="/permission/departments"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                部门管理
+            </a>
+        </nav>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-base font-semibold text-gray-900">角色列表</h3>
+            <button @click="openCreateRole()"
+                    class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                新增角色
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                <tr class="bg-gray-50 border-b border-gray-200">
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">角色编码</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">角色名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">描述</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">状态</th>
+                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                <tr th:each="role : ${roles}" class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4 text-sm font-mono text-gray-700" th:text="${role.roleCode}">-</td>
+                    <td class="px-6 py-4 text-sm font-medium text-gray-900" th:text="${role.roleName}">-</td>
+                    <td class="px-6 py-4 text-sm text-gray-500" th:text="${role.description ?: '-'}">-</td>
+                    <td class="px-6 py-4">
+                        <span th:if="${role.status == 1}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">启用</span>
+                        <span th:if="${role.status != 1}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">禁用</span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex items-center justify-end space-x-2">
+                            <button th:attr="@click='openEditRole(' + ${role} + ')'"
+                                    class="inline-flex items-center px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded-lg transition-colors">
+                                编辑
+                            </button>
+                            <button th:attr="@click='openAssignPerm(' + ${role} + ')'"
+                                    class="inline-flex items-center px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium rounded-lg transition-colors">
+                                分配权限
+                            </button>
+                            <button th:attr="@click='deleteRole(' + ${role.id} + ')'"
+                                    class="inline-flex items-center px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium rounded-lg transition-colors">
+                                删除
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <tr th:if="${roles.isEmpty()}">
+                    <td colspan="5" class="px-6 py-12 text-center">
+                        <p class="text-sm text-gray-400">暂无角色数据</p>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div x-show="showRoleModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+         @keydown.escape.window="showRoleModal = false">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 mb-4" x-text="editingRole ? '编辑角色' : '新增角色'">新增角色</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">角色编码</label>
+                    <input type="text" x-model="roleForm.roleCode"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="如: ROLE_ADMIN">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">角色名称</label>
+                    <input type="text" x-model="roleForm.roleName"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                           placeholder="如: 管理员">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                    <textarea x-model="roleForm.description" rows="3"
+                              class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                              placeholder="角色描述..."></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                    <select x-model="roleForm.status"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                        <option value="1">启用</option>
+                        <option value="0">禁用</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="showRoleModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">取消</button>
+                <button @click="saveRole()" class="px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showPermModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+         @keydown.escape.window="showPermModal = false">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">分配权限</h3>
+            <div class="space-y-1 max-h-72 overflow-y-auto">
+                <template x-for="perm in permissions" :key="perm.id">
+                    <div>
+                        <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                            <input type="checkbox" :value="perm.id"
+                                   :checked="selectedPermIds.includes(perm.id)"
+                                   @change="togglePermWithChildren(perm)"
+                                   class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                            <span class="text-sm font-medium text-gray-900" x-text="perm.permName">权限</span>
+                            <span class="text-xs text-gray-400" x-text="perm.permCode">code</span>
+                        </label>
+                        <div class="ml-8" x-show="perm.children && perm.children.length > 0">
+                            <template x-for="child in perm.children" :key="child.id">
+                                <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                                    <input type="checkbox" :value="child.id"
+                                           x-model="selectedPermIds"
+                                           class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                    <span class="text-sm text-gray-700" x-text="child.permName">子权限</span>
+                                </label>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="showPermModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">取消</button>
+                <button @click="savePermissions()" class="px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title th:text="${form?.formName + ' - 数据报表'}">表单报表</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+</head>
+<body>
+<div layout:fragment="content" x-data="{
+    totalInstances: 0,
+    pendingCount: 0,
+    approvedCount: 0,
+    rejectedCount: 0,
+    avgTime: '-',
+    currentPage: 1,
+    pageSize: 10,
+    records: [],
+    init() {
+        this.loadStats();
+        this.loadCharts();
+        this.loadRecords();
+    },
+    loadStats() {
+        fetch('/report/api/status-stats').then(r => r.json()).then(data => {
+            let total = 0;
+            data.forEach(item => {
+                total += item.count || 0;
+                if (item.status === 'PENDING' || item.status === 'RUNNING') this.pendingCount += item.count || 0;
+                if (item.status === 'APPROVED' || item.status === 'COMPLETED') this.approvedCount += item.count || 0;
+                if (item.status === 'REJECTED') this.rejectedCount += item.count || 0;
+            });
+            this.totalInstances = total;
+        });
+        fetch('/report/api/avg-time').then(r => r.json()).then(data => {
+            this.avgTime = data.avgTime || '-';
+        });
+    },
+    loadCharts() {
+        this.loadStatusPie();
+        this.loadDailyTrend();
+        this.loadNodeTimeBreakdown();
+    },
+    loadStatusPie() {
+        const chart = echarts.init(document.getElementById('form-status-pie'));
+        fetch('/report/api/status-stats').then(r => r.json()).then(data => {
+            const statusMap = { PENDING: '审批中', RUNNING: '运行中', APPROVED: '已通过', COMPLETED: '已完成', REJECTED: '已拒绝', CANCELLED: '已取消' };
+            const colorMap = { PENDING: '#f59e0b', RUNNING: '#3b82f6', APPROVED: '#10b981', COMPLETED: '#059669', REJECTED: '#ef4444', CANCELLED: '#6b7280' };
+            chart.setOption({
+                tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+                legend: { bottom: 0 },
+                series: [{
+                    type: 'pie', radius: ['40%', '65%'], center: ['50%', '45%'],
+                    itemStyle: { borderRadius: 6, borderColor: '#fff', borderWidth: 2 },
+                    label: { show: true, formatter: '{b}\n{d}%' },
+                    data: data.map(item => ({
+                        name: statusMap[item.status] || item.status,
+                        value: item.count || 0,
+                        itemStyle: { color: colorMap[item.status] || '#6366f1' }
+                    }))
+                }]
+            });
+        });
+        window.addEventListener('resize', () => chart.resize());
+    },
+    loadDailyTrend() {
+        const chart = echarts.init(document.getElementById('form-daily-trend'));
+        fetch('/report/api/date-trend').then(r => r.json()).then(data => {
+            chart.setOption({
+                tooltip: { trigger: 'axis' },
+                grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                xAxis: { type: 'category', boundaryGap: false, data: data.map(d => d.date) },
+                yAxis: { type: 'value', minInterval: 1 },
+                series: [{
+                    name: '提交数', type: 'line', smooth: true,
+                    lineStyle: { width: 2, color: '#6366f1' },
+                    itemStyle: { color: '#6366f1' },
+                    areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        { offset: 0, color: 'rgba(99,102,241,0.3)' },
+                        { offset: 1, color: 'rgba(99,102,241,0.02)' }
+                    ]) },
+                    data: data.map(d => d.count || 0)
+                }]
+            });
+        });
+        window.addEventListener('resize', () => chart.resize());
+    },
+    loadNodeTimeBreakdown() {
+        const chart = echarts.init(document.getElementById('form-node-time'));
+        fetch('/report/api/node-time').then(r => r.json()).then(data => {
+            chart.setOption({
+                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, formatter: params => params[0].name + '<br/>' + params[0].value + ' 小时' },
+                grid: { left: '3%', right: '8%', bottom: '3%', containLabel: true },
+                xAxis: { type: 'value', axisLabel: { formatter: '{value}h' } },
+                yAxis: { type: 'category', data: data.map(d => d.nodeName || d.nodeId).reverse() },
+                series: [{
+                    type: 'bar', barWidth: 16,
+                    itemStyle: { borderRadius: [0, 4, 4, 0], color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                        { offset: 0, color: '#6366f1' }, { offset: 1, color: '#818cf8' }
+                    ]) },
+                    data: data.map(d => d.avgHours || 0).reverse()
+                }]
+            });
+        });
+        window.addEventListener('resize', () => chart.resize());
+    },
+    loadRecords() {
+        fetch('/report/api/form-ranking').then(r => r.json()).then(data => {
+            this.records = data || [];
+        });
+    }
+}">
+    <div class="mb-6 flex items-center justify-between">
+        <div class="flex items-center space-x-4">
+            <a href="/report" class="inline-flex items-center px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+                </svg>
+                返回
+            </a>
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900" th:text="${form?.formName + ' - 数据报表'}">表单报表</h1>
+                <p class="text-gray-500 mt-1" th:text="${form?.formDesc}">表单统计分析</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">流程总数</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-1" x-text="totalInstances">0</p>
+                </div>
+                <div class="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">审批中</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-1" x-text="pendingCount">0</p>
+                </div>
+                <div class="w-12 h-12 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">已通过</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-1" x-text="approvedCount">0</p>
+                </div>
+                <div class="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-sm font-medium text-gray-500">已拒绝</p>
+                    <p class="text-3xl font-bold text-gray-900 mt-1" x-text="rejectedCount">0</p>
+                </div>
+                <div class="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                    <svg class="w-6 h-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h3 class="text-base font-semibold text-gray-900 mb-4">状态分布</h3>
+            <div id="form-status-pie" style="height: 300px;"></div>
+        </div>
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <h3 class="text-base font-semibold text-gray-900 mb-4">每日提交趋势</h3>
+            <div id="form-daily-trend" style="height: 300px;"></div>
+        </div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 mb-8">
+        <h3 class="text-base font-semibold text-gray-900 mb-4">审批节点耗时</h3>
+        <div id="form-node-time" style="height: 300px;"></div>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-base font-semibold text-gray-900">提交记录</h3>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                <tr class="bg-gray-50 border-b border-gray-200">
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">表单名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">提交数量</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                <template x-for="record in records" :key="record.formId">
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-sm font-medium text-gray-900" x-text="record.formName || record.formId">-</td>
+                        <td class="px-6 py-4 text-sm text-gray-500" x-text="record.count || 0">0</td>
+                    </tr>
+                </template>
+                <template x-if="records.length === 0">
+                    <tr>
+                        <td colspan="2" class="px-6 py-12 text-center text-sm text-gray-400">暂无提交记录</td>
+                    </tr>
+                </template>
+                </tbody>
+            </table>
+        </div>
+        <div class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <p class="text-sm text-gray-500" x-text="'共 ' + records.length + ' 条记录'">共 0 条记录</p>
+            <div class="flex items-center space-x-2">
+                <button @click="currentPage > 1 && currentPage--" :disabled="currentPage <= 1"
+                        :class="currentPage <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'"
+                        class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg">上一页</button>
+                <span class="text-sm text-gray-600" x-text="currentPage">1</span>
+                <button @click="currentPage++" :disabled="currentPage * pageSize >= records.length"
+                        :class="currentPage * pageSize >= records.length ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'"
+                        class="px-3 py-1.5 text-sm border border-gray-300 rounded-lg">下一页</button>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

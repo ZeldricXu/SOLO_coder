@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: flow-platform
+  namespace: flow-platform
+  annotations:
+    kubernetes.io/ingress.class: nginx
+spec:
+  tls:
+    - hosts:
+        - flow.example.com
+      secretName: flow-platform-tls
+  rules:
+    - host: flow.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: flow-platform
+                port:
+                  number: 80

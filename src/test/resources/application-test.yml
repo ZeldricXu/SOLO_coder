@@ -1,0 +1,23 @@
+spring:
+  datasource:
+    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:flow_platform_test;MODE=MySQL;DB_CLOSE_DELAY=-1
+    username: sa
+    password:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  thymeleaf:
+    cache: false
+  cache:
+    type: none
+  flyway:
+    enabled: false
+  mail:
+    host: localhost
+    port: 25
+
+logging:
+  level:
+    com.flowplatform: debug

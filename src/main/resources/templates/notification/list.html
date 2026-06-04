@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>消息中心</title>
+</head>
+<body>
+<div layout:fragment="content" x-data="{
+    expandedId: null,
+    toggleExpand(id) {
+        if (this.expandedId === id) { this.expandedId = null; return; }
+        this.expandedId = id;
+        fetch('/notification/read/' + id, { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} })
+            .then(r => r.json()).then(d => {
+                if (d.code === 200) {
+                    const dot = document.querySelector('#unread-dot-' + id);
+                    if (dot) dot.remove();
+                    const card = document.querySelector('#card-' + id);
+                    if (card) {
+                        card.classList.remove('border-l-4', 'border-blue-500');
+                        card.classList.add('border-l-4', 'border-transparent');
+                    }
+                    const title = document.querySelector('#title-' + id);
+                    if (title) title.classList.remove('font-bold');
+                }
+            });
+    },
+    markAllRead() {
+        fetch('/notification/read-all', { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} })
+            .then(r => r.json()).then(d => {
+                if (d.code === 200) window.location.reload();
+                else alert(d.msg);
+            });
+    }
+}">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">消息中心</h1>
+            <p class="text-gray-500 mt-1">查看和管理您的通知消息</p>
+        </div>
+        <button @click="markAllRead()"
+                class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            </svg>
+            全部已读
+        </button>
+    </div>
+
+    <div class="mb-6 border-b border-gray-200">
+        <nav class="flex space-x-8" aria-label="Tabs">
+            <a href="/notification"
+               th:classappend="${activeTab == 'all'} ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'"
+               class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                全部消息
+            </a>
+            <a href="/notification?type=unread"
+               th:classappend="${activeTab == 'unread'} ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700'"
+               class="whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                未读消息
+                <span th:if="${unreadCount != null and unreadCount > 0}"
+                      class="ml-1.5 inline-flex items-center justify-center px-2 py-0.5 text-xs font-bold leading-none text-white bg-red-500 rounded-full"
+                      th:text="${unreadCount}">0</span>
+            </a>
+        </nav>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+        <form method="get" action="/notification" class="p-4 flex flex-wrap items-center gap-4">
+            <div class="w-48">
+                <select name="type" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white">
+                    <option value="">全部类型</option>
+                    <option value="SYSTEM" th:selected="${type == 'SYSTEM'}">系统通知</option>
+                    <option value="APPROVAL" th:selected="${type == 'APPROVAL'}">审批通知</option>
+                    <option value="TIMEOUT" th:selected="${type == 'TIMEOUT'}">超时提醒</option>
+                    <option value="RESULT" th:selected="${type == 'RESULT'}">审批结果</option>
+                </select>
+            </div>
+            <div class="w-40">
+                <input type="date" name="startDate" th:value="${startDate}"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+            </div>
+            <div class="w-40">
+                <input type="date" name="endDate" th:value="${endDate}"
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors">
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+                筛选
+            </button>
+        </form>
+    </div>
+
+    <div class="space-y-3" th:fragment="notificationList">
+        <div th:each="notification : ${notifications}"
+             :id="'card-' + [[${notification.id}]]"
+             th:attr="'x-data': '{ id: ' + ${notification.id} + ' }'"
+             class="bg-white rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-all cursor-pointer"
+             th:classappend="${notification.isRead == 0} ? 'border-l-4 border-blue-500' : 'border-l-4 border-transparent'"
+             @click="toggleExpand([[${notification.id}]])">
+
+            <div class="p-5">
+                <div class="flex items-start justify-between">
+                    <div class="flex items-start space-x-4 flex-1 min-w-0">
+                        <div class="flex-shrink-0 mt-0.5">
+                            <div th:if="${notification.notificationType == 'SYSTEM'}"
+                                 class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <div th:if="${notification.notificationType == 'APPROVAL'}"
+                                 class="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <div th:if="${notification.notificationType == 'TIMEOUT'}"
+                                 class="w-10 h-10 bg-red-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                            <div th:if="${notification.notificationType == 'RESULT'}"
+                                 class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                                </svg>
+                            </div>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex items-center space-x-2">
+                                <h3 :id="'title-' + [[${notification.id}]]"
+                                    class="text-sm text-gray-900"
+                                    th:classappend="${notification.isRead == 0} ? 'font-bold' : 'font-medium'"
+                                    th:text="${notification.title}">通知标题</h3>
+                                <span th:if="${notification.isRead == 0}"
+                                      :id="'unread-dot-' + [[${notification.id}]]"
+                                      class="inline-flex items-center justify-center w-2 h-2 bg-blue-500 rounded-full"></span>
+                            </div>
+                            <p class="mt-1 text-sm text-gray-500 truncate"
+                               th:text="${#strings.abbreviate(notification.content, 80)}">通知内容预览</p>
+                        </div>
+                    </div>
+                    <div class="flex-shrink-0 ml-4">
+                        <span class="text-xs text-gray-400"
+                              th:text="${#temporals.format(notification.createTime, 'MM-dd HH:mm')}">01-01 12:00</span>
+                    </div>
+                </div>
+
+                <div x-show="expandedId === [[${notification.id}]]"
+                     x-transition:enter="transition ease-out duration-200"
+                     x-transition:enter-start="opacity-0 transform -translate-y-2"
+                     x-transition:enter-end="opacity-100 transform translate-y-0"
+                     x-transition:leave="transition ease-in duration-150"
+                     x-transition:leave-start="opacity-100 transform translate-y-0"
+                     x-transition:leave-end="opacity-0 transform -translate-y-2"
+                     class="mt-4 pt-4 border-t border-gray-100">
+                    <p class="text-sm text-gray-700 leading-relaxed" th:text="${notification.content}">完整通知内容</p>
+                    <div class="mt-3 flex items-center space-x-4">
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              th:if="${notification.notificationType == 'SYSTEM'}"
+                              th:classappend="bg-blue-100 text-blue-800">系统通知</span>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              th:if="${notification.notificationType == 'APPROVAL'}"
+                              th:classappend="bg-amber-100 text-amber-800">审批通知</span>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              th:if="${notification.notificationType == 'TIMEOUT'}"
+                              th:classappend="bg-red-100 text-red-800">超时提醒</span>
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                              th:if="${notification.notificationType == 'RESULT'}"
+                              th:classappend="bg-green-100 text-green-800">审批结果</span>
+                        <span class="text-xs text-gray-400"
+                              th:text="${#temporals.format(notification.createTime, 'yyyy-MM-dd HH:mm:ss')}">2025-01-01 12:00:00</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div th:if="${notifications.isEmpty()}" class="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+            <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+            <p class="text-sm text-gray-400">暂无通知消息</p>
+        </div>
+    </div>
+
+    <div th:if="${totalPages > 1}" class="mt-6 flex items-center justify-between">
+        <p class="text-sm text-gray-500">
+            第 <span th:text="${currentPage}">1</span> 页，共 <span th:text="${totalPages}">1</span> 页
+        </p>
+        <div class="flex items-center space-x-2">
+            <a th:href="@{/notification(page=${currentPage - 1}, type=${type}, startDate=${startDate}, endDate=${endDate})}"
+               th:if="${currentPage > 1}"
+               class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                上一页
+            </a>
+            <th:block th:each="i : ${#numbers.sequence(1, totalPages)}">
+                <a th:href="@{/notification(page=${i}, type=${type}, startDate=${startDate}, endDate=${endDate})}"
+                   th:text="${i}"
+                   th:classappend="${i == currentPage} ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+                   class="px-3 py-2 text-sm font-medium border rounded-lg transition-colors">
+                    1
+                </a>
+            </th:block>
+            <a th:href="@{/notification(page=${currentPage + 1}, type=${type}, startDate=${startDate}, endDate=${endDate})}"
+               th:if="${currentPage < totalPages}"
+               class="px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors">
+                下一页
+            </a>
+        </div>
+    </div>
+</div>
+</body>
+</html>

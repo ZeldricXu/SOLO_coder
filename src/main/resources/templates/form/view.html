@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>表单预览</title>
+</head>
+<body>
+<div layout:fragment="content">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900" th:text="${form.formName}">表单名称</h1>
+            <p class="text-gray-500 mt-1" th:if="${form.formDesc}" th:text="${form.formDesc}">表单描述</p>
+        </div>
+        <div class="flex items-center space-x-3">
+            <span th:if="${form.status == 1}" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">已发布</span>
+            <span th:if="${form.status != 1}" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600">未发布</span>
+            <a th:href="@{/form/edit/{id}(id=${form.id})}"
+               class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                </svg>
+                编辑
+            </a>
+            <a href="/form"
+               class="inline-flex items-center px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+                </svg>
+                返回列表
+            </a>
+        </div>
+    </div>
+
+    <div class="max-w-3xl mx-auto" x-data="formViewer()" x-init="init()">
+        <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+            <div class="px-8 py-6 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+                <h2 class="text-xl font-bold text-gray-900" x-text="schema.formName || '未命名表单'"></h2>
+                <p class="text-sm text-gray-500 mt-1" x-text="schema.formDesc" x-show="schema.formDesc"></p>
+            </div>
+
+            <div class="px-8 py-6 space-y-5">
+                <template x-for="field in schema.fields" :key="field.id">
+                    <div class="space-y-1.5">
+                        <div x-show="field.type !== 'groupTitle'" class="flex items-center">
+                            <label class="text-sm font-medium text-gray-700" x-text="field.label"></label>
+                            <span x-show="field.required" class="text-red-500 ml-0.5">*</span>
+                        </div>
+
+                        <div x-show="field.type === 'textInput'">
+                            <input type="text" disabled :placeholder="field.placeholder || '请输入'"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'textarea'">
+                            <textarea disabled :placeholder="field.placeholder || '请输入'" rows="3"
+                                      class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"></textarea>
+                        </div>
+                        <div x-show="field.type === 'number'">
+                            <input type="number" disabled :placeholder="field.placeholder || '请输入数字'"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'amount'">
+                            <div class="relative">
+                                <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">¥</span>
+                                <input type="text" disabled placeholder="0.00"
+                                       class="w-full pl-7 pr-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'email'">
+                            <input type="email" disabled :placeholder="field.placeholder || '请输入邮箱'"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'phone'">
+                            <input type="tel" disabled :placeholder="field.placeholder || '请输入手机号'"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'select'">
+                            <select disabled class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                                <option x-text="field.placeholder || '请选择'"></option>
+                                <template x-for="opt in (field.options || [])">
+                                    <option x-text="opt.label"></option>
+                                </template>
+                            </select>
+                        </div>
+                        <div x-show="field.type === 'radio'">
+                            <div class="flex items-center space-x-4">
+                                <template x-for="opt in (field.options || [])">
+                                    <label class="flex items-center space-x-1.5 text-sm text-gray-600">
+                                        <input type="radio" disabled class="text-indigo-600">
+                                        <span x-text="opt.label"></span>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'checkbox'">
+                            <div class="flex items-center space-x-4">
+                                <template x-for="opt in (field.options || [])">
+                                    <label class="flex items-center space-x-1.5 text-sm text-gray-600">
+                                        <input type="checkbox" disabled class="text-indigo-600 rounded">
+                                        <span x-text="opt.label"></span>
+                                    </label>
+                                </template>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'cascader'">
+                            <select disabled class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                                <option>请选择（级联）</option>
+                            </select>
+                        </div>
+                        <div x-show="field.type === 'address'">
+                            <div class="flex space-x-2">
+                                <select disabled class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"><option>省</option></select>
+                                <select disabled class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"><option>市</option></select>
+                                <select disabled class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed"><option>区</option></select>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'date'">
+                            <input type="text" disabled placeholder="YYYY-MM-DD"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'datetime'">
+                            <input type="text" disabled placeholder="YYYY-MM-DD HH:mm"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'time'">
+                            <input type="text" disabled placeholder="HH:mm"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'dateRange'">
+                            <div class="flex items-center space-x-2">
+                                <input type="text" disabled placeholder="开始日期" class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                                <span class="text-gray-400">~</span>
+                                <input type="text" disabled placeholder="结束日期" class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'fileUpload'">
+                            <div class="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
+                                <svg class="w-6 h-6 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                                <p class="text-xs text-gray-400 mt-1">文件上传区域</p>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'imageUpload'">
+                            <div class="border-2 border-dashed border-gray-200 rounded-lg p-4 text-center">
+                                <svg class="w-6 h-6 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                <p class="text-xs text-gray-400 mt-1">图片上传区域</p>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'signature'">
+                            <div class="border border-gray-200 rounded-lg p-4 text-center">
+                                <p class="text-xs text-gray-400">签名区域</p>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'richText'">
+                            <div class="border border-gray-200 rounded-lg p-4 min-h-[80px] bg-gray-50">
+                                <p class="text-xs text-gray-400">富文本内容</p>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'dataLink'">
+                            <select disabled class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                                <option>关联数据</option>
+                            </select>
+                        </div>
+                        <div x-show="field.type === 'groupTitle'">
+                            <div class="border-b-2 border-indigo-200 pb-2 pt-2">
+                                <h4 class="text-base font-semibold text-gray-700" x-text="field.label"></h4>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'columns'">
+                            <div class="grid grid-cols-2 gap-4 border border-gray-100 rounded-lg p-3">
+                                <div class="border border-dashed border-gray-200 rounded p-2 text-center text-xs text-gray-400">列1</div>
+                                <div class="border border-dashed border-gray-200 rounded p-2 text-center text-xs text-gray-400">列2</div>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'subTable'">
+                            <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                <div class="bg-gray-50 px-3 py-2 text-xs text-gray-500 font-medium">子表区域</div>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'detailTable'">
+                            <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                <div class="bg-gray-50 px-3 py-2 text-xs text-gray-500 font-medium">明细表</div>
+                            </div>
+                        </div>
+                        <div x-show="field.type === 'formula'">
+                            <input type="text" disabled :placeholder="field.formula || '计算结果'"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                        <div x-show="field.type === 'autoNumber'">
+                            <input type="text" disabled placeholder="自动编号"
+                                   class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                        </div>
+                    </div>
+                </template>
+
+                <div x-show="!schema.fields || schema.fields.length === 0" class="py-12 text-center">
+                    <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <p class="text-sm text-gray-400">暂无表单字段</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script th:inline="javascript">
+        var formSchemaData = /*[[${form?.formSchema}]]*/ '{}';
+
+        function formViewer() {
+            return {
+                schema: {},
+                init() {
+                    try {
+                        this.schema = JSON.parse(formSchemaData);
+                        if (!this.schema.fields) this.schema.fields = [];
+                    } catch(e) {
+                        this.schema = { fields: [] };
+                    }
+                }
+            };
+        }
+    </script>
+</div>
+</body>
+</html>

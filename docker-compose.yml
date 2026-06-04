@@ -1,0 +1,81 @@
+version: "3.8"
+
+services:
+  app:
+    image: ghcr.io/flowplatform/app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/flow_platform?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-flowplatform_prod_2024}
+      SPRING_REDIS_HOST: redis
+      SPRING_REDIS_PORT: 6379
+      SPRING_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_PROFILES_ACTIVE: prod
+      FLOW_PLATFORM_ENCRYPTION_KEY: ${FLOW_PLATFORM_ENCRYPTION_KEY:-change-me-in-production}
+      FLOW_PLATFORM_UPLOAD_PATH: /data/flow-platform/uploads
+    volumes:
+      - uploads:/data/flow-platform/uploads
+      - app-logs:/var/log/flow-platform
+    networks:
+      - flow-platform
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-flowplatform_prod_2024}
+      MYSQL_DATABASE: flow_platform
+      MYSQL_CHARSET: utf8mb4
+      MYSQL_COLLATION: utf8mb4_unicode_ci
+    volumes:
+      - mysql-data:/var/lib/mysql
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+      --innodb-flush-log-at-trx-commit=0
+      --innodb-buffer-pool-size=256M
+      --max-connections=200
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-flowplatform_prod_2024}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    networks:
+      - flow-platform
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - flow-platform
+    restart: unless-stopped
+
+volumes:
+  mysql-data:
+  redis-data:
+  uploads:
+  app-logs:
+
+networks:
+  flow-platform:
+    driver: bridge

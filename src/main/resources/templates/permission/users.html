@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>用户管理</title>
+</head>
+<body>
+<div layout:fragment="content" x-data="{
+    showUserModal: false,
+    showRoleModal: false,
+    editingUser: null,
+    selectedUserId: null,
+    allRoles: [],
+    selectedRoles: [],
+    formData: { username: '', realName: '', email: '', phone: '', deptId: '', status: 1, password: '' },
+    openCreateModal() {
+        this.editingUser = null;
+        this.formData = { username: '', realName: '', email: '', phone: '', deptId: '', status: 1, password: '' };
+        this.showUserModal = true;
+    },
+    openEditModal(user) {
+        this.editingUser = user;
+        this.formData = { id: user.id, username: user.username, realName: user.realName, email: user.email, phone: user.phone, deptId: user.deptId, status: user.status };
+        this.showUserModal = true;
+    },
+    saveUser() {
+        const params = new URLSearchParams();
+        Object.keys(this.formData).forEach(k => { if (this.formData[k] !== null && this.formData[k] !== '') params.append(k, this.formData[k]); });
+        if (this.editingUser) params.append('id', this.editingUser.id);
+        fetch('/permission/user/save', { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: params })
+            .then(r => r.json()).then(d => { if (d.code === 200) { this.showUserModal = false; window.location.reload(); } else { alert(d.msg); } });
+    },
+    deleteUser(id) {
+        if (!confirm('确定要删除该用户吗？')) return;
+        fetch('/permission/user/delete/' + id, { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'} })
+            .then(r => r.json()).then(d => { if (d.code === 200) window.location.reload(); else alert(d.msg); });
+    },
+    toggleStatus(user) {
+        const params = new URLSearchParams();
+        params.append('id', user.id);
+        params.append('status', user.status === 1 ? 0 : 1);
+        params.append('username', user.username);
+        fetch('/permission/user/save', { method: 'POST', headers: {'X-Requested-With': 'XMLHttpRequest'}, body: params })
+            .then(r => r.json()).then(d => { if (d.code === 200) window.location.reload(); else alert(d.msg); });
+    },
+    openAssignRole(user) {
+        this.selectedUserId = user.id;
+        this.selectedRoles = user.roleCodes ? [...user.roleCodes] : [];
+        this.showRoleModal = true;
+        fetch('/permission/roles').then(r => r.text()).then(() => {});
+    }
+}">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">权限管理</h1>
+            <p class="text-gray-500 mt-1">管理用户、角色与部门</p>
+        </div>
+    </div>
+
+    <div class="mb-6 border-b border-gray-200">
+        <nav class="flex space-x-8" aria-label="Tabs">
+            <a href="/permission/users"
+               class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                用户管理
+            </a>
+            <a href="/permission/roles"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                角色管理
+            </a>
+            <a href="/permission/departments"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                部门管理
+            </a>
+        </nav>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 mb-6">
+        <form method="get" action="/permission/users" class="p-4 flex flex-wrap items-center gap-4">
+            <div class="flex-1 min-w-[200px]">
+                <input type="text" name="keyword" th:value="${keyword}" placeholder="搜索用户名、姓名、邮箱..."
+                       class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+            </div>
+            <div class="w-48">
+                <select name="deptId" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                    <option value="">全部部门</option>
+                    <option th:each="dept : ${depts}" th:value="${dept.id}" th:text="${dept.deptName}" th:selected="${deptId != null and deptId == dept.id}">部门</option>
+                </select>
+            </div>
+            <div class="w-36">
+                <select name="status" class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                    <option value="">全部状态</option>
+                    <option value="1" th:selected="${status != null and status == 1}">启用</option>
+                    <option value="0" th:selected="${status != null and status == 0}">禁用</option>
+                </select>
+            </div>
+            <button type="submit"
+                    class="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium rounded-lg transition-colors">
+                搜索
+            </button>
+        </form>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200">
+        <div class="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+            <h3 class="text-base font-semibold text-gray-900">用户列表</h3>
+            <button @click="openCreateModal()"
+                    class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                </svg>
+                新增用户
+            </button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                <tr class="bg-gray-50 border-b border-gray-200">
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">头像</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">用户名</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">姓名</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">部门</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">角色</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">状态</th>
+                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                <tr th:each="user : ${users}" class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4">
+                        <div class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                            <span class="text-xs font-medium text-indigo-600" th:text="${#strings.substring(user.username, 0, 1)}">U</span>
+                        </div>
+                    </td>
+                    <td class="px-6 py-4 text-sm font-medium text-gray-900" th:text="${user.username}">-</td>
+                    <td class="px-6 py-4 text-sm text-gray-700" th:text="${user.realName ?: '-'}">-</td>
+                    <td class="px-6 py-4 text-sm text-gray-500" th:text="${user.deptName ?: '-'}">-</td>
+                    <td class="px-6 py-4">
+                        <span th:each="roleName : ${user.roleNames}"
+                              class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 mr-1 mb-1"
+                              th:text="${roleName}">角色</span>
+                        <span th:if="${user.roleNames == null or user.roleNames.isEmpty()}" class="text-sm text-gray-400">-</span>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span th:if="${user.status == 1}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">启用</span>
+                        <span th:if="${user.status != 1}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">禁用</span>
+                    </td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex items-center justify-end space-x-2">
+                            <button th:attr="@click='openEditModal(' + ${user} + ')'"
+                                    class="inline-flex items-center px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium rounded-lg transition-colors">
+                                编辑
+                            </button>
+                            <button th:attr="@click='openAssignRole(' + ${user} + ')'"
+                                    class="inline-flex items-center px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-medium rounded-lg transition-colors">
+                                分配角色
+                            </button>
+                            <button th:attr="@click='toggleStatus(' + ${user} + ')'"
+                                    class="inline-flex items-center px-3 py-1.5 text-xs font-medium rounded-lg transition-colors"
+                                    th:classappend="${user.status == 1} ? 'bg-yellow-50 hover:bg-yellow-100 text-yellow-700' : 'bg-green-50 hover:bg-green-100 text-green-700'"
+                                    th:text="${user.status == 1} ? '禁用' : '启用'">禁用</button>
+                            <button th:attr="@click='deleteUser(' + ${user.id} + ')'"
+                                    class="inline-flex items-center px-3 py-1.5 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-medium rounded-lg transition-colors">
+                                删除
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <tr th:if="${users.isEmpty()}">
+                    <td colspan="7" class="px-6 py-12 text-center">
+                        <p class="text-sm text-gray-400">暂无用户数据</p>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div x-show="showUserModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+         @keydown.escape.window="showUserModal = false">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-lg p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 mb-4" x-text="editingUser ? '编辑用户' : '新增用户'">新增用户</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">用户名</label>
+                    <input type="text" x-model="formData.username"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">姓名</label>
+                    <input type="text" x-model="formData.realName"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div x-show="!editingUser">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">密码</label>
+                    <input type="password" x-model="formData.password"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">邮箱</label>
+                    <input type="email" x-model="formData.email"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">手机</label>
+                    <input type="text" x-model="formData.phone"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">部门</label>
+                    <select x-model="formData.deptId"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                        <option value="">请选择部门</option>
+                        <option th:each="dept : ${depts}" th:value="${dept.id}" th:text="${dept.deptName}">部门</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">状态</label>
+                    <select x-model="formData.status"
+                            class="w-full px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white">
+                        <option value="1">启用</option>
+                        <option value="0">禁用</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="showUserModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">取消</button>
+                <button @click="saveUser()" class="px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showRoleModal" x-cloak
+         class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50"
+         @keydown.escape.window="showRoleModal = false">
+        <div class="bg-white rounded-xl shadow-xl w-full max-w-md p-6" @click.stop>
+            <h3 class="text-lg font-semibold text-gray-900 mb-4">分配角色</h3>
+            <div class="space-y-2 max-h-64 overflow-y-auto">
+                <template x-for="role in allRoles" :key="role.id">
+                    <label class="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer">
+                        <input type="checkbox" :value="role.roleCode"
+                               x-model="selectedRoles"
+                               class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                        <span class="text-sm text-gray-700" x-text="role.roleName">角色</span>
+                    </label>
+                </template>
+            </div>
+            <div class="flex justify-end space-x-3 mt-6">
+                <button @click="showRoleModal = false" class="px-4 py-2 text-sm text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors">取消</button>
+                <button @click="showRoleModal = false" class="px-4 py-2 text-sm text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+</body>
+</html>

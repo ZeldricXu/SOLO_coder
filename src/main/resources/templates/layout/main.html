@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title layout:title-pattern="$LAYOUT_TITLE - $CONTENT_TITLE">FlowPlatform</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css">
+    <link rel="stylesheet" th:href="@{/css/app.css}">
+    <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script th:src="@{/js/app.js}"></script>
+    <style>
+        [x-cloak] { display: none !important; }
+    </style>
+</head>
+<body class="h-screen bg-gray-50 flex overflow-hidden">
+
+    <aside class="w-64 shrink-0 transition-all duration-300" id="sidebar-wrapper"
+           x-data="{ collapsed: false }"
+           :class="{ 'w-16': collapsed, 'w-64': !collapsed }">
+        <nav class="flex flex-col h-full bg-gray-900 text-gray-300">
+            <div class="flex items-center h-16 px-4 border-b border-gray-800">
+                <div class="flex items-center space-x-2" x-show="!collapsed">
+                    <svg class="w-8 h-8 text-indigo-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                    <span class="text-lg font-bold text-white whitespace-nowrap">FlowPlatform</span>
+                </div>
+                <div class="flex items-center justify-center w-full" x-show="collapsed" x-cloak>
+                    <svg class="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                    </svg>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto py-4 space-y-1 px-2">
+                <a href="/dashboard" class="flex items-center px-3 py-2.5 rounded-lg transition-colors"
+                   th:classappend="${#strings.equals(currentPath, '/dashboard')} ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800 hover:text-white'">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1h-2z"/>
+                    </svg>
+                    <span class="ml-3 text-sm font-medium whitespace-nowrap" x-show="!collapsed">工作台</span>
+                </a>
+
+                <a href="/form" class="flex items-center px-3 py-2.5 rounded-lg transition-colors"
+                   th:classappend="${#strings.equals(currentPath, '/form')} ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800 hover:text-white'">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    <span class="ml-3 text-sm font-medium whitespace-nowrap" x-show="!collapsed">表单管理</span>
+                </a>
+
+                <a href="/process" class="flex items-center px-3 py-2.5 rounded-lg transition-colors"
+                   th:classappend="${#strings.equals(currentPath, '/process')} ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800 hover:text-white'">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm0 8a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zm10 0a1 1 0 011-1h4a1 1 0 011 1v6a1 1 0 01-1 1h-4a1 1 0 01-1-1v-6z"/>
+                    </svg>
+                    <span class="ml-3 text-sm font-medium whitespace-nowrap" x-show="!collapsed">流程管理</span>
+                </a>
+
+                <a href="/approval" class="flex items-center px-3 py-2.5 rounded-lg transition-colors"
+                   th:classappend="${#strings.equals(currentPath, '/approval')} ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800 hover:text-white'">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                    <span class="ml-3 text-sm font-medium whitespace-nowrap" x-show="!collapsed">审批中心</span>
+                </a>
+
+                <a href="/report" class="flex items-center px-3 py-2.5 rounded-lg transition-colors"
+                   th:classappend="${#strings.equals(currentPath, '/report')} ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800 hover:text-white'">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/>
+                    </svg>
+                    <span class="ml-3 text-sm font-medium whitespace-nowrap" x-show="!collapsed">数据报表</span>
+                </a>
+
+                <a href="/permission" class="flex items-center px-3 py-2.5 rounded-lg transition-colors"
+                   th:classappend="${#strings.equals(currentPath, '/permission')} ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800 hover:text-white'">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                    </svg>
+                    <span class="ml-3 text-sm font-medium whitespace-nowrap" x-show="!collapsed">权限管理</span>
+                </a>
+
+                <a href="/notification" class="flex items-center px-3 py-2.5 rounded-lg transition-colors"
+                   th:classappend="${#strings.equals(currentPath, '/notification')} ? 'bg-indigo-600 text-white' : 'hover:bg-gray-800 hover:text-white'">
+                    <svg class="w-5 h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                    </svg>
+                    <span class="ml-3 text-sm font-medium whitespace-nowrap" x-show="!collapsed">消息中心</span>
+                </a>
+            </div>
+
+            <div class="border-t border-gray-800 p-2">
+                <button @click="collapsed = !collapsed" class="flex items-center justify-center w-full px-3 py-2 rounded-lg hover:bg-gray-800 transition-colors">
+                    <svg class="w-5 h-5 transition-transform duration-200" :class="{ 'rotate-180': collapsed }" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 19l-7-7 7-7m8 14l-7-7 7-7"/>
+                    </svg>
+                    <span class="ml-3 text-sm whitespace-nowrap" x-show="!collapsed">Collapse</span>
+                </button>
+            </div>
+        </nav>
+    </aside>
+
+    <div class="flex-1 flex flex-col overflow-hidden">
+        <header class="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 shrink-0">
+            <div class="flex items-center space-x-4">
+                <h2 class="text-lg font-semibold text-gray-800">Dashboard</h2>
+            </div>
+            <div class="flex items-center space-x-4">
+                <div class="relative"
+                     hx-get="/api/notifications/unread-count" hx-trigger="every 30s"
+                     hx-target="#notification-badge" hx-swap="innerHTML">
+                    <a href="/notification" class="relative p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                        </svg>
+                        <span id="notification-badge" class="absolute -top-1 -right-1 inline-flex items-center justify-center w-5 h-5 text-xs font-bold text-white bg-red-500 rounded-full"
+                              th:if="${unreadCount != null and unreadCount > 0}" th:text="${unreadCount}">0</span>
+                    </a>
+                </div>
+
+                <div class="relative" x-data="{ open: false }">
+                    <button @click="open = !open" class="flex items-center space-x-2 p-2 hover:bg-gray-100 rounded-lg transition-colors">
+                        <div class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                            <span class="text-sm font-medium text-indigo-600" th:text="${user != null ? #strings.substring(user.username, 0, 1) : 'U'}">U</span>
+                        </div>
+                        <span class="text-sm font-medium text-gray-700" th:text="${user != null ? user.username : 'User'}">User</span>
+                        <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div x-show="open" @click.away="open = false"
+                         x-transition:enter="transition ease-out duration-100"
+                         x-transition:enter-start="transform opacity-0 scale-95"
+                         x-transition:enter-end="transform opacity-100 scale-100"
+                         x-transition:leave="transition ease-in duration-75"
+                         x-transition:leave-start="transform opacity-100 scale-100"
+                         x-transition:leave-end="transform opacity-0 scale-95"
+                         class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                        <a href="/profile" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Profile</a>
+                        <a href="/settings" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">Settings</a>
+                        <div class="border-t border-gray-100"></div>
+                        <form th:action="@{/logout}" method="post">
+                            <button type="submit" class="block w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-gray-100">Logout</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <main class="flex-1 overflow-y-auto p-6 bg-gray-50">
+            <div layout:fragment="content">
+                <p>Page content goes here</p>
+            </div>
+        </main>
+    </div>
+
+</body>
+</html>

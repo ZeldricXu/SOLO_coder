@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>填写表单</title>
+</head>
+<body>
+<div layout:fragment="content">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900" th:text="${form.formName}">表单名称</h1>
+            <p class="text-gray-500 mt-1" th:if="${form.formDesc}" th:text="${form.formDesc}">表单描述</p>
+        </div>
+        <a href="/form"
+           class="inline-flex items-center px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 shadow-sm transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/>
+            </svg>
+            返回列表
+        </a>
+    </div>
+
+    <div class="max-w-3xl mx-auto" x-data="formRenderer()" x-init="init()">
+        <form @submit.prevent="submitForm">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                <div class="px-8 py-6 border-b border-gray-200 bg-gradient-to-r from-indigo-50 to-purple-50">
+                    <h2 class="text-xl font-bold text-gray-900" x-text="schema.formName || '未命名表单'"></h2>
+                    <p class="text-sm text-gray-500 mt-1" x-text="schema.formDesc" x-show="schema.formDesc"></p>
+                </div>
+
+                <div class="px-8 py-6 space-y-5">
+                    <template x-for="field in schema.fields" :key="field.id">
+                        <div x-show="field.visible !== false" class="space-y-1.5">
+                            <div x-show="field.type !== 'groupTitle'" class="flex items-center">
+                                <label class="text-sm font-medium text-gray-700" x-text="field.label"></label>
+                                <span x-show="field.required" class="text-red-500 ml-0.5">*</span>
+                            </div>
+
+                            <div x-show="field.type === 'textInput'">
+                                <input type="text" x-model="formData[field.key]" :placeholder="field.placeholder || '请输入'"
+                                       :required="field.required"
+                                       :maxlength="field.maxLength || null"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900 placeholder-gray-400">
+                            </div>
+                            <div x-show="field.type === 'textarea'">
+                                <textarea x-model="formData[field.key]" :placeholder="field.placeholder || '请输入'" rows="3"
+                                          :required="field.required"
+                                          :maxlength="field.maxLength || null"
+                                          class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900 placeholder-gray-400"></textarea>
+                            </div>
+                            <div x-show="field.type === 'number'">
+                                <input type="number" x-model="formData[field.key]" :placeholder="field.placeholder || '请输入数字'"
+                                       :required="field.required"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900 placeholder-gray-400">
+                            </div>
+                            <div x-show="field.type === 'amount'">
+                                <div class="relative">
+                                    <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-400">¥</span>
+                                    <input type="number" step="0.01" x-model="formData[field.key]" placeholder="0.00"
+                                           :required="field.required"
+                                           class="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900 placeholder-gray-400">
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'email'">
+                                <input type="email" x-model="formData[field.key]" :placeholder="field.placeholder || '请输入邮箱'"
+                                       :required="field.required"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900 placeholder-gray-400">
+                            </div>
+                            <div x-show="field.type === 'phone'">
+                                <input type="tel" x-model="formData[field.key]" :placeholder="field.placeholder || '请输入手机号'"
+                                       :required="field.required"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900 placeholder-gray-400">
+                            </div>
+                            <div x-show="field.type === 'select'">
+                                <select x-model="formData[field.key]" :required="field.required"
+                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white text-gray-900">
+                                    <option value="" x-text="field.placeholder || '请选择'"></option>
+                                    <template x-for="opt in (field.options || [])">
+                                        <option :value="opt.value" x-text="opt.label"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <div x-show="field.type === 'radio'">
+                                <div class="flex items-center space-x-4">
+                                    <template x-for="opt in (field.options || [])">
+                                        <label class="flex items-center space-x-1.5 cursor-pointer">
+                                            <input type="radio" :name="field.key" :value="opt.value" x-model="formData[field.key]"
+                                                   :required="field.required"
+                                                   class="text-indigo-600 focus:ring-indigo-500">
+                                            <span class="text-sm text-gray-700" x-text="opt.label"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'checkbox'">
+                                <div class="flex items-center space-x-4">
+                                    <template x-for="opt in (field.options || [])">
+                                        <label class="flex items-center space-x-1.5 cursor-pointer">
+                                            <input type="checkbox" :value="opt.value"
+                                                   :checked="(formData[field.key] || []).includes(opt.value)"
+                                                   @change="toggleCheckbox(field.key, opt.value)"
+                                                   class="text-indigo-600 rounded focus:ring-indigo-500">
+                                            <span class="text-sm text-gray-700" x-text="opt.label"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'cascader'">
+                                <select x-model="formData[field.key]" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white text-gray-900">
+                                    <option value="">请选择</option>
+                                </select>
+                            </div>
+                            <div x-show="field.type === 'address'">
+                                <div class="flex space-x-2">
+                                    <select x-model="formData[field.key + '_province']" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white text-gray-900">
+                                        <option value="">省</option>
+                                    </select>
+                                    <select x-model="formData[field.key + '_city']" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white text-gray-900">
+                                        <option value="">市</option>
+                                    </select>
+                                    <select x-model="formData[field.key + '_district']" class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white text-gray-900">
+                                        <option value="">区</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'date'">
+                                <input type="date" x-model="formData[field.key]" :required="field.required"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900">
+                            </div>
+                            <div x-show="field.type === 'datetime'">
+                                <input type="datetime-local" x-model="formData[field.key]" :required="field.required"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900">
+                            </div>
+                            <div x-show="field.type === 'time'">
+                                <input type="time" x-model="formData[field.key]" :required="field.required"
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900">
+                            </div>
+                            <div x-show="field.type === 'dateRange'">
+                                <div class="flex items-center space-x-2">
+                                    <input type="date" x-model="formData[field.key + '_start']" :required="field.required"
+                                           class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900">
+                                    <span class="text-gray-400">~</span>
+                                    <input type="date" x-model="formData[field.key + '_end']" :required="field.required"
+                                           class="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors text-gray-900">
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'fileUpload'">
+                                <div class="border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-lg p-4 text-center cursor-pointer transition-colors">
+                                    <svg class="w-6 h-6 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                                    <p class="text-xs text-gray-500 mt-1">点击上传文件</p>
+                                    <input type="file" class="hidden">
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'imageUpload'">
+                                <div class="border-2 border-dashed border-gray-300 hover:border-indigo-400 rounded-lg p-4 text-center cursor-pointer transition-colors">
+                                    <svg class="w-6 h-6 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                                    <p class="text-xs text-gray-500 mt-1">点击上传图片</p>
+                                    <input type="file" accept="image/*" class="hidden">
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'signature'">
+                                <div class="border border-gray-300 hover:border-indigo-400 rounded-lg p-4 text-center cursor-pointer transition-colors bg-gray-50">
+                                    <p class="text-xs text-gray-500">点击此处进行签名</p>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'richText'">
+                                <div class="border border-gray-300 rounded-lg overflow-hidden">
+                                    <div class="bg-gray-50 border-b border-gray-200 px-3 py-1.5 flex items-center space-x-2">
+                                        <button type="button" class="p-1 text-gray-500 hover:text-gray-700 rounded"><b>B</b></button>
+                                        <button type="button" class="p-1 text-gray-500 hover:text-gray-700 rounded italic"><i>I</i></button>
+                                        <button type="button" class="p-1 text-gray-500 hover:text-gray-700 rounded underline"><u>U</u></button>
+                                    </div>
+                                    <textarea x-model="formData[field.key]" rows="4" :placeholder="field.placeholder || '请输入内容'"
+                                              class="w-full px-3 py-2 text-sm focus:ring-0 border-0 text-gray-900 placeholder-gray-400"></textarea>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'dataLink'">
+                                <select x-model="formData[field.key]" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-colors bg-white text-gray-900">
+                                    <option value="">请选择关联数据</option>
+                                </select>
+                            </div>
+                            <div x-show="field.type === 'groupTitle'">
+                                <div class="border-b-2 border-indigo-200 pb-2 pt-2">
+                                    <h4 class="text-base font-semibold text-gray-700" x-text="field.label"></h4>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'columns'">
+                                <div class="grid grid-cols-2 gap-4 border border-gray-200 rounded-lg p-3">
+                                    <div class="border border-dashed border-gray-300 rounded p-2 text-center text-xs text-gray-400">列1</div>
+                                    <div class="border border-dashed border-gray-300 rounded p-2 text-center text-xs text-gray-400">列2</div>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'subTable'">
+                                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                    <div class="bg-gray-50 px-3 py-2 text-xs text-gray-500 font-medium">子表区域</div>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'detailTable'">
+                                <div class="border border-gray-200 rounded-lg overflow-hidden">
+                                    <div class="bg-gray-50 px-3 py-2 text-xs text-gray-500 font-medium flex justify-between items-center">
+                                        <span>明细表</span>
+                                        <button type="button" class="text-indigo-500 hover:text-indigo-600">+ 添加行</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <div x-show="field.type === 'formula'">
+                                <input type="text" disabled :placeholder="field.formula || '自动计算'"
+                                       class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                            </div>
+                            <div x-show="field.type === 'autoNumber'">
+                                <input type="text" disabled placeholder="提交后自动生成"
+                                       class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-gray-50 text-gray-500 cursor-not-allowed">
+                            </div>
+
+                            <p x-show="field.required && errors[field.key]" class="text-xs text-red-500" x-text="errors[field.key]"></p>
+                        </div>
+                    </template>
+                </div>
+
+                <div class="px-8 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-end space-x-3">
+                    <button type="button" @click="resetForm"
+                            class="px-4 py-2 bg-white hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg border border-gray-300 transition-colors">
+                        重置
+                    </button>
+                    <button type="submit"
+                            class="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg shadow-sm transition-colors">
+                        提交
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <script th:inline="javascript">
+        var formSchemaData = /*[[${form?.formSchema}]]*/ '{}';
+        var formIdData = /*[[${form?.id}]]*/ null;
+
+        function formRenderer() {
+            return {
+                schema: {},
+                formData: {},
+                errors: {},
+
+                init() {
+                    try {
+                        this.schema = JSON.parse(formSchemaData);
+                        if (!this.schema.fields) this.schema.fields = [];
+                        this.schema.fields.forEach(function(f) {
+                            if (['checkbox'].includes(f.type)) {
+                                this.formData[f.key] = [];
+                            } else if (f.defaultValue) {
+                                this.formData[f.key] = f.defaultValue;
+                            } else {
+                                this.formData[f.key] = '';
+                            }
+                        }.bind(this));
+                    } catch(e) {
+                        this.schema = { fields: [] };
+                    }
+                },
+
+                toggleCheckbox(key, value) {
+                    if (!this.formData[key]) this.formData[key] = [];
+                    var idx = this.formData[key].indexOf(value);
+                    if (idx > -1) {
+                        this.formData[key].splice(idx, 1);
+                    } else {
+                        this.formData[key].push(value);
+                    }
+                },
+
+                validate() {
+                    this.errors = {};
+                    var valid = true;
+                    this.schema.fields.forEach(function(f) {
+                        if (f.required && f.visible !== false && f.type !== 'groupTitle') {
+                            var val = this.formData[f.key];
+                            if (!val || (Array.isArray(val) && val.length === 0)) {
+                                this.errors[f.key] = f.label + '不能为空';
+                                valid = false;
+                            }
+                        }
+                    }.bind(this));
+                    return valid;
+                },
+
+                submitForm() {
+                    if (!this.validate()) return;
+                    var payload = {
+                        formId: formIdData,
+                        formKey: this.schema.formKey,
+                        data: JSON.parse(JSON.stringify(this.formData))
+                    };
+                    fetch('/api/form-data/submit', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    })
+                    .then(function(res) { return res.json(); })
+                    .then(function(data) {
+                        if (data.code === 200) {
+                            alert('提交成功');
+                            window.location.href = '/form';
+                        } else {
+                            alert('提交失败: ' + (data.msg || '未知错误'));
+                        }
+                    })
+                    .catch(function(err) {
+                        alert('提交失败: ' + err.message);
+                    });
+                },
+
+                resetForm() {
+                    this.schema.fields.forEach(function(f) {
+                        if (['checkbox'].includes(f.type)) {
+                            this.formData[f.key] = [];
+                        } else {
+                            this.formData[f.key] = f.defaultValue || '';
+                        }
+                    }.bind(this));
+                    this.errors = {};
+                }
+            };
+        }
+    </script>
+</div>
+</body>
+</html>

@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: flow-platform-config
+  namespace: flow-platform
+data:
+  SPRING_PROFILES_ACTIVE: "prod"
+  SPRING_DATASOURCE_URL: "jdbc:mysql://mysql-host:3306/flow_platform?useUnicode=true&characterEncoding=utf-8&serverTimezone=Asia/Shanghai&useSSL=false"
+  SPRING_REDIS_HOST: "redis-host"
+  SPRING_REDIS_PORT: "6379"
+  FLOW_PLATFORM_UPLOAD_PATH: "/data/flow-platform/uploads"
+  JAVA_OPTS: "-Xms512m -Xmx1024m -XX:+UseG1GC"

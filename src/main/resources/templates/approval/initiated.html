@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org"
+      xmlns:layout="http://www.ultraq.net.nz/thymeleaf/layout"
+      layout:decorate="~{layout/main}">
+<head>
+    <title>已发起</title>
+</head>
+<body>
+<div layout:fragment="content">
+    <div class="mb-6 flex items-center justify-between">
+        <div>
+            <h1 class="text-2xl font-bold text-gray-900">审批中心</h1>
+            <p class="text-gray-500 mt-1">查看我发起的流程</p>
+        </div>
+    </div>
+
+    <div class="mb-6 border-b border-gray-200">
+        <nav class="flex space-x-8" aria-label="Tabs">
+            <a href="/approval/pending"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                待办事项
+            </a>
+            <a href="/approval/completed"
+               class="border-transparent text-gray-500 hover:border-gray-300 hover:text-gray-700 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                已办事项
+            </a>
+            <a href="/approval/initiated"
+               class="border-indigo-500 text-indigo-600 whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm">
+                已发起
+            </a>
+        </nav>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead>
+                <tr class="bg-gray-50 border-b border-gray-200">
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">流程名称</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">当前状态</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">发起时间</th>
+                    <th class="px-6 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">当前审批人</th>
+                    <th class="px-6 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">操作</th>
+                </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">
+                <tr th:each="inst : ${instances}" class="hover:bg-gray-50 transition-colors">
+                    <td class="px-6 py-4">
+                        <a th:href="@{/approval/detail/{id}(id=${inst.id})}" class="text-sm font-medium text-indigo-600 hover:text-indigo-800" th:text="${inst.title ?: '-'}">流程名称</a>
+                    </td>
+                    <td class="px-6 py-4">
+                        <span th:if="${inst.status == 'PENDING'}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+                            <span class="w-1.5 h-1.5 bg-yellow-400 rounded-full mr-1.5"></span>
+                            审批中
+                        </span>
+                        <span th:if="${inst.status == 'APPROVED'}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                            <span class="w-1.5 h-1.5 bg-green-400 rounded-full mr-1.5"></span>
+                            已通过
+                        </span>
+                        <span th:if="${inst.status == 'REJECTED'}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                            <span class="w-1.5 h-1.5 bg-red-400 rounded-full mr-1.5"></span>
+                            已拒绝
+                        </span>
+                        <span th:if="${inst.status == 'RETURNED'}" class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800">
+                            <span class="w-1.5 h-1.5 bg-orange-400 rounded-full mr-1.5"></span>
+                            已退回
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 text-sm text-gray-500" th:text="${#temporals.format(inst.startTime, 'yyyy-MM-dd HH:mm')}">2025-01-01</td>
+                    <td class="px-6 py-4 text-sm text-gray-600" th:text="${inst.currentNodes ?: '-'}">当前审批人</td>
+                    <td class="px-6 py-4 text-right">
+                        <div class="flex items-center justify-end space-x-2">
+                            <a th:href="@{/approval/detail/{id}(id=${inst.id})}"
+                               class="inline-flex items-center px-3 py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-700 text-xs font-medium rounded-lg transition-colors">
+                                查看详情
+                            </a>
+                            <button th:if="${inst.status == 'PENDING'}"
+                                    th:attr="hx-post=@{/approval/urge/{id}(id=${inst.id})}"
+                                    hx-confirm="确定要催办此流程吗？"
+                                    class="inline-flex items-center px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-medium rounded-lg transition-colors">
+                                <svg class="w-3.5 h-3.5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+                                </svg>
+                                催办
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+                <tr th:if="${instances.isEmpty()}">
+                    <td colspan="5" class="px-6 py-12 text-center">
+                        <svg class="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>
+                        </svg>
+                        <p class="text-sm text-gray-400">暂无已发起流程</p>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+</body>
+</html>

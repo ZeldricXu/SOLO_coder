@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: flow-platform
+  namespace: flow-platform
+spec:
+  type: ClusterIP
+  selector:
+    app: flow-platform
+  ports:
+    - port: 80
+      targetPort: 8080
