@@ -1,0 +1,7 @@
+id,name,description,value
+1,"Alpha","A string with, comma",100
+2,"Beta","A string with ""quotes""",200
+3,"Gamma","Line 1
+Line 2",300
+4,"Delta",Normal text,400
+5,"Epsilon",Mixed "quotes" and text,500

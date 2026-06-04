@@ -1,0 +1,7 @@
+[
+  {"id": 1, "name": "Alice", "age": 25, "score": 95.5, "active": true},
+  {"id": 2, "name": "Bob", "age": 30, "score": 87.2, "active": false},
+  {"id": 3, "name": "Charlie", "age": 35, "score": 91.8, "active": true},
+  {"id": 4, "name": "Diana", "age": 28, "score": 89.0, "active": true},
+  {"id": 5, "name": "Eve", "age": 32, "score": 94.3, "active": false}
+]

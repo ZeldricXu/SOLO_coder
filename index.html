@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DataExplorer - Interactive Data Analysis Tool</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/vega@5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-lite@5"></script>
+    <script src="https://cdn.jsdelivr.net/npm/vega-embed@6"></script>
+</head>
+<body>
+    <div class="app-layout">
+        <div class="toolbar">
+            <span class="toolbar-brand">⚡ DataExplorer</span>
+            <button class="toolbar-btn primary" onclick="document.getElementById('dropZone').click()">Import Data</button>
+            <button class="toolbar-btn" onclick="App.saveCurrentProject()">💾 Save</button>
+            <div class="toolbar-spacer"></div>
+            <button class="toolbar-btn" onclick="App.exportData('csv')">CSV</button>
+            <button class="toolbar-btn" onclick="App.exportData('json')">JSON</button>
+            <button class="toolbar-btn" onclick="App.exportData('excel')">Excel</button>
+            <span class="toolbar-info" id="toolbarInfo"></span>
+        </div>
+
+        <div class="sidebar-left">
+            <div class="sidebar-section">
+                <div class="sidebar-header">
+                    <span>Columns</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="sidebar-content" id="columnList">
+                    <div style="padding:12px;font-size:12px;color:var(--text-muted)">Load data to see columns</div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-header">
+                    <span>Column Details</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="sidebar-content" id="columnValues">
+                    <div style="padding:8px;font-size:12px;color:var(--text-muted)">Select a column</div>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <div class="sidebar-header">
+                    <span>Active Filters</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="sidebar-content" id="filterList">
+                    <div style="padding:8px;font-size:12px;color:var(--text-muted)">No filters applied</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="tab-bar">
+                <div class="tab-item active" data-tab="data" data-panel="dataPanel">📊 Data</div>
+                <div class="tab-item" data-tab="query" data-panel="queryPanel">🔍 Query</div>
+                <div class="tab-item" data-tab="chart" data-panel="chartPanel">📈 Charts</div>
+                <div class="tab-item" data-tab="pivot" data-panel="pivotPanel">📋 Pivot</div>
+                <div class="tab-item" data-tab="anomaly" data-panel="anomalyPanel">⚠️ Anomaly</div>
+            </div>
+
+            <div id="dataPanel" class="tab-panel">
+                <div id="dropZone" class="drop-zone">
+                    <div class="drop-zone-icon">📁</div>
+                    <div class="drop-zone-text">Drop CSV, JSON, or Parquet file here</div>
+                    <div class="drop-zone-hint">or click to browse • All processing happens locally in your browser</div>
+                </div>
+                <div class="data-table-container" id="dataTableContainer" style="display:none">
+                    <table class="data-table">
+                        <thead><tr id="dataTableHeader"></tr></thead>
+                        <tbody id="dataTableBody"></tbody>
+                    </table>
+                    <div class="pagination" id="pagination"></div>
+                </div>
+            </div>
+
+            <div id="queryPanel" class="tab-panel hidden">
+                <div class="query-panel">
+                    <div class="query-input-area">
+                        <input class="query-input" id="queryInput" placeholder="SELECT * FROM data WHERE ... (Ctrl+Enter to run)">
+                        <button class="query-execute-btn" onclick="App.executeNonQuery()">▶ Run</button>
+                    </div>
+                    <div class="query-help">
+                        <strong>Query DSL Reference:</strong><br>
+                        <code>SELECT col1, col2 FROM data WHERE col1 > 10 AND col2 = 'value'</code><br>
+                        <code>SELECT col1 FROM data WHERE col1 BETWEEN 10 AND 100 GROUP BY col2 SUM(col3)</code><br>
+                        <code>SELECT * FROM data WHERE col1 IN ('a','b','c') ORDER BY col1 DESC LIMIT 50</code><br>
+                        <code>SELECT orders.amount, users.level FROM orders JOIN users ON orders.user_id = users.id</code><br>
+                        <code>SELECT * FROM orders LEFT JOIN users ON orders.user_id = users.id</code><br>
+                        Operators: <code>=</code> <code>!=</code> <code>&lt;</code> <code>&lt;=</code> <code>&gt;</code> <code>&gt;=</code>
+                        <code>IN</code> <code>BETWEEN</code> <code>IS NULL</code> <code>IS NOT NULL</code> <code>LIKE</code><br>
+                        Aggregates: <code>SUM</code> <code>COUNT</code> <code>AVG</code> <code>MIN</code> <code>MAX</code> <code>STDDEV</code> <code>COUNT_DISTINCT</code> <code>PERCENTILE</code><br>
+                        Joins: <code>JOIN</code> (INNER), <code>LEFT JOIN</code> with <code>ON</code> condition
+                    </div>
+                    <div class="query-result" id="queryResult"></div>
+                </div>
+            </div>
+
+            <div id="chartPanel" class="tab-panel hidden">
+                <div class="chart-config" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px">
+                    <div class="form-group">
+                        <label class="form-label">Chart Type</label>
+                        <select class="form-select" id="chartType">
+                            <option value="bar">Bar Chart</option>
+                            <option value="line">Line Chart</option>
+                            <option value="scatter">Scatter Plot</option>
+                            <option value="boxplot">Box Plot</option>
+                            <option value="heatmap">Heatmap</option>
+                            <option value="histogram">Histogram</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">X Axis</label>
+                        <select class="form-select" id="chartXField"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Y Axis</label>
+                        <select class="form-select" id="chartYField"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Color</label>
+                        <select class="form-select" id="chartColorField"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Aggregate</label>
+                        <select class="form-select" id="chartAggregate">
+                            <option value="">None</option>
+                            <option value="mean">Mean</option>
+                            <option value="sum">Sum</option>
+                            <option value="count">Count</option>
+                            <option value="min">Min</option>
+                            <option value="max">Max</option>
+                            <option value="median">Median</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Brush Selection</label>
+                        <select class="form-select" id="chartBrush">
+                            <option value="0">Disabled</option>
+                            <option value="1">Enabled</option>
+                        </select>
+                    </div>
+                    <div class="form-group" id="histogramBinGroup" style="display:none">
+                        <label class="form-label">Histogram Bins</label>
+                        <input type="number" class="form-input" id="histogramBins" value="10" min="2" max="100">
+                    </div>
+                    <div class="form-group" id="heatmapAggGroup" style="display:none">
+                        <label class="form-label">Heatmap Aggregate</label>
+                        <select class="form-select" id="heatmapAggregate">
+                            <option value="count">Count</option>
+                            <option value="sum">Sum</option>
+                            <option value="mean">Mean</option>
+                            <option value="min">Min</option>
+                            <option value="max">Max</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="toolbar-btn primary" onclick="App.generateChart()" style="margin-bottom:12px">Generate Chart</button>
+                <div class="chart-container" id="chartContainer"></div>
+            </div>
+
+            <div id="pivotPanel" class="tab-panel hidden">
+                <div class="pivot-config">
+                    <div class="form-group">
+                        <label class="form-label">Row Dimensions (drag columns here)</label>
+                        <div class="pivot-dim-list" id="pivotRowDims">
+                            <span style="color:var(--text-muted);font-size:11px">Drag columns here</span>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Column Dimensions (drag columns here)</label>
+                        <div class="pivot-dim-list" id="pivotColDims">
+                            <span style="color:var(--text-muted);font-size:11px">Drag columns here</span>
+                        </div>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                        <div class="form-group">
+                            <label class="form-label">Value Field</label>
+                            <select class="form-select" id="pivotValueField"></select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Aggregation</label>
+                            <select class="form-select" id="pivotAggMethod">
+                                <option value="0">Sum</option>
+                                <option value="1">Count</option>
+                                <option value="2">Average</option>
+                                <option value="3">Min</option>
+                                <option value="4">Max</option>
+                                <option value="5">Std Dev</option>
+                                <option value="6">Count Distinct</option>
+                                <option value="7">Percentile P50</option>
+                                <option value="7.5">Percentile P90</option>
+                                <option value="7.95">Percentile P95</option>
+                                <option value="7.99">Percentile P99</option>
+                            </select>
+                        </div>
+                    </div>
+                    <button class="toolbar-btn primary" onclick="App.buildPivot()" style="width:100%;margin-top:8px">Build Pivot Table</button>
+                </div>
+                <div id="pivotResult" style="overflow:auto"></div>
+            </div>
+
+            <div id="anomalyPanel" class="tab-panel hidden">
+                <div class="anomaly-config" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:12px">
+                    <div class="form-group">
+                        <label class="form-label">Column</label>
+                        <select class="form-select" id="anomalyColumn"></select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Method</label>
+                        <select class="form-select" id="anomalyMethod">
+                            <option value="0">IQR</option>
+                            <option value="1">Z-Score</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Threshold</label>
+                        <input class="form-input" id="anomalyThreshold" type="number" step="0.1" value="1.5" placeholder="1.5 (IQR) or 3.0 (Z-score)">
+                    </div>
+                </div>
+                <button class="toolbar-btn primary" onclick="App.detectAnomalies()" style="margin-bottom:12px">Detect Anomalies</button>
+                <div id="anomalyResult"></div>
+            </div>
+        </div>
+
+        <div class="sidebar-right">
+            <div class="sidebar-section">
+                <div class="sidebar-header">
+                    <span>Data Summary</span>
+                    <span class="arrow">▼</span>
+                </div>
+                <div class="sidebar-content" id="dataSummary">
+                    <div style="padding:8px;font-size:12px;color:var(--text-muted)">Load data to see summary</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="status-bar" id="statusBar">
+            <span class="status-item">Ready</span>
+        </div>
+    </div>
+
+    <div id="filterPanelOverlay" class="filter-panel-overlay hidden">
+        <div class="filter-panel">
+            <div class="filter-panel-header">
+                <span class="filter-panel-title" id="filterPanelTitle">Filter</span>
+                <button class="filter-panel-close" onclick="App.closeFilterPanel()">×</button>
+            </div>
+            <div class="filter-panel-body" id="filterPanelBody">
+            </div>
+            <div class="filter-panel-footer">
+                <button class="toolbar-btn" onclick="App.clearFilterForColumn()">Clear</button>
+                <button class="toolbar-btn" onclick="App.closeFilterPanel()">Cancel</button>
+                <button class="toolbar-btn primary" onclick="App.applyFilterFromPanel()">Apply</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="loading-overlay" id="loadingOverlay">
+        <div style="text-align:center">
+            <div class="spinner"></div>
+            <div class="loading-text" id="loadingText">Loading WASM module...</div>
+        </div>
+    </div>
+
+    <script src="wasm_exec.js"></script>
+    <script>
+        const go = new Go();
+        if (!WebAssembly.instantiateStreaming) {
+            WebAssembly.instantiateStreaming = async (resp, importObject) => {
+                const source = await (await resp).arrayBuffer();
+                return await WebAssembly.instantiate(source, importObject);
+            };
+        }
+        WebAssembly.instantiateStreaming(fetch('main.wasm'), go.importObject).then(result => {
+            go.run(result.instance);
+        }).catch(err => {
+            console.error('WASM load error:', err);
+            const loadingText = document.getElementById('loadingText');
+            if (loadingText) {
+                loadingText.textContent = 'WASM load error: ' + err.message;
+            }
+        });
+    </script>
+    <script src="js/app.js"></script>
+</body>
+</html>
