@@ -1,0 +1,47 @@
+app = "auction-api-staging"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[deploy]
+  strategy = "rolling"
+
+[env]
+  RUN_MODE = "staging"
+  SERVER_HOST = "0.0.0.0"
+  SERVER_PORT = "8080"
+  MEDIA_STORAGE_PATH = "/app/media"
+
+[secrets]
+  DATABASE_URL = "set-via-fly-secrets"
+  REDIS_URL = "set-via-fly-secrets"
+  MONGODB_URI = "set-via-fly-secrets"
+  JWT_SECRET = "set-via-fly-secrets"
+
+[[services]]
+  http_checks = []
+  internal_port = 8080
+  processes = ["app"]
+  protocol = "tcp"
+  script_checks = []
+
+  [services.concurrency]
+    hard_limit = 50
+    soft_limit = 25
+    type = "connections"
+
+  [[services.ports]]
+    force_https = true
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443
+
+  [[services.tcp_checks]]
+    grace_period = "10s"
+    interval = "15s"
+    restart_limit = 0
+    timeout = "2s"

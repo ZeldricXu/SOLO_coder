@@ -1,0 +1,30 @@
+app = "auction-frontend-staging"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile.frontend"
+
+[deploy]
+  strategy = "rolling"
+
+[env]
+  API_BASE_URL = "https://auction-api-staging.fly.dev/api/v1"
+
+[[services]]
+  internal_port = 80
+  processes = ["app"]
+  protocol = "tcp"
+
+  [services.concurrency]
+    hard_limit = 100
+    soft_limit = 50
+    type = "connections"
+
+  [[services.ports]]
+    force_https = true
+    handlers = ["http"]
+    port = 80
+
+  [[services.ports]]
+    handlers = ["tls", "http"]
+    port = 443

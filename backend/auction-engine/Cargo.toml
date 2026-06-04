@@ -1,0 +1,29 @@
+[package]
+name = "auction-engine"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+actix-web.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+sqlx.workspace = true
+redis.workspace = true
+mongodb.workspace = true
+rust_decimal.workspace = true
+rust_decimal_macros.workspace = true
+futures-util.workspace = true
+parking_lot.workspace = true
+dashmap.workspace = true
+async-stream.workspace = true
+async-trait.workspace = true
+shared.workspace = true
+common.workspace = true
+models.workspace = true

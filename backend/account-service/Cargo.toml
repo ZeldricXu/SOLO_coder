@@ -1,0 +1,24 @@
+[package]
+name = "account-service"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+actix-web.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+uuid.workspace = true
+thiserror.workspace = true
+anyhow.workspace = true
+tracing.workspace = true
+sqlx.workspace = true
+mongodb.workspace = true
+bson.workspace = true
+rust_decimal.workspace = true
+async-trait.workspace = true
+shared.workspace = true
+common.workspace = true
+models.workspace = true
+futures-util.workspace = true

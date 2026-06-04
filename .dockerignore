@@ -1,0 +1,10 @@
+target/
+.git/
+.github/
+.env
+.env.*
+*.md
+deploy/
+docker-compose*.yml
+.dockerignore
+Dockerfile*

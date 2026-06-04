@@ -1,0 +1,21 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+
+[database]
+max_connections = 20
+
+[redis]
+max_connections = 20
+
+[mongodb]
+database = "auction_production"
+
+[auth]
+jwt_expiry_hours = 12
+
+[media]
+storage_path = "/app/media"
+max_file_size = 20971520
+allowed_image_types = ["image/jpeg", "image/png", "image/webp"]
+allowed_video_types = ["video/mp4", "video/webm"]

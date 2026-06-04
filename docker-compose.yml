@@ -1,0 +1,102 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: auction-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: auction
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: auction-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    container_name: auction-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auction-migrate
+    command: ["/app/auction-api", "--migrate-only"]
+    environment:
+      RUN_MODE: development
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/auction
+      REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auction-backend
+    ports:
+      - "8080:8080"
+    environment:
+      RUN_MODE: development
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/auction
+      REDIS_URL: redis://redis:6379
+      MONGODB_URI: mongodb://mongodb:27017
+      JWT_SECRET: dev-jwt-secret-not-for-production
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8080
+      MEDIA_STORAGE_PATH: /app/media
+    volumes:
+      - media_data:/app/media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: auction-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:
+  mongo_data:
+  media_data:
