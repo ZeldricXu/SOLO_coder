@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BehaviorTree id="shadow_assassin" name="暗影刺客AI">
+  <Selector>
+    <Sequence>
+      <Condition type="hp_low" threshold="0.3"/>
+      <Action type="cast_spell" spell="vanish"/>
+      <Action type="flee"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="not_in_attack_range"/>
+      <Action type="cast_spell" spell="shadow_step"/>
+      <Condition type="in_attack_range"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="chase"/>
+      <Condition type="in_attack_range"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="heard_sound"/>
+      <Action type="cast_spell" spell="stealth"/>
+      <Action type="investigate"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

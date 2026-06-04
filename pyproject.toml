@@ -1,0 +1,64 @@
+[tool.poetry]
+name = "dungeon-engine"
+version = "0.2.0"
+description = "Roguelike Dungeon Game Engine with multiplayer support"
+authors = ["Dungeon Team"]
+readme = "README.md"
+packages = [
+    { include = "server" },
+    { include = "client" },
+]
+
+[tool.poetry.dependencies]
+python = "^3.12"
+websockets = ">=12.0"
+pydantic = ">=2.5"
+pydantic-settings = ">=2.1"
+uvicorn = {version = ">=0.27", extras = ["standard"]}
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=7.4"
+pytest-asyncio = ">=0.23"
+pytest-cov = ">=4.1"
+ruff = ">=0.2"
+mypy = ">=1.8"
+
+[tool.poetry.group.client.dependencies]
+pygame = ">=2.5"
+
+[tool.poetry.scripts]
+dungeon-server = "server.app:main"
+dungeon-gm = "tools.gm_cli:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["server", "client", "tests", "tools"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["server", "client"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["tests"]
+markers = [
+    "integration: integration tests",
+    "slow: slow tests",
+]
+
+[tool.coverage.run]
+source = ["server"]
+omit = ["tests/*"]

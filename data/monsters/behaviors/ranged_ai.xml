@@ -1,0 +1,36 @@
+<BehaviorTree id="ranged_ai" name="远程怪物AI">
+  <Selector>
+    <Sequence>
+      <Condition type="hp_low" threshold="0.2"/>
+      <Action type="flee"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="player_too_close" min_distance="2"/>
+      <Action type="retreat" distance="3"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="in_range" range="5"/>
+      <Condition type="in_attack_range"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="player_far" min_distance="3"/>
+      <Action type="chase"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="chase"/>
+      <Condition type="in_range" range="5"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="heard_sound"/>
+      <Action type="investigate"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

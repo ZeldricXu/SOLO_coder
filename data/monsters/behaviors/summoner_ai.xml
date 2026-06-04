@@ -1,0 +1,34 @@
+<BehaviorTree id="summoner_ai" name="召唤型怪物AI">
+  <Selector>
+    <Sequence>
+      <Condition type="hp_low" threshold="0.3"/>
+      <Action type="flee"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="can_summon" max_summons="3"/>
+      <Condition type="cooldown_ready" spell="summon"/>
+      <Action type="summon" template="skeleton" count="1"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="player_too_close" min_distance="2"/>
+      <Action type="retreat" distance="3"/>
+      <Action type="cast_spell" spell="arcane_bolt"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="in_range" range="6"/>
+      <Action type="cast_spell" spell="arcane_bolt"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="chase"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="heard_sound"/>
+      <Action type="investigate"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

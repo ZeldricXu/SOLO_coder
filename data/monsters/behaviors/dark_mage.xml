@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BehaviorTree id="dark_mage" name="暗黑法师AI">
+  <Selector>
+    <Sequence>
+      <Condition type="hp_low" threshold="0.25"/>
+      <Action type="cast_spell" spell="teleport_away"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="in_range" range="5"/>
+      <Action type="cast_spell" spell="dark_bolt"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="chase"/>
+      <Condition type="in_range" range="5"/>
+      <Action type="cast_spell" spell="dark_bolt"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="heard_sound"/>
+      <Action type="investigate"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

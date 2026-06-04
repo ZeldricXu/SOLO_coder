@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BehaviorTree id="goblin" name="哥布林AI">
+  <Selector>
+    <Sequence>
+      <Condition type="hp_low" threshold="0.3"/>
+      <Action type="call_for_help"/>
+      <Action type="flee"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="ally_nearby"/>
+      <Action type="chase"/>
+      <Condition type="in_attack_range"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="flee"/>
+      <Condition type="safe_distance"/>
+      <Action type="call_for_help"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="heard_sound"/>
+      <Action type="investigate"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

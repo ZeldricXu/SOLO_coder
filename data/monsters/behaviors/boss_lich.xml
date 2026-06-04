@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BehaviorTree id="boss_lich" name="巫妖王BossAI">
+  <Selector>
+    <Sequence>
+      <Condition type="hp_below" threshold="0.3"/>
+      <Action type="cast_spell" spell="summon_minions"/>
+      <Action type="cast_spell" spell="death_coil"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="cooldown_ready" spell="ice_storm"/>
+      <Action type="cast_spell" spell="ice_storm"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="in_range" range="5"/>
+      <Action type="cast_spell" spell="death_coil"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="in_range" range="3"/>
+      <Action type="cast_spell" spell="drain_life"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="chase"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

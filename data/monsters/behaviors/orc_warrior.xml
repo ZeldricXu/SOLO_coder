@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BehaviorTree id="orc_warrior" name="兽人战士AI">
+  <Selector>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="chase"/>
+      <Condition type="in_attack_range"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="heard_sound"/>
+      <Action type="call_for_help"/>
+      <Action type="investigate"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

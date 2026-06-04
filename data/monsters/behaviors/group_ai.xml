@@ -1,0 +1,28 @@
+<BehaviorTree id="group_ai" name="群体协作AI">
+  <Selector>
+    <Sequence>
+      <Condition type="hp_low" threshold="0.2"/>
+      <Action type="flee"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="allies_nearby_count" count="3" range="5"/>
+      <Action type="call_help" radius="6"/>
+      <Action type="chase"/>
+      <Condition type="in_attack_range"/>
+      <Action type="swarm"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="call_for_help"/>
+      <Action type="chase"/>
+      <Condition type="in_attack_range"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="heard_sound"/>
+      <Action type="investigate"/>
+    </Sequence>
+    <Action type="patrol"/>
+  </Selector>
+</BehaviorTree>

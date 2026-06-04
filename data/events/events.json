@@ -1,0 +1,142 @@
+{
+  "events": [
+    {
+      "id": "mimic_chest",
+      "name": "宝箱怪",
+      "type": "trap",
+      "trigger": "enter_room",
+      "probability": 0.15,
+      "description": "看似普通的宝箱突然变成了宝箱怪！",
+      "effect": "spawn_mimic",
+      "min_floor": 1
+    },
+    {
+      "id": "wishing_well",
+      "name": "许愿井",
+      "type": "benefit",
+      "trigger": "interact",
+      "probability": 0.1,
+      "description": "一口古老的许愿井，投入金币可获得祝福。",
+      "choices": [
+        {"name": "投入10金币", "cost_gold": 10, "effect": "random_buff", "duration": 5},
+        {"name": "投入50金币", "cost_gold": 50, "effect": "rare_item"},
+        {"name": "离开", "effect": "none"}
+      ],
+      "min_floor": 1
+    },
+    {
+      "id": "mysterious_merchant",
+      "name": "神秘商人",
+      "type": "merchant",
+      "trigger": "enter_room",
+      "probability": 0.08,
+      "description": "一个神秘的商人出现在暗处，兜售着奇怪的货物。",
+      "shop_items": 4,
+      "price_multiplier": 1.5,
+      "min_floor": 2
+    },
+    {
+      "id": "altar_sacrifice",
+      "name": "祭坛献祭",
+      "type": "altar",
+      "trigger": "interact",
+      "probability": 0.1,
+      "description": "一座古老的祭坛，似乎需要献上什么...",
+      "choices": [
+        {"name": "献祭10%生命", "cost_hp_percent": 0.1, "effect": "random_stat_boost", "value": 2},
+        {"name": "献祭一件装备", "cost_item": true, "effect": "rare_item"},
+        {"name": "亵渎祭坛", "effect": "curse", "curse_duration": 10},
+        {"name": "离开", "effect": "none"}
+      ],
+      "min_floor": 1
+    },
+    {
+      "id": "cursed_room",
+      "name": "诅咒房间",
+      "type": "curse",
+      "trigger": "enter_room",
+      "probability": 0.08,
+      "description": "房间内弥漫着不祥的气息，但你看到角落里有闪闪发光的宝物。",
+      "effect": "cursed_loot",
+      "curse_type": "random_debuff",
+      "curse_duration": 10,
+      "loot_rarity_bonus": 1,
+      "min_floor": 3
+    },
+    {
+      "id": "healing_fountain",
+      "name": "治愈泉水",
+      "type": "benefit",
+      "trigger": "interact",
+      "probability": 0.12,
+      "description": "清澈的泉水散发着微光，饮用后感觉精力充沛。",
+      "effect": "full_heal",
+      "min_floor": 1
+    },
+    {
+      "id": "trap_room",
+      "name": "陷阱房间",
+      "type": "trap",
+      "trigger": "enter_room",
+      "probability": 0.15,
+      "description": "地板上布满了暗藏的机关！",
+      "effect": "random_trap",
+      "trap_types": ["spike", "poison_gas", "arrow", "fire"],
+      "damage_range": [10, 30],
+      "min_floor": 1
+    },
+    {
+      "id": "treasure_vault",
+      "name": "宝藏密室",
+      "type": "treasure",
+      "trigger": "enter_room",
+      "probability": 0.05,
+      "description": "一个装满宝藏的密室！但入口正在坍塌...",
+      "effect": "timed_loot",
+      "turns_limit": 5,
+      "item_count": [2, 4],
+      "min_floor": 3
+    }
+  ],
+  "season_challenges": [
+    {
+      "id": "no_armor",
+      "name": "赤身裸体",
+      "description": "禁用所有防具",
+      "rule": "disable_item_type",
+      "item_type": "armor",
+      "score_multiplier": 2.0
+    },
+    {
+      "id": "double_hp",
+      "name": "钢铁意志",
+      "description": "全怪物血量翻倍",
+      "rule": "monster_hp_multiplier",
+      "value": 2.0,
+      "score_multiplier": 1.5
+    },
+    {
+      "id": "time_limit",
+      "name": "与时间赛跑",
+      "description": "每层限时100回合",
+      "rule": "floor_turn_limit",
+      "value": 100,
+      "score_multiplier": 2.0
+    },
+    {
+      "id": "no_healing",
+      "name": "以战养战",
+      "description": "禁用所有治疗物品",
+      "rule": "disable_item_subtype",
+      "item_subtype": "health_potion",
+      "score_multiplier": 1.8
+    },
+    {
+      "id": "one_weapon",
+      "name": "武器大师",
+      "description": "只能使用初始武器",
+      "rule": "lock_initial_weapon",
+      "score_multiplier": 2.5
+    }
+  ]
+}

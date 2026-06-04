@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  dungeon-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${DUNGEON_PORT:-8765}:8765"
+    volumes:
+      - dungeon-data:/app/data
+    env_file:
+      - .env.production
+    environment:
+      - DUNGEON_ENVIRONMENT=production
+    restart: unless-stopped
+    stop_signal: SIGTERM
+    stop_grace_period: 60s
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(); s.settimeout(2); s.connect(('localhost',8765)); s.close()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+        reservations:
+          memory: 128M
+          cpus: "0.25"
+
+volumes:
+  dungeon-data:

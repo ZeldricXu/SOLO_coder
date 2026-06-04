@@ -1,0 +1,315 @@
+{
+  "weapons": [
+    {
+      "id": "bone_sword",
+      "name": "骨剑",
+      "type": "weapon",
+      "subtype": "sword",
+      "attack": 5,
+      "defense": 0,
+      "speed": 0,
+      "rarity": "white",
+      "min_floor": 1,
+      "two_hand": false
+    },
+    {
+      "id": "dagger",
+      "name": "匕首",
+      "type": "weapon",
+      "subtype": "dagger",
+      "attack": 3,
+      "defense": 0,
+      "speed": 3,
+      "rarity": "white",
+      "min_floor": 1,
+      "two_hand": false
+    },
+    {
+      "id": "battle_axe",
+      "name": "战斧",
+      "type": "weapon",
+      "subtype": "axe",
+      "attack": 10,
+      "defense": 0,
+      "speed": -2,
+      "rarity": "blue",
+      "min_floor": 3,
+      "two_hand": true
+    },
+    {
+      "id": "magic_staff",
+      "name": "魔法杖",
+      "type": "weapon",
+      "subtype": "staff",
+      "attack": 6,
+      "defense": 0,
+      "speed": 0,
+      "rarity": "blue",
+      "min_floor": 3,
+      "two_hand": true,
+      "bonus_mana": 10
+    },
+    {
+      "id": "shadow_dagger",
+      "name": "暗影匕首",
+      "type": "weapon",
+      "subtype": "dagger",
+      "attack": 8,
+      "defense": 0,
+      "speed": 5,
+      "rarity": "purple",
+      "min_floor": 5,
+      "two_hand": false,
+      "special_effect": "backstab"
+    },
+    {
+      "id": "dragon_sword",
+      "name": "屠龙剑",
+      "type": "weapon",
+      "subtype": "sword",
+      "attack": 20,
+      "defense": 3,
+      "speed": 0,
+      "rarity": "orange",
+      "min_floor": 7,
+      "two_hand": true,
+      "special_effect": "dragon_slayer"
+    },
+    {
+      "id": "lich_staff",
+      "name": "巫妖之杖",
+      "type": "weapon",
+      "subtype": "staff",
+      "attack": 12,
+      "defense": 0,
+      "speed": 0,
+      "rarity": "orange",
+      "min_floor": 5,
+      "two_hand": true,
+      "bonus_mana": 25,
+      "special_effect": "life_drain"
+    }
+  ],
+  "armors": [
+    {
+      "id": "leather_armor",
+      "name": "皮甲",
+      "type": "armor",
+      "subtype": "chest",
+      "attack": 0,
+      "defense": 4,
+      "speed": -1,
+      "rarity": "white",
+      "min_floor": 1,
+      "slot": "chest"
+    },
+    {
+      "id": "iron_armor",
+      "name": "铁甲",
+      "type": "armor",
+      "subtype": "chest",
+      "attack": 0,
+      "defense": 8,
+      "speed": -3,
+      "rarity": "blue",
+      "min_floor": 3,
+      "slot": "chest"
+    },
+    {
+      "id": "bone_shield",
+      "name": "骨盾",
+      "type": "armor",
+      "subtype": "shield",
+      "attack": 0,
+      "defense": 5,
+      "speed": -2,
+      "rarity": "white",
+      "min_floor": 1,
+      "slot": "offhand"
+    },
+    {
+      "id": "dragon_armor",
+      "name": "龙鳞甲",
+      "type": "armor",
+      "subtype": "chest",
+      "attack": 0,
+      "defense": 15,
+      "speed": -2,
+      "rarity": "orange",
+      "min_floor": 7,
+      "slot": "chest",
+      "special_effect": "fire_resist"
+    },
+    {
+      "id": "crown_of_undead",
+      "name": "亡灵王冠",
+      "type": "armor",
+      "subtype": "helmet",
+      "attack": 3,
+      "defense": 4,
+      "speed": 0,
+      "rarity": "orange",
+      "min_floor": 5,
+      "slot": "head",
+      "special_effect": "undead_command"
+    }
+  ],
+  "accessories": [
+    {
+      "id": "speed_ring",
+      "name": "疾风戒指",
+      "type": "accessory",
+      "attack": 0,
+      "defense": 0,
+      "speed": 5,
+      "rarity": "purple",
+      "min_floor": 5,
+      "slot": "ring"
+    },
+    {
+      "id": "fire_gem",
+      "name": "火焰宝石",
+      "type": "accessory",
+      "attack": 3,
+      "defense": 0,
+      "speed": 0,
+      "rarity": "blue",
+      "min_floor": 5,
+      "slot": "accessory",
+      "element_bonus": {"fire": 0.2}
+    },
+    {
+      "id": "ice_gem",
+      "name": "冰霜宝石",
+      "type": "accessory",
+      "attack": 3,
+      "defense": 0,
+      "speed": 0,
+      "rarity": "blue",
+      "min_floor": 5,
+      "slot": "accessory",
+      "element_bonus": {"ice": 0.2}
+    }
+  ],
+  "consumables": [
+    {
+      "id": "health_potion",
+      "name": "生命药水",
+      "type": "consumable",
+      "effect": "heal",
+      "value": 20,
+      "rarity": "white",
+      "stack_max": 10
+    },
+    {
+      "id": "mana_potion",
+      "name": "魔力药水",
+      "type": "consumable",
+      "effect": "mana",
+      "value": 15,
+      "rarity": "white",
+      "stack_max": 10
+    },
+    {
+      "id": "slime_gel",
+      "name": "史莱姆凝胶",
+      "type": "consumable",
+      "effect": "defense_buff",
+      "value": 3,
+      "duration": 5,
+      "rarity": "white",
+      "stack_max": 5
+    },
+    {
+      "id": "gold_small",
+      "name": "小袋金币",
+      "type": "consumable",
+      "effect": "gold",
+      "value": 10,
+      "rarity": "white",
+      "stack_max": 99
+    },
+    {
+      "id": "scroll_fireball",
+      "name": "火球术卷轴",
+      "type": "consumable",
+      "effect": "damage",
+      "element": "fire",
+      "value": 30,
+      "range": 3,
+      "rarity": "purple",
+      "stack_max": 3
+    },
+    {
+      "id": "scroll_ice_storm",
+      "name": "冰风暴卷轴",
+      "type": "consumable",
+      "effect": "damage",
+      "element": "ice",
+      "value": 25,
+      "range": 3,
+      "status_effect": "frozen",
+      "rarity": "purple",
+      "stack_max": 3
+    },
+    {
+      "id": "resurrection_scroll",
+      "name": "复活卷轴",
+      "type": "consumable",
+      "effect": "resurrection",
+      "value": 0,
+      "rarity": "orange",
+      "stack_max": 1
+    },
+    {
+      "id": "enhance_stone",
+      "name": "强化石",
+      "type": "consumable",
+      "effect": "enhance_material",
+      "value": 1,
+      "rarity": "blue",
+      "min_floor": 2,
+      "stack_max": 99,
+      "description": "用于装备强化的神秘矿石"
+    },
+    {
+      "id": "protection_rune",
+      "name": "保护符文",
+      "type": "consumable",
+      "effect": "protect_enhance",
+      "value": 1,
+      "rarity": "purple",
+      "min_floor": 4,
+      "stack_max": 10,
+      "description": "强化失败时防止装备降级"
+    }
+  ],
+  "prefixes": [
+    {"name": "锋利的", "stat": "attack", "value": [2, 5], "min_rarity": "blue"},
+    {"name": "坚固的", "stat": "defense", "value": [2, 5], "min_rarity": "blue"},
+    {"name": "疾风的", "stat": "speed", "value": [2, 4], "min_rarity": "blue"},
+    {"name": "烈焰的", "stat": "element_fire", "value": [0.1, 0.3], "min_rarity": "purple"},
+    {"name": "寒冰的", "stat": "element_ice", "value": [0.1, 0.3], "min_rarity": "purple"},
+    {"name": "剧毒的", "stat": "element_poison", "value": [0.1, 0.3], "min_rarity": "purple"},
+    {"name": "毁灭的", "stat": "attack", "value": [5, 10], "min_rarity": "gold"},
+    {"name": "不朽的", "stat": "defense", "value": [5, 10], "min_rarity": "gold"},
+    {"name": "传说之", "stat": "attack", "value": [8, 15], "min_rarity": "orange"},
+    {"name": "神佑之", "stat": "defense", "value": [8, 15], "min_rarity": "orange"}
+  ],
+  "suffixes": [
+    {"name": "之力", "stat": "attack", "value": [1, 3], "min_rarity": "blue"},
+    {"name": "之护", "stat": "defense", "value": [1, 3], "min_rarity": "blue"},
+    {"name": "之速", "stat": "speed", "value": [1, 3], "min_rarity": "blue"},
+    {"name": "灼烧", "stat": "burn_on_hit", "value": [3, 8], "min_rarity": "purple"},
+    {"name": "冰冻", "stat": "freeze_chance", "value": [0.1, 0.25], "min_rarity": "purple"},
+    {"name": "吸血", "stat": "life_steal", "value": [0.05, 0.15], "min_rarity": "gold"},
+    {"name": "暴击", "stat": "crit_chance", "value": [0.1, 0.25], "min_rarity": "gold"},
+    {"name": "神怒", "stat": "all_damage", "value": [0.1, 0.2], "min_rarity": "orange"}
+  ],
+  "rarity_weights": {
+    "1": {"white": 70, "blue": 20, "purple": 7, "gold": 2.5, "orange": 0.5},
+    "3": {"white": 50, "blue": 30, "purple": 13, "gold": 5, "orange": 2},
+    "5": {"white": 35, "blue": 30, "purple": 20, "gold": 10, "orange": 5},
+    "7": {"white": 20, "blue": 25, "purple": 28, "gold": 17, "orange": 10}
+  }
+}

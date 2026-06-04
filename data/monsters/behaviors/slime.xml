@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<BehaviorTree id="slime" name="史莱姆AI">
+  <Selector>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Condition type="in_attack_range"/>
+      <Action type="attack"/>
+    </Sequence>
+    <Sequence>
+      <Condition type="can_see_player"/>
+      <Action type="chase"/>
+    </Sequence>
+    <Action type="wander"/>
+  </Selector>
+</BehaviorTree>

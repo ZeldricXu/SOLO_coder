@@ -1,0 +1,19 @@
+{
+    "server_host": "localhost",
+    "server_port": 8765,
+    "environment": "development",
+    "environments": {
+        "development": {
+            "server_host": "localhost",
+            "server_port": 8765
+        },
+        "staging": {
+            "server_host": "staging.dungeon.example.com",
+            "server_port": 8765
+        },
+        "production": {
+            "server_host": "dungeon.example.com",
+            "server_port": 8765
+        }
+    }
+}
