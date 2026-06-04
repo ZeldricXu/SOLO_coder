@@ -1,0 +1,186 @@
+name: CFD Solver CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-lint-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-lint-
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting
+        run: cargo fmt --all --check
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+            ${{ runner.os }}-cargo-
+
+      - name: Download benchmark data
+        run: |
+          chmod +x scripts/download-benchmarks.sh
+          ./scripts/download-benchmarks.sh
+
+      - name: Run tests (default features)
+        run: cargo test --workspace --verbose
+
+      - name: Run tests (CGNS feature)
+        run: cargo test --workspace --features mesh-generator/cgns --verbose
+
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+      deployments: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-bench-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-bench-
+            ${{ runner.os }}-cargo-
+
+      - name: Download benchmark data
+        run: |
+          chmod +x scripts/download-benchmarks.sh
+          ./scripts/download-benchmarks.sh
+
+      - name: Run benchmarks
+        run: cargo bench --bench cfd_benchmarks
+
+      - name: Store benchmark result
+        uses: benchmark-action/github-action-benchmark@v1
+        with:
+          name: CFD Solver Benchmarks
+          tool: 'criterion'
+          output-file-path: target/criterion/report/raw.json
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: benchmarks
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          auto-push: true
+          alert-threshold: '130%'
+          comment-on-alert: true
+          fail-on-alert: false
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl, aarch64-unknown-linux-musl
+
+      - name: Install cross build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-release-${{ hashFiles('**/Cargo.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-release-
+            ${{ runner.os }}-cargo-
+
+      - name: Build x86_64 Linux static binary
+        run: cargo build --release --bin cfd-solver --target x86_64-unknown-linux-musl
+
+      - name: Build aarch64 Linux static binary
+        run: cargo build --release --bin cfd-solver --target aarch64-unknown-linux-musl
+
+      - name: Create release artifacts directory
+        run: |
+          mkdir -p release
+          cp target/x86_64-unknown-linux-musl/release/cfd-solver release/cfd-solver-x86_64-linux-musl
+          cp target/aarch64-unknown-linux-musl/release/cfd-solver release/cfd-solver-aarch64-linux-musl
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd release
+          sha256sum cfd-solver-x86_64-linux-musl > cfd-solver-x86_64-linux-musl.sha256
+          sha256sum cfd-solver-aarch64-linux-musl > cfd-solver-aarch64-linux-musl.sha256
+
+      - name: Upload binaries to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: |
+            release/cfd-solver-x86_64-linux-musl
+            release/cfd-solver-x86_64-linux-musl.sha256
+            release/cfd-solver-aarch64-linux-musl
+            release/cfd-solver-aarch64-linux-musl.sha256
+          generate_release_notes: true

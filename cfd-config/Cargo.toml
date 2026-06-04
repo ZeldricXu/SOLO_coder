@@ -1,0 +1,11 @@
+[package]
+name = "cfd-config"
+version = "0.1.0"
+edition = "2021"
+description = "TOML configuration parser for CFD solver"
+
+[dependencies]
+serde = { workspace = true }
+toml = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }

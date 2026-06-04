@@ -1,0 +1,13 @@
+[package]
+name = "turbulence-model"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nalgebra = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+mesh-generator = { path = "../mesh-generator" }
+linear-system-solver = { path = "../linear-system-solver" }
+boundary-condition = { path = "../boundary-condition" }

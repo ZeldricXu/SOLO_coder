@@ -1,0 +1,9 @@
+[package]
+name = "timestep-controller"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nalgebra = { workspace = true }
+log = { workspace = true }
+mesh-generator = { path = "../mesh-generator" }

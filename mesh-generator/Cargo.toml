@@ -1,0 +1,15 @@
+[package]
+name = "mesh-generator"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nalgebra = { workspace = true }
+rayon = { workspace = true }
+thiserror = { workspace = true }
+log = { workspace = true }
+hdf5 = { version = "0.8", optional = true }
+
+[features]
+default = []
+cgns = ["dep:hdf5"]
