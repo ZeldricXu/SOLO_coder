@@ -1,0 +1,64 @@
+[
+  {
+    "id": "high-error-rate",
+    "name": "高错误率告警",
+    "description": "当错误数超过阈值时触发",
+    "type": "THRESHOLD",
+    "severity": "ERROR",
+    "enabled": true,
+    "metric": "errors",
+    "comparison": "GT",
+    "threshold": 10,
+    "minViolations": 2,
+    "cooldownSeconds": 300,
+    "escalationMinutes": 10,
+    "notificationChannels": ["wechat-work", "email"]
+  },
+  {
+    "id": "high-traffic",
+    "name": "流量突增告警",
+    "description": "当日志速率超过阈值时触发",
+    "type": "THRESHOLD",
+    "severity": "WARNING",
+    "enabled": true,
+    "metric": "rate_per_minute",
+    "comparison": "GT",
+    "threshold": 1000,
+    "minViolations": 3,
+    "cooldownSeconds": 600,
+    "escalationMinutes": 15,
+    "notificationChannels": ["slack"]
+  },
+  {
+    "id": "critical-error-spike",
+    "name": "致命错误组合告警",
+    "description": "当同时满足高错误率和高错误比例时触发",
+    "type": "COMPOSITE",
+    "severity": "CRITICAL",
+    "enabled": true,
+    "operator": "AND",
+    "cooldownSeconds": 180,
+    "escalationMinutes": 5,
+    "children": [
+      {
+        "id": "high-errors-sub",
+        "name": "高错误数",
+        "type": "THRESHOLD",
+        "severity": "ERROR",
+        "metric": "errors",
+        "comparison": "GT",
+        "threshold": 20
+      },
+      {
+        "id": "high-error-ratio-sub",
+        "name": "高错误比例",
+        "type": "THRESHOLD",
+        "severity": "ERROR",
+        "metric": "error_ratio",
+        "comparison": "GT",
+        "threshold": 0.1
+      }
+    ],
+    "notificationChannels": ["wechat-work", "email", "slack"]
+  }
+]

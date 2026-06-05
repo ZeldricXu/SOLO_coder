@@ -1,0 +1,31 @@
+[
+  {
+    "id": "email-ops",
+    "name": "email",
+    "type": "EMAIL",
+    "enabled": true,
+    "smtpHost": "smtp.example.com",
+    "smtpPort": 587,
+    "smtpUser": "alert@example.com",
+    "smtpPassword": "your-password",
+    "smtpAuth": true,
+    "smtpStartTls": true,
+    "fromAddress": "alert@example.com",
+    "toAddresses": "ops@example.com,dev@example.com"
+  },
+  {
+    "id": "wechat-work-ops",
+    "name": "wechat-work",
+    "type": "WECHAT_WORK",
+    "enabled": true,
+    "webhookUrl": "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key",
+    "secret": ""
+  },
+  {
+    "id": "slack-ops",
+    "name": "slack",
+    "type": "SLACK",
+    "enabled": true,
+    "webhookUrl": ""
+  }
+]
