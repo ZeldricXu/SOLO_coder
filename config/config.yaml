@@ -1,0 +1,36 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 30
+  write_timeout: 30
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: pointcloud
+  sslmode: disable
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  cache_ttl: 3600
+
+storage:
+  data_dir: ./data
+  tile_dir: ./data/tiles
+  upload_dir: ./data/uploads
+
+octree:
+  max_depth: 10
+  min_points_per_node: 100
+  max_points_per_node: 5000
+  lod_levels: 6
+
+collaboration:
+  ping_interval: 30
+  max_connections_per_room: 50
+  conflict_resolution: "last-write-wins"
