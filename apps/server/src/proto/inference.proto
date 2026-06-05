@@ -1,0 +1,130 @@
+syntax = "proto3";
+
+package mlops;
+
+service InferenceService {
+  rpc Predict (InferenceRequest) returns (InferenceResponse);
+  rpc PredictBatch (BatchInferenceRequest) returns (BatchInferenceResponse);
+  rpc GetStatus (StatusRequest) returns (StatusResponse);
+}
+
+service ModelRegistryService {
+  rpc GetModel (GetModelRequest) returns (Model);
+  rpc ListModels (ListModelsRequest) returns (ListModelsResponse);
+  rpc GetVersion (GetVersionRequest) returns (ModelVersion);
+}
+
+message Tensor {
+  repeated int64 shape = 1;
+  string dtype = 2;
+  bytes data = 3;
+}
+
+message InferenceRequest {
+  string model_id = 1;
+  optional string version = 2;
+  map<string, Tensor> inputs = 3;
+  string request_id = 4;
+  optional string user_id = 5;
+  optional string session_id = 6;
+  map<string, string> context = 7;
+  bool bypass_cache = 8;
+}
+
+message InferenceResponse {
+  string model_id = 1;
+  string version = 2;
+  map<string, Tensor> outputs = 3;
+  string request_id = 4;
+  string inference_id = 5;
+  int64 latency_ms = 6;
+  int32 batch_size = 7;
+  bool from_cache = 8;
+  int64 timestamp = 9;
+}
+
+message BatchInferenceRequest {
+  string model_id = 1;
+  optional string version = 2;
+  repeated InferenceRequest requests = 3;
+  int32 batch_size = 4;
+}
+
+message BatchInferenceResponse {
+  string model_id = 1;
+  string version = 2;
+  repeated InferenceResponse responses = 3;
+  int64 total_latency_ms = 4;
+  int32 batch_count = 5;
+  int64 timestamp = 6;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  int64 uptime_ms = 1;
+  int64 total_requests = 2;
+  double success_rate = 3;
+  double avg_latency_ms = 4;
+  double p50_latency_ms = 5;
+  double p95_latency_ms = 6;
+  double p99_latency_ms = 7;
+  repeated LoadedModelInfo loaded_models = 8;
+}
+
+message LoadedModelInfo {
+  string model_id = 1;
+  string version = 2;
+  string status = 3;
+  int64 loaded_at = 4;
+  int64 memory_usage_bytes = 5;
+}
+
+message GetModelRequest {
+  string id = 1;
+}
+
+message GetVersionRequest {
+  string id = 1;
+}
+
+message ListModelsRequest {
+  optional string name = 1;
+  optional string team = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message ListModelsResponse {
+  repeated Model models = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+  int32 total_pages = 5;
+}
+
+message Model {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string owner_id = 4;
+  string team = 5;
+  repeated string tags = 6;
+  string status = 7;
+  int64 created_at = 8;
+  int64 updated_at = 9;
+  optional ModelVersion latest_version = 10;
+}
+
+message ModelVersion {
+  string id = 1;
+  string model_id = 2;
+  string version = 3;
+  string semantic_version = 4;
+  string format = 5;
+  int64 size_bytes = 6;
+  string storage_backend = 7;
+  string storage_path = 8;
+  string status = 9;
+  int64 created_at = 10;
+}

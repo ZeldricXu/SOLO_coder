@@ -1,0 +1,426 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== 模型注册中心 ====================
+model Model {
+  id          String          @id @default(uuid())
+  name        String
+  description String?
+  ownerId     String
+  team        String
+  tags        String[]        @default([])
+  status      String          @default("active") // active | inactive | archived | deleted
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  metadata    Json            @default("{}")
+  versions    ModelVersion[]
+  latestVersionId String?
+
+  @@index([team])
+  @@index([ownerId])
+  @@index([status])
+  @@fulltext([name, description])
+}
+
+model ModelVersion {
+  id              String   @id @default(uuid())
+  modelId         String
+  model           Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  version         String
+  semanticVersion String
+  format          String   // pkl | onnx | pt | joblib | h5 | pb | custom
+  sizeBytes       BigInt
+  storageBackend  String   // s3 | local
+  storagePath     String
+  checksum        String
+  status          String   @default("pending") // pending | ready | failed | archived
+  createdAt       DateTime @default(now())
+  dataSchema      Json
+  loaderConfig    Json     @default("{}")
+  experimentId    String?
+  tags            String[] @default([])
+
+  metrics         ModelMetric[]
+  hyperParameters ModelHyperParameter[]
+
+  @@index([modelId, createdAt])
+  @@index([status])
+  @@unique([modelId, version])
+}
+
+model ModelMetric {
+  id        String   @id @default(uuid())
+  versionId String
+  version   ModelVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  name      String
+  value     Float
+  timestamp DateTime @default(now())
+  step      Int?
+  context   Json?
+
+  @@index([versionId, name, timestamp])
+}
+
+model ModelHyperParameter {
+  id        String   @id @default(uuid())
+  versionId String
+  version   ModelVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  name      String
+  value     String
+  type      String   // string | number | boolean | json
+
+  @@index([versionId, name])
+}
+
+// ==================== 实验追踪 ====================
+model Experiment {
+  id        String          @id @default(uuid())
+  name      String
+  description String?
+  projectId String
+  ownerId   String
+  team      String
+  tags      String[]        @default([])
+  status    String          @default("active")
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  metadata  Json            @default("{}")
+  runs      ExperimentRun[]
+  bestRunId String?
+
+  @@index([projectId])
+  @@index([team])
+  @@index([ownerId])
+  @@fulltext([name, description])
+}
+
+model ExperimentRun {
+  id             String          @id @default(uuid())
+  experimentId   String
+  experiment     Experiment      @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  name           String
+  status         String          @default("running") // running | completed | failed | killed
+  startTime      DateTime        @default(now())
+  endTime        DateTime?
+  durationMs     BigInt?
+  artifactPaths  String[]        @default([])
+  modelVersionId String?
+  datasetVersion String?
+  parentRunId    String?
+  childRunIds    String[]        @default([])
+  notes          String?
+  tags           String[]        @default([])
+  sourceType     String?         // git | notebook | script | manual
+  sourceUri      String?
+  sourceCommit   String?
+  sourceEntry    String?
+
+  hyperParameters RunHyperParameter[]
+  metrics         RunMetric[]
+
+  @@index([experimentId, startTime])
+  @@index([status])
+  @@index([parentRunId])
+}
+
+model RunHyperParameter {
+  id     String   @id @default(uuid())
+  runId  String
+  run    ExperimentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name   String
+  value  String
+  type   String
+
+  @@index([runId, name])
+}
+
+model RunMetric {
+  id        String   @id @default(uuid())
+  runId     String
+  run       ExperimentRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  name      String
+  value     Float
+  timestamp DateTime @default(now())
+  step      Int?
+  context   Json?
+
+  @@index([runId, name, timestamp])
+}
+
+model LineageEdge {
+  id        String @id @default(uuid())
+  sourceId  String
+  sourceType String // experiment | model | dataset | feature_set
+  targetId  String
+  targetType String
+  relation  String // parent | child | uses | produces
+
+  @@index([sourceId, targetId])
+  @@index([targetId])
+}
+
+// ==================== 特征存储 ====================
+model FeatureSet {
+  id               String              @id @default(uuid())
+  name             String
+  description      String?
+  projectId        String
+  ownerId          String
+  team             String
+  mode             String              // online | offline | both
+  entities         Json
+  features         Json
+  tags             String[]            @default([])
+  status           String              @default("active")
+  ttlSeconds       Int?
+  onlineStorage    Json?
+  offlineStorage   Json?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  versions         FeatureSetVersion[]
+  latestVersionId  String?
+
+  @@index([projectId])
+  @@index([team, mode])
+  @@fulltext([name, description])
+}
+
+model FeatureSetVersion {
+  id            String      @id @default(uuid())
+  featureSetId  String
+  featureSet    FeatureSet  @relation(fields: [featureSetId], references: [id], onDelete: Cascade)
+  version       String
+  featureSchema Json
+  sourceUri     String?
+  rowCount      BigInt?
+  sizeBytes     BigInt?
+  createdAt     DateTime    @default(now())
+  status        String      @default("active") // active | deprecated | archived
+
+  @@index([featureSetId, createdAt])
+  @@unique([featureSetId, version])
+}
+
+model FeatureStatistics {
+  id             String           @id @default(uuid())
+  featureSetId   String
+  featureSet     FeatureSet       @relation(fields: [featureSetId], references: [id], onDelete: Cascade)
+  featureName    String
+  min            Float?
+  max            Float?
+  mean           Float?
+  std            Float?
+  median         Float?
+  nullCount      BigInt?
+  uniqueCount    BigInt?
+  histogramBins  Float[]?
+  histogramCounts BigInt[]?
+  lastUpdated    DateTime         @default(now())
+
+  @@index([featureSetId, featureName])
+}
+
+// ==================== A/B实验 ====================
+model ABTest {
+  id                String          @id @default(uuid())
+  name              String
+  description       String?
+  projectId         String
+  ownerId           String
+  team              String
+  hypothesis        String
+  primaryMetric     String
+  status            String          @default("draft") // draft | running | paused | completed | archived
+  startTime         DateTime?
+  endTime           DateTime?
+  statusUpdatedAt   DateTime        @default(now())
+  tags              String[]        @default([])
+  bucketStrategy    String          // random | user_id | session_id | device_id | custom
+  bucketKey         String?
+  trafficAllocation Json
+  variants          ABVariant[]
+  targetingRules    Json            @default("[]")
+  metrics           Json            @default("[]")
+  results           Json?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  metadata          Json            @default("{}")
+
+  @@index([projectId, status])
+  @@index([team])
+  @@fulltext([name, hypothesis])
+}
+
+model ABVariant {
+  id             String  @id @default(uuid())
+  experimentId   String
+  experiment     ABTest  @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  name           String
+  description    String?
+  isControl      Boolean @default(false)
+  trafficWeight  Float   @default(1)
+  trafficPercentage Float @default(0)
+  config         Json    @default("{}")
+  modelId        String?
+  modelVersion   String?
+  status         String  @default("active")
+
+  @@index([experimentId])
+}
+
+model ABTestAssignment {
+  id             String   @id @default(uuid())
+  experimentId   String
+  experiment     ABTest   @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variantId      String
+  variant        ABVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  bucketKey      String
+  userId         String?
+  sessionId      String?
+  deviceId       String?
+  assignedAt     DateTime @default(now())
+  context        Json?
+
+  @@index([experimentId, bucketKey])
+  @@index([userId])
+  @@unique([experimentId, bucketKey])
+}
+
+model ABTestEvent {
+  id             String   @id @default(uuid())
+  experimentId   String
+  experiment     ABTest   @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variantId      String
+  variant        ABVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  eventName      String
+  userId         String?
+  sessionId      String?
+  properties     Json     @default("{}")
+  timestamp      DateTime @default(now())
+
+  @@index([experimentId, variantId, eventName, timestamp])
+  @@index([userId])
+}
+
+// ==================== 告警与监控 ====================
+model Alert {
+  id                    String                  @id @default(uuid())
+  name                  String
+  description           String?
+  type                  String  // inference_latency | error_rate | model_drift | feature_drift | throughput | memory | custom
+  severity              String  // info | warning | critical
+  status                String  @default("active") // active | acknowledged | resolved
+  modelId               String?
+  version               String?
+  featureSetId          String?
+  featureName           String?
+  threshold             Json
+  condition             Json    @default("{}")
+  notificationChannels  Json    @default("[]")
+  lastTriggeredAt       DateTime?
+  lastResolvedAt        DateTime?
+  triggerCount          Int     @default(0)
+  acknowledgedBy        String?
+  acknowledgedAt        DateTime?
+  resolvedBy            String?
+  resolvedReason        String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([type, status])
+  @@index([modelId])
+  @@index([severity])
+}
+
+model AlertEvent {
+  id          String   @id @default(uuid())
+  alertId     String
+  alert       Alert    @relation(fields: [alertId], references: [id], onDelete: Cascade)
+  severity    String
+  message     String
+  metricValue Float
+  threshold   Float
+  timestamp   DateTime @default(now())
+  context     Json?
+
+  @@index([alertId, timestamp])
+}
+
+model DriftDetectionConfig {
+  id                        String   @id @default(uuid())
+  modelId                   String
+  version                   String?
+  name                      String
+  driftType                 String   // data_drift | concept_drift | prediction_drift
+  statisticalTest           String   // ks | chi_square | t_test | mann_whitney | adversarial
+  featureNames              String[] @default([])
+  thresholdPValue           Float
+  windowSizeMinutes         Int
+  baselineWindowSizeMinutes Int
+  sampleSize                Int
+  alertOnDetection          Boolean  @default(true)
+  alertSeverity             String   @default("warning")
+  enabled                   Boolean  @default(true)
+  createdAt                 DateTime @default(now())
+  updatedAt                 DateTime @updatedAt
+
+  @@index([modelId, enabled])
+}
+
+model DriftDetectionResult {
+  id              String   @id @default(uuid())
+  configId        String
+  config          DriftDetectionConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  modelId         String
+  version         String?
+  driftType       String
+  featureName     String?
+  statisticalTest String
+  statistic       Float
+  pValue          Float
+  thresholdPValue Float
+  isDriftDetected Boolean
+  effectSize      Float
+  baselineStats   Json
+  currentStats    Json
+  timestamp       DateTime @default(now())
+  windowStart     DateTime
+  windowEnd       DateTime
+  alertId         String?
+
+  @@index([configId, timestamp])
+  @@index([modelId, isDriftDetected])
+}
+
+model InferenceMetrics {
+  id            String   @id @default(uuid())
+  requestId     String
+  inferenceId   String
+  modelId       String
+  version       String
+  latencyMs     Int
+  queueTimeMs   Int      @default(0)
+  batchSize     Int      @default(1)
+  inputSize     Int
+  outputSize    Int
+  fromCache     Boolean  @default(false)
+  success       Boolean  @default(true)
+  error         String?
+  timestamp     DateTime @default(now())
+  userId        String?
+  sessionId     String?
+  inputFeatures Json?
+  outputFeatures Json?
+
+  @@index([modelId, version, timestamp])
+  @@index([success])
+}
