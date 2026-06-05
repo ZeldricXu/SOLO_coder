@@ -1,0 +1,201 @@
+package storage
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/go-redis/redis/v8"
+
+	"github.com/datateam/loganalyzer/internal/config"
+)
+
+type RedisClient struct {
+	client *redis.Client
+	cfg    config.RedisConfig
+}
+
+func NewRedisClient(cfg config.RedisConfig) (*RedisClient, error) {
+	client := redis.NewClient(&redis.Options{
+		Addr:         cfg.Address,
+		Password:     cfg.Password,
+		DB:           cfg.DB,
+		PoolSize:     cfg.PoolSize,
+		DialTimeout:  cfg.DialTimeout,
+		ReadTimeout:  cfg.ReadTimeout,
+		WriteTimeout: cfg.WriteTimeout,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := client.Ping(ctx).Err(); err != nil {
+		return nil, fmt.Errorf("failed to connect to redis: %w", err)
+	}
+
+	return &RedisClient{
+		client: client,
+		cfg:    cfg,
+	}, nil
+}
+
+func (r *RedisClient) IncrementWindow(ctx context.Context, key string, window time.Time, value float64) error {
+	windowKey := fmt.Sprintf("window:%s:%d", key, window.Unix())
+	return r.client.ZIncrBy(ctx, windowKey, value, "count").Err()
+}
+
+func (r *RedisClient) AddToWindow(ctx context.Context, key string, window time.Time, value float64) error {
+	windowKey := fmt.Sprintf("window:%s:%d", key, window.Unix())
+	now := float64(time.Now().Unix())
+	return r.client.ZAdd(ctx, windowKey, &redis.Z{
+		Score:  now,
+		Member: value,
+	}).Err()
+}
+
+func (r *RedisClient) GetWindowValues(ctx context.Context, key string, startTime, endTime time.Time) ([]float64, error) {
+	var values []float64
+
+	startWindow := startTime.Truncate(time.Minute)
+	endWindow := endTime.Truncate(time.Minute)
+
+	for w := startWindow; !w.After(endWindow); w = w.Add(time.Minute) {
+		windowKey := fmt.Sprintf("window:%s:%d", key, w.Unix())
+		results, err := r.client.ZRange(ctx, windowKey, 0, -1).Result()
+		if err != nil {
+			return nil, err
+		}
+		for _, r := range results {
+			var v float64
+			if _, err := fmt.Sscanf(r, "%f", &v); err == nil {
+				values = append(values, v)
+			}
+		}
+	}
+
+	return values, nil
+}
+
+func (r *RedisClient) GetWindowCount(ctx context.Context, key string, startTime, endTime time.Time) (int64, error) {
+	var count int64
+
+	startWindow := startTime.Truncate(time.Minute)
+	endWindow := endTime.Truncate(time.Minute)
+
+	for w := startWindow; !w.After(endWindow); w = w.Add(time.Minute) {
+		windowKey := fmt.Sprintf("window:%s:%d", key, w.Unix())
+		c, err := r.client.ZCard(ctx, windowKey).Result()
+		if err != nil {
+			return 0, err
+		}
+		count += c
+	}
+
+	return count, nil
+}
+
+func (r *RedisClient) ExpireWindow(ctx context.Context, key string, window time.Time, ttl time.Duration) error {
+	windowKey := fmt.Sprintf("window:%s:%d", key, window.Unix())
+	return r.client.Expire(ctx, windowKey, ttl).Err()
+}
+
+func (r *RedisClient) CleanOldWindows(ctx context.Context, key string, olderThan time.Time) error {
+	pattern := fmt.Sprintf("window:%s:*", key)
+	var cursor uint64
+
+	for {
+		keys, nextCursor, err := r.client.Scan(ctx, cursor, pattern, 100).Result()
+		if err != nil {
+			return err
+		}
+
+		for _, k := range keys {
+			var windowTs int64
+			if _, err := fmt.Sscanf(k, "window:%*[^:]:%d", &windowTs); err == nil {
+				windowTime := time.Unix(windowTs, 0)
+				if windowTime.Before(olderThan) {
+					r.client.Del(ctx, k)
+				}
+			}
+		}
+
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+
+	return nil
+}
+
+func (r *RedisClient) SetDeduplication(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
+	existing, err := r.client.SetNX(ctx, fmt.Sprintf("dedup:%s", key), value, ttl).Result()
+	if err != nil {
+		return false, err
+	}
+	return existing, nil
+}
+
+func (r *RedisClient) GetDeduplication(ctx context.Context, key string) (string, error) {
+	return r.client.Get(ctx, fmt.Sprintf("dedup:%s", key)).Result()
+}
+
+func (r *RedisClient) DeleteDeduplication(ctx context.Context, key string) error {
+	return r.client.Del(ctx, fmt.Sprintf("dedup:%s", key)).Err()
+}
+
+func (r *RedisClient) SetIncident(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	return r.client.Set(ctx, fmt.Sprintf("incident:%s", key), value, ttl).Err()
+}
+
+func (r *RedisClient) GetIncident(ctx context.Context, key string) (string, error) {
+	return r.client.Get(ctx, fmt.Sprintf("incident:%s", key)).Result()
+}
+
+func (r *RedisClient) DeleteIncident(ctx context.Context, key string) error {
+	return r.client.Del(ctx, fmt.Sprintf("incident:%s", key)).Err()
+}
+
+func (r *RedisClient) Publish(ctx context.Context, channel string, message interface{}) error {
+	return r.client.Publish(ctx, channel, message).Err()
+}
+
+func (r *RedisClient) Subscribe(ctx context.Context, channel string) *redis.PubSub {
+	return r.client.Subscribe(ctx, channel)
+}
+
+func (r *RedisClient) Set(ctx context.Context, key string, value interface{}, expiration time.Duration) error {
+	return r.client.Set(ctx, key, value, expiration).Err()
+}
+
+func (r *RedisClient) Get(ctx context.Context, key string) (string, error) {
+	return r.client.Get(ctx, key).Result()
+}
+
+func (r *RedisClient) Del(ctx context.Context, key string) error {
+	return r.client.Del(ctx, key).Err()
+}
+
+func (r *RedisClient) HSet(ctx context.Context, key string, values ...interface{}) error {
+	return r.client.HSet(ctx, key, values...).Err()
+}
+
+func (r *RedisClient) HGetAll(ctx context.Context, key string) (map[string]string, error) {
+	return r.client.HGetAll(ctx, key).Result()
+}
+
+func (r *RedisClient) LPush(ctx context.Context, key string, values ...interface{}) error {
+	return r.client.LPush(ctx, key, values...).Err()
+}
+
+func (r *RedisClient) RPop(ctx context.Context, key string) (string, error) {
+	return r.client.RPop(ctx, key).Result()
+}
+
+func (r *RedisClient) LRange(ctx context.Context, key string, start, stop int64) ([]string, error) {
+	return r.client.LRange(ctx, key, start, stop).Result()
+}
+
+func (r *RedisClient) Close() error {
+	return r.client.Close()
+}

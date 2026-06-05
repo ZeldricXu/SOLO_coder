@@ -1,0 +1,274 @@
+server:
+  http_port: 8080
+  grpc_port: 9090
+  metrics_port: 9091
+  environment: development
+  log_level: info
+
+collectors:
+  elasticsearch:
+    - enabled: true
+      name: es-production
+      addresses:
+        - http://localhost:9200
+      username: elastic
+      password: changeme
+      index: "logs-*"
+      scroll_size: 1000
+      poll_interval: 30s
+      query: '{"match_all": {}}'
+      time_field: "@timestamp"
+      level_field: level
+      message_field: message
+
+  loki:
+    - enabled: true
+      name: loki-main
+      address: http://localhost:3100
+      username: ""
+      password: ""
+      query: '{job=~".+"}'
+      range: 15m
+      poll_interval: 30s
+      step: 1m
+
+  kafka:
+    - enabled: true
+      name: kafka-logs
+      brokers:
+        - localhost:9092
+      topic: application-logs
+      group_id: log-analyzer
+      partition: 0
+
+  syslog:
+    - enabled: true
+      name: syslog-udp
+      bind_addr: 0.0.0.0
+      port: 5140
+      protocol: udp
+
+pipeline:
+  hot_reload: true
+  reload_path: config/rules
+  worker_count: 4
+  buffer_size: 10000
+  error_handler: log
+
+  rules:
+    - id: filter-healthcheck
+      name: Filter Healthcheck Logs
+      type: filter
+      enabled: true
+      condition: "/healthcheck|/ping|/metrics"
+      config:
+        mode: drop
+        field: message
+
+    - id: parse-nginx-access
+      name: Parse Nginx Access Logs
+      type: parse
+      enabled: true
+      condition: "nginx"
+      config:
+        regex: '^(\S+) - (\S+) \[([^\]]+)\] "(\S+) (\S+) (\S+)" (\d+) (\d+) "([^"]*)" "([^"]*)"$'
+        field_names:
+          - client_ip
+          - remote_user
+          - timestamp
+          - method
+          - path
+          - protocol
+          - status_code
+          - response_size
+          - referer
+          - user_agent
+
+    - id: enrich-geoip
+      name: Enrich GeoIP Location
+      type: enrich
+      enabled: true
+      condition: ".*"
+      config:
+        enrich_type: geoip
+        source_field: client_ip
+        target_fields:
+          - country
+          - city
+          - latitude
+          - longitude
+
+    - id: enrich-error-code
+      name: Enrich Error Code Description
+      type: enrich
+      enabled: true
+      condition: ".*"
+      config:
+        enrich_type: error_code
+        mappings:
+          "500": Internal Server Error
+          "404": Not Found
+          "403": Forbidden
+          "401": Unauthorized
+          "400": Bad Request
+          "503": Service Unavailable
+          "504": Gateway Timeout
+
+detection:
+  algorithm: zscore
+  window_size: 5m
+  slide_step: 1m
+
+  rules:
+    - id: error-rate-spike
+      name: Error Rate Spike Detection
+      enabled: true
+      type: error_rate
+      service_name: ".*"
+      metric: error_count
+      threshold: 3.0
+      window_size: 5m
+      algorithm: zscore
+      severity: critical
+      min_observations: 10
+
+    - id: response-time-p99
+      name: P99 Response Time Anomaly
+      enabled: true
+      type: latency
+      service_name: "api-gateway"
+      metric: p99_latency
+      threshold: 4.0
+      window_size: 10m
+      algorithm: mad
+      severity: high
+      min_observations: 20
+
+    - id: specific-error-pattern
+      name: Database Connection Error Pattern
+      enabled: true
+      type: pattern
+      service_name: "order-service"
+      metric: pattern_count
+      threshold: 5.0
+      window_size: 5m
+      algorithm: zscore
+      severity: critical
+      min_observations: 5
+
+correlation:
+  trace_id_fields:
+    - trace_id
+    - traceId
+    - X-Trace-ID
+    - request_id
+  timeout: 5m
+  max_event_chain_size: 100
+  buffer_ttl: 10m
+
+aggregation:
+  enabled: true
+  group_by_fields:
+    - service_name
+    - error_code
+    - severity
+  time_window: 5m
+  suppress_lower_priority: true
+  max_incident_size: 50
+  dedup_key_template: "{{.AlertType}}-{{.ServiceName}}-{{.ErrorCode}}"
+
+notification:
+  enabled: true
+  retry:
+    max_retries: 3
+    backoff: 1s
+    multiplier: 2.0
+
+  channels:
+    - type: dingtalk
+      name: ops-dingtalk
+      enabled: true
+      config:
+        webhook_url: "https://oapi.dingtalk.com/robot/send?access_token=xxx"
+        secret: "SECxxx"
+        at_mobiles:
+          - "13800138000"
+        at_all: false
+      filter:
+        min_severity: warning
+        services: []
+        alert_types: []
+
+    - type: pagerduty
+      name: pagerduty-oncall
+      enabled: true
+      config:
+        routing_key: "your-routing-key"
+        service_key: "your-service-key"
+        api_url: "https://events.pagerduty.com/v2/enqueue"
+      filter:
+        min_severity: high
+        services: []
+        alert_types: []
+
+    - type: webhook
+      name: internal-webhook
+      enabled: true
+      config:
+        url: "http://internal-alert-service/api/alerts"
+        headers:
+          Authorization: "Bearer xxx"
+          Content-Type: "application/json"
+        method: POST
+      filter:
+        min_severity: info
+        services: []
+        alert_types: []
+
+storage:
+  clickhouse:
+    addresses:
+      - localhost:9000
+    database: loganalyzer
+    username: default
+    password: ""
+    dial_timeout: 5
+    read_timeout: 10
+    write_timeout: 10
+    max_open_conns: 50
+    max_idle_conns: 10
+
+  redis:
+    address: localhost:6379
+    password: ""
+    db: 0
+    pool_size: 50
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
+
+  kafka:
+    brokers:
+      - localhost:9092
+    topic: log-analyzer-buffer
+    partition: 0
+
+api:
+  enabled: true
+  http_port: 8080
+  base_path: /api
+  read_timeout: 30
+  write_timeout: 30
+  cors:
+    enabled: true
+    allowed_origins:
+      - "*"
+    allowed_methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allowed_headers:
+      - "*"
+    allow_credentials: false
