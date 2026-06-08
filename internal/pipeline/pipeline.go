@@ -23,24 +23,30 @@ type Rule interface {
 	Name() string
 	Type() string
 	Enabled() bool
+	ServiceName() string
+	Level() string
 	Process(ctx context.Context, event *models.LogEvent) (*models.LogEvent, error)
 	Reload(cfg config.PipelineRule) error
 }
 
 type BaseRule struct {
-	id      string
-	name    string
-	typ     string
-	enabled bool
-	order   int
-	cfg     map[string]interface{}
+	id          string
+	name        string
+	typ         string
+	enabled     bool
+	order       int
+	serviceName string
+	level       string
+	cfg         map[string]interface{}
 }
 
-func (r *BaseRule) ID() string      { return r.id }
-func (r *BaseRule) Name() string    { return r.name }
-func (r *BaseRule) Type() string    { return r.typ }
-func (r *BaseRule) Enabled() bool   { return r.enabled }
-func (r *BaseRule) Order() int      { return r.order }
+func (r *BaseRule) ID() string          { return r.id }
+func (r *BaseRule) Name() string        { return r.name }
+func (r *BaseRule) Type() string        { return r.typ }
+func (r *BaseRule) Enabled() bool       { return r.enabled }
+func (r *BaseRule) Order() int          { return r.order }
+func (r *BaseRule) ServiceName() string { return r.serviceName }
+func (r *BaseRule) Level() string       { return r.level }
 
 type FilterRule struct {
 	BaseRule
@@ -65,6 +71,7 @@ type EnrichRule struct {
 type Pipeline struct {
 	rules         []Rule
 	rulesMu       sync.RWMutex
+	ruleIndex     map[string][]Rule
 	cfg           config.PipelineConfig
 	input         <-chan *models.LogEvent
 	output        chan *models.LogEvent
@@ -91,6 +98,7 @@ func NewPipeline(cfg config.PipelineConfig, input <-chan *models.LogEvent, geoIP
 		hotReloadCh:  make(chan struct{}),
 		geoIPDBPath:  geoIPDBPath,
 		errorCodeMap: make(map[string]string),
+		ruleIndex:    make(map[string][]Rule),
 	}
 
 	if err := p.loadRules(cfg.Rules); err != nil {
@@ -128,20 +136,46 @@ func (p *Pipeline) loadRules(cfgRules []config.PipelineRule) error {
 
 	p.rulesMu.Lock()
 	p.rules = rules
+	p.buildRuleIndexLocked(rules)
 	p.rulesMu.Unlock()
 
 	log.Printf("Loaded %d pipeline rules", len(rules))
 	return nil
 }
 
+func (p *Pipeline) buildRuleIndexLocked(rules []Rule) {
+	ruleIndex := make(map[string][]Rule)
+	for _, rule := range rules {
+		svc := rule.ServiceName()
+		lvl := rule.Level()
+		svcKeys := []string{"*"}
+		if svc != "" {
+			svcKeys = append(svcKeys, svc)
+		}
+		lvlKeys := []string{"*"}
+		if lvl != "" {
+			lvlKeys = append(lvlKeys, lvl)
+		}
+		for _, sk := range svcKeys {
+			for _, lk := range lvlKeys {
+				key := sk + ":" + lk
+				ruleIndex[key] = append(ruleIndex[key], rule)
+			}
+		}
+	}
+	p.ruleIndex = ruleIndex
+}
+
 func (p *Pipeline) createRule(cfg config.PipelineRule) (Rule, error) {
 	base := BaseRule{
-		id:      cfg.ID,
-		name:    cfg.Name,
-		typ:     cfg.Type,
-		enabled: cfg.Enabled,
-		order:   cfg.Order,
-		cfg:     cfg.Config,
+		id:          cfg.ID,
+		name:        cfg.Name,
+		typ:         cfg.Type,
+		enabled:     cfg.Enabled,
+		order:       cfg.Order,
+		serviceName: cfg.ServiceName,
+		level:       cfg.Level,
+		cfg:         cfg.Config,
 	}
 
 	switch cfg.Type {
@@ -256,6 +290,8 @@ func (r *FilterRule) Reload(cfg config.PipelineRule) error {
 		r.mode = "include"
 	}
 	r.enabled = cfg.Enabled
+	r.serviceName = cfg.ServiceName
+	r.level = cfg.Level
 	return nil
 }
 
@@ -324,6 +360,8 @@ func (r *ParseRule) Reload(cfg config.PipelineRule) error {
 	r.regex = re
 	r.fieldNames = fields
 	r.enabled = cfg.Enabled
+	r.serviceName = cfg.ServiceName
+	r.level = cfg.Level
 	return nil
 }
 
@@ -371,6 +409,8 @@ func (r *EnrichRule) Process(ctx context.Context, event *models.LogEvent) (*mode
 
 func (r *EnrichRule) Reload(cfg config.PipelineRule) error {
 	r.enabled = cfg.Enabled
+	r.serviceName = cfg.ServiceName
+	r.level = cfg.Level
 	r.enrichType, _ = cfg.Config["type"].(string)
 
 	if r.enrichType == "error_code" {
@@ -460,7 +500,7 @@ func (p *Pipeline) worker(ctx context.Context, id int) {
 
 func (p *Pipeline) processEvent(ctx context.Context, event *models.LogEvent) (*models.LogEvent, error) {
 	p.rulesMu.RLock()
-	rules := p.rules
+	rules := p.getCandidateRulesLocked(event)
 	p.rulesMu.RUnlock()
 
 	var err error
@@ -479,6 +519,45 @@ func (p *Pipeline) processEvent(ctx context.Context, event *models.LogEvent) (*m
 	}
 
 	return event, nil
+}
+
+func (p *Pipeline) getCandidateRulesLocked(event *models.LogEvent) []Rule {
+	svc := event.ServiceName
+	if svc == "" {
+		svc = "*"
+	}
+	lvl := string(event.Level)
+	if lvl == "" {
+		lvl = "*"
+	}
+
+	candidates := make(map[string]Rule)
+
+	keys := []string{
+		svc + ":" + lvl,
+		svc + ":*",
+		"*:" + lvl,
+		"*:*",
+	}
+
+	for _, key := range keys {
+		if rules, ok := p.ruleIndex[key]; ok {
+			for _, r := range rules {
+				candidates[r.ID()] = r
+			}
+		}
+	}
+
+	result := make([]Rule, 0, len(candidates))
+	for _, r := range candidates {
+		result = append(result, r)
+	}
+
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].(interface{ Order() int }).Order() < result[j].(interface{ Order() int }).Order()
+	})
+
+	return result
 }
 
 func (p *Pipeline) onConfigChange(cfg *config.Config) {

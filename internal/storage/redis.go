@@ -3,12 +3,53 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 
 	"github.com/datateam/loganalyzer/internal/config"
 )
+
+type WindowStats struct {
+	Count       int64
+	ErrorCount  int64
+	Sum         float64
+	SumSquares  float64
+	Values      []float64
+}
+
+var windowStatsScript = redis.NewScript(`
+local keyPrefix = KEYS[1]
+local startWindow = tonumber(ARGV[1])
+local endWindow = tonumber(ARGV[2])
+local step = tonumber(ARGV[3])
+
+local count = 0
+local errorCount = 0
+local sum = 0.0
+local sumSquares = 0.0
+local values = {}
+
+for w = startWindow, endWindow, step do
+    local windowKey = keyPrefix .. ":" .. tostring(w)
+    local results = redis.call("ZRANGE", windowKey, 0, -1)
+    for _, r in ipairs(results) do
+        local v = tonumber(r)
+        if v then
+            count = count + 1
+            sum = sum + v
+            sumSquares = sumSquares + v * v
+            table.insert(values, v)
+            if v > 0 then
+                errorCount = errorCount + 1
+            end
+        end
+    end
+end
+
+return {count, errorCount, tostring(sum), tostring(sumSquares), values}
+`)
 
 type RedisClient struct {
 	client *redis.Client
@@ -91,6 +132,55 @@ func (r *RedisClient) GetWindowValues(ctx context.Context, key string, startTime
 	}
 
 	return values, nil
+}
+
+func (r *RedisClient) GetWindowStats(ctx context.Context, key string, startTime, endTime time.Time) (*WindowStats, error) {
+	if r.mock != nil {
+		return r.mock.GetWindowStats(ctx, key, startTime, endTime)
+	}
+
+	startWindow := startTime.Truncate(time.Minute)
+	endWindow := endTime.Truncate(time.Minute)
+
+	keyPrefix := fmt.Sprintf("window:%s", key)
+
+	res, err := windowStatsScript.Run(ctx, r.client, []string{keyPrefix},
+		startWindow.Unix(), endWindow.Unix(), int64(time.Minute/time.Second)).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	arr, ok := res.([]interface{})
+	if !ok || len(arr) < 5 {
+		return nil, fmt.Errorf("unexpected lua script result format")
+	}
+
+	stats := &WindowStats{}
+
+	if count, ok := arr[0].(int64); ok {
+		stats.Count = count
+	}
+	if errCount, ok := arr[1].(int64); ok {
+		stats.ErrorCount = errCount
+	}
+	if sumStr, ok := arr[2].(string); ok {
+		stats.Sum, _ = strconv.ParseFloat(sumStr, 64)
+	}
+	if sumSqStr, ok := arr[3].(string); ok {
+		stats.SumSquares, _ = strconv.ParseFloat(sumSqStr, 64)
+	}
+	if vals, ok := arr[4].([]interface{}); ok {
+		stats.Values = make([]float64, 0, len(vals))
+		for _, v := range vals {
+			if s, ok := v.(string); ok {
+				if f, err := strconv.ParseFloat(s, 64); err == nil {
+					stats.Values = append(stats.Values, f)
+				}
+			}
+		}
+	}
+
+	return stats, nil
 }
 
 func (r *RedisClient) GetWindowCount(ctx context.Context, key string, startTime, endTime time.Time) (int64, error) {

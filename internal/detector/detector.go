@@ -267,15 +267,17 @@ func (d *DetectionEngine) detectRule(ctx context.Context, rule config.DetectionR
 	endTime := now.Truncate(d.cfg.SlideStep)
 	startTime := endTime.Add(-rule.WindowSize)
 
-	values, err := d.redis.GetWindowValues(ctx, key, startTime, endTime)
+	stats, err := d.redis.GetWindowStats(ctx, key, startTime, endTime)
 	if err != nil {
-		log.Printf("Failed to get window values for %s: %v", key, err)
+		log.Printf("Failed to get window stats for %s: %v", key, err)
 		return
 	}
 
-	if len(values) < rule.MinObservations {
+	if stats.Count < int64(rule.MinObservations) {
 		return
 	}
+
+	values := stats.Values
 
 	algo := Algorithm(strings.ToLower(rule.Algorithm))
 	if algo == "" {
@@ -287,14 +289,7 @@ func (d *DetectionEngine) detectRule(ctx context.Context, rule config.DetectionR
 
 	switch metricType {
 	case MetricErrorRate:
-		totalCount := int64(len(values))
-		errorCount := int64(0)
-		for _, v := range values {
-			if v > 0 {
-				errorCount++
-			}
-		}
-		metricValue = float64(errorCount) / float64(totalCount) * 100
+		metricValue = float64(stats.ErrorCount) / float64(stats.Count) * 100
 
 		historicalData, _ := d.getHistoricalData(ctx, key, endTime, 7*24*time.Hour)
 		var dataset []float64
@@ -329,7 +324,7 @@ func (d *DetectionEngine) detectRule(ctx context.Context, rule config.DetectionR
 		}
 
 	case MetricErrorPattern:
-		metricValue = float64(len(values))
+		metricValue = float64(stats.Count)
 	}
 
 	if d.isAnomaly(metricValue, score, rule.Threshold) {

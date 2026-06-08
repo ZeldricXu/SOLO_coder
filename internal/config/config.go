@@ -99,6 +99,8 @@ type PipelineRule struct {
 	Type        string                 `yaml:"type"`
 	Enabled     bool                   `yaml:"enabled"`
 	Condition   string                 `yaml:"condition"`
+	ServiceName string                 `yaml:"service_name"`
+	Level       string                 `yaml:"level"`
 	Config      map[string]interface{} `yaml:"config"`
 	Order       int                    `yaml:"order"`
 }
@@ -221,11 +223,25 @@ type CORSConfig struct {
 
 type ConfigChangeCallback func(*Config)
 
+type configCacheEntry struct {
+	cfg       *Config
+	expiresAt time.Time
+}
+
 var (
 	globalConfig *Config
+	cacheEntry   *configCacheEntry
+	cacheMu      sync.RWMutex
 	callbacks    []ConfigChangeCallback
 	callbacksMu  sync.RWMutex
+	defaultTTL   = 5 * time.Second
 )
+
+func SetCacheTTL(ttl time.Duration) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	defaultTTL = ttl
+}
 
 func Load(configPath string) (*Config, error) {
 	absPath, err := filepath.Abs(configPath)
@@ -243,23 +259,61 @@ func Load(configPath string) (*Config, error) {
 		return nil, fmt.Errorf("failed to parse config: %w", err)
 	}
 
-	globalConfig = cfg
+	updateGlobalConfig(cfg)
 	return cfg, nil
 }
 
 func Get() *Config {
+	cacheMu.RLock()
+	entry := cacheEntry
+	cacheMu.RUnlock()
+
+	if entry != nil && time.Now().Before(entry.expiresAt) {
+		return entry.cfg
+	}
+
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	if cacheEntry != nil && time.Now().Before(cacheEntry.expiresAt) {
+		return cacheEntry.cfg
+	}
+
+	if globalConfig != nil {
+		cacheEntry = &configCacheEntry{
+			cfg:       globalConfig,
+			expiresAt: time.Now().Add(defaultTTL),
+		}
+	}
 	return globalConfig
 }
 
+func InvalidateCache() {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	cacheEntry = nil
+}
+
+func updateGlobalConfig(cfg *Config) {
+	cacheMu.Lock()
+	globalConfig = cfg
+	cacheEntry = &configCacheEntry{
+		cfg:       cfg,
+		expiresAt: time.Now().Add(defaultTTL),
+	}
+	cacheMu.Unlock()
+}
+
 func (c *Config) Reload() error {
-	if globalConfig == nil {
+	cached := Get()
+	if cached == nil {
 		return fmt.Errorf("config not initialized")
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	*c = *globalConfig
+	*c = *cached
 	notifyCallbacks(c)
 	return nil
 }
@@ -351,10 +405,7 @@ func (w *ConsulWatcher) handleConfigChange(key string, value []byte) error {
 		return fmt.Errorf("failed to unmarshal new config: %w", err)
 	}
 
-	globalConfig.mu.Lock()
-	*globalConfig = *newCfg
-	globalConfig.mu.Unlock()
-
-	notifyCallbacks(globalConfig)
+	updateGlobalConfig(newCfg)
+	notifyCallbacks(Get())
 	return nil
 }

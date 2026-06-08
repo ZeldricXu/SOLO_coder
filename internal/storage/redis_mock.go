@@ -218,6 +218,28 @@ func (m *MockRedisClient) GetWindowCount(ctx context.Context, key string, startT
 	return int64(len(values)), nil
 }
 
+func (m *MockRedisClient) GetWindowStats(ctx context.Context, key string, startTime, endTime time.Time) (*WindowStats, error) {
+	values, err := m.GetWindowValues(ctx, key, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+
+	stats := &WindowStats{
+		Values: values,
+		Count:  int64(len(values)),
+	}
+
+	for _, v := range values {
+		stats.Sum += v
+		stats.SumSquares += v * v
+		if v > 0 {
+			stats.ErrorCount++
+		}
+	}
+
+	return stats, nil
+}
+
 func (m *MockRedisClient) IncrementWindow(ctx context.Context, key string, window time.Time, value float64) error {
 	return m.AddWindowValue(ctx, key, window, value)
 }
