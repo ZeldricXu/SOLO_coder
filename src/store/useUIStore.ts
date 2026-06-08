@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { Point2D } from '@/types/geometry';
+import type { GIRenderSettings } from '@/types/gi';
+import { createDefaultGISettings } from '@/types/gi';
+import type { DrawingSession } from '@/types/drawing';
 
 interface PanelState {
   furnitureLibrary: boolean;
@@ -11,6 +14,8 @@ interface PanelState {
   exportDialog: boolean;
   settingsPanel: boolean;
   projectList: boolean;
+  sketchfabBrowser: boolean;
+  giPanel: boolean;
 }
 
 interface MeasurementState {
@@ -40,6 +45,8 @@ interface UIState {
   worldPos: { x: number; y: number; z: number };
   isLoading: boolean;
   loadingText: string;
+  giSettings: GIRenderSettings;
+  drawingSession: DrawingSession;
 }
 
 interface UIActions {
@@ -67,6 +74,8 @@ interface UIActions {
   setMouseWorldPos: (pos: Point2D) => void;
   setWorldPos: (pos: { x: number; y: number; z: number }) => void;
   setLoading: (loading: boolean, text?: string) => void;
+  setGISettings: (settings: Partial<GIRenderSettings>) => void;
+  setDrawingSession: (session: Partial<DrawingSession>) => void;
 }
 
 const initialState: UIState = {
@@ -80,6 +89,8 @@ const initialState: UIState = {
     exportDialog: false,
     settingsPanel: false,
     projectList: false,
+    sketchfabBrowser: false,
+    giPanel: true,
   },
   leftPanelWidth: 64,
   rightPanelWidth: 280,
@@ -104,6 +115,14 @@ const initialState: UIState = {
   worldPos: { x: 0, y: 0, z: 0 },
   isLoading: false,
   loadingText: '',
+  giSettings: createDefaultGISettings(),
+  drawingSession: {
+    active: false,
+    color: '#ff4444',
+    lineWidth: 2,
+    tool: 'freehand',
+    currentPrimitive: null,
+  },
 };
 
 export const useUIStore = create<UIState & UIActions>((set, get) => ({
@@ -133,6 +152,8 @@ export const useUIStore = create<UIState & UIActions>((set, get) => ({
         exportDialog: false,
         settingsPanel: false,
         projectList: false,
+        sketchfabBrowser: false,
+        giPanel: false,
       },
     });
   },
@@ -217,5 +238,17 @@ export const useUIStore = create<UIState & UIActions>((set, get) => ({
 
   setLoading: (loading, text = '') => {
     set({ isLoading: loading, loadingText: text });
+  },
+
+  setGISettings: (settings) => {
+    set((state) => ({
+      giSettings: { ...state.giSettings, ...settings },
+    }));
+  },
+
+  setDrawingSession: (session) => {
+    set((state) => ({
+      drawingSession: { ...state.drawingSession, ...session },
+    }));
   },
 }));

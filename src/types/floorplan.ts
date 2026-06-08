@@ -1,4 +1,5 @@
 import type { Point2D, Point3D, RGB } from './geometry';
+import type { DrawingPrimitive } from './drawing';
 
 export const FLOOR_PLAN_VERSION = '1.0.0';
 
@@ -6,7 +7,7 @@ export type WallType = 'straight' | 'arc';
 export type OpeningType = 'door' | 'window';
 export type LightType = 'point' | 'area' | 'spot' | 'ambient';
 export type ViewMode = '2d' | '3d' | 'split';
-export type ToolType = 'select' | 'wall-straight' | 'wall-arc' | 'door' | 'window' | 'measure' | 'annotation' | 'furniture';
+export type ToolType = 'select' | 'wall-straight' | 'wall-arc' | 'door' | 'window' | 'measure' | 'annotation' | 'annotation-draw' | 'furniture' | 'sketchfab';
 
 export interface Project {
   id: string;
@@ -125,6 +126,7 @@ export interface Annotation {
   screenshot?: string;
   createdAt: number;
   status: 'open' | 'resolved';
+  drawings?: DrawingPrimitive[];
 }
 
 export interface FloorPlan {

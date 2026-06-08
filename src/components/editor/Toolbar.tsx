@@ -17,6 +17,9 @@ import {
   FileJson,
   Home,
   FileText,
+  Pencil,
+  Sun,
+  Globe,
 } from 'lucide-react';
 import { useFloorPlanStore } from '@/store/useFloorPlanStore';
 import { useUIStore } from '@/store/useUIStore';
@@ -30,7 +33,7 @@ interface ToolbarProps {
 
 export const Toolbar: React.FC<ToolbarProps> = ({ draftId }) => {
   const navigate = useNavigate();
-  const { undo, redo, viewMode, setViewMode, floorPlan, setFloorPlan } = useFloorPlanStore();
+  const { undo, redo, viewMode, setViewMode, floorPlan, setFloorPlan, currentTool, setCurrentTool } = useFloorPlanStore();
   const { togglePanel, showGrid, setShowGrid, showHelpers, setShowHelpers, addNotification } = useUIStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -153,6 +156,24 @@ export const Toolbar: React.FC<ToolbarProps> = ({ draftId }) => {
           icon={<MessageSquare size={16} />}
           label="批注"
           onClick={() => togglePanel('annotationPanel')}
+        />
+        <ToolbarButton
+          icon={<Pencil size={16} />}
+          label="绘图批注"
+          onClick={() =>
+            setCurrentTool(currentTool === 'annotation-draw' ? 'select' : 'annotation-draw')
+          }
+          active={currentTool === 'annotation-draw'}
+        />
+        <ToolbarButton
+          icon={<Globe size={16} />}
+          label="Sketchfab"
+          onClick={() => togglePanel('sketchfabBrowser')}
+        />
+        <ToolbarButton
+          icon={<Sun size={16} />}
+          label="光照"
+          onClick={() => togglePanel('giPanel')}
         />
         <ToolbarButton
           icon={<FileText size={16} />}

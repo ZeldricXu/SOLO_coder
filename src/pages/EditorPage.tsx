@@ -9,6 +9,8 @@ import { StatusBar } from '@/components/editor/StatusBar';
 import { FurnitureLibrary } from '@/components/editor/FurnitureLibrary';
 import { AnnotationPanel } from '@/components/editor/AnnotationPanel';
 import { RenderDialog } from '@/components/editor/RenderDialog';
+import { SketchfabBrowser } from '@/components/editor/SketchfabBrowser';
+import { GIConfigPanel } from '@/components/editor/GIConfigPanel';
 import { useFloorPlanStore } from '@/store/useFloorPlanStore';
 import { useUIStore } from '@/store/useUIStore';
 import { getDraft, saveDraft, generateThumbnail } from '@/utils/storage/indexedDB';
@@ -18,7 +20,7 @@ const EditorPage: React.FC = () => {
   const { draftId } = useParams<{ draftId: string }>();
   const navigate = useNavigate();
   const { viewMode, floorPlan, setFloorPlan } = useFloorPlanStore();
-  const { panels } = useUIStore();
+  const { panels, giSettings, setGISettings } = useUIStore();
   const currentDraftIdRef = useRef<string>(draftId || `draft_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
   const autoSaveTimerRef = useRef<NodeJS.Timeout | null>(null);
   const isLoadedRef = useRef(false);
@@ -100,11 +102,18 @@ const EditorPage: React.FC = () => {
         {panels.furnitureLibrary && <FurnitureLibrary />}
         {panels.annotationPanel && <AnnotationPanel />}
         {panels.propertyPanel && <PropertyPanel />}
+        {panels.sketchfabBrowser && <SketchfabBrowser />}
       </div>
 
       <StatusBar />
 
       {panels.renderDialog && <RenderDialog />}
+
+      {viewMode === '3d' && panels.giPanel && (
+        <div className="absolute bottom-4 left-4 w-80 z-20">
+          <GIConfigPanel settings={giSettings} onChange={setGISettings} />
+        </div>
+      )}
     </div>
   );
 };
