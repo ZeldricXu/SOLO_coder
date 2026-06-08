@@ -46,25 +46,19 @@ public class SyslogParser extends AbstractLogParser {
     protected LogEvent extractFields(Matcher matcher, String rawLine) {
         LogEvent event = new LogEvent();
 
-        if (matcher.pattern() == SYSLOG_3164_PATTERN) {
-            String pri = matcher.group(1);
-            int severity = Integer.parseInt(pri) % 8;
-            event.setLevel(mapSyslogSeverity(severity));
+        int groupCount = matcher.groupCount();
+        String pri = matcher.group(1);
+        int severity = Integer.parseInt(pri) % 8;
+        event.setLevel(mapSyslogSeverity(severity));
 
-            Instant ts = TimeUtils.parseTimestamp(matcher.group(2));
-            event.setTimestamp(ts != null ? ts : Instant.now());
+        Instant ts = TimeUtils.parseTimestamp(matcher.group(2));
+        event.setTimestamp(ts != null ? ts : Instant.now());
 
+        if (groupCount == 5) {
             event.setHost(matcher.group(3).trim());
             event.setLogger(matcher.group(4).trim());
             event.setMessage(matcher.group(5).trim());
-        } else if (matcher.pattern() == SYSLOG_5424_PATTERN) {
-            String pri = matcher.group(1);
-            int severity = Integer.parseInt(pri) % 8;
-            event.setLevel(mapSyslogSeverity(severity));
-
-            Instant ts = TimeUtils.parseTimestamp(matcher.group(2));
-            event.setTimestamp(ts != null ? ts : Instant.now());
-
+        } else if (groupCount >= 7) {
             event.setHost(matcher.group(3).trim());
             event.setService(matcher.group(4).trim());
             event.setLogger(matcher.group(5).trim());
@@ -87,6 +81,39 @@ public class SyslogParser extends AbstractLogParser {
             case 7: return LogLevel.DEBUG;
             default: return LogLevel.UNKNOWN;
         }
+    }
+
+    @Override
+    public LogEvent parse(String line) {
+        if (line == null || line.trim().isEmpty()) {
+            return null;
+        }
+
+        Matcher matcher5424 = SYSLOG_5424_PATTERN.matcher(line);
+        if (matcher5424.find()) {
+            LogEvent event = extractFields(matcher5424, line);
+            if (event != null) {
+                event.setRawLine(line);
+                if (event.getErrorType() == null) {
+                    event.setErrorType(event.extractErrorType());
+                }
+                return event;
+            }
+        }
+
+        Matcher matcher3164 = SYSLOG_3164_PATTERN.matcher(line);
+        if (matcher3164.find()) {
+            LogEvent event = extractFields(matcher3164, line);
+            if (event != null) {
+                event.setRawLine(line);
+                if (event.getErrorType() == null) {
+                    event.setErrorType(event.extractErrorType());
+                }
+                return event;
+            }
+        }
+
+        return parseGeneric(line);
     }
 
     @Override

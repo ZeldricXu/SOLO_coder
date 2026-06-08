@@ -31,7 +31,7 @@ public class MovingAverageDetector {
     public void train(List<Double> baselineData, String metric) {
         this.baseline = new BaselineModel(metric);
         this.baseline.setWindowSize(windowSize);
-        if (baselineData != null && baselineData.size() >= minDataPoints) {
+        if (baselineData != null && !baselineData.isEmpty()) {
             this.baseline.learn(baselineData);
         }
     }

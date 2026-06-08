@@ -28,7 +28,7 @@ public class ZScoreDetector {
 
     public void train(List<Double> baselineData, String metric) {
         this.baseline = new BaselineModel(metric);
-        if (baselineData != null && baselineData.size() >= minDataPoints) {
+        if (baselineData != null && !baselineData.isEmpty()) {
             this.baseline.learn(baselineData);
         }
     }

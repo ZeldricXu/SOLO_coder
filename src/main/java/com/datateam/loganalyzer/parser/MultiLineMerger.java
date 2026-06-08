@@ -10,7 +10,12 @@ import java.util.regex.Pattern;
 public class MultiLineMerger {
 
     private static final Pattern STACK_TRACE_LINE = Pattern.compile(
-        "^\\s+(at\\s+[a-zA-Z0-9$.]+\\([^)]*\\)|Caused by:\\s+|\\.\\.\\.\\s+\\d+\\s+more)"
+        "^(\\s+(at\\s+[a-zA-Z0-9$.]+\\([^)]*\\)|\\.\\.\\.\\s+\\d+\\s+more)|Caused by:.*)$"
+    );
+
+    private static final Pattern EXCEPTION_CLASS_LINE = Pattern.compile(
+        "^([a-zA-Z_$][a-zA-Z\\d_$]*\\.)+[a-zA-Z_$][a-zA-Z\\d_$]*Exception:|" +
+        "^([a-zA-Z_$][a-zA-Z\\d_$]*\\.)+[a-zA-Z_$][a-zA-Z\\d_$]*Error:"
     );
 
     private static final Pattern NEW_LOG_ENTRY = Pattern.compile(
@@ -47,9 +52,10 @@ public class MultiLineMerger {
         }
 
         boolean isStackTraceLine = STACK_TRACE_LINE.matcher(line).matches();
+        boolean isExceptionClassLine = EXCEPTION_CLASS_LINE.matcher(line.trim()).find();
         boolean isNewEntry = NEW_LOG_ENTRY.matcher(line.trim()).find();
 
-        if (isStackTraceLine && currentEvent != null) {
+        if ((isStackTraceLine || isExceptionClassLine) && currentEvent != null) {
             if (currentStackTrace.length() > 0) {
                 currentStackTrace.append("\n");
             }
@@ -57,7 +63,7 @@ public class MultiLineMerger {
             return null;
         }
 
-        if (isNewEntry || !isStackTraceLine) {
+        if (isNewEntry || (!isStackTraceLine && !isExceptionClassLine)) {
             LogEvent completed = flush();
             currentEvent = parser.parse(line);
             return completed;
@@ -99,13 +105,14 @@ public class MultiLineMerger {
             if (line == null) continue;
 
             boolean isStackTraceLine = STACK_TRACE_LINE.matcher(line).matches();
+            boolean isExceptionClassLine = EXCEPTION_CLASS_LINE.matcher(line.trim()).find();
             boolean isNewEntry = NEW_LOG_ENTRY.matcher(line.trim()).find();
 
             if (isNewEntry && current.length() > 0) {
                 merged.add(current.toString());
                 current.setLength(0);
                 current.append(line);
-            } else if (isStackTraceLine) {
+            } else if (isStackTraceLine || isExceptionClassLine) {
                 if (current.length() > 0) {
                     current.append("\n").append(line);
                 } else {

@@ -55,6 +55,15 @@ public class JsonLogParser extends AbstractLogParser {
         event.setRawLine(line);
 
         Object tsObj = json.get(timestampField);
+        if (tsObj == null) {
+            String[] altTimestampFields = {"timestamp", "time", "ts", "@timestamp"};
+            for (String altField : altTimestampFields) {
+                tsObj = json.get(altField);
+                if (tsObj != null) {
+                    break;
+                }
+            }
+        }
         if (tsObj != null) {
             Instant ts = TimeUtils.parseTimestamp(tsObj.toString());
             event.setTimestamp(ts != null ? ts : Instant.now());
@@ -107,7 +116,7 @@ public class JsonLogParser extends AbstractLogParser {
                 !key.equals(messageField) && !key.equals(serviceField) &&
                 !key.equals(loggerField) && !key.equals(threadField) &&
                 !key.equals(hostField) && !key.equals(stackTraceField)) {
-                event.addField(key, entry.getValue() != null ? entry.getValue().toString() : null);
+                addFlattenedFields(event, key, entry.getValue());
             }
         }
 
@@ -151,5 +160,26 @@ public class JsonLogParser extends AbstractLogParser {
 
     public void setStackTraceField(String stackTraceField) {
         this.stackTraceField = stackTraceField;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void addFlattenedFields(LogEvent event, String prefix, Object value) {
+        if (value == null) {
+            event.addField(prefix, null);
+        } else if (value instanceof Map) {
+            Map<String, Object> nested = (Map<String, Object>) value;
+            for (Map.Entry<String, Object> entry : nested.entrySet()) {
+                String newKey = prefix + "." + entry.getKey();
+                addFlattenedFields(event, newKey, entry.getValue());
+            }
+        } else {
+            event.addField(prefix, value.toString());
+            int dotIdx = prefix.indexOf('.');
+            while (dotIdx >= 0) {
+                String shortKey = prefix.substring(dotIdx + 1);
+                event.addField(shortKey, value.toString());
+                dotIdx = prefix.indexOf('.', dotIdx + 1);
+            }
+        }
     }
 }

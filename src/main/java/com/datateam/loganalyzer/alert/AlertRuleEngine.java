@@ -173,7 +173,7 @@ public class AlertRuleEngine {
                     String errorType = metric.substring(11);
                     return point.getErrorTypeCounts().getOrDefault(errorType, 0L);
                 }
-                return point.getTotalCount();
+                return 0.0;
         }
     }
 
