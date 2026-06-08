@@ -20,6 +20,22 @@ class ModelStatusEnum(str, Enum):
     ARCHIVED = "archived"
 
 
+class ABTestStatusEnum(str, Enum):
+    DRAFT = "draft"
+    SCHEDULED = "scheduled"
+    RUNNING = "running"
+    PAUSED = "paused"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+    ARCHIVED = "archived"
+
+
+class TrafficSplitStrategyEnum(str, Enum):
+    RANDOM = "random"
+    HASH = "hash"
+    ROUND_ROBIN = "round_robin"
+
+
 class ModelVersionBase(BaseModel):
     model_name: str
     model_type: ModelTypeEnum
@@ -78,16 +94,20 @@ class ModelVersionResponse(ModelVersionBase):
 
 
 class ABTestExperimentBase(BaseModel):
-    name: str
+    experiment_name: str
     description: Optional[str] = None
-    model_type: ModelTypeEnum
-    control_model_version: Optional[str] = None
-    treatment_model_versions: Optional[List[str]] = None
-    traffic_split: Optional[Dict[str, float]] = None
+    model_name: str
+    variant_a_model_id: int
+    variant_b_model_id: int
+    traffic_split_a: Optional[float] = 50.0
+    traffic_split_b: Optional[float] = 50.0
+    strategy: TrafficSplitStrategyEnum = TrafficSplitStrategyEnum.RANDOM
+    primary_metric: Optional[str] = "accuracy"
     target_metrics: Optional[List[str]] = None
     start_date: Optional[datetime] = None
     end_date: Optional[datetime] = None
-    sample_size: Optional[int] = None
+    sample_size_a: Optional[int] = 0
+    sample_size_b: Optional[int] = 0
     confidence_level: float = 0.95
 
 
@@ -96,43 +116,48 @@ class ABTestExperimentCreate(ABTestExperimentBase):
 
 
 class ABTestExperimentUpdate(BaseModel):
-    status: Optional[str] = None
+    status: Optional[ABTestStatusEnum] = None
     is_active: Optional[bool] = None
     results_summary: Optional[Dict[str, Any]] = None
-    winner_model: Optional[str] = None
+    winner: Optional[str] = None
+    winner_model_id: Optional[int] = None
     approved_by: Optional[str] = None
     approved_at: Optional[datetime] = None
     stopped_reason: Optional[str] = None
+    notes: Optional[str] = None
 
 
 class ABTestExperimentResponse(ABTestExperimentBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    status: str
+    status: ABTestStatusEnum
     is_active: bool
     created_by: Optional[str] = None
     approved_by: Optional[str] = None
     approved_at: Optional[datetime] = None
     results_summary: Optional[Dict[str, Any]] = None
-    winner_model: Optional[str] = None
+    winner: Optional[str] = None
+    winner_model_id: Optional[int] = None
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
     stopped_at: Optional[datetime] = None
     stopped_reason: Optional[str] = None
+    notes: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
 
 class ABTestResultBase(BaseModel):
     experiment_id: int
-    model_version_id: int
-    document_id: int
-    extraction_result_id: int
-    group: str
+    variant: str
+    document_id: Optional[int] = None
+    metric_name: str
+    metric_value: float
     metrics: Optional[Dict[str, Any]] = None
     review_rate: Optional[float] = None
     average_confidence: Optional[float] = None
     processing_time: Optional[float] = None
-    field_accuracy: Optional[Dict[str, float]] = None
 
 
 class ABTestResultCreate(ABTestResultBase):
@@ -143,10 +168,6 @@ class ABTestResultResponse(ABTestResultBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    human_evaluated: bool = False
-    human_score: Optional[float] = None
-    evaluated_by: Optional[str] = None
-    evaluated_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
 

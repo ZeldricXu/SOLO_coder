@@ -18,6 +18,20 @@ class BatchStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class BatchPriority(str, enum.Enum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class BatchDocumentStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    NEEDS_REVIEW = "needs_review"
+
+
 class BatchJob(BaseModel, TimestampMixin):
     __tablename__ = "batch_jobs"
 
@@ -47,7 +61,7 @@ class BatchJob(BaseModel, TimestampMixin):
     zip_file_size = Column(Integer)
     extract_dir = Column(String(1024))
 
-    metadata = Column(JSON)
+    job_metadata = Column(JSON)
     processing_options = Column(JSON)
     extraction_schema = Column(JSON)
 

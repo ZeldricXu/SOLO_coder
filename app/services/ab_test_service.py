@@ -1,5 +1,6 @@
 import random
 import json
+import hashlib
 from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy import and_, func
@@ -328,10 +329,11 @@ class ABTestService:
                 model_id = experiment.variant_b_model_id
 
         elif experiment.strategy == TrafficSplitStrategyEnum.HASH:
-            if not document_id:
+            if document_id is None:
                 raise ValueError("document_id required for hash-based routing")
 
-            hash_val = hash(f"{experiment.id}:{document_id}") % 100
+            hash_input = f"{experiment.id}:{document_id}".encode("utf-8")
+            hash_val = int(hashlib.sha256(hash_input).hexdigest(), 16) % 100
             if hash_val < experiment.traffic_split_a:
                 variant = "a"
                 model_id = experiment.variant_a_model_id

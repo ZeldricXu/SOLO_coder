@@ -1,22 +1,11 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
 
+from app.models.review import ReviewStatus, ReviewPriority
 
-class ReviewStatusEnum(str, Enum):
-    PENDING = "pending"
-    ASSIGNED = "assigned"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    ESCALATED = "escalated"
-    CANCELLED = "cancelled"
-
-
-class ReviewPriorityEnum(str, Enum):
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
+ReviewStatusEnum = ReviewStatus
+ReviewPriorityEnum = ReviewPriority
 
 
 class ReviewTaskBase(BaseModel):

@@ -16,7 +16,7 @@ from app.schemas.review import (
     FieldCorrection,
     TrainingDataExportRequest,
 )
-from app.models.review import ReviewTask, ReviewComment
+from app.models.review import ReviewTask, ReviewComment, ReviewStatus, ReviewPriority
 from app.models.extraction import ExtractedField, ExtractionResult
 from app.models.document import Document, DocumentStatus
 from app.core.database import get_sync_db
@@ -43,7 +43,7 @@ class ReviewService:
         self,
         document_id: int,
         extraction_result_id: Optional[int] = None,
-        priority: ReviewPriorityEnum = ReviewPriorityEnum.MEDIUM,
+        priority: ReviewPriority = ReviewPriority.MEDIUM,
         deadline_hours: int = 24,
     ) -> ReviewTask:
         db = next(get_sync_db())
@@ -52,9 +52,9 @@ class ReviewService:
                 and_(
                     ReviewTask.document_id == document_id,
                     ReviewTask.status.in_([
-                        ReviewStatusEnum.PENDING,
-                        ReviewStatusEnum.ASSIGNED,
-                        ReviewStatusEnum.IN_PROGRESS,
+                        ReviewStatus.PENDING,
+                        ReviewStatus.ASSIGNED,
+                        ReviewStatus.IN_PROGRESS,
                     ])
                 )
             ).first()
@@ -123,8 +123,8 @@ class ReviewService:
 
     def get_review_queue(
         self,
-        status: Optional[ReviewStatusEnum] = None,
-        priority: Optional[ReviewPriorityEnum] = None,
+        status: Optional[ReviewStatus] = None,
+        priority: Optional[ReviewPriority] = None,
         assigned_to: Optional[str] = None,
         page: int = 1,
         page_size: int = 20,
@@ -247,7 +247,7 @@ class ReviewService:
 
             task.assigned_to = assigned_to
             task.assigned_at = datetime.utcnow()
-            task.status = ReviewStatusEnum.ASSIGNED
+            task.status = ReviewStatus.ASSIGNED
 
             db.commit()
             db.refresh(task)
@@ -257,6 +257,59 @@ class ReviewService:
 
         except Exception as e:
             logger.error(f"Failed to assign review task {task_id}: {e}", exc_info=True)
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
+    def claim_review_task(self, task_id: int, reviewer_id: str) -> ReviewTask:
+        db = next(get_sync_db())
+        try:
+            task = db.query(ReviewTask).filter(ReviewTask.id == task_id).first()
+            if not task:
+                raise ValueError(f"Review task not found: {task_id}")
+
+            current_version = task.version
+
+            if task.status not in [ReviewStatus.PENDING, ReviewStatus.ASSIGNED]:
+                raise ValueError(f"Task {task_id} is not available for claiming (status: {task.status})")
+
+            from sqlalchemy import update
+            stmt = (
+                update(ReviewTask)
+                .where(
+                    and_(
+                        ReviewTask.id == task_id,
+                        ReviewTask.version == current_version,
+                    )
+                )
+                .values(
+                    status=ReviewStatus.IN_PROGRESS,
+                    assigned_to=reviewer_id,
+                    assigned_at=datetime.utcnow(),
+                    started_at=datetime.utcnow(),
+                    version=current_version + 1,
+                )
+                .execution_options(synchronize_session=False)
+            )
+
+            result = db.execute(stmt)
+            db.commit()
+
+            if result.rowcount == 0:
+                raise ValueError(
+                    f"Task {task_id} has been claimed by another reviewer. "
+                    "Please refresh and try again."
+                )
+
+            db.refresh(task)
+            logger.info(f"Review task {task_id} claimed by {reviewer_id}")
+            return task
+
+        except ValueError:
+            raise
+        except Exception as e:
+            logger.error(f"Failed to claim review task {task_id}: {e}", exc_info=True)
             db.rollback()
             raise
         finally:
@@ -272,7 +325,7 @@ class ReviewService:
             if task.assigned_to and task.assigned_to != reviewer:
                 raise PermissionError(f"Task {task_id} is assigned to {task.assigned_to}, not {reviewer}")
 
-            task.status = ReviewStatusEnum.IN_PROGRESS
+            task.status = ReviewStatus.IN_PROGRESS
             task.started_at = datetime.utcnow()
             if not task.assigned_to:
                 task.assigned_to = reviewer
@@ -293,21 +346,73 @@ class ReviewService:
 
     def complete_review_task(
         self,
-        request: ReviewTaskCompleteRequest,
+        *args,
+        **kwargs,
     ) -> Dict[str, Any]:
+        if args and isinstance(args[0], ReviewTaskCompleteRequest):
+            request = args[0]
+        elif len(args) >= 2:
+            task_id = args[0]
+            update = args[1]
+            reviewer = args[2] if len(args) >= 3 else kwargs.get("reviewer", "unknown")
+
+            corrections = []
+            if hasattr(update, 'model_dump'):
+                update_dict = update.model_dump()
+            else:
+                update_dict = dict(update)
+
+            request = ReviewTaskCompleteRequest(
+                task_id=task_id,
+                completed_by=reviewer,
+                is_correct=update_dict.get("is_correct", True),
+                review_notes=update_dict.get("review_notes", None),
+                has_quality_issues=update_dict.get("has_quality_issues", False),
+                quality_issue_description=update_dict.get("quality_issue_description", None),
+                corrections=corrections,
+            )
+        elif "request" in kwargs:
+            request = kwargs["request"]
+        else:
+            raise ValueError("Invalid arguments for complete_review_task")
+
         db = next(get_sync_db())
         try:
             task = db.query(ReviewTask).filter(ReviewTask.id == request.task_id).first()
             if not task:
                 raise ValueError(f"Review task not found: {request.task_id}")
 
-            task.status = ReviewStatusEnum.COMPLETED
-            task.completed_at = datetime.utcnow()
-            task.completed_by = request.completed_by
-            task.is_correct = request.is_correct
-            task.review_notes = request.review_notes
-            task.has_quality_issues = request.has_quality_issues
-            task.quality_issue_description = request.quality_issue_description
+            current_version = task.version
+            from sqlalchemy import update as sqlalchemy_update
+            stmt = (
+                sqlalchemy_update(ReviewTask)
+                .where(
+                    and_(
+                        ReviewTask.id == request.task_id,
+                        ReviewTask.version == current_version,
+                    )
+                )
+                .values(
+                    status=ReviewStatus.COMPLETED,
+                    completed_at=datetime.utcnow(),
+                    completed_by=request.completed_by,
+                    is_correct=request.is_correct,
+                    review_notes=request.review_notes,
+                    has_quality_issues=request.has_quality_issues,
+                    quality_issue_description=request.quality_issue_description,
+                    version=current_version + 1,
+                )
+                .execution_options(synchronize_session=False)
+            )
+
+            result = db.execute(stmt)
+            db.commit()
+
+            if result.rowcount == 0:
+                raise ValueError(
+                    f"Task {request.task_id} has been modified by another user. "
+                    "Please refresh and try again."
+                )
 
             if task.started_at:
                 task.review_duration = (task.completed_at - task.started_at).total_seconds()
@@ -416,30 +521,30 @@ class ReviewService:
                 query = query.filter(ReviewTask.created_at <= end_date)
 
             total_tasks = query.count()
-            pending_tasks = query.filter(ReviewTask.status == ReviewStatusEnum.PENDING).count()
-            in_progress_tasks = query.filter(ReviewTask.status == ReviewStatusEnum.IN_PROGRESS).count()
-            completed_tasks = query.filter(ReviewTask.status == ReviewStatusEnum.COMPLETED).count()
-            escalated_tasks = query.filter(ReviewTask.status == ReviewStatusEnum.ESCALATED).count()
+            pending_tasks = query.filter(ReviewTask.status == ReviewStatus.PENDING).count()
+            in_progress_tasks = query.filter(ReviewTask.status == ReviewStatus.IN_PROGRESS).count()
+            completed_tasks = query.filter(ReviewTask.status == ReviewStatus.COMPLETED).count()
+            escalated_tasks = query.filter(ReviewTask.status == ReviewStatus.ESCALATED).count()
 
             high_priority_pending = query.filter(
                 and_(
-                    ReviewTask.status == ReviewStatusEnum.PENDING,
-                    ReviewTask.priority == ReviewPriorityEnum.HIGH,
+                    ReviewTask.status == ReviewStatus.PENDING,
+                    ReviewTask.priority == ReviewPriority.HIGH,
                 )
             ).count()
 
             tasks_past_deadline = query.filter(
                 and_(
                     ReviewTask.status.in_([
-                        ReviewStatusEnum.PENDING,
-                        ReviewStatusEnum.ASSIGNED,
-                        ReviewStatusEnum.IN_PROGRESS,
+                        ReviewStatus.PENDING,
+                        ReviewStatus.ASSIGNED,
+                        ReviewStatus.IN_PROGRESS,
                     ]),
                     ReviewTask.deadline_at < datetime.utcnow(),
                 )
             ).count()
 
-            completed_query = query.filter(ReviewTask.status == ReviewStatusEnum.COMPLETED)
+            completed_query = query.filter(ReviewTask.status == ReviewStatus.COMPLETED)
             avg_review_time = None
             avg_corrections = 0.0
 
@@ -566,7 +671,7 @@ class ReviewService:
             task.escalated_to = escalated_to
             task.escalated_reason = escalated_reason
             task.escalated_at = datetime.utcnow()
-            task.status = ReviewStatusEnum.ESCALATED
+            task.status = ReviewStatus.ESCALATED
 
             comment = ReviewComment(
                 review_task_id=task_id,

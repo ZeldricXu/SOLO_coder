@@ -23,6 +23,10 @@ class Settings(BaseSettings):
 
     CELERY_BROKER_URL: str = "redis://localhost:6379/2"
     CELERY_RESULT_BACKEND: str = "redis://localhost:6379/3"
+    CELERY_TASK_TIME_LIMIT: int = 3600
+    CELERY_TASK_SOFT_TIME_LIMIT: int = 3000
+    CELERY_WORKER_PREFETCH_MULTIPLIER: int = 1
+    CELERY_MAX_RETRIES: int = 3
 
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "minioadmin"
@@ -31,6 +35,7 @@ class Settings(BaseSettings):
     MINIO_RAW_BUCKET: str = "raw-documents"
     MINIO_PROCESSED_BUCKET: str = "processed-documents"
     MINIO_MODEL_BUCKET: str = "model-artifacts"
+    MINIO_BUCKET_BATCHES: str = "batches"
 
     OCR_LANGS: str = "ch,en"
     OCR_USE_GPU: bool = False

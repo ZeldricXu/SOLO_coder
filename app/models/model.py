@@ -62,11 +62,6 @@ class ModelVersion(BaseModel, TimestampMixin):
         back_populates="model_version_obj",
         lazy="dynamic",
     )
-    ab_test_results = relationship(
-        "ABTestResult",
-        back_populates="model_version",
-        lazy="dynamic",
-    )
 
     __mapper_args__ = {
         "confirm_deleted_rows": False,
@@ -76,21 +71,29 @@ class ModelVersion(BaseModel, TimestampMixin):
 class ABTestExperiment(BaseModel, TimestampMixin):
     __tablename__ = "ab_test_experiments"
 
-    name = Column(String(256), nullable=False, index=True)
+    experiment_name = Column(String(256), nullable=False, index=True)
     description = Column(Text)
 
-    model_type = Column(Enum(ModelType), nullable=False, index=True)
+    model_name = Column(String(256), nullable=False, index=True)
+    variant_a_model_id = Column(Integer, nullable=False, index=True)
+    variant_b_model_id = Column(Integer, nullable=False, index=True)
+
+    traffic_split_a = Column(Float, default=50.0)
+    traffic_split_b = Column(Float, default=50.0)
+    strategy = Column(String(64), default="random")
+    primary_metric = Column(String(128), default="accuracy")
+
     status = Column(String(64), default="draft", index=True)
+    is_active = Column(Boolean, default=False, index=True)
 
-    control_model_version = Column(String(64))
-    treatment_model_versions = Column(JSON)
-
-    traffic_split = Column(JSON)
+    sample_size_a = Column(Integer, default=0)
+    sample_size_b = Column(Integer, default=0)
     target_metrics = Column(JSON)
 
     start_date = Column(DateTime)
     end_date = Column(DateTime)
-    sample_size = Column(Integer)
+    started_at = Column(DateTime)
+    ended_at = Column(DateTime)
     confidence_level = Column(Float, default=0.95)
 
     created_by = Column(String(256))
@@ -98,31 +101,26 @@ class ABTestExperiment(BaseModel, TimestampMixin):
     approved_at = Column(DateTime)
 
     results_summary = Column(JSON)
-    winner_model = Column(String(64))
+    winner = Column(String(64))
+    winner_model_id = Column(Integer)
 
-    is_active = Column(Boolean, default=False, index=True)
     stopped_at = Column(DateTime)
     stopped_reason = Column(Text)
+    notes = Column(Text)
 
 
 class ABTestResult(BaseModel, TimestampMixin):
     __tablename__ = "ab_test_results"
 
     experiment_id = Column(Integer, nullable=False, index=True)
-    model_version_id = Column(Integer, ForeignKey("model_versions.id"), nullable=False, index=True)
-    document_id = Column(Integer, nullable=False, index=True)
-    extraction_result_id = Column(Integer, nullable=False)
+    variant = Column(String(64), nullable=False, index=True)
+    document_id = Column(Integer, index=True)
+    metric_name = Column(String(128), nullable=False, index=True)
+    metric_value = Column(Float, nullable=False)
 
-    group = Column(String(64), index=True)
     metrics = Column(JSON)
     review_rate = Column(Float)
     average_confidence = Column(Float)
     processing_time = Column(Float)
-    field_accuracy = Column(JSON)
 
-    human_evaluated = Column(Boolean, default=False)
-    human_score = Column(Float)
-    evaluated_by = Column(String(256))
-    evaluated_at = Column(DateTime)
-
-    model_version = relationship("ModelVersion", back_populates="ab_test_results")
+    experiment = relationship("ABTestExperiment", foreign_keys=[experiment_id], primaryjoin="ABTestResult.experiment_id == ABTestExperiment.id")

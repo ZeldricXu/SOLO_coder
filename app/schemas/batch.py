@@ -1,21 +1,13 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime
-from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.schemas.document import ProcessingOptions
+from app.models.batch import BatchStatus, BatchPriority, BatchDocumentStatus
 
-
-class BatchStatusEnum(str, Enum):
-    CREATED = "created"
-    UPLOADING = "uploading"
-    UPLOADED = "uploaded"
-    QUEUED = "queued"
-    PROCESSING = "processing"
-    PARTIALLY_COMPLETED = "partially_completed"
-    COMPLETED = "completed"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+BatchStatusEnum = BatchStatus
+BatchPriorityEnum = BatchPriority
+BatchDocumentStatusEnum = BatchDocumentStatus
 
 
 class BatchJobBase(BaseModel):
@@ -26,7 +18,7 @@ class BatchJobBase(BaseModel):
     submitted_by: Optional[str] = None
     processing_options: Optional[ProcessingOptions] = None
     extraction_schema: Optional[Dict[str, Any]] = None
-    metadata: Optional[Dict[str, Any]] = None
+    job_metadata: Optional[Dict[str, Any]] = None
 
 
 class BatchJobCreate(BatchJobBase):

@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, JSON, ForeignKey, Enum, Float
 from sqlalchemy.orm import relationship
 import enum
 
@@ -53,6 +53,8 @@ class ReviewTask(BaseModel, TimestampMixin):
 
     queued_at = Column(DateTime, default=datetime.utcnow, index=True)
     deadline_at = Column(DateTime)
+
+    version = Column(Integer, default=1, nullable=False)
 
     document = relationship("Document", back_populates="review_tasks")
     extraction_result = relationship("ExtractionResult", back_populates="review_tasks")

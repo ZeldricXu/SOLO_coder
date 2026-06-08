@@ -45,10 +45,10 @@ class BatchService:
     def create_batch_from_zip(
         self,
         zip_data: bytes,
-        batch_name: str,
+        job_name: str,
         priority: BatchPriorityEnum = BatchPriorityEnum.MEDIUM,
         document_priority: DocumentPriorityEnum = DocumentPriorityEnum.MEDIUM,
-        metadata: Optional[Dict[str, Any]] = None,
+        job_metadata: Optional[Dict[str, Any]] = None,
     ) -> BatchJob:
         db = next(get_sync_db())
         try:
@@ -58,13 +58,13 @@ class BatchService:
                 raise ValueError("No valid documents found in ZIP file")
 
             batch_create = BatchJobCreate(
-                batch_name=batch_name,
+                job_name=job_name,
                 priority=priority,
-                total_documents=len(documents_info),
-                metadata=metadata or {},
+                job_metadata=job_metadata or {},
             )
 
             batch = BatchJob(**batch_create.model_dump())
+            batch.total_documents = len(documents_info)
             db.add(batch)
             db.flush()
 

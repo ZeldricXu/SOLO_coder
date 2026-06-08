@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, Boolean, JSON, ForeignKey, Enum
+from sqlalchemy import Column, Integer, String, Text, Float, Boolean, JSON, ForeignKey, Enum, DateTime
 from sqlalchemy.orm import relationship
 import enum
 
@@ -33,7 +33,7 @@ class ExtractionResult(BaseModel, TimestampMixin):
     __tablename__ = "extraction_results"
 
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
-    model_version_id = Column(Integer, ForeignKey("modelversion.id"), nullable=True, index=True)
+    model_version_id = Column(Integer, ForeignKey("model_versions.id"), nullable=True, index=True)
     status = Column(Enum(ExtractionStatus), default=ExtractionStatus.PENDING, index=True)
 
     schema_name = Column(String(256), nullable=False)

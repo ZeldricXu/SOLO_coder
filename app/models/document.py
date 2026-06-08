@@ -37,7 +37,7 @@ class DocumentPriority(str, enum.Enum):
 class Document(BaseModel, TimestampMixin):
     __tablename__ = "documents"
 
-    batch_id = Column(Integer, ForeignKey("batchjob.id"), nullable=True, index=True)
+    batch_id = Column(Integer, ForeignKey("batch_jobs.id"), nullable=True, index=True)
     filename = Column(String(512), nullable=False, index=True)
     original_filename = Column(String(512), nullable=False)
     document_type = Column(Enum(DocumentType), default=DocumentType.UNKNOWN, index=True)
