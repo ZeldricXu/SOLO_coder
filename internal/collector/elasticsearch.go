@@ -80,23 +80,26 @@ func (c *ElasticsearchCollector) scrollAndProcess(ctx context.Context) error {
 
 	scrollID := ""
 	for {
-		var req esapi.SearchRequest
+		var res *esapi.Response
+		var err error
+
 		if scrollID == "" {
-			req = esapi.SearchRequest{
-				Index:        []string{c.cfg.Index},
-				Body:         strings.NewReader(query),
-				Scroll:       1 * time.Minute,
-				Size:         c.cfg.ScrollSize,
-				DocumentType: "_doc",
+			scrollSize := c.cfg.ScrollSize
+			req := esapi.SearchRequest{
+				Index:  []string{c.cfg.Index},
+				Body:   strings.NewReader(query),
+				Scroll: 1 * time.Minute,
+				Size:   &scrollSize,
 			}
+			res, err = req.Do(ctx, c.client)
 		} else {
-			req = esapi.ScrollRequest{
+			req := esapi.ScrollRequest{
 				ScrollID: scrollID,
 				Scroll:   1 * time.Minute,
 			}
+			res, err = req.Do(ctx, c.client)
 		}
 
-		res, err := req.Do(ctx, c.client)
 		if err != nil {
 			return fmt.Errorf("search request failed: %w", err)
 		}

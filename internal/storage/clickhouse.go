@@ -32,7 +32,6 @@ func NewClickHouseClient(cfg config.ClickHouseConfig) (*ClickHouseClient, error)
 		},
 		DialTimeout:  time.Duration(cfg.DialTimeout) * time.Second,
 		ReadTimeout:  time.Duration(cfg.ReadTimeout) * time.Second,
-		WriteTimeout: time.Duration(cfg.WriteTimeout) * time.Second,
 		MaxOpenConns: cfg.MaxOpenConns,
 		MaxIdleConns: cfg.MaxIdleConns,
 	})
@@ -49,14 +48,14 @@ func NewClickHouseClient(cfg config.ClickHouseConfig) (*ClickHouseClient, error)
 		cfg:  cfg,
 	}
 
-	if err := client.initSchema(); err != nil {
+	if err := client.InitSchema(); err != nil {
 		return nil, fmt.Errorf("failed to init schema: %w", err)
 	}
 
 	return client, nil
 }
 
-func (c *ClickHouseClient) initSchema() error {
+func (c *ClickHouseClient) InitSchema() error {
 	ctx := context.Background()
 
 	schemaSQL := `

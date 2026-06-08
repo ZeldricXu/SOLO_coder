@@ -3,7 +3,6 @@ package collector
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"strconv"
 	"strings"

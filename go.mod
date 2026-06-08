@@ -12,6 +12,8 @@ require (
 	github.com/montanaflynn/stats v0.7.1
 	github.com/oschwald/geoip2-golang v1.9.0
 	github.com/segmentio/kafka-go v0.4.48
+	github.com/stretchr/testify v1.8.4
+	github.com/testcontainers/testcontainers-go v0.27.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 

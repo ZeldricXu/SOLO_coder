@@ -41,9 +41,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to create ClickHouse client: %v", err)
 	}
-	if err := clickhouse.InitSchema(); err != nil {
-		log.Printf("Warning: Failed to init ClickHouse schema: %v", err)
-	}
 	log.Printf("ClickHouse client initialized")
 
 	redisClient, err := storage.NewRedisClient(cfg.Storage.Redis)
@@ -59,8 +56,7 @@ func main() {
 		log.Printf("Kafka buffer initialized")
 	}
 
-	collectorManager := collector.NewManager()
-	collectorOutput := make(chan *models.LogEvent, 10000)
+	collectorManager := collector.NewManager(10000)
 
 	for _, esCfg := range cfg.Collectors.Elasticsearch {
 		if !esCfg.Enabled {
@@ -72,7 +68,6 @@ func main() {
 			continue
 		}
 		collectorManager.AddCollector(esCollector)
-		esCollector.SetOutput(collectorOutput)
 		log.Printf("Elasticsearch collector added: %s", esCfg.Name)
 	}
 
@@ -86,7 +81,6 @@ func main() {
 			continue
 		}
 		collectorManager.AddCollector(lokiCollector)
-		lokiCollector.SetOutput(collectorOutput)
 		log.Printf("Loki collector added: %s", lokiCfg.Name)
 	}
 
@@ -100,7 +94,6 @@ func main() {
 			continue
 		}
 		collectorManager.AddCollector(kafkaCollector)
-		kafkaCollector.SetOutput(collectorOutput)
 		log.Printf("Kafka collector added: %s", kafkaCfg.Name)
 	}
 
@@ -114,9 +107,10 @@ func main() {
 			continue
 		}
 		collectorManager.AddCollector(syslogCollector)
-		syslogCollector.SetOutput(collectorOutput)
 		log.Printf("Syslog collector added: %s", syslogCfg.Name)
 	}
+
+	collectorOutput := collectorManager.Output()
 
 	pipe, err := pipeline.NewPipeline(cfg.Pipeline, collectorOutput, *geoIPPath)
 	if err != nil {
@@ -124,16 +118,51 @@ func main() {
 	}
 	log.Printf("Pipeline initialized with %d rules", len(cfg.Pipeline.Rules))
 
-	detectorEngine := detector.NewDetector(cfg.Detection, pipe.Output(), redisClient)
+	alertInput := make(chan *models.Alert, 100)
+	eventChainInput := make(chan *models.EventChain, 10)
+
+	detectorEngine, err := detector.NewDetectionEngine(cfg.Detection, redisClient, pipe.Output())
+	if err != nil {
+		log.Fatalf("Failed to create detector: %v", err)
+	}
 	log.Printf("Anomaly detector initialized")
 
-	correlatorEngine := correlator.NewCorrelator(cfg.Correlation, detectorEngine.Output(), clickhouse)
+	go func() {
+		for alert := range detectorEngine.Alerts() {
+			select {
+			case alertInput <- alert:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	correlatorEngine, err := correlator.NewCorrelator(cfg.Correlation, clickhouse, pipe.Output())
+	if err != nil {
+		log.Fatalf("Failed to create correlator: %v", err)
+	}
 	log.Printf("Correlator initialized")
 
-	aggregatorEngine := aggregator.NewAggregator(cfg.Aggregation, correlatorEngine.Output(), redisClient)
+	go func() {
+		for chain := range correlatorEngine.EventChains() {
+			select {
+			case eventChainInput <- chain:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	aggregatorEngine, err := aggregator.NewAggregator(cfg.Aggregation, redisClient, alertInput, eventChainInput)
+	if err != nil {
+		log.Fatalf("Failed to create aggregator: %v", err)
+	}
 	log.Printf("Alert aggregator initialized")
 
-	notifierEngine := notifier.NewNotifier(cfg.Notification, aggregatorEngine.Output())
+	notifierEngine, err := notifier.NewNotifier(cfg.Notification, aggregatorEngine.Incidents())
+	if err != nil {
+		log.Fatalf("Failed to create notifier: %v", err)
+	}
 	log.Printf("Notifier initialized with %d channels", len(cfg.Notification.Channels))
 
 	apiServer := api.NewServer(cfg.API, clickhouse, redisClient, aggregatorEngine, correlatorEngine)
@@ -145,13 +174,24 @@ func main() {
 			if err := pipe.ReloadRules(newCfg.Pipeline.Rules); err != nil {
 				log.Printf("Failed to reload pipeline rules: %v", err)
 			}
-			detectorEngine.ReloadRules(newCfg.Detection.Rules)
-			notifierEngine.ReloadConfig(newCfg.Notification)
 			log.Printf("Configuration reloaded successfully")
 		})
 	}
 
-	if err := collectorManager.StartAll(ctx); err != nil {
+	go func() {
+		for event := range pipe.Output() {
+			if kafkaBuffer != nil {
+				if err := kafkaBuffer.Write(ctx, event); err != nil {
+					log.Printf("Failed to write to Kafka buffer: %v", err)
+				}
+			}
+			if err := clickhouse.Insert(ctx, []*models.LogEvent{event}); err != nil {
+				log.Printf("Failed to insert to ClickHouse: %v", err)
+			}
+		}
+	}()
+
+	if err := collectorManager.Start(ctx); err != nil {
 		log.Fatalf("Failed to start collectors: %v", err)
 	}
 	log.Println("All collectors started")
@@ -186,19 +226,6 @@ func main() {
 	}
 	log.Printf("API server started on port %d", cfg.API.HTTPPort)
 
-	go func() {
-		for event := range pipe.Output() {
-			if kafkaBuffer != nil {
-				if err := kafkaBuffer.Write(ctx, event); err != nil {
-					log.Printf("Failed to write to Kafka buffer: %v", err)
-				}
-			}
-			if err := clickhouse.Insert(ctx, event); err != nil {
-				log.Printf("Failed to insert to ClickHouse: %v", err)
-			}
-		}
-	}()
-
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigCh
@@ -214,9 +241,7 @@ func main() {
 	}
 
 	log.Println("Stopping collectors...")
-	if err := collectorManager.StopAll(); err != nil {
-		log.Printf("Error stopping collectors: %v", err)
-	}
+	collectorManager.Stop()
 
 	log.Println("Stopping pipeline...")
 	pipe.Stop()
@@ -235,7 +260,9 @@ func main() {
 
 	if kafkaBuffer != nil {
 		log.Println("Closing Kafka buffer...")
-		kafkaBuffer.Close()
+		if err := kafkaBuffer.Stop(); err != nil {
+			log.Printf("Error stopping Kafka buffer: %v", err)
+		}
 	}
 
 	log.Println("Closing ClickHouse connection...")

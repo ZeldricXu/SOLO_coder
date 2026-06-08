@@ -297,12 +297,16 @@ func (d *DetectionEngine) detectRule(ctx context.Context, rule config.DetectionR
 		metricValue = float64(errorCount) / float64(totalCount) * 100
 
 		historicalData, _ := d.getHistoricalData(ctx, key, endTime, 7*24*time.Hour)
+		var dataset []float64
 		if len(historicalData) > 0 {
-			if algo == AlgorithmZScore {
-				score = CalculateZScore(append(historicalData, metricValue), metricValue)
-			} else {
-				score = CalculateMAD(append(historicalData, metricValue), metricValue)
-			}
+			dataset = append(historicalData, metricValue)
+		} else {
+			dataset = values
+		}
+		if algo == AlgorithmZScore {
+			score = CalculateZScore(dataset, metricValue)
+		} else {
+			score = CalculateMAD(dataset, metricValue)
 		}
 
 	case MetricP99Latency:
@@ -312,12 +316,16 @@ func (d *DetectionEngine) detectRule(ctx context.Context, rule config.DetectionR
 		metricValue = Percentile(sorted, 99)
 
 		historicalData, _ := d.getHistoricalData(ctx, key, endTime, 7*24*time.Hour)
+		var dataset []float64
 		if len(historicalData) > 0 {
-			if algo == AlgorithmZScore {
-				score = CalculateZScore(append(historicalData, metricValue), metricValue)
-			} else {
-				score = CalculateMAD(append(historicalData, metricValue), metricValue)
-			}
+			dataset = append(historicalData, metricValue)
+		} else {
+			dataset = values
+		}
+		if algo == AlgorithmZScore {
+			score = CalculateZScore(dataset, metricValue)
+		} else {
+			score = CalculateMAD(dataset, metricValue)
 		}
 
 	case MetricErrorPattern:
@@ -337,9 +345,19 @@ func (d *DetectionEngine) detectRule(ctx context.Context, rule config.DetectionR
 func (d *DetectionEngine) getHistoricalData(ctx context.Context, key string, endTime time.Time, lookback time.Duration) ([]float64, error) {
 	historical := make([]float64, 0)
 
-	for i := 1; i <= int(lookback/d.cfg.SlideStep); i++ {
-		windowEnd := endTime.Add(-time.Duration(i) * d.cfg.SlideStep)
-		windowStart := windowEnd.Add(-d.cfg.SlideStep)
+	maxPoints := 100
+	step := d.cfg.SlideStep
+	if step < time.Minute {
+		step = time.Minute
+	}
+	numPoints := int(lookback / step)
+	if numPoints > maxPoints {
+		numPoints = maxPoints
+	}
+
+	for i := 1; i <= numPoints; i++ {
+		windowEnd := endTime.Add(-time.Duration(i) * step)
+		windowStart := windowEnd.Add(-step)
 
 		values, err := d.redis.GetWindowValues(ctx, key, windowStart, windowEnd)
 		if err != nil {

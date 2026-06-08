@@ -89,12 +89,16 @@ type Manager struct {
 	output     chan *models.LogEvent
 	mu         sync.RWMutex
 	wg         sync.WaitGroup
+	stopped    bool
+	stopMu     sync.Mutex
+	stopCh     chan struct{}
 }
 
 func NewManager(bufferSize int) *Manager {
 	return &Manager{
 		collectors: make([]Collector, 0),
 		output:     make(chan *models.LogEvent, bufferSize),
+		stopCh:     make(chan struct{}),
 	}
 }
 
@@ -122,6 +126,8 @@ func (m *Manager) Start(ctx context.Context) error {
 				case m.output <- event:
 				case <-ctx.Done():
 					return
+				case <-m.stopCh:
+					return
 				}
 			}
 		}(c)
@@ -131,6 +137,15 @@ func (m *Manager) Start(ctx context.Context) error {
 }
 
 func (m *Manager) Stop() {
+	m.stopMu.Lock()
+	if m.stopped {
+		m.stopMu.Unlock()
+		return
+	}
+	m.stopped = true
+	close(m.stopCh)
+	m.stopMu.Unlock()
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

@@ -285,7 +285,7 @@ func (n *Notifier) shouldSend(ch Channel, incident *models.Incident) bool {
 	filter := baseCh.GetFilter()
 
 	if filter.MinSeverity != "" {
-		if !n.isSeverityAllowed(incident.Severity, filter.MinSeverity) {
+		if !n.isSeverityAllowed(string(incident.Severity), filter.MinSeverity) {
 			return false
 		}
 	}

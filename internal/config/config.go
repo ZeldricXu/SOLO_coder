@@ -111,17 +111,18 @@ type DetectionConfig struct {
 }
 
 type DetectionRule struct {
-	ID              string        `yaml:"id"`
-	Name            string        `yaml:"name"`
-	Enabled         bool          `yaml:"enabled"`
-	Type            string        `yaml:"type"`
-	ServiceName     string        `yaml:"service_name"`
-	Metric          string        `yaml:"metric"`
-	Threshold       float64       `yaml:"threshold"`
-	WindowSize      time.Duration `yaml:"window_size"`
-	Algorithm       string        `yaml:"algorithm"`
-	Severity        string        `yaml:"severity"`
-	MinObservations int           `yaml:"min_observations"`
+	ID              string                 `yaml:"id"`
+	Name            string                 `yaml:"name"`
+	Enabled         bool                   `yaml:"enabled"`
+	Type            string                 `yaml:"type"`
+	ServiceName     string                 `yaml:"service_name"`
+	Metric          string                 `yaml:"metric"`
+	Threshold       float64                `yaml:"threshold"`
+	WindowSize      time.Duration          `yaml:"window_size"`
+	Algorithm       string                 `yaml:"algorithm"`
+	Severity        string                 `yaml:"severity"`
+	MinObservations int                    `yaml:"min_observations"`
+	Config          map[string]interface{} `yaml:"config"`
 }
 
 type CorrelationConfig struct {

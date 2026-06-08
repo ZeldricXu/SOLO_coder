@@ -13,6 +13,7 @@ import (
 type RedisClient struct {
 	client *redis.Client
 	cfg    config.RedisConfig
+	mock   *MockRedisClient
 }
 
 func NewRedisClient(cfg config.RedisConfig) (*RedisClient, error) {
@@ -40,11 +41,19 @@ func NewRedisClient(cfg config.RedisConfig) (*RedisClient, error) {
 }
 
 func (r *RedisClient) IncrementWindow(ctx context.Context, key string, window time.Time, value float64) error {
+	if r.mock != nil {
+		return r.mock.IncrementWindow(ctx, key, window, value)
+	}
+
 	windowKey := fmt.Sprintf("window:%s:%d", key, window.Unix())
 	return r.client.ZIncrBy(ctx, windowKey, value, "count").Err()
 }
 
 func (r *RedisClient) AddToWindow(ctx context.Context, key string, window time.Time, value float64) error {
+	if r.mock != nil {
+		return r.mock.AddWindowValue(ctx, key, window, value)
+	}
+
 	windowKey := fmt.Sprintf("window:%s:%d", key, window.Unix())
 	now := float64(time.Now().Unix())
 	return r.client.ZAdd(ctx, windowKey, &redis.Z{
@@ -54,6 +63,10 @@ func (r *RedisClient) AddToWindow(ctx context.Context, key string, window time.T
 }
 
 func (r *RedisClient) GetWindowValues(ctx context.Context, key string, startTime, endTime time.Time) ([]float64, error) {
+	if r.mock != nil {
+		return r.mock.GetWindowValues(ctx, key, startTime, endTime)
+	}
+
 	var values []float64
 
 	startWindow := startTime.Truncate(time.Minute)
@@ -77,6 +90,10 @@ func (r *RedisClient) GetWindowValues(ctx context.Context, key string, startTime
 }
 
 func (r *RedisClient) GetWindowCount(ctx context.Context, key string, startTime, endTime time.Time) (int64, error) {
+	if r.mock != nil {
+		return r.mock.GetWindowCount(ctx, key, startTime, endTime)
+	}
+
 	var count int64
 
 	startWindow := startTime.Truncate(time.Minute)
@@ -95,11 +112,19 @@ func (r *RedisClient) GetWindowCount(ctx context.Context, key string, startTime,
 }
 
 func (r *RedisClient) ExpireWindow(ctx context.Context, key string, window time.Time, ttl time.Duration) error {
+	if r.mock != nil {
+		return r.mock.ExpireWindow(ctx, key, window, ttl)
+	}
+
 	windowKey := fmt.Sprintf("window:%s:%d", key, window.Unix())
 	return r.client.Expire(ctx, windowKey, ttl).Err()
 }
 
 func (r *RedisClient) CleanOldWindows(ctx context.Context, key string, olderThan time.Time) error {
+	if r.mock != nil {
+		return r.mock.CleanOldWindows(ctx, key, olderThan)
+	}
+
 	pattern := fmt.Sprintf("window:%s:*", key)
 	var cursor uint64
 
@@ -129,6 +154,14 @@ func (r *RedisClient) CleanOldWindows(ctx context.Context, key string, olderThan
 }
 
 func (r *RedisClient) SetDeduplication(ctx context.Context, key string, value interface{}, ttl time.Duration) (bool, error) {
+	if r.mock != nil {
+		strValue, ok := value.(string)
+		if !ok {
+			strValue = fmt.Sprintf("%v", value)
+		}
+		return r.mock.SetDeduplication(ctx, key, strValue, ttl)
+	}
+
 	existing, err := r.client.SetNX(ctx, fmt.Sprintf("dedup:%s", key), value, ttl).Result()
 	if err != nil {
 		return false, err
@@ -137,14 +170,26 @@ func (r *RedisClient) SetDeduplication(ctx context.Context, key string, value in
 }
 
 func (r *RedisClient) GetDeduplication(ctx context.Context, key string) (string, error) {
+	if r.mock != nil {
+		return r.mock.GetDeduplication(ctx, key)
+	}
+
 	return r.client.Get(ctx, fmt.Sprintf("dedup:%s", key)).Result()
 }
 
 func (r *RedisClient) DeleteDeduplication(ctx context.Context, key string) error {
+	if r.mock != nil {
+		return r.mock.DeleteDeduplication(ctx, key)
+	}
+
 	return r.client.Del(ctx, fmt.Sprintf("dedup:%s", key)).Err()
 }
 
 func (r *RedisClient) SetIncident(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	if r.mock != nil {
+		return r.mock.SetIncident(ctx, key, value, ttl)
+	}
+
 	return r.client.Set(ctx, fmt.Sprintf("incident:%s", key), value, ttl).Err()
 }
 
@@ -153,6 +198,10 @@ func (r *RedisClient) GetIncident(ctx context.Context, key string) (string, erro
 }
 
 func (r *RedisClient) DeleteIncident(ctx context.Context, key string) error {
+	if r.mock != nil {
+		return r.mock.DeleteIncident(ctx, key)
+	}
+
 	return r.client.Del(ctx, fmt.Sprintf("incident:%s", key)).Err()
 }
 
@@ -197,5 +246,9 @@ func (r *RedisClient) LRange(ctx context.Context, key string, start, stop int64)
 }
 
 func (r *RedisClient) Close() error {
+	if r.mock != nil {
+		return r.mock.Close()
+	}
+
 	return r.client.Close()
 }
