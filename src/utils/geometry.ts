@@ -1,5 +1,5 @@
 import type { Point2D, Point3D, Line2D, Polygon2D, AABB } from '@/types/geometry';
-import type { Wall } from '@/types/floorplan';
+import type { Wall, Room } from '@/types/floorplan';
 
 export const distance = (a: Point2D, b: Point2D): number => {
   const dx = b.x - a.x;
@@ -122,8 +122,20 @@ export const polygonArea = (points: Point2D[]): number => {
 };
 
 export const isPointInPolygon = (point: Point2D, polygon: Point2D[]): boolean => {
-  let inside = false;
   const n = polygon.length;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = polygon[i].x, yi = polygon[i].y;
+    const xj = polygon[j].x, yj = polygon[j].y;
+
+    if (Math.abs((yj - yi) * (point.x - xi) - (xj - xi) * (point.y - yi)) < 0.0001) {
+      if (point.x >= Math.min(xi, xj) - 0.0001 && point.x <= Math.max(xi, xj) + 0.0001 &&
+          point.y >= Math.min(yi, yj) - 0.0001 && point.y <= Math.max(yi, yj) + 0.0001) {
+        return true;
+      }
+    }
+  }
+
+  let inside = false;
   for (let i = 0, j = n - 1; i < n; j = i++) {
     const xi = polygon[i].x, yi = polygon[i].y;
     const xj = polygon[j].x, yj = polygon[j].y;
@@ -222,4 +234,114 @@ export const simplifyPolygon = (points: Point2D[], tolerance: number = 0.01): Po
   result.push(points[points.length - 1]);
   
   return result;
+};
+
+export const linesIntersectWithParams = (
+  line1: Line2D,
+  line2: Line2D
+): { point: Point2D; t1: number; t2: number } | null => {
+  const { start: p1, end: p2 } = line1;
+  const { start: p3, end: p4 } = line2;
+
+  const denom = (p4.y - p3.y) * (p2.x - p1.x) - (p4.x - p3.x) * (p2.y - p1.y);
+  if (Math.abs(denom) < 0.0001) return null;
+
+  const t1 = ((p4.x - p3.x) * (p1.y - p3.y) - (p4.y - p3.y) * (p1.x - p3.x)) / denom;
+  const t2 = ((p2.x - p1.x) * (p1.y - p3.y) - (p2.y - p1.y) * (p1.x - p3.x)) / denom;
+
+  if (t1 >= 0 && t1 <= 1 && t2 >= 0 && t2 <= 1) {
+    return {
+      point: {
+        x: p1.x + t1 * (p2.x - p1.x),
+        y: p1.y + t1 * (p2.y - p1.y),
+      },
+      t1,
+      t2,
+    };
+  }
+
+  return null;
+};
+
+export const checkWallIntersection = (
+  wall1: Wall,
+  wall2: Wall
+): { point: Point2D; t1: number; t2: number } | null => {
+  if (wall1.type === 'arc' || wall2.type === 'arc') {
+    return null;
+  }
+
+  return linesIntersectWithParams(
+    { start: wall1.start, end: wall1.end },
+    { start: wall2.start, end: wall2.end }
+  );
+};
+
+export const detectRoomsFromWalls = (walls: Wall[]): Room[] => {
+  const rooms: Room[] = [];
+  const adjacency = new Map<string, Point2D[]>();
+
+  for (const wall of walls) {
+    const startKey = `${wall.start.x.toFixed(3)},${wall.start.y.toFixed(3)}`;
+    const endKey = `${wall.end.x.toFixed(3)},${wall.end.y.toFixed(3)}`;
+
+    if (!adjacency.has(startKey)) adjacency.set(startKey, []);
+    if (!adjacency.has(endKey)) adjacency.set(endKey, []);
+
+    adjacency.get(startKey)!.push(wall.end);
+    adjacency.get(endKey)!.push(wall.start);
+  }
+
+  const visited = new Set<string>();
+  const cycles: Point2D[][] = [];
+
+  const findCycles = (start: Point2D, current: Point2D, path: Point2D[]): boolean => {
+    const key = `${current.x.toFixed(3)},${current.y.toFixed(3)}`;
+
+    if (visited.has(key)) {
+      if (key === `${start.x.toFixed(3)},${start.y.toFixed(3)}` && path.length > 3) {
+        cycles.push([...path]);
+        return true;
+      }
+      return false;
+    }
+
+    visited.add(key);
+    path.push(current);
+
+    const neighbors = adjacency.get(key) || [];
+    for (const neighbor of neighbors) {
+      const prev = path.length > 1 ? path[path.length - 2] : null;
+      if (prev && prev.x === neighbor.x && prev.y === neighbor.y) continue;
+
+      if (findCycles(start, neighbor, path)) {
+        return true;
+      }
+    }
+
+    path.pop();
+    visited.delete(key);
+    return false;
+  };
+
+  for (const wall of walls) {
+    const startKey = `${wall.start.x.toFixed(3)},${wall.start.y.toFixed(3)}`;
+    if (!visited.has(startKey)) {
+      findCycles(wall.start, wall.start, []);
+    }
+  }
+
+  for (let i = 0; i < Math.min(cycles.length, 5); i++) {
+    const boundary = cycles[i];
+    rooms.push({
+      id: generateId(),
+      name: `房间 ${i + 1}`,
+      boundary,
+      height: 2.8,
+      floorMaterialId: 'mat-floor-wood',
+      ceilingMaterialId: 'mat-wall-white',
+    });
+  }
+
+  return rooms;
 };

@@ -1,11 +1,15 @@
 import * as THREE from 'three';
-import { SUBTRACTION, ADDITION, INTERSECTION, Evaluator } from 'three-bvh-csg';
+import { SUBTRACTION, ADDITION, INTERSECTION, Evaluator, Brush } from 'three-bvh-csg';
 
 const csgEvaluator = new Evaluator();
 
-const toBrush = (mesh: THREE.Mesh) => {
+const toBrush = (mesh: THREE.Mesh): Brush => {
   mesh.updateMatrixWorld();
-  return mesh as any;
+  const brush = new Brush(mesh.geometry, mesh.material);
+  brush.matrix.copy(mesh.matrix);
+  brush.matrixWorld.copy(mesh.matrixWorld);
+  brush.prepareGeometry();
+  return brush;
 };
 
 export const subtractGeometry = (
@@ -62,17 +66,18 @@ export const createWallGeometry = (
   thickness: number,
   height: number
 ): THREE.Mesh => {
+  const absHeight = Math.abs(height);
   const length = start.distanceTo(end);
   const mid = new THREE.Vector3().addVectors(start, end).multiplyScalar(0.5);
   const direction = new THREE.Vector3().subVectors(end, start).normalize();
   const angle = Math.atan2(direction.z, direction.x);
 
-  const geometry = new THREE.BoxGeometry(length, height, thickness);
+  const geometry = new THREE.BoxGeometry(length, absHeight, thickness);
   const material = new THREE.MeshStandardMaterial({ color: 0xffffff });
   const mesh = new THREE.Mesh(geometry, material);
 
   mesh.position.copy(mid);
-  mesh.position.y = height / 2;
+  mesh.position.y = absHeight / 2;
   mesh.rotation.y = -angle;
 
   mesh.updateMatrix();

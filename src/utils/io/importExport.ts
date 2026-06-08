@@ -1,7 +1,7 @@
 import DxfParser from 'dxf-parser';
 import type { FloorPlan, Wall, Opening, Room } from '@/types/floorplan';
 import type { Point2D } from '@/types/geometry';
-import { generateId } from '../geometry';
+import { generateId, detectRoomsFromWalls } from '../geometry';
 import { createDefaultFloorPlan } from '@/store/useFloorPlanStore';
 
 export const EXPORT_FORMAT_VERSION = '1.0.0';
@@ -57,14 +57,21 @@ export const importFromJSON = (jsonStr: string): FloorPlan => {
       throw new Error('无效的户型数据格式');
     }
 
-    return parsed.data;
+    const defaultPlan = createDefaultFloorPlan();
+    return {
+      ...defaultPlan,
+      ...parsed.data,
+    };
   } catch (error) {
     console.error('JSON解析失败:', error);
+    if (error instanceof SyntaxError) {
+      throw error;
+    }
     throw new Error('户型文件解析失败，请检查文件格式');
   }
 };
 
-export const importFromFile = async (file: File): Promise<FloorPlan> => {
+export const importFromFile = async (file: File | { name: string; text: () => Promise<string> }): Promise<FloorPlan> => {
   const text = await file.text();
 
   if (file.name.endsWith('.json')) {
@@ -178,74 +185,6 @@ export const parseDXF = async (dxfContent: string): Promise<FloorPlan> => {
   }
 };
 
-const detectRoomsFromWalls = (walls: Wall[]): Room[] => {
-  const rooms: Room[] = [];
-  const adjacency = new Map<string, Point2D[]>();
-
-  for (const wall of walls) {
-    const startKey = `${wall.start.x.toFixed(3)},${wall.start.y.toFixed(3)}`;
-    const endKey = `${wall.end.x.toFixed(3)},${wall.end.y.toFixed(3)}`;
-
-    if (!adjacency.has(startKey)) adjacency.set(startKey, []);
-    if (!adjacency.has(endKey)) adjacency.set(endKey, []);
-
-    adjacency.get(startKey)!.push(wall.end);
-    adjacency.get(endKey)!.push(wall.start);
-  }
-
-  const visited = new Set<string>();
-  const cycles: Point2D[][] = [];
-
-  const findCycles = (start: Point2D, current: Point2D, path: Point2D[]): boolean => {
-    const key = `${current.x.toFixed(3)},${current.y.toFixed(3)}`;
-
-    if (visited.has(key)) {
-      if (key === `${start.x.toFixed(3)},${start.y.toFixed(3)}` && path.length > 3) {
-        cycles.push([...path]);
-        return true;
-      }
-      return false;
-    }
-
-    visited.add(key);
-    path.push(current);
-
-    const neighbors = adjacency.get(key) || [];
-    for (const neighbor of neighbors) {
-      const prev = path.length > 1 ? path[path.length - 2] : null;
-      if (prev && prev.x === neighbor.x && prev.y === neighbor.y) continue;
-
-      if (findCycles(start, neighbor, path)) {
-        return true;
-      }
-    }
-
-    path.pop();
-    visited.delete(key);
-    return false;
-  };
-
-  for (const wall of walls) {
-    const startKey = `${wall.start.x.toFixed(3)},${wall.start.y.toFixed(3)}`;
-    if (!visited.has(startKey)) {
-      findCycles(wall.start, wall.start, []);
-    }
-  }
-
-  for (let i = 0; i < Math.min(cycles.length, 5); i++) {
-    const boundary = cycles[i];
-    rooms.push({
-      id: generateId(),
-      name: `房间 ${i + 1}`,
-      boundary,
-      floorMaterialId: 'mat-floor-wood',
-      ceilingMaterialId: 'mat-ceiling-white',
-      height: 2.8,
-    });
-  }
-
-  return rooms;
-};
 
 export const validateFloorPlan = (floorPlan: FloorPlan): { valid: boolean; errors: string[] } => {
   const errors: string[] = [];

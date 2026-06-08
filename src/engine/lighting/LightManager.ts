@@ -14,17 +14,16 @@ export class LightManager {
 
   addLight(lightData: LightSource): void {
     let light: THREE.Light | null = null;
-    const color = new THREE.Color(
-      lightData.color.r,
-      lightData.color.g,
-      lightData.color.b
-    );
+    const parsedColor = this.parseColor(lightData.color);
+    const color = new THREE.Color(parsedColor.r, parsedColor.g, parsedColor.b);
+    
+    const clampedIntensity = Math.max(0, Math.min(10, lightData.intensity));
 
     switch (lightData.type) {
       case 'point':
         light = new THREE.PointLight(
           color,
-          lightData.intensity,
+          clampedIntensity,
           lightData.params.distance || 0,
           lightData.params.decay || 2
         );
@@ -32,9 +31,9 @@ export class LightManager {
       case 'spot':
         light = new THREE.SpotLight(
           color,
-          lightData.intensity,
+          clampedIntensity,
           lightData.params.distance || 0,
-          (lightData.params.angle || 45) * Math.PI / 180,
+          lightData.params.angle || 45 * Math.PI / 180,
           lightData.params.penumbra || 0.3,
           lightData.params.decay || 2
         );
@@ -42,22 +41,24 @@ export class LightManager {
       case 'area':
         light = new THREE.RectAreaLight(
           color,
-          lightData.intensity,
+          clampedIntensity,
           lightData.params.width || 1,
           lightData.params.height || 1
         );
         break;
       case 'ambient':
-        light = new THREE.AmbientLight(color, lightData.intensity);
+        light = new THREE.AmbientLight(color, clampedIntensity);
         break;
     }
 
     if (!light) return;
 
     light.position.set(lightData.position.x, lightData.position.y, lightData.position.z);
-    light.castShadow = lightData.castShadow;
+    if (lightData.type !== 'ambient') {
+      light.castShadow = lightData.castShadow;
+    }
     light.name = `light-${lightData.id}`;
-    light.userData = { lightId: lightData.id };
+    light.userData = { lightId: lightData.id, lightType: lightData.type };
 
     if (lightData.target && light instanceof THREE.SpotLight) {
       light.target.position.set(
@@ -213,6 +214,64 @@ export class LightManager {
         }
       }
     });
+  }
+
+  getLights(): Map<string, THREE.Light> {
+    return this.lights;
+  }
+
+  areHelpersVisible(): boolean {
+    return this.showHelpers;
+  }
+
+  enableHelpers(): void {
+    this.setShowHelpers(true);
+  }
+
+  disableHelpers(): void {
+    this.setShowHelpers(false);
+  }
+
+  private parseColor(color: string | { r: number; g: number; b: number }): { r: number; g: number; b: number } {
+    if (typeof color === 'string') {
+      const hex = color.replace('#', '');
+      return {
+        r: parseInt(hex.substring(0, 2), 16) / 255,
+        g: parseInt(hex.substring(2, 4), 16) / 255,
+        b: parseInt(hex.substring(4, 6), 16) / 255,
+      };
+    }
+    return color;
+  }
+
+  updateLightById(id: string, updates: Partial<LightSource>): void {
+    const existingLight = this.lights.get(id);
+    if (!existingLight) return;
+
+    const existingData: LightSource = {
+      id,
+      name: existingLight.name || `light-${id}`,
+      type: existingLight.userData.lightType || 'point',
+      position: { x: existingLight.position.x, y: existingLight.position.y, z: existingLight.position.z },
+      color: { r: existingLight.color.r, g: existingLight.color.g, b: existingLight.color.b },
+      intensity: existingLight.intensity,
+      castShadow: (existingLight as any).castShadow || false,
+      params: {},
+    };
+
+    const parsedColor = updates.color ? this.parseColor(updates.color) : existingData.color;
+    const newIntensity = updates.intensity !== undefined 
+      ? Math.max(0, Math.min(10, updates.intensity))
+      : existingData.intensity;
+
+    const updated: LightSource = {
+      ...existingData,
+      ...updates,
+      color: parsedColor,
+      intensity: newIntensity,
+    };
+
+    this.updateLight(updated);
   }
 
   createDefaultLights(): void {

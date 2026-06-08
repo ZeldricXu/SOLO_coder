@@ -51,12 +51,13 @@ export class SnapManager {
 
   findSnapTarget(
     point: Point2D,
-    zoom: number,
+    zoom?: number,
     excludeWallId?: string
   ): SnapTarget | null {
     if (!this.config.enabled) return null;
 
-    const threshold = this.config.threshold / zoom;
+    const actualZoom = zoom ?? 1;
+    const threshold = this.config.threshold / actualZoom;
     const targets: SnapTarget[] = [];
 
     for (const wall of this.walls) {

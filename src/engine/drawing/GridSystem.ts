@@ -37,6 +37,10 @@ export class GridSystem {
     };
   }
 
+  snapToGrid(point: Point2D): Point2D {
+    return this.snap(point);
+  }
+
   draw(
     ctx: CanvasRenderingContext2D,
     width: number,
@@ -90,17 +94,21 @@ export class GridSystem {
     ctx.stroke();
   }
 
-  worldToScreen(world: Point2D, offset: Point2D, zoom: number): Point2D {
+  worldToScreen(world: Point2D, offset?: Point2D, zoom?: number): Point2D {
+    const off = offset || { x: 0, y: 60 };
+    const z = zoom || 80;
     return {
-      x: world.x * zoom + offset.x,
-      y: world.y * zoom + offset.y,
+      x: world.x * z + off.x,
+      y: world.y * z + off.y,
     };
   }
 
-  screenToWorld(screen: Point2D, offset: Point2D, zoom: number): Point2D {
+  screenToWorld(screen: Point2D, offset?: Point2D, zoom?: number): Point2D {
+    const off = offset || { x: 0, y: 60 };
+    const z = zoom || 80;
     return {
-      x: (screen.x - offset.x) / zoom,
-      y: (screen.y - offset.y) / zoom,
+      x: (screen.x - off.x) / z,
+      y: (screen.y - off.y) / z,
     };
   }
 }

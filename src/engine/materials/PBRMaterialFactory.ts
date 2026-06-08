@@ -1,14 +1,44 @@
 import * as THREE from 'three';
 import type { Material, PBRProperties } from '@/types/floorplan';
+import { DEFAULT_MATERIALS } from '@/types/materials';
 
 export class PBRMaterialFactory {
   private textureLoader: THREE.TextureLoader;
+  private materialCache: Map<string, THREE.MeshStandardMaterial> = new Map();
+  private materialRegistry: Map<string, Material> = new Map();
 
   constructor() {
     this.textureLoader = new THREE.TextureLoader();
+    DEFAULT_MATERIALS.forEach((m) => this.materialRegistry.set(m.id, m));
   }
 
-  createMaterial(materialData: Material): THREE.MeshStandardMaterial {
+  createMaterial(
+    materialIdOrData: string | Material,
+    overrideData?: Partial<Material>
+  ): THREE.MeshStandardMaterial {
+    let materialData: Material;
+
+    if (typeof materialIdOrData === 'string') {
+      const cached = this.materialCache.get(materialIdOrData);
+      if (cached && !overrideData) {
+        return cached;
+      }
+
+      const registered = this.materialRegistry.get(materialIdOrData);
+      if (!registered) {
+        throw new Error(`Material not found: ${materialIdOrData}`);
+      }
+      materialData = overrideData ? { ...registered, ...overrideData } : registered;
+    } else {
+      materialData = overrideData ? { ...materialIdOrData, ...overrideData } : materialIdOrData;
+    }
+
+    const cacheKey = typeof materialIdOrData === 'string' ? materialIdOrData : materialData.id;
+
+    if (!overrideData && this.materialCache.has(cacheKey)) {
+      return this.materialCache.get(cacheKey)!;
+    }
+
     const properties = materialData.properties as PBRProperties;
 
     const color = new THREE.Color(
@@ -61,6 +91,10 @@ export class PBRMaterialFactory {
       });
     }
 
+    if (!overrideData) {
+      this.materialCache.set(cacheKey, material);
+    }
+
     return material;
   }
 
@@ -77,6 +111,19 @@ export class PBRMaterialFactory {
         () => resolve(null)
       );
     });
+  }
+
+  getMaterialCache(): Map<string, THREE.MeshStandardMaterial> {
+    return this.materialCache;
+  }
+
+  clearCache(): void {
+    this.materialCache.forEach((mat) => mat.dispose());
+    this.materialCache.clear();
+  }
+
+  registerMaterial(material: Material): void {
+    this.materialRegistry.set(material.id, material);
   }
 
   createWireframeMaterial(): THREE.LineBasicMaterial {
