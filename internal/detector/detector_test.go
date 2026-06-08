@@ -180,7 +180,20 @@ func TestDetectionEngine_SlidingWindow_ZScoreAnomaly(t *testing.T) {
 	err = engine.Start(ctx)
 	require.NoError(t, err)
 
+	key := fmt.Sprintf("%s:%s:%s", rule.ServiceName, MetricErrorRate, rule.ID)
 	baseTime := time.Now().Add(-3 * time.Minute)
+
+	for i := 0; i < 30; i++ {
+		window := baseTime.Add(-time.Duration(i+1) * time.Minute)
+		for j := 0; j < 20; j++ {
+			val := 0.0
+			if j%20 == 0 {
+				val = 1.0
+			}
+			mockRedis.Mock().AddWindowValue(ctx, key, window, val)
+		}
+	}
+
 	for i := 0; i < 60; i++ {
 		level := models.LevelInfo
 		if i%20 == 0 {
@@ -478,6 +491,25 @@ func TestDetectionEngine_MultipleRules_IndependentDetection(t *testing.T) {
 	require.NoError(t, err)
 
 	baseTime := time.Now().Add(-3 * time.Minute)
+
+	for _, rule := range rules {
+		serviceName := rule.ServiceName
+		if serviceName != "service-a" {
+			continue
+		}
+		key := fmt.Sprintf("%s:%s:%s", serviceName, MetricErrorRate, rule.ID)
+		for i := 0; i < 30; i++ {
+			window := baseTime.Add(-time.Duration(i+1) * time.Minute)
+			for j := 0; j < 20; j++ {
+				val := 0.0
+				if j%20 == 0 {
+					val = 1.0
+				}
+				mockRedis.Mock().AddWindowValue(ctx, key, window, val)
+			}
+		}
+	}
+
 	for i := 0; i < 40; i++ {
 		levelA := models.LevelInfo
 		if i%30 == 0 {

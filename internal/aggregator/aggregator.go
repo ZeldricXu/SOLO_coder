@@ -108,28 +108,12 @@ func (a *Aggregator) processAlert(ctx context.Context, alert *models.Alert) {
 	dedupKey := a.generateDedupKey(alert)
 	alert.DeduplicationKey = dedupKey
 
-	isDuplicate, err := a.redis.SetDeduplication(ctx, dedupKey, alert.ID, a.cfg.TimeWindow)
+	isFirst, err := a.redis.SetDeduplication(ctx, dedupKey, alert.ID, a.cfg.TimeWindow)
 	if err != nil {
 		log.Printf("Failed to check deduplication: %v", err)
 	}
 
-	if !isDuplicate {
-		a.incidentsMu.RLock()
-		existing, ok := a.incidents[dedupKey]
-		a.incidentsMu.RUnlock()
-
-		if ok && !a.shouldCreateNewIncident(existing, alert) {
-			a.addToIncident(existing, alert)
-			return
-		}
-
-		if a.cfg.SuppressLowerPriority && ok {
-			if a.isLowerPriority(alert.Severity, existing.Severity) {
-				log.Printf("Suppressed lower priority alert: %s (existing: %s)", alert.Severity, existing.Severity)
-				return
-			}
-		}
-
+	if isFirst {
 		incident := a.createIncident(alert, dedupKey)
 		a.incidentsMu.Lock()
 		a.incidents[dedupKey] = incident
@@ -151,7 +135,13 @@ func (a *Aggregator) processAlert(ctx context.Context, alert *models.Alert) {
 	a.incidentsMu.RUnlock()
 
 	if ok {
-		a.addToIncident(existing, alert)
+		if a.cfg.SuppressLowerPriority && a.isLowerPriority(alert.Severity, existing.Severity) {
+			log.Printf("Suppressed lower priority alert: %s (existing: %s)", alert.Severity, existing.Severity)
+			return
+		}
+		if !a.shouldCreateNewIncident(existing, alert) {
+			a.addToIncident(existing, alert)
+		}
 	}
 }
 

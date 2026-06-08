@@ -33,13 +33,13 @@ import (
 )
 
 type TestInfrastructure struct {
-	ctx         context.Context
-	esContainer tc.Container
-	esURL       string
+	ctx            context.Context
+	esContainer    tc.Container
+	esURL          string
 	kafkaContainer tc.Container
-	kafkaBrokers []string
+	kafkaBrokers   []string
 	redisContainer tc.Container
-	redisURL    string
+	redisURL       string
 }
 
 func SetupTestInfrastructure(t *testing.T) *TestInfrastructure {
@@ -124,11 +124,11 @@ func SetupTestInfrastructure(t *testing.T) *TestInfrastructure {
 				Image:        "confluentinc/cp-kafka:7.5.3",
 				ExposedPorts: []string{"9092/tcp", "9093/tcp"},
 				Env: map[string]string{
-					"KAFKA_NODE_ID":                        "1",
-					"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP": "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
-					"KAFKA_ADVERTISED_LISTENERS":           "INTERNAL://localhost:9092,EXTERNAL://localhost:9093",
+					"KAFKA_NODE_ID":                          "1",
+					"KAFKA_LISTENER_SECURITY_PROTOCOL_MAP":   "INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT",
+					"KAFKA_ADVERTISED_LISTENERS":             "INTERNAL://localhost:9092,EXTERNAL://localhost:9093",
 					"KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR": "1",
-					"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":  "1",
+					"KAFKA_TRANSACTION_STATE_LOG_MIN_ISR":    "1",
 					"KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR": "1",
 				},
 				WaitingFor: wait.ForListeningPort("9093/tcp").WithStartupTimeout(2 * time.Minute),
@@ -210,7 +210,7 @@ func TestEndToEndPipeline_FullFlow(t *testing.T) {
 	createIndex(t, esClient, indexName)
 	docCount := 100
 	anomalyStartIdx := 70
-	events := writeTestDataToES(t, esClient, indexName, docCount, anomalyStartIdx)
+	writeTestDataToES(t, esClient, indexName, docCount, anomalyStartIdx)
 	refreshIndex(t, esClient, indexName)
 
 	redisCfg := config.RedisConfig{
@@ -221,67 +221,74 @@ func TestEndToEndPipeline_FullFlow(t *testing.T) {
 	redisClient, err := storage.NewRedisClient(redisCfg)
 	require.NoError(t, err)
 
-	collectorCfg := config.CollectorConfig{
-		Enabled: true,
-		Elasticsearch: config.ESCollectorConfig{
-			Enabled:    true,
-			Addresses:  []string{infra.esURL},
-			Index:      indexName,
-			Query:      `{"match_all": {}}`,
-			ScrollSize: 10,
-			Interval:   1 * time.Second,
-			BatchSize:  10,
-		},
+	esCollectorCfg := config.ElasticsearchConfig{
+		Enabled:      true,
+		Addresses:    []string{infra.esURL},
+		Index:        indexName,
+		Query:        `{"match_all": {}}`,
+		ScrollSize:   10,
+		PollInterval: 500 * time.Millisecond,
+		TimeField:    "timestamp",
+		LevelField:   "level",
+		MessageField: "message",
 	}
 
-	esCollector, err := collector.NewElasticsearchCollector(collectorCfg.Elasticsearch)
+	esCollector, err := collector.NewElasticsearchCollector(esCollectorCfg)
 	require.NoError(t, err)
 
+	pipelineInput := make(chan *models.LogEvent, 100)
 	processorCfg := config.PipelineConfig{
-		Enabled: true,
 		Rules: []config.PipelineRule{
 			{
-				ID:       "parse-nginx",
-				Name:     "Parse Nginx Logs",
-				Type:     "parse",
-				Enabled:  true,
-				Pattern:  `(?P<status_code>\d{3})`,
-				SourceField: "message",
+				ID:      "parse-nginx",
+				Name:    "Parse Nginx Logs",
+				Type:    "parse",
+				Enabled: true,
+				Config: map[string]interface{}{
+					"pattern":      `(?P<status_code>\d{3})`,
+					"source_field": "message",
+				},
 			},
 		},
 		WorkerCount: 2,
 		BufferSize:  100,
 	}
 
-	processor, err := pipeline.NewProcessor(processorCfg)
+	processor, err := pipeline.NewPipeline(processorCfg, pipelineInput, "")
 	require.NoError(t, err)
 
+	detectorInput := make(chan *models.LogEvent, 100)
 	detectorCfg := config.DetectionConfig{
-		Enabled: true,
+		Algorithm:  "zscore",
+		WindowSize: 1 * time.Minute,
+		SlideStep:  2 * time.Second,
 		Rules: []config.DetectionRule{
 			{
-				ID:           "error-rate-spike",
-				Name:         "Error Rate Spike Detection",
-				Enabled:      true,
-				MetricType:   "error_rate",
-				Algorithm:    "zscore",
-				WindowSize:   1 * time.Minute,
-				Threshold:    2.0,
-				MinDataPoints: 5,
+				ID:              "error-rate-spike",
+				Name:            "Error Rate Spike Detection",
+				Enabled:         true,
+				Type:            "error_rate",
+				Metric:          "error_rate",
+				Algorithm:       "zscore",
+				WindowSize:      1 * time.Minute,
+				Threshold:       2.0,
+				ServiceName:     "order-service",
+				Severity:        "HIGH",
+				MinObservations: 5,
 			},
 		},
-		Interval: 2 * time.Second,
 	}
 
-	detectEngine, err := detector.NewDetector(detectorCfg, redisClient)
+	detectEngine, err := detector.NewDetectionEngine(detectorCfg, redisClient, detectorInput)
 	require.NoError(t, err)
 
 	aggregatorCfg := config.AggregationConfig{
-		Enabled:          true,
-		GroupByFields:    []string{"service_name", "alert_type"},
-		TimeWindow:       5 * time.Minute,
-		MaxIncidentSize:  50,
-		DedupKeyTemplate: "{{.AlertType}}-{{.ServiceName}}",
+		Enabled:              true,
+		GroupByFields:        []string{"service_name", "alert_type"},
+		TimeWindow:           5 * time.Minute,
+		MaxIncidentSize:      50,
+		SuppressLowerPriority: false,
+		DedupKeyTemplate:     "{{.AlertType}}-{{.ServiceName}}",
 	}
 
 	alertInput := make(chan *models.Alert, 100)
@@ -321,7 +328,7 @@ func TestEndToEndPipeline_FullFlow(t *testing.T) {
 	go func() {
 		for event := range esCollector.Output() {
 			select {
-			case processor.Input() <- event:
+			case pipelineInput <- event:
 			case <-ctx.Done():
 				return
 			}
@@ -331,7 +338,7 @@ func TestEndToEndPipeline_FullFlow(t *testing.T) {
 	go func() {
 		for event := range processor.Output() {
 			select {
-			case detectEngine.Input() <- event:
+			case detectorInput <- event:
 			case <-ctx.Done():
 				return
 			}
@@ -339,7 +346,7 @@ func TestEndToEndPipeline_FullFlow(t *testing.T) {
 	}()
 
 	go func() {
-		for alert := range detectEngine.Output() {
+		for alert := range detectEngine.Alerts() {
 			select {
 			case alertInput <- alert:
 			case <-ctx.Done():
@@ -349,7 +356,7 @@ func TestEndToEndPipeline_FullFlow(t *testing.T) {
 	}()
 
 	go func() {
-		for incident := range aggregatorEngine.Output() {
+		for incident := range aggregatorEngine.Incidents() {
 			if incident == nil {
 				continue
 			}
@@ -365,8 +372,6 @@ func TestEndToEndPipeline_FullFlow(t *testing.T) {
 		}
 	}()
 
-	processedCount := int32(0)
-	alertCount := int32(0)
 	incidentCount := int32(0)
 
 	timeout := time.After(50 * time.Second)
@@ -377,23 +382,20 @@ loop:
 	for {
 		select {
 		case <-ticker.C:
-			t.Logf("Processed: %d, Alerts: %d, Incidents: %d",
-				atomic.LoadInt32(&processedCount),
-				atomic.LoadInt32(&alertCount),
-				atomic.LoadInt32(&incidentCount))
+			t.Logf("Incidents: %d", atomic.LoadInt32(&incidentCount))
 
 			select {
 			case incident := <-webhookReceived:
 				atomic.AddInt32(&incidentCount, 1)
 				t.Logf("Received incident via webhook: %s, severity: %s, alerts: %d",
-					incident.ID, incident.Severity, incident.AlertCount)
+					incident.ID, incident.Severity, len(incident.Alerts))
 
 				assert.NotEmpty(t, incident.ID)
-				assert.NotEmpty(t, incident.ServiceName)
+				assert.NotEmpty(t, incident.ServiceNames)
 				assert.NotEmpty(t, incident.Severity)
-				assert.Greater(t, incident.AlertCount, 0)
+				assert.Greater(t, len(incident.Alerts), 0)
 				assert.NotNil(t, incident.Alerts)
-				assert.NotNil(t, incident.CreatedAt)
+				assert.False(t, incident.StartTime.IsZero())
 
 				if atomic.LoadInt32(&incidentCount) >= 1 {
 					cancel()
@@ -412,8 +414,8 @@ loop:
 	assert.GreaterOrEqual(t, atomic.LoadInt32(&incidentCount), int32(1),
 		"Should receive at least one incident via webhook")
 
-	t.Logf("Final stats - Events: %d, Alerts: %d, Incidents: %d",
-		docCount, atomic.LoadInt32(&alertCount), atomic.LoadInt32(&incidentCount))
+	t.Logf("Final stats - Events: %d, Incidents: %d",
+		docCount, atomic.LoadInt32(&incidentCount))
 }
 
 func TestCollector_ESUnavailable_DegradesGracefully(t *testing.T) {
@@ -427,19 +429,19 @@ func TestCollector_ESUnavailable_DegradesGracefully(t *testing.T) {
 	badESURL := "http://localhost:19999"
 	indexName := "test-unavailable"
 
-	collectorCfg := config.ESCollectorConfig{
-		Enabled:     true,
-		Addresses:   []string{badESURL},
-		Index:       indexName,
-		Query:       `{"match_all": {}}`,
-		ScrollSize:  10,
-		Interval:    1 * time.Second,
-		BatchSize:   10,
-		MaxRetries:  2,
-		RetryDelay:  1 * time.Second,
+	esCollectorCfg := config.ElasticsearchConfig{
+		Enabled:      true,
+		Addresses:    []string{badESURL},
+		Index:        indexName,
+		Query:        `{"match_all": {}}`,
+		ScrollSize:   10,
+		PollInterval: 1 * time.Second,
+		TimeField:    "timestamp",
+		LevelField:   "level",
+		MessageField: "message",
 	}
 
-	esCollector, err := collector.NewElasticsearchCollector(collectorCfg)
+	esCollector, err := collector.NewElasticsearchCollector(esCollectorCfg)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(infra.ctx, 15*time.Second)
@@ -493,7 +495,7 @@ func TestKafka_BackpressureHandling(t *testing.T) {
 	for i := 0; i < totalMessages; i++ {
 		event := testdata.NewLogEvent(
 			testdata.WithServiceName("kafka-test-service"),
-			testdata.WithLevel(models.LogLevelInfo),
+			testdata.WithLevel(models.LevelInfo),
 		)
 		event.Message = fmt.Sprintf("test message %d", i)
 		eventBytes, err := json.Marshal(event)
@@ -510,11 +512,11 @@ func TestKafka_BackpressureHandling(t *testing.T) {
 	t.Logf("Finished producing %d messages", totalMessages)
 
 	consumerCfg := config.KafkaCollectorConfig{
-		Enabled:  true,
-		Brokers:  infra.kafkaBrokers,
-		Topic:    topic,
-		GroupID:  "test-group",
-		BufferSize: 100,
+		Enabled:   true,
+		Brokers:   infra.kafkaBrokers,
+		Topic:     topic,
+		GroupID:   "test-group",
+		Partition: 0,
 	}
 
 	kafkaCollector, err := collector.NewKafkaCollector(consumerCfg)
@@ -557,7 +559,7 @@ loop:
 	duration := time.Since(start)
 	t.Logf("Received %d/%d messages in %v", atomic.LoadInt32(&receivedCount), totalMessages, duration)
 
-	assert.GreaterOrEqual(t, atomic.LoadInt32(&receivedCount), int32(totalMessages*0.8),
+	assert.GreaterOrEqual(t, atomic.LoadInt32(&receivedCount), int32(float64(totalMessages)*0.8),
 		"Should receive at least 80% of messages")
 
 	t.Logf("Throughput: %.2f messages/sec", float64(atomic.LoadInt32(&receivedCount))/duration.Seconds())
@@ -615,7 +617,7 @@ func TestAlertStorm_NoiseSuppression(t *testing.T) {
 			testdata.WithAlertServiceName("storm-service"),
 		)
 		alert.Timestamp = time.Now()
-		alert.Message = fmt.Sprintf("DB timeout error #%d", i)
+		alert.Description = fmt.Sprintf("DB timeout error #%d", i)
 		alertInput <- alert
 	}
 
@@ -627,7 +629,7 @@ func TestAlertStorm_NoiseSuppression(t *testing.T) {
 collectIncidents:
 	for {
 		select {
-		case incident := <-aggregatorEngine.Output():
+		case incident := <-aggregatorEngine.Incidents():
 			if incident != nil {
 				incidents = append(incidents, incident)
 			}
@@ -642,7 +644,7 @@ collectIncidents:
 	if len(incidents) > 0 {
 		assert.Equal(t, models.SeverityCritical, incidents[0].Severity,
 			"Incident should have the highest severity")
-		assert.Greater(t, incidents[0].AlertCount, 1, "Incident should contain multiple alerts")
+		assert.Greater(t, len(incidents[0].Alerts), 1, "Incident should contain multiple alerts")
 	}
 
 	noiseReductionRatio := float64(totalAlerts) / float64(len(incidents))
@@ -685,7 +687,7 @@ func createIndex(t *testing.T, client *elasticsearch.Client, indexName string) {
 	}
 }
 
-func writeTestDataToES(t *testing.T, client *elasticsearch.Client, indexName string, count int, anomalyStartIdx int) []*models.LogEvent {
+func writeTestDataToES(t *testing.T, client *elasticsearch.Client, indexName string, count int, anomalyStartIdx int) {
 	t.Helper()
 
 	events := make([]*models.LogEvent, count)
@@ -704,7 +706,7 @@ func writeTestDataToES(t *testing.T, client *elasticsearch.Client, indexName str
 
 		event := testdata.NewLogEvent(
 			testdata.WithServiceName("order-service"),
-			testdata.WithLevel(models.LogLevelInfo),
+			testdata.WithLevel(models.LevelInfo),
 			testdata.WithTimestamp(ts),
 		)
 		event.StatusCode = statusCode
@@ -712,7 +714,7 @@ func writeTestDataToES(t *testing.T, client *elasticsearch.Client, indexName str
 		event.TraceID = uuid.New().String()
 
 		if statusCode >= 500 {
-			event.Level = models.LogLevelError
+			event.Level = models.LevelError
 			event.ErrorCode = "DB_TIMEOUT"
 		}
 
@@ -721,7 +723,7 @@ func writeTestDataToES(t *testing.T, client *elasticsearch.Client, indexName str
 		events[i] = event
 	}
 
-	bulkBody := testdata.NewESBulkRequest(indexName, events)
+	bulkBody := testdata.NewESBulkRequest(events)
 
 	req := esapi.BulkRequest{
 		Index:   indexName,
@@ -738,7 +740,6 @@ func writeTestDataToES(t *testing.T, client *elasticsearch.Client, indexName str
 	}
 
 	t.Logf("Wrote %d documents to ES index %s", count, indexName)
-	return events
 }
 
 func refreshIndex(t *testing.T, client *elasticsearch.Client, indexName string) {

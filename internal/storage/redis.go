@@ -16,6 +16,10 @@ type RedisClient struct {
 	mock   *MockRedisClient
 }
 
+func (r *RedisClient) Mock() *MockRedisClient {
+	return r.mock
+}
+
 func NewRedisClient(cfg config.RedisConfig) (*RedisClient, error) {
 	client := redis.NewClient(&redis.Options{
 		Addr:         cfg.Address,
