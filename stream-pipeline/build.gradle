@@ -1,0 +1,21 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'com.loganalytics.pipeline.StreamPipelineMain'
+}
+
+dependencies {
+    implementation project(':common')
+    implementation project(':pattern-detector')
+    implementation project(':storage-index')
+    implementation "org.apache.kafka:kafka-streams:${kafkaStreamsVersion}"
+    implementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
+    implementation 'io.krakens:java-grok:0.1.9'
+    implementation 'com.github.ben-manes.caffeine:caffeine:3.1.8'
+
+    testImplementation project(':test-support')
+    testImplementation "org.apache.kafka:kafka-streams-test-utils:${kafkaStreamsVersion}"
+    testImplementation "org.testcontainers:kafka:${testcontainersVersion}"
+}

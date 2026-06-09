@@ -1,0 +1,8 @@
+dependencies {
+    api "org.testcontainers:testcontainers:${testcontainersVersion}"
+    api "org.testcontainers:junit-jupiter:${testcontainersVersion}"
+    api "org.testcontainers:kafka:${testcontainersVersion}"
+    api "org.testcontainers:postgresql:${testcontainersVersion}"
+    api "org.testcontainers:minio:${testcontainersVersion}"
+    api 'org.awaitility:awaitility:4.2.1'
+}

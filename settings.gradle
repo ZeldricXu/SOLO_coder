@@ -1,0 +1,19 @@
+rootProject.name = 'log-analytics-platform'
+
+include 'common'
+include 'log-agent'
+include 'stream-pipeline'
+include 'pattern-detector'
+include 'metrics-aggregator'
+include 'storage-index'
+include 'api-server'
+include 'alert-engine'
+include 'query-parser'
+include 'test-support'
+
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}

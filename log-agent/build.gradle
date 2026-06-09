@@ -1,0 +1,29 @@
+plugins {
+    id 'application'
+}
+
+application {
+    mainClass = 'com.loganalytics.agent.LogAgentMain'
+}
+
+dependencies {
+    implementation project(':common')
+    implementation "org.apache.kafka:kafka-clients:${kafkaVersion}"
+    implementation 'com.github.oshi:oshi-core:6.6.3'
+    implementation 'net.java.dev.jna:jna:5.14.0'
+    implementation 'info.picocli:picocli:4.7.6'
+    annotationProcessor 'info.picocli:picocli-codegen:4.7.6'
+
+    testImplementation project(':test-support')
+    testImplementation "org.testcontainers:kafka:${testcontainersVersion}"
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.loganalytics.agent.LogAgentMain'
+    }
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    from {
+        configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+    }
+}

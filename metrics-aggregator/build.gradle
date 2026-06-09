@@ -1,0 +1,23 @@
+dependencies {
+    implementation project(':common')
+    implementation project(':test-support')
+
+    implementation 'org.apache.kafka:kafka-streams'
+    implementation 'com.github.ben-manes.caffeine:caffeine'
+    implementation 'info.picocli:picocli'
+    implementation 'com.zaxxer:HikariCP'
+    implementation 'org.postgresql:postgresql'
+
+    annotationProcessor 'info.picocli:picocli-codegen'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+    testImplementation 'org.mockito:mockito-core'
+    testImplementation 'org.assertj:assertj-core'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'org.testcontainers:kafka'
+    testImplementation 'org.testcontainers:junit-jupiter'
+}
+
+application {
+    mainClass = 'com.loganalytics.metrics.MetricsAggregatorMain'
+}

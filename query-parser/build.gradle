@@ -1,0 +1,24 @@
+plugins {
+    id 'antlr'
+}
+
+dependencies {
+    implementation project(':common')
+    antlr "org.antlr:antlr4:${antlrVersion}"
+
+    testImplementation project(':test-support')
+}
+
+generateGrammarSource {
+    maxHeapSize = "64m"
+    arguments += ['-visitor', '-package', 'com.loganalytics.query.parser']
+    outputDirectory = file("$buildDir/generated-sources/antlr/com/loganalytics/query/parser")
+}
+
+sourceSets {
+    main {
+        java {
+            srcDirs += "$buildDir/generated-sources/antlr"
+        }
+    }
+}
