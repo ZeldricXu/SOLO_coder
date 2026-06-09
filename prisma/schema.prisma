@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+  CANCELLED
+}
+
+enum PlanTier {
+  FREE
+  STARTER
+  PROFESSIONAL
+  ENTERPRISE
+}
+
+enum ContentStatus {
+  DRAFT
+  REVIEWING
+  APPROVED
+  PUBLISHED
+  ARCHIVED
+  REJECTED
+}
+
+enum WorkflowNodeType {
+  START
+  APPROVAL
+  CONDITION
+  PARALLEL
+  END
+}
+
+enum ApprovalType {
+  ANY
+  ALL
+  PERCENTAGE
+}
+
+enum WebhookEvent {
+  CONTENT_CREATED
+  CONTENT_UPDATED
+  CONTENT_PUBLISHED
+  CONTENT_DELETED
+  WORKFLOW_STARTED
+  WORKFLOW_APPROVED
+  WORKFLOW_REJECTED
+}
+
+enum WebhookStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  RETRYING
+}
+
+enum CDNRegion {
+  CN_NORTH
+  CN_SOUTH
+  CN_EAST
+  CN_WEST
+  AP_SOUTHEAST
+  US_WEST
+  EU_WEST
+}
+
+model Tenant {
+  id           String       @id @default(uuid())
+  code         String       @unique
+  name         String
+  status       TenantStatus @default(PENDING)
+  plan         PlanTier     @default(FREE)
+  hostPattern  String?
+  apiKey       String       @unique
+  dbSchema     String       @unique
+  elasticIndexPrefix String  @unique
+  customDomain String?
+
+  maxApiCallsPerDay Int      @default(10000)
+  maxStorageGb      Int      @default(1)
+  maxContentModels  Int      @default(5)
+  maxUsers          Int      @default(10)
+  maxWebhooks       Int      @default(3)
+  enableVersioning  Boolean  @default(false)
+  enableWorkflow    Boolean  @default(false)
+  enableElasticsearch Boolean @default(false)
+  enableCDN         Boolean  @default(false)
+
+  storageUsedBytes BigInt    @default(0)
+  apiCallsToday    Int       @default(0)
+  lastApiCallReset DateTime  @default(now())
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  deletedAt DateTime?
+
+  contentModels     ContentModel[]
+  workflowDefs      WorkflowDefinition[]
+  webhooks          WebhookConfig[]
+  tenantUsage       TenantUsage[]
+  searchConfigs     SearchConfig[]
+
+  @@index([status])
+  @@index([code])
+  @@index([apiKey])
+  @@index([hostPattern])
+}
+
+model TenantUsage {
+  id              String   @id @default(uuid())
+  tenantId        String
+  date            String
+  apiCalls        Int      @default(0)
+  storageUsedBytes BigInt  @default(0)
+  contentCount    Int      @default(0)
+  userCount       Int      @default(0)
+  webhookCount    Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  @@unique([tenantId, date])
+  @@index([tenantId])
+  @@index([date])
+}
+
+model ContentModel {
+  id          String   @id @default(uuid())
+  tenantId    String
+  name        String
+  code        String
+  description String?
+  tableName   String
+  schemaJson  Json
+  version     Int      @default(1)
+  isPublished Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id])
+
+  workflowDefs  WorkflowDefinition[]
+  searchConfigs SearchConfig[]
+  contents      ContentEntry[]
+  versions      ContentVersion[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model ContentEntry {
+  id           String        @id @default(uuid())
+  tenantId     String
+  modelId      String
+  status       ContentStatus @default(DRAFT)
+  data         Json
+  publishedData Json?
+  publishedAt  DateTime?
+  createdBy    String
+  updatedBy    String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  deletedAt    DateTime?
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  model   ContentModel  @relation(fields: [modelId], references: [id])
+
+  versions         ContentVersion[]
+  workflowInsts    WorkflowInstance[]
+  cdnPublishStatus CDNPublishStatus[]
+
+  @@index([tenantId, modelId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ContentVersion {
+  id         String        @id @default(uuid())
+  tenantId   String
+  contentId  String
+  modelId    String
+  version    Int
+  snapshot   Json
+  status     ContentStatus
+  diffPatch  String?
+  message    String?
+  createdBy  String
+  createdAt  DateTime      @default(now())
+
+  tenant  Tenant        @relation(fields: [tenantId], references: [id])
+  content ContentEntry  @relation(fields: [contentId], references: [id])
+  model   ContentModel  @relation(fields: [modelId], references: [id])
+
+  @@unique([contentId, version])
+  @@index([contentId])
+  @@index([createdAt])
+}
+
+model WorkflowDefinition {
+  id          String             @id @default(uuid())
+  tenantId    String
+  modelId     String
+  name        String
+  description String?
+  nodes       Json
+  startNodeId String
+  endNodeId   String
+  isDefault   Boolean            @default(false)
+  version     Int                @default(1)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id])
+  model  ContentModel @relation(fields: [modelId], references: [id])
+
+  instances WorkflowInstance[]
+
+  @@index([tenantId, modelId])
+}
+
+model WorkflowInstance {
+  id             String   @id @default(uuid())
+  definitionId   String
+  tenantId       String
+  contentId      String
+  currentNodeId  String
+  status         String   @default("running")
+  approvals      Json
+  startedBy      String
+  startedAt      DateTime @default(now())
+  completedAt    DateTime?
+
+  tenant     Tenant             @relation(fields: [tenantId], references: [id])
+  definition WorkflowDefinition @relation(fields: [definitionId], references: [id])
+  content    ContentEntry       @relation(fields: [contentId], references: [id])
+
+  @@index([tenantId])
+  @@index([contentId])
+  @@index([status])
+}
+
+model SearchConfig {
+  id               String   @id @default(uuid())
+  tenantId         String
+  modelId          String
+  fieldWeights     Json
+  defaultOperator  String   @default("AND")
+  fuzziness        Int      @default(1)
+  analyzer         String   @default("ik_max_word")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant Tenant       @relation(fields: [tenantId], references: [id])
+  model  ContentModel @relation(fields: [modelId], references: [id])
+
+  @@unique([tenantId, modelId])
+}
+
+model CDNPublishStatus {
+  id         String    @id @default(uuid())
+  tenantId   String
+  contentId  String
+  region     CDNRegion
+  status     String    @default("pending")
+  cdnUrl     String
+  publishedAt DateTime?
+  errorMessage String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  tenant  Tenant       @relation(fields: [tenantId], references: [id])
+  content ContentEntry @relation(fields: [contentId], references: [id])
+
+  @@unique([contentId, region])
+  @@index([tenantId])
+  @@index([status])
+}
+
+model WebhookConfig {
+  id         String          @id @default(uuid())
+  tenantId   String
+  url        String
+  secret     String
+  events     WebhookEvent[]
+  active     Boolean         @default(true)
+  timeoutMs  Int             @default(5000)
+  maxRetries Int             @default(5)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id])
+  deliveries WebhookDelivery[]
+
+  @@index([tenantId])
+  @@index([active])
+}
+
+model WebhookDelivery {
+  id                 String         @id @default(uuid())
+  webhookId          String
+  event              WebhookEvent
+  payload            Json
+  status             WebhookStatus  @default(PENDING)
+  attempts           Int            @default(0)
+  lastAttemptAt      DateTime?
+  nextAttemptAt      DateTime?
+  responseStatusCode Int?
+  errorMessage       String?
+  createdAt          DateTime       @default(now())
+
+  webhook WebhookConfig @relation(fields: [webhookId], references: [id])
+
+  @@index([webhookId])
+  @@index([status])
+  @@index([nextAttemptAt])
+}
