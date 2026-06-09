@@ -20,7 +20,10 @@ def plot_along_line(mesh, field, start, end, n_points=100, ax=None, **kwargs):
     ax.grid(True, alpha=0.3)
     return ax
 
-def plot_velocity_profile(mesh, velocity, axis='x', y=None, z=0, ax=None, **kwargs):
+def plot_velocity_profile(mesh, velocity, axis='x', y=None, z=0, ax=None, save_path=None, **kwargs):
+    import matplotlib.pyplot as plt
+    if ax is None:
+        fig, ax = plt.subplots()
     if mesh.ndim == 2:
         if y is None:
             y = (mesh.y_range[0] + mesh.y_range[1]) / 2
@@ -47,6 +50,9 @@ def plot_velocity_profile(mesh, velocity, axis='x', y=None, z=0, ax=None, **kwar
     vel_mag = np.linalg.norm(velocity, axis=1)
     ax = plot_along_line(mesh, vel_mag, start, end, ax=ax, **kwargs)
     ax.set_ylabel('Velocity magnitude')
+    if save_path is not None:
+        plt.savefig(save_path, dpi=150, bbox_inches='tight')
+        plt.close()
     return ax
 
 def plot_pressure_distribution(mesh, pressure, y=None, z=0, ax=None, **kwargs):

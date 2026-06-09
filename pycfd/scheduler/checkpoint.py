@@ -9,9 +9,12 @@ import json
 import pickle
 
 class CheckpointManager:
-    def __init__(self, checkpoint_dir: str = './checkpoints', max_checkpoints: int = 10):
+    def __init__(self, checkpoint_dir: str = './checkpoints', max_checkpoints: int = 10,
+                 interval: int = 100):
         self.checkpoint_dir = checkpoint_dir
         self.max_checkpoints = max_checkpoints
+        self.interval = interval
+        self.last_saved_step = -1
         os.makedirs(checkpoint_dir, exist_ok=True)
         self.checkpoint_files: List[str] = []
         self._load_existing_checkpoints()
@@ -145,6 +148,106 @@ class CheckpointManager:
                 os.remove(oldest)
             except:
                 pass
+
+    def save_checkpoint(self, solver, step: int, time: float = None,
+                        metadata: Dict[str, Any] = None) -> str:
+        """Save solver state to a checkpoint file.
+        
+        Args:
+            solver: The solver object to save
+            step: Current simulation step
+            time: Current simulation time
+            metadata: Additional metadata to save
+            
+        Returns:
+            Path to the saved checkpoint file
+        """
+        data = {
+            'flow_u': solver.flow.u.copy(),
+            'flow_v': solver.flow.v.copy(),
+            'flow_p': solver.flow.p.copy(),
+            'flow_u_prev': solver.flow.u_prev.copy(),
+            'flow_p_prev': solver.flow.p_prev.copy(),
+            'flow_ap': solver.flow.ap.copy(),
+            'underrelaxation': solver.underrelaxation,
+            'step': step,
+            'time': time if time is not None else 0.0
+        }
+        if hasattr(solver, 'residual_history') and solver.residual_history:
+            data['residual_history'] = np.array(solver.residual_history)
+        self.last_saved_step = step
+        return self.save(data, step, time, metadata)
+
+    def load_checkpoint(self, solver, step: int = None, time: float = None) -> bool:
+        """Load solver state from a checkpoint file.
+        
+        Args:
+            solver: The solver object to restore
+            step: Step number to load (or None for latest)
+            time: Time to load (or None for latest)
+            
+        Returns:
+            True if checkpoint was loaded successfully, False otherwise
+        """
+        if step is None and time is None:
+            data = self.load_latest()
+        else:
+            filename = self.get_checkpoint_at(step=step, time=time)
+            if filename is None:
+                raise FileNotFoundError(f"No checkpoint found for step={step}, time={time}")
+            data = self.load(filename)
+        
+        if data is None:
+            return False
+        
+        solver.flow.u[:] = data['flow_u']
+        solver.flow.v[:] = data['flow_v']
+        solver.flow.p[:] = data['flow_p']
+        solver.flow.u_prev[:] = data['flow_u_prev']
+        solver.flow.p_prev[:] = data['flow_p_prev']
+        solver.flow.ap[:] = data['flow_ap']
+        if 'underrelaxation' in data:
+            solver.underrelaxation = data['underrelaxation']
+        if 'residual_history' in data and hasattr(solver, 'residual_history'):
+            solver.residual_history = data['residual_history'].tolist()
+        return True
+
+    def save_if_needed(self, solver) -> Optional[str]:
+        """Save checkpoint if the interval has elapsed.
+        
+        Args:
+            solver: The solver object
+            
+        Returns:
+            Path to saved checkpoint if saved, None otherwise
+        """
+        if not hasattr(solver, 'current_step'):
+            return None
+        step = solver.current_step
+        if step - self.last_saved_step >= self.interval:
+            return self.save_checkpoint(solver, step)
+        return None
+
+    def list_checkpoints(self) -> List[Dict[str, Any]]:
+        """List all available checkpoints with metadata.
+        
+        Returns:
+            List of dicts containing checkpoint info (filename, step, time, timestamp)
+        """
+        checkpoints = []
+        for fname in self.checkpoint_files:
+            try:
+                with h5py.File(fname, 'r') as f:
+                    info = {
+                        'filename': fname,
+                        'step': f.attrs.get('step'),
+                        'time': f.attrs.get('time'),
+                        'timestamp': f.attrs.get('timestamp')
+                    }
+                    checkpoints.append(info)
+            except:
+                continue
+        return checkpoints
 
     def get_checkpoint_at(self, step: int = None, time: float = None) -> Optional[str]:
         if step is not None:

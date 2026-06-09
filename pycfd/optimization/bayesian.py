@@ -123,19 +123,43 @@ def UpperConfidenceBound(mu: np.ndarray, sigma: np.ndarray, kappa: float = 2.0) 
 
 class BayesianOptimizer:
     def __init__(self, objective_func: Callable, variables: List[DesignVariable],
-                 n_initial: int = 10, acq_func: str = 'ei', maximize: bool = False):
+                 n_initial: int = 10, acq_func: str = 'ei', maximize: bool = False,
+                 max_failed_samples: int = 50):
         self.objective_func = objective_func
         self.param_space = ParameterSpace(variables)
         self.n_initial = n_initial
         self.maximize = maximize
+        self.max_failed_samples = max_failed_samples
         self.gp = GaussianProcess(kernel='rbf')
         self.acquisition = AcquisitionFunction(kind=acq_func)
         self.X_samples = None
         self.y_samples = None
         self.sample_dicts = []
         self.results = []
+        self.failed_samples = []
+        self.n_failed = 0
         self.best_x = None
         self.best_y = None if maximize else float('inf')
+
+    def _safe_evaluate(self, sample_dict: dict) -> Tuple[Optional[float], Optional[str]]:
+        """Safely evaluate objective function, catching exceptions and invalid values."""
+        try:
+            y = self.objective_func(sample_dict)
+            y = float(y)
+            if np.isnan(y) or np.isinf(y):
+                return None, f"Invalid value: {y}"
+            return y, None
+        except Exception as e:
+            return None, str(e)
+
+    def _get_valid_samples(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Return only valid (non-NaN, non-Inf) samples for GP training."""
+        if self.X_samples is None or len(self.X_samples) == 0:
+            return None, None
+        valid_mask = ~(np.isnan(self.y_samples) | np.isinf(self.y_samples))
+        if np.sum(valid_mask) == 0:
+            return None, None
+        return self.X_samples[valid_mask], self.y_samples[valid_mask]
 
     def _objective_wrapper(self, sample_dict: dict) -> float:
         y = self.objective_func(sample_dict)
@@ -149,16 +173,27 @@ class BayesianOptimizer:
             sample_dict = {name: val[i] if hasattr(val, '__len__') and not isinstance(val, str) else val 
                           for name, val in initial_samples.items()}
             self.sample_dicts.append(sample_dict)
-            y = self._objective_wrapper(sample_dict)
-            self.results.append((sample_dict, y))
+            
+            y, error = self._safe_evaluate(sample_dict)
+            if y is None:
+                self.n_failed += 1
+                self.failed_samples.append((sample_dict, error))
+                self.results.append((sample_dict, None, error))
+                y_wrapped = np.nan
+            else:
+                y_wrapped = y if self.maximize else -y
+                self.results.append((sample_dict, y, None))
+            
             if self.X_samples is None:
                 self.X_samples = self.param_space.to_array({k: np.array([v]) for k, v in sample_dict.items()})
-                self.y_samples = np.array([y])
+                self.y_samples = np.array([y_wrapped])
             else:
                 x_new = self.param_space.to_array({k: np.array([v]) for k, v in sample_dict.items()})
                 self.X_samples = np.vstack([self.X_samples, x_new])
-                self.y_samples = np.append(self.y_samples, y)
-            self._update_best(sample_dict, y)
+                self.y_samples = np.append(self.y_samples, y_wrapped)
+            
+            if y is not None:
+                self._update_best(sample_dict, y)
 
     def _update_best(self, sample_dict: dict, y: float) -> None:
         if self.maximize:
@@ -174,12 +209,24 @@ class BayesianOptimizer:
         if self.X_samples is None:
             self._sample_initial()
         bounds = self.param_space.bounds_array()
+        
         for it in range(n_iterations):
-            self.gp.fit(self.X_samples, self.y_samples)
-            self.acquisition.update(np.max(self.y_samples))
+            if self.n_failed >= self.max_failed_samples:
+                print(f"WARNING: Maximum failed samples ({self.max_failed_samples}) reached. Stopping.")
+                break
+            
+            X_valid, y_valid = self._get_valid_samples()
+            if X_valid is None or len(X_valid) < 2:
+                print(f"WARNING: Not enough valid samples ({len(X_valid) if X_valid is not None else 0}). Skipping iteration.")
+                continue
+            
+            self.gp.fit(X_valid, y_valid)
+            self.acquisition.update(np.max(y_valid))
+            
             def neg_acq(x):
                 mu, sigma = self.gp.predict(x.reshape(1, -1), return_std=True)
                 return -self.acquisition.evaluate(mu, sigma)[0]
+            
             best_val = float('inf')
             best_x = None
             for _ in range(n_restarts):
@@ -188,23 +235,43 @@ class BayesianOptimizer:
                 if result.fun < best_val:
                     best_val = result.fun
                     best_x = result.x
+            
             new_x = best_x.reshape(1, -1)
             new_sample = self.param_space.from_array(new_x)
             sample_dict = {k: v[0] if hasattr(v, '__len__') and not isinstance(v, str) else v 
                           for k, v in new_sample.items()}
             self.sample_dicts.append(sample_dict)
-            new_y = self._objective_wrapper(sample_dict)
-            self.results.append((sample_dict, new_y))
+            
+            y, error = self._safe_evaluate(sample_dict)
+            if y is None:
+                self.n_failed += 1
+                self.failed_samples.append((sample_dict, error))
+                self.results.append((sample_dict, None, error))
+                new_y = np.nan
+            else:
+                new_y = y if self.maximize else -y
+                self.results.append((sample_dict, y, None))
+            
             self.X_samples = np.vstack([self.X_samples, new_x])
             self.y_samples = np.append(self.y_samples, new_y)
-            self._update_best(sample_dict, new_y)
-            print(f"Iteration {it+1}/{n_iterations}: Best y = {self.best_y:.4f}")
+            
+            if y is not None:
+                self._update_best(sample_dict, y)
+                print(f"Iteration {it+1}/{n_iterations}: Best y = {self.best_y:.4f}, valid = {len(X_valid)}/{len(self.X_samples)}")
+            else:
+                print(f"Iteration {it+1}/{n_iterations}: Sample failed: {error}, failed = {self.n_failed}")
+        
+        X_valid, y_valid = self._get_valid_samples()
+        n_valid = len(X_valid) if X_valid is not None else 0
         return {
             'best_x': self.best_x,
             'best_y': self.best_y,
             'X': self.X_samples,
             'y': self.y_samples,
-            'results': self.results
+            'results': self.results,
+            'failed_samples': self.failed_samples,
+            'n_failed': self.n_failed,
+            'n_valid': n_valid
         }
 
     def get_optimization_history(self) -> Tuple[np.ndarray, np.ndarray]:

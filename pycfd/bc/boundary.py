@@ -1,23 +1,96 @@
 import numpy as np
 from ..core.jit import njit
 
+def _set_matrix_value(A, row, col, value):
+    """Set matrix value, works for both SparseMatrix and scipy sparse matrices."""
+    if hasattr(A, 'set_value'):
+        A.set_value(row, col, value)
+    else:
+        # Scipy sparse matrix - convert to lil for modification if needed
+        if hasattr(A, 'tolil'):
+            A = A.tolil()
+            A[row, col] = value
+            return A.tocsr()
+        else:
+            A[row, col] = value
+    return A
+
+def _add_matrix_value(A, row, col, value):
+    """Add matrix value, works for both SparseMatrix and scipy sparse matrices."""
+    if hasattr(A, 'add_value'):
+        A.add_value(row, col, value)
+    else:
+        if hasattr(A, 'tolil'):
+            A = A.tolil()
+            A[row, col] += value
+            return A.tocsr()
+        else:
+            A[row, col] += value
+    return A
+
 class BoundaryCondition:
     def __init__(self, boundary_name, bc_type='generic'):
         self.boundary_name = boundary_name
         self.bc_type = bc_type
         self.faces = None
+        self._initialized = False
+        self._validation_errors = []
 
     def initialize(self, mesh):
         if isinstance(self.boundary_name, str) and self.boundary_name in mesh.boundary_faces:
             self.faces = mesh.boundary_faces[self.boundary_name]
         elif isinstance(self.boundary_name, int):
             self.faces = mesh.get_boundary_faces(self.boundary_name)
+        elif isinstance(self.boundary_name, np.ndarray):
+            self.faces = self.boundary_name
         else:
             self.faces = np.array([], dtype=np.int64)
+        self._initialized = True
+
+    def validate(self, mesh):
+        """Validate boundary condition face indices against mesh."""
+        errors = []
+        
+        if self.faces is None:
+            self.initialize(mesh)
+        
+        faces = np.asarray(self.faces, dtype=np.int64)
+        
+        negative_mask = faces < 0
+        if np.any(negative_mask):
+            bad = faces[negative_mask]
+            errors.append(f"Negative face IDs: {bad.tolist()}")
+        
+        oob_mask = faces >= mesh.n_faces
+        if np.any(oob_mask):
+            bad = faces[oob_mask]
+            errors.append(f"Face IDs exceed bounds (max {mesh.n_faces-1}): {bad.tolist()}")
+        
+        if len(faces) != len(np.unique(faces)):
+            seen = {}
+            dupes = []
+            for f in faces:
+                if f in seen:
+                    dupes.append(f)
+                seen[f] = True
+            if dupes:
+                errors.append(f"Duplicate face IDs: {dupes}")
+        
+        self._validation_errors = errors
+        self._validated = True
+        return len(errors) == 0, errors
 
     def get_boundary_cells(self, mesh):
+        if self._validation_errors:
+            raise ValueError(f"BC has validation errors: {self._validation_errors}")
         if self.faces is None or len(self.faces) == 0:
             return np.array([], dtype=np.int64)
+        if mesh is None:
+            return np.array([], dtype=np.int64)
+        if not getattr(self, '_validated', False):
+            for f in self.faces:
+                if f < 0 or f >= mesh.n_faces:
+                    raise IndexError(f"Face ID {f} out of bounds [0, {mesh.n_faces-1}]")
         return np.array([mesh.owner[f] for f in self.faces], dtype=np.int64)
 
     def apply_velocity(self, A, b, direction, flow, mesh):
@@ -44,6 +117,9 @@ class BoundaryManager:
     def initialize(self, mesh):
         for bc in self.boundary_conditions.values():
             bc.initialize(mesh)
+            is_valid, errors = bc.validate(mesh)
+            if not is_valid:
+                raise ValueError(f"Boundary condition '{bc.boundary_name}' validation failed: {errors}")
 
     def apply_velocity_bc(self, A, b, direction, flow, mesh=None):
         for bc in self.boundary_conditions.values():
@@ -83,7 +159,7 @@ class VelocityInletBC(BoundaryCondition):
             return A, b
         vel_dir = vel[direction] if vel.ndim > 0 else vel
         for cid in cells:
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * vel_dir
         return A, b
 
@@ -101,7 +177,7 @@ class VelocityInletBC(BoundaryCondition):
         else:
             return A, b
         for cid in cells:
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * value
         return A, b
 
@@ -121,14 +197,14 @@ class PressureInletBC(BoundaryCondition):
             if len(neighbor_cells) > 0:
                 interior_value = np.mean(flow.u[neighbor_cells, direction])
                 vel = interior_value * d
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 1e15 * vel
         return A, b
 
     def apply_pressure(self, A, b, flow, mesh):
         cells = self.get_boundary_cells(mesh)
         for cid in cells:
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * self.total_pressure
         return A, b
 
@@ -149,14 +225,14 @@ class PressureOutletBC(BoundaryCondition):
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
                 interior_value = np.mean(flow.u[neighbor_cells, direction])
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 1e15 * interior_value
         return A, b
 
     def apply_pressure(self, A, b, flow, mesh):
         cells = self.get_boundary_cells(mesh)
         for cid in cells:
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * self.static_pressure
         return A, b
 
@@ -166,7 +242,7 @@ class PressureOutletBC(BoundaryCondition):
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
                 interior_value = np.mean(phi[neighbor_cells])
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 1e15 * interior_value
         return A, b
 
@@ -180,7 +256,7 @@ class OutflowBC(BoundaryCondition):
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
                 interior_value = np.mean(flow.u[neighbor_cells, direction])
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 1e15 * interior_value
         return A, b
 
@@ -191,8 +267,8 @@ class OutflowBC(BoundaryCondition):
             if len(neighbor_cells) > 0:
                 neighbors = neighbor_cells
                 for nb in neighbors:
-                    A.add_value(cid, nb, -1.0)
-                A.set_value(cid, cid, len(neighbors))
+                    A = _add_matrix_value(A, cid, nb, -1.0)
+                A = _set_matrix_value(A, cid, cid, len(neighbors))
                 b[cid] = 0.0
         return A, b
 
@@ -202,7 +278,7 @@ class OutflowBC(BoundaryCondition):
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
                 interior_value = np.mean(phi[neighbor_cells])
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 1e15 * interior_value
         return A, b
 
@@ -226,7 +302,7 @@ class WallBC(BoundaryCondition):
                 value = 0.0
             else:
                 return A, b
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * value
         return A, b
 
@@ -236,8 +312,8 @@ class WallBC(BoundaryCondition):
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
                 for nb in neighbor_cells:
-                    A.add_value(cid, nb, -1.0)
-                A.set_value(cid, cid, len(neighbor_cells))
+                    A = _add_matrix_value(A, cid, nb, -1.0)
+                A = _set_matrix_value(A, cid, cid, len(neighbor_cells))
                 b[cid] = 0.0
         return A, b
 
@@ -252,7 +328,7 @@ class WallBC(BoundaryCondition):
                 nu = 1e-6
                 u_tau = 0.01
                 value = nu * u_tau * u_tau / (0.4187 * dy * dy)
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 1e15 * value
             return A, b
         elif scalar_name == 'omega':
@@ -261,13 +337,13 @@ class WallBC(BoundaryCondition):
                 dy = np.linalg.norm(mesh.cell_centers[cid] - mesh.face_centers[self.faces[0]])
                 nu = 1e-6
                 value = 6.0 * nu / (0.075 * dy * dy)
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 1e15 * value
             return A, b
         else:
             return A, b
         for cid in cells:
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * value
         return A, b
 
@@ -283,14 +359,14 @@ class SymmetryBC(BoundaryCondition):
             normal = mesh.face_normals[fid]
             tangent = np.array([-normal[1], normal[0]]) if mesh.ndim == 2 else np.cross(normal, [1, 0, 0])
             if np.abs(normal[direction]) > 0.5:
-                A.set_value(cid, cid, 1e15)
+                A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 0.0
             else:
                 neighbor_cells = mesh.get_neighbors(cid)
                 if len(neighbor_cells) > 0:
                     for nb in neighbor_cells:
-                        A.add_value(cid, nb, -1.0)
-                    A.set_value(cid, cid, len(neighbor_cells))
+                        A = _add_matrix_value(A, cid, nb, -1.0)
+                    A = _set_matrix_value(A, cid, cid, len(neighbor_cells))
                     b[cid] = 0.0
         return A, b
 
@@ -300,8 +376,8 @@ class SymmetryBC(BoundaryCondition):
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
                 for nb in neighbor_cells:
-                    A.add_value(cid, nb, -1.0)
-                A.set_value(cid, cid, len(neighbor_cells))
+                    A = _add_matrix_value(A, cid, nb, -1.0)
+                A = _set_matrix_value(A, cid, cid, len(neighbor_cells))
                 b[cid] = 0.0
         return A, b
 
@@ -311,8 +387,8 @@ class SymmetryBC(BoundaryCondition):
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
                 for nb in neighbor_cells:
-                    A.add_value(cid, nb, -1.0)
-                A.set_value(cid, cid, len(neighbor_cells))
+                    A = _add_matrix_value(A, cid, nb, -1.0)
+                A = _set_matrix_value(A, cid, cid, len(neighbor_cells))
                 b[cid] = 0.0
         return A, b
 
@@ -354,8 +430,8 @@ class PeriodicBC(BoundaryCondition):
         for fid1, fid2 in self.face_mapping.items():
             c1 = mesh.owner[fid1]
             c2 = mesh.owner[fid2]
-            A.set_value(c1, c1, 1.0)
-            A.set_value(c1, c2, -1.0)
+            A = _set_matrix_value(A, c1, c1, 1.0)
+            A = _set_matrix_value(A, c1, c2, -1.0)
             b[c1] = 0.0
         return A, b
 
@@ -366,15 +442,23 @@ class PeriodicBC(BoundaryCondition):
         for fid1, fid2 in self.face_mapping.items():
             c1 = mesh.owner[fid1]
             c2 = mesh.owner[fid2]
-            A.set_value(c1, c1, 1.0)
-            A.set_value(c1, c2, -1.0)
+            A = _set_matrix_value(A, c1, c1, 1.0)
+            A = _set_matrix_value(A, c1, c2, -1.0)
             b[c1] = 0.0
         return A, b
 
 class UDFBoundaryCondition(BoundaryCondition):
-    def __init__(self, boundary_name, bc_type, udf):
+    def __init__(self, boundary_name, bc_type='generic', udf=None, func=None):
         super().__init__(boundary_name, bc_type=bc_type)
-        self.udf = udf
+        if func is not None:
+            class _FuncWrapper:
+                def __init__(self, f):
+                    self.f = f
+                def evaluate(self, positions, time=0.0):
+                    return self.f(positions, time)
+            self.udf = _FuncWrapper(func)
+        else:
+            self.udf = udf
 
     def apply_velocity(self, A, b, direction, flow, mesh):
         cells = self.get_boundary_cells(mesh)
@@ -382,7 +466,7 @@ class UDFBoundaryCondition(BoundaryCondition):
         values = self.udf.evaluate(centers, mesh.solver.time if hasattr(mesh, 'solver') else 0.0)
         for i, cid in enumerate(cells):
             val = values[i, direction] if values.ndim > 1 else values[i]
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * val
         return A, b
 
@@ -392,7 +476,7 @@ class UDFBoundaryCondition(BoundaryCondition):
         values = self.udf.evaluate(centers, mesh.solver.time if hasattr(mesh, 'solver') else 0.0)
         for i, cid in enumerate(cells):
             val = values[i] if values.ndim > 0 else values
-            A.set_value(cid, cid, 1e15)
+            A = _set_matrix_value(A, cid, cid, 1e15)
             b[cid] = 1e15 * val
         return A, b
 

@@ -8,9 +8,11 @@ class FlowField:
         self.ndim = ndim
         self.n_cells = n_cells
         self.u = np.zeros((n_cells, ndim), dtype=np.float64)
+        self.u_prev = np.zeros((n_cells, ndim), dtype=np.float64)
         self.v = np.zeros(n_cells, dtype=np.float64)
         self.p = np.zeros(n_cells, dtype=np.float64)
         self.p_prev = np.zeros(n_cells, dtype=np.float64)
+        self.ap = np.ones(n_cells, dtype=np.float64)
         self.phi = np.zeros(n_cells, dtype=np.float64)
         self.u_star = np.zeros((n_cells, ndim), dtype=np.float64)
         self.grad_u = np.zeros((n_cells, ndim, ndim), dtype=np.float64)
@@ -26,8 +28,10 @@ class FlowField:
 
     def initialize(self, u0=0.0, p0=0.0, v0=None):
         self.u[:] = u0
+        self.u_prev[:] = u0
         self.p[:] = p0
         self.p_prev[:] = p0
+        self.ap[:] = 1.0
         if v0 is not None and self.ndim >= 2:
             self.v[:] = v0
 
@@ -58,11 +62,17 @@ class FlowSolver:
         self.alpha_p = self.underrelaxation['p']
         self.alpha_u = self.underrelaxation['u']
         self.residuals = {}
+        self.residual_history = []
         self.p_matrix = None
         self.p_rhs = None
         self.max_iterations = 1000
         self.convergence_tolerance = 1e-6
         self._precompute_geometric_quantities()
+        
+    @property
+    def current_step(self):
+        """Return the current step number (alias for timestep)."""
+        return self.timestep
 
     def _precompute_geometric_quantities(self):
         m = self.mesh
@@ -213,6 +223,7 @@ class FlowSolver:
             if k not in self.residuals:
                 self.residuals[k] = []
             self.residuals[k].append(v)
+        self.residual_history.append(res)
         return res
 
     def solve(self, n_steps=100, transient=False):

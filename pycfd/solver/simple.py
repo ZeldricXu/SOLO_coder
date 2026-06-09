@@ -21,7 +21,7 @@ class SimpleSolver(FlowSolver):
         for direction in range(self.ndim):
             A, b, ap = self.assemble_momentum_matrix(direction)
             if self.bc_manager:
-                A, b = self.bc_manager.apply_velocity_bc(A, b, direction, self.flow)
+                A, b = self.bc_manager.apply_velocity_bc(A, b, direction, self.flow, self.mesh)
             u_star = A.solve(b, method='spsolve')
             ur = self.underrelaxation['u']
             self.flow.u_star[:, direction] = self.flow.u_prev[:, direction] + ur * (u_star - self.flow.u_prev[:, direction])
@@ -34,7 +34,7 @@ class SimpleSolver(FlowSolver):
         for _ in range(self.pressure_correction_iterations):
             A_p, b_p = self._assemble_pressure_correction_matrix()
             if self.bc_manager:
-                A_p, b_p = self.bc_manager.apply_pressure_bc(A_p, b_p, self.flow)
+                A_p, b_p = self.bc_manager.apply_pressure_bc(A_p, b_p, self.flow, self.mesh)
             from scipy.sparse.linalg import spsolve
             try:
                 p_prime = spsolve(A_p, b_p)

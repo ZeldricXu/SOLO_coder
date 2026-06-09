@@ -150,6 +150,67 @@ class Mesh:
                 neighbors.append(self.owner[fid])
         return np.array(neighbors, dtype=np.int64)
 
+    def check_quality(self, **kwargs):
+        """
+        Perform comprehensive mesh quality checking.
+        
+        Parameters:
+        -----------
+        **kwargs : dict
+            Additional arguments passed to check_mesh_quality()
+        
+        Returns:
+        --------
+        report : MeshQualityReport
+            Complete quality report
+        """
+        from .quality import check_mesh_quality
+        return check_mesh_quality(self, **kwargs)
+
+    def validate(self):
+        """
+        Validate mesh for computation (critical checks only).
+        
+        Returns:
+        --------
+        is_valid : bool
+            Whether the mesh is valid for computation
+        message : str
+            Error message if invalid
+        """
+        from .quality import validate_mesh
+        return validate_mesh(self)
+
+    def compute_jacobian(self, cell_id):
+        """
+        Compute the Jacobian determinant for a cell.
+        
+        For structured/quad cells, this computes the transformation
+        Jacobian from physical to reference coordinates.
+        
+        Parameters:
+        -----------
+        cell_id : int
+            Cell index
+        
+        Returns:
+        --------
+        detJ : float
+            Jacobian determinant
+        """
+        cell = self.cells[cell_id]
+        points = self.points[cell]
+        
+        if len(cell) == 4 and self.ndim == 2:
+            p0, p1, p2, p3 = points
+            dx_dxi = 0.25 * (p1[0] + p2[0] - p0[0] - p3[0])
+            dy_dxi = 0.25 * (p1[1] + p2[1] - p0[1] - p3[1])
+            dx_deta = 0.25 * (p2[0] + p3[0] - p0[0] - p1[0])
+            dy_deta = 0.25 * (p2[1] + p3[1] - p0[1] - p1[1])
+            return dx_dxi * dy_deta - dy_dxi * dx_deta
+        else:
+            return self.cell_volumes[cell_id]
+
 @njit
 def _compute_face_geometry_jit(points, faces, centers, normals, areas, ndim):
     for fid in prange(len(faces)):

@@ -5,6 +5,12 @@ from .adaptive import adaptive_refine, adaptive_coarsen, refine_by_indicator, gr
 from .boundary_layer import generate_boundary_layer, extrude_boundary_layer
 from .gmsh_io import read_gmsh, write_gmsh, import_gmsh_mesh
 from .cgns_io import read_cgns, write_cgns
+from .quality import (
+    check_mesh_quality, validate_mesh,
+    check_volumes, check_overlapping_cells,
+    check_nonorthogonality, check_aspect_ratio, check_skewness,
+    MeshQualityReport, QualityIssue, MeshQualityIssue
+)
 
 __all__ = [
     'Mesh', 'StructuredMesh', 'UnstructuredMesh',
@@ -14,5 +20,9 @@ __all__ = [
     'gradient_indicator', 'curvature_indicator',
     'generate_boundary_layer', 'extrude_boundary_layer',
     'read_gmsh', 'write_gmsh', 'import_gmsh_mesh',
-    'read_cgns', 'write_cgns'
+    'read_cgns', 'write_cgns',
+    'check_mesh_quality', 'validate_mesh',
+    'check_volumes', 'check_overlapping_cells',
+    'check_nonorthogonality', 'check_aspect_ratio', 'check_skewness',
+    'MeshQualityReport', 'QualityIssue', 'MeshQualityIssue',
 ]
