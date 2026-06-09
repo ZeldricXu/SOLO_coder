@@ -3,6 +3,12 @@ import type { FloorPlan, Wall, Opening, Room } from '@/types/floorplan';
 import type { Point2D } from '@/types/geometry';
 import { generateId, detectRoomsFromWalls } from '../geometry';
 import { createDefaultFloorPlan } from '@/store/useFloorPlanStore';
+import {
+  detectAndDecode,
+  decodeWithEncoding,
+  EncodingDetectionError,
+  type EncodingName,
+} from './encodingDetector';
 
 export const EXPORT_FORMAT_VERSION = '1.0.0';
 
@@ -71,18 +77,62 @@ export const importFromJSON = (jsonStr: string): FloorPlan => {
   }
 };
 
-export const importFromFile = async (file: File | { name: string; text: () => Promise<string> }): Promise<FloorPlan> => {
-  const text = await file.text();
+export interface ImportOptions {
+  encoding?: EncodingName;
+  onEncodingDetected?: (result: Awaited<ReturnType<typeof detectAndDecode>>) => void;
+  onEncodingError?: (error: EncodingDetectionError) => EncodingName | null;
+}
 
+export const importFromFile = async (
+  file: File | { name: string; text: () => Promise<string>; arrayBuffer?: () => Promise<ArrayBuffer> },
+  options: ImportOptions = {}
+): Promise<FloorPlan> => {
   if (file.name.endsWith('.json')) {
+    const text = await file.text();
     return importFromJSON(text);
   }
 
   if (file.name.endsWith('.dxf')) {
+    if ('arrayBuffer' in file && typeof file.arrayBuffer === 'function') {
+      const buffer = await file.arrayBuffer();
+      return importFromDXFBuffer(buffer, options);
+    }
+    const text = await file.text();
     return parseDXF(text);
   }
 
   throw new Error('不支持的文件格式，请上传 .json 或 .dxf 文件');
+};
+
+export const importFromDXFBuffer = async (
+  buffer: ArrayBuffer,
+  options: ImportOptions = {}
+): Promise<FloorPlan> => {
+  const detectionResult = await detectAndDecode(buffer, options.encoding);
+
+  if (options.onEncodingDetected) {
+    options.onEncodingDetected(detectionResult);
+  }
+
+  let text: string;
+
+  if (detectionResult.confidence < 0.3 && options.onEncodingError) {
+    const error = new EncodingDetectionError(
+      `无法自动检测编码，已尝试 ${detectionResult.tried.join(', ')}`,
+      detectionResult.tried,
+      buffer
+    );
+    const manualEncoding = options.onEncodingError(error);
+    if (manualEncoding) {
+      text = decodeWithEncoding(buffer, manualEncoding);
+    } else {
+      throw error;
+    }
+  } else {
+    text = decodeWithEncoding(buffer, detectionResult.encoding);
+  }
+
+  return parseDXF(text);
 };
 
 export const parseDXF = async (dxfContent: string): Promise<FloorPlan> => {
