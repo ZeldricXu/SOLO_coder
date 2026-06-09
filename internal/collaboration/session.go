@@ -165,9 +165,9 @@ func (s *CollaborationService) JoinRoom(roomID, userID, username string, conn *w
 	}
 
 	room.mu.Lock()
-	defer room.mu.Unlock()
 
 	if len(room.Users) >= room.maxUsers {
+		room.mu.Unlock()
 		return nil, nil, fmt.Errorf("room is full (max %d users)", room.maxUsers)
 	}
 
@@ -204,6 +204,8 @@ func (s *CollaborationService) JoinRoom(roomID, userID, username string, conn *w
 	}
 	joinMsg.Payload, _ = json.Marshal(user)
 
+	room.mu.Unlock()
+
 	s.broadcast(room, joinMsg, userID)
 
 	return user, room, nil
@@ -219,10 +221,10 @@ func (s *CollaborationService) LeaveRoom(roomID, userID string) {
 	}
 
 	room.mu.Lock()
-	defer room.mu.Unlock()
 
 	user, exists := room.Users[userID]
 	if !exists {
+		room.mu.Unlock()
 		return
 	}
 
@@ -243,9 +245,13 @@ func (s *CollaborationService) LeaveRoom(roomID, userID string) {
 	}
 	leaveMsg.Payload, _ = json.Marshal(map[string]string{"user_id": userID})
 
+	isEmpty := len(room.Users) == 0
+
+	room.mu.Unlock()
+
 	s.broadcast(room, leaveMsg, "")
 
-	if len(room.Users) == 0 {
+	if isEmpty {
 		s.roomsMu.Lock()
 		delete(s.rooms, roomID)
 		s.roomsMu.Unlock()
@@ -295,10 +301,10 @@ func (s *CollaborationService) handleViewSync(room *Room, user *User, msg Messag
 	}
 
 	room.mu.Lock()
-	defer room.mu.Unlock()
 
 	resolution := ConflictResolution(s.cfg.ConflictResolution)
 
+	shouldBroadcast := false
 	if room.State.ViewState == nil || resolution == ConflictLastWriteWins {
 		room.State.ViewState = &viewState
 		room.State.ViewVersion++
@@ -314,7 +320,12 @@ func (s *CollaborationService) handleViewSync(room *Room, user *User, msg Messag
 			Data:      msg.Payload,
 		}
 		room.operations.Add(op)
+		shouldBroadcast = true
+	}
 
+	room.mu.Unlock()
+
+	if shouldBroadcast {
 		s.broadcast(room, msg, user.ID)
 	}
 
@@ -328,7 +339,6 @@ func (s *CollaborationService) handleAnnotation(room *Room, user *User, msg Mess
 	}
 
 	room.mu.Lock()
-	defer room.mu.Unlock()
 
 	resolution := ConflictResolution(s.cfg.ConflictResolution)
 	entityID, _ := annotationData["id"].(string)
@@ -336,6 +346,7 @@ func (s *CollaborationService) handleAnnotation(room *Room, user *User, msg Mess
 	existingOp, hasConflict := room.operations.FindLatest(entityID)
 
 	if hasConflict && resolution == ConflictReject {
+		room.mu.Unlock()
 		return fmt.Errorf("conflict detected, annotation update rejected")
 	}
 
@@ -361,6 +372,8 @@ func (s *CollaborationService) handleAnnotation(room *Room, user *User, msg Mess
 		Previous:  existingOp.Data,
 	}
 	room.operations.Add(op)
+
+	room.mu.Unlock()
 
 	s.broadcast(room, msg, user.ID)
 

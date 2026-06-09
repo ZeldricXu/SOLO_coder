@@ -357,7 +357,6 @@ func (b *LODBuilder) GetTilesForView(frustum *math3d.Frustum, lodBias float64, m
 			continue
 		}
 
-		distance := 1.0
 		if tile.LOD < int(float64(len(index.Levels)-1)*lodBias)+1 {
 			visibleTiles = append(visibleTiles, tile)
 		}

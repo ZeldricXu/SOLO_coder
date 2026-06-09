@@ -1,7 +1,6 @@
 package octree
 
 import (
-	"math"
 	"pointcloud-platform/config"
 	"pointcloud-platform/internal/parser"
 	"pointcloud-platform/pkg/math3d"
@@ -243,7 +242,7 @@ func (o *Octree) GetAllLeafNodes() []*OctreeNode {
 }
 
 func (o *Octree) GetNodeAtPosition(lod int, x, y, z int64) *OctreeNode {
-	levelSize := float64(1 << uint(lod))
+	levelSize := float64(int64(1) << uint(lod))
 	nodeSize := o.GlobalBounds.Size().Div(levelSize)
 
 	min := o.GlobalBounds.Min

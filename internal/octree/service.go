@@ -115,11 +115,11 @@ func (s *OctreeService) QueryTiles(datasetID string, frustum *math3d.Frustum, ma
 	s.mu.RUnlock()
 
 	if !exists {
-		builder, err := s.loadBuilder(datasetID)
+		var err error
+		builder, err = s.loadBuilder(datasetID)
 		if err != nil {
 			return nil, fmt.Errorf("dataset not built: %w", err)
 		}
-		builder = builder
 	}
 
 	return builder.GetTilesForView(frustum, 1.0, maxTiles), nil
@@ -157,9 +157,8 @@ func (s *OctreeService) loadBuilder(datasetID string) (*LODBuilder, error) {
 	indexPath := filepath.Join(s.storageCfg.TileDir, datasetID, "index.json")
 
 	var index DatasetTileIndex
-	var err error
 
-	_, err = indexPath, nil
+	_ = indexPath
 
 	octree := NewOctree(s.cfg, index.Bounds)
 

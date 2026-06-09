@@ -27,26 +27,44 @@ func Init(cfg *config.RedisConfig) error {
 }
 
 func Get(key string) (string, error) {
+	if Client == nil {
+		return "", fmt.Errorf("redis client not initialized")
+	}
 	return Client.Get(ctx, key).Result()
 }
 
 func Set(key string, value interface{}, ttl int) error {
+	if Client == nil {
+		return fmt.Errorf("redis client not initialized")
+	}
 	return Client.Set(ctx, key, value, time.Duration(ttl)*time.Second).Err()
 }
 
 func SetBytes(key string, value []byte, ttl int) error {
+	if Client == nil {
+		return fmt.Errorf("redis client not initialized")
+	}
 	return Client.Set(ctx, key, value, time.Duration(ttl)*time.Second).Err()
 }
 
 func GetBytes(key string) ([]byte, error) {
+	if Client == nil {
+		return nil, fmt.Errorf("redis client not initialized")
+	}
 	return Client.Get(ctx, key).Bytes()
 }
 
 func Delete(key string) error {
+	if Client == nil {
+		return fmt.Errorf("redis client not initialized")
+	}
 	return Client.Del(ctx, key).Err()
 }
 
 func Exists(key string) (bool, error) {
+	if Client == nil {
+		return false, fmt.Errorf("redis client not initialized")
+	}
 	result, err := Client.Exists(ctx, key).Result()
 	return result > 0, err
 }
@@ -66,12 +84,18 @@ func HotTileKey(datasetID string) string {
 }
 
 func IncrementTileHit(datasetID string, lod int, x, y, z int64) error {
+	if Client == nil {
+		return fmt.Errorf("redis client not initialized")
+	}
 	key := HotTileKey(datasetID)
 	field := fmt.Sprintf("%d:%d:%d:%d", lod, x, y, z)
 	return Client.ZIncrBy(ctx, key, 1, field).Err()
 }
 
 func GetHotTiles(datasetID string, count int) ([]string, error) {
+	if Client == nil {
+		return nil, fmt.Errorf("redis client not initialized")
+	}
 	key := HotTileKey(datasetID)
 	result, err := Client.ZRevRange(ctx, key, 0, int64(count-1)).Result()
 	return result, err

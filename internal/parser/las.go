@@ -89,7 +89,7 @@ func (p *LASParser) ParseHeader(r io.Reader) (*PointCloudHeader, error) {
 
 	coordSystem := "unknown"
 
-	if pointDataOffset > headerSize {
+	if pointDataOffset > uint32(headerSize) {
 		vlrData := make([]byte, pointDataOffset-uint32(headerSize))
 		if _, err := io.ReadFull(r, vlrData); err == nil {
 			coordSystem = p.detectCoordinateSystem(vlrData)

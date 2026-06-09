@@ -199,3 +199,66 @@ func (m Mat4) MulVec4(v Vec4) Vec4 {
 		m[3]*v.X + m[7]*v.Y + m[11]*v.Z + m[15]*v.W,
 	}
 }
+
+func ExtractFrustum(vp Mat4) *Frustum {
+	var frustum Frustum
+
+	frustum.Planes[0] = Vec4{
+		X: vp[3] - vp[0],
+		Y: vp[7] - vp[4],
+		Z: vp[11] - vp[8],
+		W: vp[15] - vp[12],
+	}
+	frustum.Planes[1] = Vec4{
+		X: vp[3] + vp[0],
+		Y: vp[7] + vp[4],
+		Z: vp[11] + vp[8],
+		W: vp[15] + vp[12],
+	}
+	frustum.Planes[2] = Vec4{
+		X: vp[3] - vp[1],
+		Y: vp[7] - vp[5],
+		Z: vp[11] - vp[9],
+		W: vp[15] - vp[13],
+	}
+	frustum.Planes[3] = Vec4{
+		X: vp[3] + vp[1],
+		Y: vp[7] + vp[5],
+		Z: vp[11] + vp[9],
+		W: vp[15] + vp[13],
+	}
+	frustum.Planes[4] = Vec4{
+		X: vp[3] - vp[2],
+		Y: vp[7] - vp[6],
+		Z: vp[11] - vp[10],
+		W: vp[15] - vp[14],
+	}
+	frustum.Planes[5] = Vec4{
+		X: vp[3] + vp[2],
+		Y: vp[7] + vp[6],
+		Z: vp[11] + vp[10],
+		W: vp[15] + vp[14],
+	}
+
+	for i := 0; i < 6; i++ {
+		length := math.Sqrt(frustum.Planes[i].X*frustum.Planes[i].X +
+			frustum.Planes[i].Y*frustum.Planes[i].Y +
+			frustum.Planes[i].Z*frustum.Planes[i].Z)
+		if length > 0 {
+			frustum.Planes[i].X /= length
+			frustum.Planes[i].Y /= length
+			frustum.Planes[i].Z /= length
+			frustum.Planes[i].W /= length
+		}
+	}
+
+	return &frustum
+}
+
+func LookAt(eye, target, up Vec3) Mat4 {
+	return Mat4LookAt(eye, target, up)
+}
+
+func Perspective(fov, aspect, near, far float64) Mat4 {
+	return Mat4Perspective(fov, aspect, near, far)
+}

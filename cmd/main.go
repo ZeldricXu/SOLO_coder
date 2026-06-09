@@ -22,10 +22,14 @@ import (
 )
 
 func main() {
-	cfg, err := config.Load()
-	if err != nil {
+	configPath := "config/config.yaml"
+	if len(os.Args) > 1 {
+		configPath = os.Args[1]
+	}
+	if err := config.Load(configPath); err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	cfg := config.AppConfig
 
 	if err := ensureDirectories(cfg); err != nil {
 		log.Fatalf("Failed to ensure directories: %v", err)
@@ -41,9 +45,9 @@ func main() {
 	}
 	defer cache.Client.Close()
 
-	parseService := parser.NewParseService(&cfg.Storage)
+	parseService := parser.NewParseService(4)
 	octreeService := octree.NewOctreeService(&cfg.Octree, &cfg.Storage)
-	tileService := tile.NewTileService(&cfg.Storage, &cfg.Octree)
+	tileService := tile.NewTileService(cfg, octreeService)
 	renderService := renderer.NewRenderService()
 	annotationService := annotation.NewAnnotationService()
 	collabService := collaboration.NewCollaborationService(&cfg.Collaboration)
@@ -61,7 +65,7 @@ func main() {
 
 	api := r.Group("/api/v1")
 	{
-		tileHandler := tile.NewHandler(tileService, octreeService)
+		tileHandler := tile.NewHandler(tileService)
 		tileHandler.RegisterRoutes(api)
 
 		renderHandler := renderer.NewHandler(renderService)
@@ -97,7 +101,7 @@ func ensureDirectories(cfg *config.Config) error {
 	dirs := []string{
 		cfg.Storage.UploadDir,
 		cfg.Storage.TileDir,
-		cfg.Storage.CacheDir,
+		cfg.Storage.DataDir,
 	}
 
 	for _, dir := range dirs {

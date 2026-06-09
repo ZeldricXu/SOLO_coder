@@ -81,7 +81,6 @@ func NewAssetService(cfg *config.StorageConfig, parseSvc *parser.ParseService) *
 
 func (s *AssetService) CreateProject(name, description, ownerID string) (*Project, error) {
 	id := uuid.New().String()
-	now := time.Now()
 
 	query := `
 		INSERT INTO projects (id, name, description, owner_id)
@@ -191,7 +190,6 @@ func (s *AssetService) DeleteProject(id string) error {
 
 func (s *AssetService) CreateDataset(projectID, name, description string) (*Dataset, error) {
 	id := uuid.New().String()
-	now := time.Now()
 
 	query := `
 		INSERT INTO datasets (id, project_id, name, description)
@@ -532,7 +530,6 @@ func (s *AssetService) CheckPermission(projectID, userID, permission string) (bo
 
 func (s *AssetService) CreateUser(username, email, password string) (*User, error) {
 	id := uuid.New().String()
-	now := time.Now()
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
