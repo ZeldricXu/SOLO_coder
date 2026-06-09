@@ -1,0 +1,144 @@
+.wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.wrapper.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.input:checked + .radio::after {
+  transform: scale(1);
+  opacity: 1;
+}
+
+.input:focus-visible + .radio {
+  box-shadow: var(--shadow-focus);
+}
+
+.input:disabled + .radio {
+  background-color: var(--color-background-secondary);
+  border-color: var(--color-border);
+}
+
+.input:disabled:checked + .radio::after {
+  background-color: var(--color-primary-disabled);
+}
+
+.radio {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-border-strong);
+  border-radius: var(--radius-full);
+  background-color: var(--color-surface);
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+  position: relative;
+}
+
+.radio:hover {
+  border-color: var(--color-primary);
+}
+
+.radio.error {
+  border-color: var(--color-error);
+}
+
+.radio.error:hover {
+  border-color: var(--color-error-hover);
+}
+
+.input:checked + .radio {
+  border-color: var(--color-primary);
+}
+
+.radio::after {
+  content: '';
+  position: absolute;
+  border-radius: var(--radius-full);
+  background-color: var(--color-primary);
+  transform: scale(0);
+  opacity: 0;
+  transition: all 0.15s ease-in-out;
+}
+
+.sm {
+  width: 16px;
+  height: 16px;
+}
+
+.sm::after {
+  width: 8px;
+  height: 8px;
+}
+
+.md {
+  width: 20px;
+  height: 20px;
+}
+
+.md::after {
+  width: 10px;
+  height: 10px;
+}
+
+.lg {
+  width: 24px;
+  height: 24px;
+}
+
+.lg::after {
+  width: 12px;
+  height: 12px;
+}
+
+.label {
+  color: var(--color-text-primary);
+}
+
+.smLabel {
+  font-size: var(--font-size-sm);
+}
+
+.mdLabel {
+  font-size: var(--font-size-md);
+}
+
+.lgLabel {
+  font-size: var(--font-size-lg);
+}
+
+.group {
+  display: flex;
+  gap: var(--spacing-md);
+}
+
+.groupVertical {
+  flex-direction: column;
+}
+
+.groupLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.errorText {
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+  margin-top: var(--spacing-xs);
+}

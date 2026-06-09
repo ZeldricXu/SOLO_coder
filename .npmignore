@@ -1,0 +1,16 @@
+node_modules
+src
+stories
+tests
+.storybook
+scripts
+.vite
+storybook-static
+coverage
+*.tsbuildinfo
+*.log
+rollup.config.mjs
+vitest.config.ts
+tsconfig.json
+.eslintrc.json
+.prettierrc

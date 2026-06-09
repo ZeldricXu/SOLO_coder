@@ -1,0 +1,137 @@
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: var(--spacing-xs);
+}
+
+.label {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+}
+
+.required {
+  color: var(--color-error);
+  margin-left: var(--spacing-xs);
+}
+
+.inputWrapper {
+  display: flex;
+  align-items: center;
+  background-color: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: all 0.15s ease-in-out;
+  position: relative;
+}
+
+.inputWrapper:hover:not(.disabled) {
+  border-color: var(--color-border-strong);
+}
+
+.inputWrapper:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.inputWrapper.error {
+  border-color: var(--color-error);
+}
+
+.inputWrapper.error:focus-within {
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.5);
+}
+
+.inputWrapper.disabled {
+  background-color: var(--color-background-secondary);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.sm {
+  min-height: 32px;
+}
+
+.md {
+  min-height: 40px;
+}
+
+.lg {
+  min-height: 48px;
+}
+
+.prefix {
+  display: flex;
+  align-items: center;
+  padding-left: var(--spacing-sm);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.suffix {
+  display: flex;
+  align-items: center;
+  padding-right: var(--spacing-sm);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0 var(--spacing-sm);
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: inherit;
+  font-family: inherit;
+}
+
+.inputSm {
+  font-size: var(--font-size-sm);
+}
+
+.inputMd {
+  font-size: var(--font-size-md);
+}
+
+.inputLg {
+  font-size: var(--font-size-lg);
+}
+
+.input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.input:disabled {
+  cursor: not-allowed;
+}
+
+.input[type='number']::-webkit-inner-spin-button,
+.input[type='number']::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+.helperText {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+}
+
+.helperText.error {
+  color: var(--color-error);
+}
+
+.counter {
+  font-size: var(--font-size-xs);
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+}

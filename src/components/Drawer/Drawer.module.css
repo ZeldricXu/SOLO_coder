@@ -1,0 +1,114 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background-color: var(--color-overlay);
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.drawer {
+  position: fixed;
+  z-index: 1001;
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-2xl);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.left {
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 360px;
+  animation: slideInLeft 0.2s ease-out;
+}
+
+.right {
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: 360px;
+  animation: slideInRight 0.2s ease-out;
+}
+
+.top {
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 360px;
+  animation: slideInTop 0.2s ease-out;
+}
+
+.bottom {
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 360px;
+  animation: slideInBottom 0.2s ease-out;
+}
+
+@keyframes slideInLeft {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideInRight {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@keyframes slideInTop {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes slideInBottom {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-md) var(--spacing-lg);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.title {
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.closeBtn {
+  padding: var(--spacing-xs);
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.closeBtn:hover {
+  background-color: var(--color-surface-hover);
+  color: var(--color-text-secondary);
+}
+
+.body {
+  padding: var(--spacing-lg);
+  overflow-y: auto;
+  flex: 1;
+}

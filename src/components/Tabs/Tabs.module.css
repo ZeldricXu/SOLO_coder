@@ -1,0 +1,167 @@
+.wrapper {
+  display: flex;
+  width: 100%;
+}
+
+.vertical {
+  flex-direction: row;
+}
+
+.horizontal {
+  flex-direction: column;
+}
+
+.tabList {
+  display: flex;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tabListTop,
+.tabListBottom {
+  flex-direction: row;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tabListBottom {
+  border-bottom: none;
+  border-top: 1px solid var(--color-border);
+}
+
+.tabListLeft,
+.tabListRight {
+  flex-direction: column;
+  border-right: 1px solid var(--color-border);
+  min-width: 120px;
+}
+
+.tabListRight {
+  border-right: none;
+  border-left: 1px solid var(--color-border);
+}
+
+.tab {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+  white-space: nowrap;
+  position: relative;
+  user-select: none;
+}
+
+.tab:hover:not(.disabled):not(.active) {
+  color: var(--color-text-primary);
+  background-color: var(--color-bg-hover);
+}
+
+.tab:focus {
+  outline: none;
+}
+
+.tab:focus-visible {
+  background-color: var(--color-bg-hover);
+}
+
+.tab.active {
+  color: var(--color-primary);
+}
+
+.tab.disabled {
+  color: var(--color-text-disabled);
+  cursor: not-allowed;
+}
+
+.sm {
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-xs);
+}
+
+.lg {
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-size: var(--font-size-base);
+}
+
+.indicator {
+  position: absolute;
+  background-color: var(--color-primary);
+  transition: all var(--transition-base) cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.indicatorTop,
+.indicatorBottom {
+  height: 2px;
+  bottom: -1px;
+}
+
+.indicatorBottom {
+  bottom: auto;
+  top: -1px;
+}
+
+.indicatorLeft,
+.indicatorRight {
+  width: 2px;
+  right: -1px;
+}
+
+.indicatorRight {
+  right: auto;
+  left: -1px;
+}
+
+.card .tab {
+  border: 1px solid transparent;
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  margin-right: var(--spacing-xs);
+  margin-bottom: -1px;
+}
+
+.card .tab.active {
+  background-color: var(--color-bg-elevated);
+  border-color: var(--color-border);
+  border-bottom-color: var(--color-bg-elevated);
+}
+
+.capsule .tabList {
+  background-color: var(--color-bg-tertiary);
+  padding: 2px;
+  border-radius: var(--radius-lg);
+  border: none;
+  gap: 2px;
+}
+
+.capsule .tab {
+  border-radius: var(--radius-md);
+}
+
+.capsule .tab.active {
+  background-color: var(--color-bg-elevated);
+  box-shadow: var(--shadow-sm);
+}
+
+.tabPanels {
+  flex: 1;
+  padding: var(--spacing-md);
+  min-height: 100px;
+}
+
+.tabPanel {
+  display: none;
+}
+
+.tabPanel.active {
+  display: block;
+}
+
+.card .tabPanels {
+  border: 1px solid var(--color-border);
+  border-radius: 0 var(--radius-md) var(--radius-md) var(--radius-md);
+}

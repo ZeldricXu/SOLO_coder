@@ -1,0 +1,145 @@
+.wrapper {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.wrapper.disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.input:checked + .checkbox {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.input:checked + .checkbox svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.input:indeterminate + .checkbox {
+  background-color: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.input:indeterminate + .checkbox .indeterminate {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.input:focus-visible + .checkbox {
+  box-shadow: var(--shadow-focus);
+}
+
+.input:disabled + .checkbox {
+  background-color: var(--color-background-secondary);
+  border-color: var(--color-border);
+}
+
+.input:disabled:checked + .checkbox {
+  background-color: var(--color-primary-disabled);
+  border-color: var(--color-primary-disabled);
+}
+
+.checkbox {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background-color: var(--color-surface);
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+
+.sm {
+  width: 16px;
+  height: 16px;
+}
+
+.md {
+  width: 20px;
+  height: 20px;
+}
+
+.lg {
+  width: 24px;
+  height: 24px;
+}
+
+.checkbox:hover {
+  border-color: var(--color-primary);
+}
+
+.checkbox.error {
+  border-color: var(--color-error);
+}
+
+.checkbox.error:hover {
+  border-color: var(--color-error-hover);
+}
+
+.checkIcon {
+  color: var(--color-text-inverse);
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.15s ease-in-out;
+}
+
+.indeterminate {
+  position: absolute;
+  width: 50%;
+  height: 2px;
+  background-color: var(--color-text-inverse);
+  border-radius: 1px;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: all 0.15s ease-in-out;
+}
+
+.label {
+  color: var(--color-text-primary);
+  line-height: 1.5;
+}
+
+.smLabel {
+  font-size: var(--font-size-sm);
+  padding-top: 0;
+}
+
+.mdLabel {
+  font-size: var(--font-size-md);
+}
+
+.lgLabel {
+  font-size: var(--font-size-lg);
+}
+
+.errorText {
+  font-size: var(--font-size-sm);
+  color: var(--color-error);
+  margin-top: var(--spacing-xs);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+
+.groupRow {
+  flex-direction: row;
+  flex-wrap: wrap;
+}
