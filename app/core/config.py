@@ -4,7 +4,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=True,
+    )
 
     APP_NAME: str = "DocumentUnderstandingPipeline"
     APP_ENV: str = "development"
@@ -13,6 +18,20 @@ class Settings(BaseSettings):
     APP_PORT: int = 8000
     API_PREFIX: str = "/api/v1"
     SECRET_KEY: str = "change-me-in-production"
+    WORKERS: int = 1
+    CORS_ORIGINS: List[str] = ["*"]
+
+    @property
+    def DEBUG(self) -> bool:
+        return self.APP_DEBUG
+
+    @property
+    def HOST(self) -> str:
+        return self.APP_HOST
+
+    @property
+    def PORT(self) -> int:
+        return self.APP_PORT
 
     DATABASE_URL: str = "postgresql+asyncpg://postgres:password@localhost:5432/doc_understanding"
     DATABASE_SYNC_URL: str = "postgresql+psycopg2://postgres:password@localhost:5432/doc_understanding"
@@ -27,6 +46,8 @@ class Settings(BaseSettings):
     CELERY_TASK_SOFT_TIME_LIMIT: int = 3000
     CELERY_WORKER_PREFETCH_MULTIPLIER: int = 1
     CELERY_MAX_RETRIES: int = 3
+    CELERY_WORKER_CONCURRENCY: int = 2
+    CELERY_WORKER_MAX_TASKS_PER_CHILD: int = 1000
 
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "minioadmin"
@@ -47,16 +68,24 @@ class Settings(BaseSettings):
     ML_DEVICE: str = "cpu"
     ML_BATCH_SIZE: int = 4
     ML_MAX_SEQ_LENGTH: int = 512
+    GPU_MEMORY_FRACTION: float = 0.8
+    GPU_MEMORY_LIMIT_MB: Optional[int] = None
 
     EXTRACTION_MODEL_NAME: str = "qwen-vl-chat"
     EXTRACTION_MODEL_VERSION: str = "1.0.0"
+    EXTRACTION_MODEL_PATH: Optional[str] = None
     EXTRACTION_CONFIDENCE_THRESHOLD: float = 0.7
 
     LAYOUT_MODEL_NAME: str = "layoutlmv3-base"
     LAYOUT_MODEL_VERSION: str = "1.0.0"
+    LAYOUT_MODEL_PATH: Optional[str] = None
 
     TABLE_MODEL_NAME: str = "table-transformer-detection"
     TABLE_MODEL_VERSION: str = "1.0.0"
+    TABLE_MODEL_PATH: Optional[str] = None
+
+    API_KEYS: str = ""
+    REQUIRE_API_KEY: bool = False
 
     RATE_LIMIT_PER_MINUTE: int = 100
     MAX_CONCURRENT_TASKS: int = 4
@@ -90,7 +119,18 @@ class Settings(BaseSettings):
     def ab_test_metrics_list(self) -> List[str]:
         return [m.strip() for m in self.AB_TEST_METRICS.split(",")]
 
+    @property
+    def api_keys_list(self) -> List[str]:
+        if not self.API_KEYS:
+            return []
+        return [k.strip() for k in self.API_KEYS.split(",") if k.strip()]
+
 
 @lru_cache()
 def get_settings() -> Settings:
+    import os
+    env = os.getenv("APP_ENV", "development")
+    env_file = f".env.{env}"
+    if os.path.exists(env_file):
+        return Settings(_env_file=env_file)
     return Settings()

@@ -1,0 +1,110 @@
+FROM nvidia/cuda:12.4-runtime-ubuntu22.04 AS builder
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH \
+    PATH=/usr/local/cuda/bin:$PATH
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-dev \
+    python3.12-distutils \
+    python3-pip \
+    build-essential \
+    libpq-dev \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libcudnn8 \
+    libcudnn8-dev \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+
+RUN pip install --no-cache-dir \
+    "torch==2.4.1+cu124" \
+    "torchvision==0.19.1+cu124" \
+    --index-url https://download.pytorch.org/whl/cu124
+
+COPY requirements.txt .
+RUN grep -v "^torch\|^torchvision" requirements.txt > /tmp/requirements-no-torch.txt \
+    && pip wheel --no-cache-dir --wheel-dir /wheels -r /tmp/requirements-no-torch.txt
+
+FROM nvidia/cuda:12.4-runtime-ubuntu22.04 AS runtime
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    CUDA_HOME=/usr/local/cuda \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/extras/CUPTI/lib64:$LD_LIBRARY_PATH \
+    PATH=/usr/local/cuda/bin:$PATH \
+    APP_ENV=production \
+    APP_DEBUG=false \
+    ML_DEVICE=cuda \
+    OCR_USE_GPU=true
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    software-properties-common \
+    && add-apt-repository ppa:deadsnakes/ppa -y \
+    && apt-get update && apt-get install -y --no-install-recommends \
+    python3.12 \
+    python3.12-distutils \
+    libpq5 \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    libcudnn8 \
+    curl \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.12 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.12 1 \
+    && curl -sS https://bootstrap.pypa.io/get-pip.py | python3.12
+
+RUN pip install --no-cache-dir \
+    "torch==2.4.1+cu124" \
+    "torchvision==0.19.1+cu124" \
+    --index-url https://download.pytorch.org/whl/cu124
+
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache /wheels/* && rm -rf /wheels
+
+COPY . .
+
+RUN mkdir -p /app/logs /app/.model_cache /app/data
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=120s --retries=3 \
+    CMD celery -A app.tasks.celery_app inspect ping -d celery@$HOSTNAME || exit 1
+
+CMD ["celery", "-A", "app.tasks.celery_app", "worker", \
+    "--loglevel=info", \
+    "--concurrency=2", \
+    "--pool=prefork", \
+    "--queues=default,high_priority,batch", \
+    "--max-tasks-per-child=50", \
+    "--time-limit=3600", \
+    "--soft-time-limit=3300"]
