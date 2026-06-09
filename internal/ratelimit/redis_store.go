@@ -13,12 +13,16 @@ const (
 	keyPrefix = "ratelimit:"
 )
 
+type RedisClient interface {
+	redis.Scripter
+}
+
 type RedisStore struct {
-	client *redis.Client
+	client RedisClient
 	mu     sync.Mutex
 }
 
-func NewRedisStore(client *redis.Client) *RedisStore {
+func NewRedisStore(client RedisClient) *RedisStore {
 	return &RedisStore{
 		client: client,
 	}

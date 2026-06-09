@@ -5,13 +5,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/redis/go-redis/v9"
-
 	"DF1-56/internal/models"
 )
 
 type Manager struct {
-	store         *RedisStore
+	store         interface{}
 	keyBuilder    *KeyBuilder
 	tokenBucket   *TokenBucket
 	slidingWindow *SlidingWindow
@@ -20,8 +18,25 @@ type Manager struct {
 	releaseFuncs  map[string][]func()
 }
 
-func NewManager(redisClient *redis.Client) *Manager {
+type Store interface {
+	TokenBucketStore
+	SlidingWindowStore
+	ConcurrencyStore
+}
+
+func NewManager(redisClient RedisClient) *Manager {
 	store := NewRedisStore(redisClient)
+	return &Manager{
+		store:         store,
+		keyBuilder:    NewKeyBuilder(),
+		tokenBucket:   NewTokenBucket(store),
+		slidingWindow: NewSlidingWindow(store),
+		concurrency:   NewConcurrency(store),
+		releaseFuncs:  make(map[string][]func()),
+	}
+}
+
+func NewManagerWithStore(store Store) *Manager {
 	return &Manager{
 		store:         store,
 		keyBuilder:    NewKeyBuilder(),

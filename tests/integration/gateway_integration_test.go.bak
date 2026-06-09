@@ -1,0 +1,588 @@
+package integration
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+	"time"
+
+	"github.com/redis/go-redis/v9"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/modules/redis"
+	"github.com/testcontainers/testcontainers-go/wait"
+
+	"DF1-56/internal/auth"
+	"DF1-56/internal/circuitbreaker"
+	"DF1-56/internal/middleware"
+	"DF1-56/internal/models"
+	"DF1-56/internal/ratelimit"
+	"DF1-56/internal/router"
+	"DF1-56/internal/telemetry"
+	"DF1-56/internal/testutil"
+)
+
+type IntegrationTestSuite struct {
+	ctx              context.Context
+	redisContainer   *redis.RedisContainer
+	postgresContainer *postgres.PostgresContainer
+	redisClient      *redis.Client
+	rateLimitManager *ratelimit.Manager
+	routerManager    *router.RouterManager
+	telemetry        *telemetry.Telemetry
+}
+
+func setupTestSuite(t *testing.T) *IntegrationTestSuite {
+	t.Helper()
+	ctx := context.Background()
+
+	suite := &IntegrationTestSuite{
+		ctx: ctx,
+	}
+
+	t.Log("Starting Redis container...")
+	redisContainer, err := redis.RunContainer(ctx,
+		testcontainers.WithImage("redis:7.2-alpine"),
+		redis.WithSnapshotting(10, 1),
+		redis.WithLogLevel(redis.LogLevelVerbose),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("Ready to accept connections").
+				WithOccurrence(1).
+				WithStartupTimeout(5*time.Second),
+		),
+	)
+	require.NoError(t, err)
+	suite.redisContainer = redisContainer
+
+	redisEndpoint, err := redisContainer.Endpoint(ctx, "")
+	require.NoError(t, err)
+
+	t.Logf("Redis started at: %s", redisEndpoint)
+
+	suite.redisClient = redis.NewClient(&redis.Options{
+		Addr: redisEndpoint,
+	})
+
+	t.Log("Starting PostgreSQL container...")
+	postgresContainer, err := postgres.RunContainer(ctx,
+		testcontainers.WithImage("postgres:14-alpine"),
+		postgres.WithDatabase("apigateway"),
+		postgres.WithUsername("apigateway"),
+		postgres.WithPassword("apigateway"),
+		testcontainers.WithWaitStrategy(
+			wait.ForLog("database system is ready to accept connections").
+				WithOccurrence(2).
+				WithStartupTimeout(10*time.Second),
+		),
+	)
+	require.NoError(t, err)
+	suite.postgresContainer = postgresContainer
+
+	postgresEndpoint, err := postgresContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+	t.Logf("PostgreSQL started at: %s", postgresEndpoint)
+
+	suite.rateLimitManager = ratelimit.NewManager(suite.redisClient)
+	suite.routerManager = router.NewRouterManager()
+
+	telemetryConfig := telemetry.Config{
+		ServiceName:    "test-gateway",
+		ServiceVersion: "1.0.0",
+		Enabled:        true,
+		MetricsEnabled: false,
+		TracingEnabled: false,
+	}
+	suite.telemetry = telemetry.NewTelemetry(telemetryConfig)
+
+	t.Cleanup(func() {
+		t.Log("Cleaning up test containers...")
+		if err := suite.redisContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate Redis: %v", err)
+		}
+		if err := suite.postgresContainer.Terminate(ctx); err != nil {
+			t.Logf("Failed to terminate PostgreSQL: %v", err)
+		}
+		if suite.redisClient != nil {
+			suite.redisClient.Close()
+		}
+		if suite.telemetry != nil {
+			suite.telemetry.Shutdown()
+		}
+	})
+
+	return suite
+}
+
+func TestGateway_Integration_SuccessPath(t *testing.T) {
+	suite := setupTestSuite(t)
+	routeFactory := testutil.NewRouteFactory()
+	rlFactory := testutil.NewRateLimitPolicyFactory()
+	authFactory := testutil.NewAuthPolicyFactory()
+	cbFactory := testutil.NewCircuitBreakerPolicyFactory()
+
+	t.Run("full request flow - success", func(t *testing.T) {
+		mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"status":  "success",
+				"message": "hello from upstream",
+			})
+		}))
+		defer mockUpstream.Close()
+
+		route := routeFactory(
+			testutil.WithRouteID("integration-route-1"),
+			testutil.WithRoutePath("/api/v1/integration"),
+			testutil.WithUpstreamURL(mockUpstream.URL),
+			testutil.WithMatchType(models.RouteMatchTypePrefix),
+			testutil.WithRateLimitPolicy("rl-1"),
+			testutil.WithAuthPolicy("auth-1"),
+			testutil.WithCircuitBreaker("cb-1"),
+		)
+		err := suite.routerManager.AddRoute(route)
+		require.NoError(t, err)
+
+		rateLimitPolicy := rlFactory(
+			testutil.WithRateLimitID("rl-1"),
+			testutil.WithRateLimitAlgorithm(models.AlgorithmTokenBucket),
+			testutil.WithTokenBucketRule(100, 50, time.Minute),
+		)
+
+		authPolicy := authFactory(
+			testutil.WithAuthID("auth-1"),
+			testutil.WithJWTStrategy("integration-secret", "HS256"),
+		)
+
+		circuitBreakerPolicy := cbFactory(
+			testutil.WithCBID("cb-1"),
+			testutil.WithErrorThreshold(0.5),
+			testutil.WithRequestVolume(10),
+			testutil.WithSleepWindow(30*time.Second),
+		)
+
+		jwtConfig := authPolicy.Strategies[0].Config.JWTConfig
+		jwtMiddleware, err := auth.NewJWTMiddleware(jwtConfig, false, 1)
+		require.NoError(t, err)
+
+		rateLimitPolicyID := "rl-1"
+		rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(
+			suite.rateLimitManager,
+			map[string]*models.RateLimitPolicy{rateLimitPolicyID: rateLimitPolicy},
+		)
+
+		circuitBreaker := circuitbreaker.NewCircuitBreaker(circuitBreakerPolicy)
+		circuitBreakerMiddleware := circuitbreaker.NewCircuitBreakerMiddleware(
+			map[string]*circuitbreaker.CircuitBreaker{"cb-1": circuitBreaker},
+		)
+
+		forwarder := router.NewForwarder(nil)
+		forwarderMiddleware := router.NewForwarderMiddleware(forwarder)
+
+		chainBuilder := middleware.NewChainBuilder()
+		chainBuilder.Add(0, telemetry.NewTracingMiddleware(suite.telemetry))
+		chainBuilder.Add(1, rateLimitMiddleware)
+		chainBuilder.Add(2, jwtMiddleware)
+		chainBuilder.Add(3, circuitBreakerMiddleware)
+		chainBuilder.Add(4, forwarderMiddleware)
+
+		token := testutil.GenerateJWT(
+			"integration-secret",
+			"HS256",
+			"test-issuer",
+			"user-123",
+			time.Hour,
+		)
+
+		ctx, recorder := testutil.NewTestGatewayContext("GET", "/api/v1/integration")
+		ctx.Request.Header.Set("Authorization", "Bearer "+token)
+
+		matchedRoute, pathParams := suite.routerManager.MatchRoute(ctx.Request.Method, ctx.Request.URL.Path)
+		require.NotNil(t, matchedRoute, "route should match")
+		ctx.Route = matchedRoute
+		ctx.PathParams = pathParams
+
+		chain := chainBuilder.Build("integration-route-1")
+		require.NotNil(t, chain)
+
+		finalHandler := chain.Then(func(ctx *models.GatewayContext) error {
+			return nil
+		})
+
+		err = finalHandler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, recorder.Code)
+
+		var responseBody map[string]interface{}
+		err = json.Unmarshal(recorder.Body.Bytes(), &responseBody)
+		require.NoError(t, err)
+		assert.Equal(t, "success", responseBody["status"])
+		assert.Equal(t, "hello from upstream", responseBody["message"])
+
+		metrics := suite.telemetry.GetMetrics()
+		assert.NotNil(t, metrics)
+		assert.Greater(t, metrics.RequestTotal, int64(0))
+	})
+
+	t.Run("rate limit integration - rejects after threshold", func(t *testing.T) {
+		mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		}))
+		defer mockUpstream.Close()
+
+		limit := int64(5)
+		rlPolicy := rlFactory(
+			testutil.WithRateLimitID("rl-limited"),
+			testutil.WithRateLimitAlgorithm(models.AlgorithmTokenBucket),
+			testutil.WithTokenBucketRule(limit, limit, 10*time.Second),
+		)
+
+		rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(
+			suite.rateLimitManager,
+			map[string]*models.RateLimitPolicy{"rl-limited": rlPolicy},
+		)
+
+		chainBuilder := middleware.NewChainBuilder()
+		chainBuilder.Add(0, rateLimitMiddleware)
+
+		route := routeFactory(
+			testutil.WithRouteID("rate-limit-route"),
+			testutil.WithRoutePath("/api/v1/ratelimit"),
+			testutil.WithUpstreamURL(mockUpstream.URL),
+			testutil.WithRateLimitPolicy("rl-limited"),
+		)
+		err := suite.routerManager.AddRoute(route)
+		require.NoError(t, err)
+
+		allowedCount := 0
+		rejectedCount := 0
+
+		for i := 0; i < int(limit*2); i++ {
+			ctx, _ := testutil.NewTestGatewayContext("GET", "/api/v1/ratelimit")
+			ctx.Route = route
+
+			chain := chainBuilder.Build("rate-limit-route")
+			handler := chain.Then(func(ctx *models.GatewayContext) error {
+				return nil
+			})
+
+			err := handler(ctx)
+			if err == nil {
+				allowedCount++
+			} else {
+				rejectedCount++
+			}
+		}
+
+		assert.Equal(t, int(limit), allowedCount, "should allow exactly limit requests")
+		assert.Equal(t, int(limit), rejectedCount, "should reject requests over limit")
+	})
+
+	t.Run("circuit breaker integration - trips after failures", func(t *testing.T) {
+		failCount := 0
+		mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			failCount++
+			if failCount <= 10 {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+		}))
+		defer mockUpstream.Close()
+
+		cbPolicy := cbFactory(
+			testutil.WithCBID("cb-integration"),
+			testutil.WithErrorThreshold(0.5),
+			testutil.WithRequestVolume(5),
+			testutil.WithSleepWindow(5*time.Second),
+			testutil.WithFallbackResponse(503, `{"error": "circuit breaker open"}`),
+		)
+
+		cb := circuitbreaker.NewCircuitBreaker(cbPolicy)
+		cbMiddleware := circuitbreaker.NewCircuitBreakerMiddleware(
+			map[string]*circuitbreaker.CircuitBreaker{"cb-integration": cb},
+		)
+
+		chainBuilder := middleware.NewChainBuilder()
+		chainBuilder.Add(0, cbMiddleware)
+
+		for i := 0; i < 15; i++ {
+			ctx, recorder := testutil.NewTestGatewayContext("GET", "/api/v1/circuit")
+			ctx.Route = &models.Route{
+				ID:             "cb-route",
+				CircuitBreaker: "cb-integration",
+				UpstreamURL:    mockUpstream.URL,
+			}
+
+			if i < 10 {
+				cb.OnFailure(fmt.Errorf("upstream error"))
+			}
+
+			chain := chainBuilder.Build("cb-route")
+			handler := chain.Then(func(ctx *models.GatewayContext) error {
+				return nil
+			})
+
+			err := handler(ctx)
+			if err != nil {
+				t.Logf("Request %d: circuit open, status %d", i, recorder.Code)
+			}
+		}
+
+		assert.Equal(t, models.StateOpen, cb.State(), "circuit should be open after failures")
+
+		ctx, recorder := testutil.NewTestGatewayContext("GET", "/api/v1/circuit")
+		ctx.Route = &models.Route{
+			ID:             "cb-route",
+			CircuitBreaker: "cb-integration",
+			UpstreamURL:    mockUpstream.URL,
+		}
+
+		chain := chainBuilder.Build("cb-route")
+		handler := chain.Then(func(ctx *models.GatewayContext) error {
+			return nil
+		})
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+		assert.Contains(t, recorder.Body.String(), "circuit breaker open")
+	})
+}
+
+func TestGateway_Integration_FailurePath(t *testing.T) {
+	suite := setupTestSuite(t)
+	routeFactory := testutil.NewRouteFactory()
+	rlFactory := testutil.NewRateLimitPolicyFactory()
+	cbFactory := testutil.NewCircuitBreakerPolicyFactory()
+
+	t.Run("expired JWT is rejected", func(t *testing.T) {
+		authPolicy := testutil.NewAuthPolicyFactory()(
+			testutil.WithJWTStrategy("auth-secret", "HS256"),
+		)
+		jwtConfig := authPolicy.Strategies[0].Config.JWTConfig
+		jwtMiddleware, err := auth.NewJWTMiddleware(jwtConfig, false, 1)
+		require.NoError(t, err)
+
+		expiredToken := testutil.GenerateExpiredJWT(
+			"auth-secret",
+			"HS256",
+			"test-issuer",
+			"user-123",
+		)
+
+		ctx, _ := testutil.NewTestGatewayContext("GET", "/api/v1/protected")
+		ctx.Request.Header.Set("Authorization", "Bearer "+expiredToken)
+
+		handlerCalled := false
+		next := func(ctx *models.GatewayContext) error {
+			handlerCalled = true
+			return nil
+		}
+
+		err = jwtMiddleware.Handle(ctx, next)
+		require.Error(t, err)
+		assert.False(t, handlerCalled)
+		assert.Contains(t, err.Error(), "expired")
+	})
+
+	t.Run("continuous 5xx triggers circuit breaker", func(t *testing.T) {
+		mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_ = json.NewEncoder(w).Encode(map[string]string{"error": "internal server error"})
+		}))
+		defer mockUpstream.Close()
+
+		cbPolicy := cbFactory(
+			testutil.WithCBID("cb-continuous-fail"),
+			testutil.WithErrorThreshold(0.3),
+			testutil.WithRequestVolume(10),
+			testutil.WithSleepWindow(10*time.Second),
+			testutil.WithFallbackResponse(503, `{"error": "service temporarily unavailable"}`),
+		)
+
+		cb := circuitbreaker.NewCircuitBreaker(cbPolicy)
+		cbMiddleware := circuitbreaker.NewCircuitBreakerMiddleware(
+			map[string]*circuitbreaker.CircuitBreaker{"cb-continuous-fail": cb},
+		)
+
+		chainBuilder := middleware.NewChainBuilder()
+		chainBuilder.Add(0, cbMiddleware)
+
+		for i := 0; i < 20; i++ {
+			cb.OnFailure(fmt.Errorf("upstream 5xx error"))
+		}
+
+		assert.Equal(t, models.StateOpen, cb.State())
+
+		ctx, recorder := testutil.NewTestGatewayContext("GET", "/api/v1/failing")
+		ctx.Route = &models.Route{
+			ID:             "failing-route",
+			CircuitBreaker: "cb-continuous-fail",
+		}
+
+		chain := chainBuilder.Build("failing-route")
+		handler := chain.Then(func(ctx *models.GatewayContext) error {
+			return nil
+		})
+
+		err := handler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusServiceUnavailable, recorder.Code)
+		assert.Contains(t, recorder.Body.String(), "temporarily unavailable")
+	})
+
+	t.Run("half-open state recovery", func(t *testing.T) {
+		cbPolicy := cbFactory(
+			testutil.WithCBID("cb-recovery"),
+			testutil.WithErrorThreshold(0.5),
+			testutil.WithRequestVolume(5),
+			testutil.WithSleepWindow(100*time.Millisecond),
+			testutil.WithHalfOpenRequests(3),
+			testutil.WithSuccessThreshold(2),
+		)
+
+		cb := circuitbreaker.NewCircuitBreaker(cbPolicy)
+
+		for i := 0; i < 10; i++ {
+			cb.OnFailure(fmt.Errorf("failure"))
+		}
+		assert.Equal(t, models.StateOpen, cb.State())
+
+		time.Sleep(150 * time.Millisecond)
+
+		allowed1 := cb.Allow()
+		assert.True(t, allowed1, "should allow first request in half-open")
+		cb.OnSuccess()
+
+		allowed2 := cb.Allow()
+		assert.True(t, allowed2, "should allow second request in half-open")
+		cb.OnSuccess()
+
+		assert.Equal(t, models.StateClosed, cb.State(), "circuit should close after success threshold")
+
+		allowed3 := cb.Allow()
+		assert.True(t, allowed3, "should allow all requests after closing")
+	})
+}
+
+func TestGateway_Integration_FullChain(t *testing.T) {
+	suite := setupTestSuite(t)
+	routeFactory := testutil.NewRouteFactory()
+	rlFactory := testutil.NewRateLimitPolicyFactory()
+	authFactory := testutil.NewAuthPolicyFactory()
+	cbFactory := testutil.NewCircuitBreakerPolicyFactory()
+
+	t.Run("complete middleware chain with tracing", func(t *testing.T) {
+		mockUpstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"user_id": "user-123",
+				"email":   "user@example.com",
+			})
+		}))
+		defer mockUpstream.Close()
+
+		route := routeFactory(
+			testutil.WithRouteID("full-chain-route"),
+			testutil.WithRoutePath("/api/v1/fullchain/:id"),
+			testutil.WithUpstreamURL(mockUpstream.URL),
+			testutil.WithRateLimitPolicy("rl-full"),
+			testutil.WithAuthPolicy("auth-full"),
+			testutil.WithCircuitBreaker("cb-full"),
+		)
+		err := suite.routerManager.AddRoute(route)
+		require.NoError(t, err)
+
+		rlPolicy := rlFactory(
+			testutil.WithRateLimitID("rl-full"),
+			testutil.WithTokenBucketRule(1000, 500, time.Minute),
+		)
+
+		authPolicy := authFactory(
+			testutil.WithAuthID("auth-full"),
+			testutil.WithJWTStrategy("fullchain-secret", "HS256"),
+		)
+
+		cbPolicy := cbFactory(
+			testutil.WithCBID("cb-full"),
+			testutil.WithErrorThreshold(0.5),
+			testutil.WithRequestVolume(100),
+		)
+
+		jwtConfig := authPolicy.Strategies[0].Config.JWTConfig
+		jwtMiddleware, err := auth.NewJWTMiddleware(jwtConfig, false, 2)
+		require.NoError(t, err)
+
+		rateLimitMiddleware := ratelimit.NewRateLimitMiddleware(
+			suite.rateLimitManager,
+			map[string]*models.RateLimitPolicy{"rl-full": rlPolicy},
+		)
+
+		cb := circuitbreaker.NewCircuitBreaker(cbPolicy)
+		cbMiddleware := circuitbreaker.NewCircuitBreakerMiddleware(
+			map[string]*circuitbreaker.CircuitBreaker{"cb-full": cb},
+		)
+
+		forwarder := router.NewForwarder(nil)
+		forwarderMiddleware := router.NewForwarderMiddleware(forwarder)
+
+		chainBuilder := middleware.NewChainBuilder()
+		chainBuilder.Add(0, telemetry.NewTracingMiddleware(suite.telemetry))
+		chainBuilder.Add(1, rateLimitMiddleware)
+		chainBuilder.Add(2, jwtMiddleware)
+		chainBuilder.Add(3, cbMiddleware)
+		chainBuilder.Add(4, forwarderMiddleware)
+
+		token := testutil.GenerateJWT(
+			"fullchain-secret",
+			"HS256",
+			"test-issuer",
+			"user-789",
+			time.Hour,
+		)
+
+		ctx, recorder := testutil.NewTestGatewayContext("GET", "/api/v1/fullchain/12345")
+		ctx.Request.Header.Set("Authorization", "Bearer "+token)
+
+		matchedRoute, pathParams := suite.routerManager.MatchRoute("GET", "/api/v1/fullchain/12345")
+		require.NotNil(t, matchedRoute)
+		assert.Equal(t, "12345", pathParams["id"])
+
+		ctx.Route = matchedRoute
+		ctx.PathParams = pathParams
+
+		chain := chainBuilder.Build("full-chain-route")
+		require.NotNil(t, chain)
+
+		finalHandler := chain.Then(func(ctx *models.GatewayContext) error {
+			return nil
+		})
+
+		err = finalHandler(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, http.StatusOK, recorder.Code)
+
+		var response map[string]interface{}
+		err = json.Unmarshal(recorder.Body.Bytes(), &response)
+		require.NoError(t, err)
+		assert.Equal(t, "user-123", response["user_id"])
+
+		assert.Equal(t, "user-789", ctx.UserID)
+
+		metrics := suite.telemetry.GetMetrics()
+		assert.Greater(t, metrics.RequestTotal, int64(0))
+		assert.Greater(t, metrics.RequestDurationSum, int64(0))
+
+		t.Logf("Request total: %d, Duration sum: %dms",
+			metrics.RequestTotal, metrics.RequestDurationSum)
+	})
+}

@@ -6,11 +6,15 @@ import (
 	"time"
 )
 
-type Concurrency struct {
-	store *RedisStore
+type ConcurrencyStore interface {
+	ConcurrencyAcquire(ctx context.Context, key string, maxConcurrent int64, requestID string, ttl time.Duration) (*ConcurrencyAcquireResult, error)
 }
 
-func NewConcurrency(store *RedisStore) *Concurrency {
+type Concurrency struct {
+	store ConcurrencyStore
+}
+
+func NewConcurrency(store ConcurrencyStore) *Concurrency {
 	return &Concurrency{
 		store: store,
 	}

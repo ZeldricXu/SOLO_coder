@@ -115,21 +115,18 @@ func (t *TrieRouter) matchNode(node *trieNode, parts []string, index int, params
 		if node.route != nil {
 			return node.route, params
 		}
+		if node.wildcard != nil && node.wildcard.route != nil {
+			return node.wildcard.route, params
+		}
 		return nil, nil
 	}
 
 	part := parts[index]
-	if part == "" && index == len(parts)-1 {
-		if node.route != nil {
+	if part == "" {
+		if index == 0 && index == len(parts)-1 && node.route != nil {
 			return node.route, params
 		}
-	}
-
-	if node.wildcard != nil {
-		paramsCopy := copyParams(params)
-		if route, matchedParams := t.matchNode(node.wildcard, parts, index+1, paramsCopy); route != nil {
-			return route, matchedParams
-		}
+		return nil, nil
 	}
 
 	if child, exists := node.children[part]; exists {
@@ -147,15 +144,32 @@ func (t *TrieRouter) matchNode(node *trieNode, parts []string, index int, params
 		}
 	}
 
+	if node.wildcard != nil && node.wildcard.route != nil {
+		return node.wildcard.route, params
+	}
+
 	return nil, nil
 }
 
 func splitPath(path string) []string {
+	if path == "/" {
+		return []string{""}
+	}
+
+	hasTrailingSlash := strings.HasSuffix(path, "/")
 	path = strings.Trim(path, "/")
+
 	if path == "" {
 		return []string{""}
 	}
-	return strings.Split(path, "/")
+
+	parts := strings.Split(path, "/")
+
+	if hasTrailingSlash {
+		parts = append(parts, "")
+	}
+
+	return parts
 }
 
 func copyParams(params map[string]string) map[string]string {

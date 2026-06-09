@@ -45,7 +45,15 @@ func (m *RouterManager) AddRoute(route *models.Route) error {
 	}
 
 	switch route.MatchType {
-	case models.RouteMatchTypePrefix, models.RouteMatchTypeExact:
+	case models.RouteMatchTypePrefix:
+		prefixPath := route.Path
+		if !strings.HasSuffix(prefixPath, "/*") {
+			prefixPath = strings.TrimRight(prefixPath, "/") + "/*"
+		}
+		if err := m.trieRouter.Insert(prefixPath, route); err != nil {
+			return fmt.Errorf("failed to insert into trie router: %w", err)
+		}
+	case models.RouteMatchTypeExact:
 		if err := m.trieRouter.Insert(route.Path, route); err != nil {
 			return fmt.Errorf("failed to insert into trie router: %w", err)
 		}
@@ -167,7 +175,15 @@ func (m *RouterManager) rebuild() error {
 		}
 
 		switch route.MatchType {
-		case models.RouteMatchTypePrefix, models.RouteMatchTypeExact:
+		case models.RouteMatchTypePrefix:
+			prefixPath := route.Path
+			if !strings.HasSuffix(prefixPath, "/*") {
+				prefixPath = strings.TrimRight(prefixPath, "/") + "/*"
+			}
+			if err := m.trieRouter.Insert(prefixPath, route); err != nil {
+				return fmt.Errorf("failed to rebuild trie router for route %s: %w", route.ID, err)
+			}
+		case models.RouteMatchTypeExact:
 			if err := m.trieRouter.Insert(route.Path, route); err != nil {
 				return fmt.Errorf("failed to rebuild trie router for route %s: %w", route.ID, err)
 			}

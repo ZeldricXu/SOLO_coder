@@ -5,11 +5,15 @@ import (
 	"time"
 )
 
-type TokenBucket struct {
-	store *RedisStore
+type TokenBucketStore interface {
+	TokenBucketTake(ctx context.Context, key string, capacity, refillRate int64, window time.Duration) (*TokenBucketResult, error)
 }
 
-func NewTokenBucket(store *RedisStore) *TokenBucket {
+type TokenBucket struct {
+	store TokenBucketStore
+}
+
+func NewTokenBucket(store TokenBucketStore) *TokenBucket {
 	return &TokenBucket{
 		store: store,
 	}

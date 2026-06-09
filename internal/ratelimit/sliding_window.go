@@ -5,11 +5,15 @@ import (
 	"time"
 )
 
-type SlidingWindow struct {
-	store *RedisStore
+type SlidingWindowStore interface {
+	SlidingWindowAllow(ctx context.Context, key string, limit int64, window time.Duration) (*SlidingWindowResult, error)
 }
 
-func NewSlidingWindow(store *RedisStore) *SlidingWindow {
+type SlidingWindow struct {
+	store SlidingWindowStore
+}
+
+func NewSlidingWindow(store SlidingWindowStore) *SlidingWindow {
 	return &SlidingWindow{
 		store: store,
 	}
