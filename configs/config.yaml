@@ -1,0 +1,351 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+  read_timeout: 30s
+  write_timeout: 30s
+  idle_timeout: 60s
+  max_header_bytes: 1048576
+
+admin:
+  host: 0.0.0.0
+  port: 9090
+  read_timeout: 10s
+  write_timeout: 10s
+
+etcd:
+  endpoints:
+    - localhost:2379
+  username: ""
+  password: ""
+
+redis:
+  address: localhost:6379
+  password: ""
+  db: 0
+  pool_size: 50
+  max_retries: 3
+  timeout: 5s
+
+postgres:
+  host: localhost
+  port: 5432
+  user: apigateway
+  password: apigateway
+  dbname: apigateway
+  sslmode: disable
+  max_open_conns: 25
+  max_idle_conns: 5
+  conn_max_lifetime: 5m
+  timeout: 5s
+
+telemetry:
+  service_name: api-gateway
+  service_version: 1.0.0
+  otlp_endpoint: localhost:4318
+  otlp_insecure: true
+  trace_sample_rate: 1.0
+  metrics_enabled: true
+  tracing_enabled: true
+  prometheus_port: 9090
+
+api_keys:
+  "api-key-123": "service-a"
+  "api-key-456": "service-b"
+  "api-key-789": "admin"
+
+enabled_middlewares:
+  - tracing
+  - ratelimit
+  - auth
+  - gray
+  - circuitbreaker
+  - forward
+  - mirror
+
+routes:
+  "route-api-v1-users":
+    id: "route-api-v1-users"
+    path: "/api/v1/users"
+    method: "GET"
+    match_type: "prefix"
+    upstream_cluster: "service-users"
+    rewrite_path: "/v1/users"
+    protocol: "http"
+    timeout: "10s"
+    retry_count: 2
+    rate_limit_policy: "rl-api-v1-users"
+    auth_policy: "auth-jwt-api"
+    circuit_breaker: "cb-service-users"
+    gray_policy: "gray-users"
+    mirror_policy: "mirror-users-v2"
+    enabled: true
+
+  "route-api-v1-orders":
+    id: "route-api-v1-orders"
+    path: "/api/v1/orders"
+    method: "*"
+    match_type: "prefix"
+    upstream_cluster: "service-orders"
+    rewrite_path: "/api/orders"
+    protocol: "http"
+    timeout: "15s"
+    retry_count: 3
+    rate_limit_policy: "rl-api-v1-orders"
+    auth_policy: "auth-api-key"
+    circuit_breaker: "cb-service-orders"
+    enabled: true
+
+  "route-api-v2-products":
+    id: "route-api-v2-products"
+    path: "/api/v2/products"
+    method: "GET"
+    match_type: "regex"
+    regex_pattern: "^/api/v2/products/([0-9]+)$"
+    upstream_url: "http://products-service:8080"
+    rewrite_path: "/products/$1"
+    protocol: "http"
+    timeout: "5s"
+    retry_count: 1
+    enabled: true
+
+  "route-health":
+    id: "route-health"
+    path: "/health"
+    method: "GET"
+    match_type: "exact"
+    upstream_url: "http://localhost:8080/health"
+    protocol: "http"
+    timeout: "5s"
+    retry_count: 0
+    enabled: true
+
+rate_limits:
+  "rl-api-v1-users":
+    id: "rl-api-v1-users"
+    name: "Users API Rate Limit"
+    algorithm: "token_bucket"
+    key_builder:
+      include_api: true
+      include_user: true
+      include_ip: true
+    rules:
+      - dimension: "user"
+        limit: 100
+        window: "1m"
+        capacity: 200
+        refill_rate: 100
+      - dimension: "ip"
+        limit: 1000
+        window: "1m"
+        capacity: 2000
+        refill_rate: 1000
+    enabled: true
+
+  "rl-api-v1-orders":
+    id: "rl-api-v1-orders"
+    name: "Orders API Rate Limit"
+    algorithm: "sliding_window"
+    key_builder:
+      include_api: true
+      include_ip: true
+    rules:
+      - dimension: "api"
+        limit: 500
+        window: "1m"
+      - dimension: "concurrency"
+        limit: 10
+        window: "1m"
+    enabled: true
+
+auths:
+  "auth-jwt-api":
+    id: "auth-jwt-api"
+    name: "JWT API Authentication"
+    strategies:
+      - type: "jwt"
+        config:
+          jwt_config:
+            secret: "your-jwt-secret-key-change-in-production"
+            algorithm: "HS256"
+            issuer: "api-gateway"
+            audience:
+              - "api-users"
+            claims_required:
+              - "sub"
+              - "role"
+        optional: false
+        priority: 1
+    allow_anonymous: false
+    token_ttl: "24h"
+    enabled: true
+
+  "auth-api-key":
+    id: "auth-api-key"
+    name: "API Key Authentication"
+    strategies:
+      - type: "api_key"
+        config:
+          api_key_config:
+            header_name: "X-API-Key"
+            query_param: "api_key"
+        optional: false
+        priority: 1
+    allow_anonymous: false
+    token_ttl: "0s"
+    enabled: true
+
+circuit_breakers:
+  "cb-service-users":
+    id: "cb-service-users"
+    name: "Service Users Circuit Breaker"
+    error_threshold: 0.5
+    request_volume: 20
+    sleep_window: "30s"
+    half_open_requests: 5
+    success_threshold: 3
+    timeout: "10s"
+    fallback_response:
+      status_code: 503
+      headers:
+        Content-Type: "application/json"
+      body: '{"error":"service unavailable","code":503,"message":"Users service is temporarily unavailable"}'
+    enabled: true
+
+  "cb-service-orders":
+    id: "cb-service-orders"
+    name: "Service Orders Circuit Breaker"
+    error_threshold: 0.3
+    request_volume: 10
+    sleep_window: "15s"
+    half_open_requests: 3
+    success_threshold: 2
+    timeout: "15s"
+    enabled: true
+
+grays:
+  "gray-users":
+    id: "gray-users"
+    name: "Users Service Gray Release"
+    type: "percent"
+    default_cluster: "service-users-v1"
+    rules:
+      - target_cluster: "service-users-v2"
+        percent: 10
+        priority: 1
+      - target_cluster: "service-users-v2"
+        header_match:
+          X-Gray-Version: "v2"
+        priority: 10
+      - target_cluster: "service-users-v2"
+        user_ids:
+          - "user-123"
+          - "user-456"
+        priority: 100
+    enabled: true
+
+mirrors:
+  "mirror-users-v2":
+    id: "mirror-users-v2"
+    name: "Mirror Users Traffic to V2"
+    target_cluster: "service-users-v2-mirror"
+    percent: 50
+    timeout: "5s"
+    include_headers:
+      - "Authorization"
+      - "X-Request-ID"
+      - "X-Trace-ID"
+    exclude_headers:
+      - "Cookie"
+    enabled: true
+
+upstreams:
+  "service-users":
+    id: "service-users"
+    name: "Users Service Cluster"
+    load_balancer: "round_robin"
+    protocol: "http"
+    health_check:
+      type: "http"
+      interval: "10s"
+      timeout: "5s"
+      path: "/health"
+      method: "GET"
+      expected_status:
+        - 200
+      failure_threshold: 3
+      success_threshold: 2
+    nodes:
+      - id: "users-node-1"
+        address: "users-service-1:8080"
+        weight: 1
+        healthy: true
+        protocol: "http"
+      - id: "users-node-2"
+        address: "users-service-2:8080"
+        weight: 1
+        healthy: true
+        protocol: "http"
+
+  "service-users-v1":
+    id: "service-users-v1"
+    name: "Users Service V1 Cluster"
+    load_balancer: "weighted"
+    protocol: "http"
+    nodes:
+      - id: "users-v1-node-1"
+        address: "users-v1-service:8080"
+        weight: 2
+        healthy: true
+        protocol: "http"
+
+  "service-users-v2":
+    id: "service-users-v2"
+    name: "Users Service V2 Cluster"
+    load_balancer: "round_robin"
+    protocol: "http"
+    nodes:
+      - id: "users-v2-node-1"
+        address: "users-v2-service:8080"
+        weight: 1
+        healthy: true
+        protocol: "http"
+
+  "service-users-v2-mirror":
+    id: "service-users-v2-mirror"
+    name: "Users Service V2 Mirror Cluster"
+    load_balancer: "random"
+    protocol: "http"
+    nodes:
+      - id: "users-v2-mirror-node-1"
+        address: "users-v2-mirror-service:8080"
+        weight: 1
+        healthy: true
+        protocol: "http"
+
+  "service-orders":
+    id: "service-orders"
+    name: "Orders Service Cluster"
+    load_balancer: "least_conn"
+    protocol: "http"
+    health_check:
+      type: "tcp"
+      interval: "15s"
+      timeout: "3s"
+      failure_threshold: 3
+      success_threshold: 2
+    nodes:
+      - id: "orders-node-1"
+        address: "orders-service-1:8080"
+        weight: 1
+        healthy: true
+        protocol: "http"
+      - id: "orders-node-2"
+        address: "orders-service-2:8080"
+        weight: 1
+        healthy: true
+        protocol: "http"
+      - id: "orders-node-3"
+        address: "orders-service-3:8080"
+        weight: 1
+        healthy: true
+        protocol: "http"

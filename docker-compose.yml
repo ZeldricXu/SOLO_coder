@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  etcd:
+    image: bitnami/etcd:3.5.9
+    container_name: api-gateway-etcd
+    environment:
+      - ALLOW_NONE_AUTHENTICATION=yes
+      - ETCD_ADVERTISE_CLIENT_URLS=http://etcd:2379
+    ports:
+      - "2379:2379"
+      - "2380:2380"
+    volumes:
+      - etcd_data:/bitnami/etcd
+    networks:
+      - api-gateway-network
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: api-gateway-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - api-gateway-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    command: redis-server --appendonly yes
+
+  postgresql:
+    image: postgres:14-alpine
+    container_name: api-gateway-postgres
+    environment:
+      - POSTGRES_USER=apigateway
+      - POSTGRES_PASSWORD=apigateway
+      - POSTGRES_DB=apigateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - api-gateway-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U apigateway -d apigateway"]
+      interval: 5s
+      timeout: 5s
+      retries: 3
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.51
+    container_name: api-gateway-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - api-gateway-network
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:16686"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: api-gateway-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./configs/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - api-gateway-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.enable-lifecycle'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://localhost:9090/-/healthy"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mock-service-1:
+    image: nginx:alpine
+    container_name: api-gateway-mock-1
+    ports:
+      - "8081:80"
+    volumes:
+      - ./configs/mock1.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - api-gateway-network
+
+  mock-service-2:
+    image: nginx:alpine
+    container_name: api-gateway-mock-2
+    ports:
+      - "8082:80"
+    volumes:
+      - ./configs/mock2.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - api-gateway-network
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    ports:
+      - "8080:8080"
+      - "9091:9090"
+    environment:
+      - CONFIG_PATH=/app/configs/config.yaml
+    volumes:
+      - ./configs:/app/configs
+    depends_on:
+      etcd:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      postgresql:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    networks:
+      - api-gateway-network
+
+volumes:
+  etcd_data:
+  redis_data:
+  postgres_data:
+  prometheus_data:
+
+networks:
+  api-gateway-network:
+    driver: bridge
