@@ -1,6 +1,5 @@
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select, func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -10,8 +9,6 @@ from app.schemas.common import (
     PaginatedParams,
     SuccessResponse,
     IdResponse,
-    APIResponse,
-    PaginatedResponse,
 )
 from app.schemas.product import (
     AttributeCreate,

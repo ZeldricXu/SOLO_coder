@@ -1,13 +1,12 @@
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
-import json
 import httpx
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, desc, asc
+from sqlalchemy import and_, func, desc, asc
 
 from app.core.cache import cache
 from app.core.logging import get_logger
@@ -24,7 +23,6 @@ from app.models.inventory_alert import (
 from app.models.inventory import Inventory
 from app.models.sku import SKU, SkuStatus
 from app.models.warehouse import Warehouse
-from app.models.category import Category
 from app.models.batch import Batch
 from app.models.user import User
 from app.schemas.alert import (
@@ -37,7 +35,6 @@ from app.schemas.alert import (
 )
 from app.services.crud_base import CRUDBase
 from app.utils.forecast.seasonal import (
-    seasonal_decompose,
     detect_seasonality,
     calculate_seasonal_indices,
 )
@@ -728,7 +725,6 @@ class AlertService:
             if rule.sku_ids:
                 rule_skus = [s for s in skus if s.id in rule.sku_ids]
             if rule.category_id:
-                from app.models.product import Product
                 rule_skus = [
                     s for s in rule_skus
                     if s.product and s.product.category_id == rule.category_id
@@ -810,6 +806,24 @@ class AlertService:
             resolved_alerts_count=resolved_count,
             new_alerts=new_alerts,
         )
+
+    def check_alerts_sync(
+        self,
+        rule_id: Optional[int] = None,
+        sku_ids: Optional[List[int]] = None,
+        warehouse_ids: Optional[List[int]] = None,
+    ) -> AlertCheckResponse:
+        import asyncio
+
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            result = loop.run_until_complete(
+                self.check_alerts(rule_id, sku_ids, warehouse_ids)
+            )
+        finally:
+            loop.close()
+        return result
 
     def adjust_thresholds_for_seasonality(
         self,

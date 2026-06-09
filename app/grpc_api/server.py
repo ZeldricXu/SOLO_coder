@@ -1,6 +1,4 @@
-import asyncio
 from concurrent import futures
-from typing import Optional
 
 import grpc
 from sqlalchemy.orm import Session
@@ -11,7 +9,6 @@ from app.core.logging import get_logger
 from app.grpc_api import inventory_pb2, inventory_pb2_grpc
 from app.services.inventory_service import InventoryService
 from app.services.sku_service import SKUService
-from app.services.purchase_order_service import PurchaseOrderService
 
 logger = get_logger(__name__)
 

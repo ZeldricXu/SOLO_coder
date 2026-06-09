@@ -9,7 +9,6 @@ from app.core.cache import cache
 from app.core.logging import get_logger
 from app.models.inventory_transaction import InventoryTransaction, TransactionType
 from app.models.sku import SKU
-from app.models.product import Product
 from app.utils.forecast import (
     moving_average,
     exponential_smoothing,
@@ -18,11 +17,9 @@ from app.utils.forecast import (
     linear_regression_forecast,
     auto_arima_forecast,
     seasonal_decompose,
-    seasonal_forecast,
     detect_seasonality,
     evaluate_forecast,
     select_best_model,
-    calculate_mape,
     ForecastMetrics,
 )
 from app.schemas.purchase_order import ForecastMethodEnum

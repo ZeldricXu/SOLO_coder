@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy import select, func
 from sqlalchemy.orm import Session
@@ -14,18 +14,15 @@ from app.schemas.common import (
 from app.schemas.product import (
     ProductCreate,
     ProductUpdate,
-    Product,
     ProductDetail,
     ProductListResponse,
     ProductDetailResponse,
-    Category,
     CategoryCreate,
     CategoryUpdate,
     CategoryTree,
     CategoryListResponse,
     CategoryDetailResponse,
     CategoryTreeResponse,
-    ApplyTemplateRequest,
 )
 from app.services.product_service import product_service
 from app.services.category_service import category_service

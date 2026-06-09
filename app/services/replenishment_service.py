@@ -4,7 +4,7 @@ import math
 import numpy as np
 
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, desc, asc
+from sqlalchemy import and_, func, desc, asc
 
 from app.core.cache import cache
 from app.core.logging import get_logger
@@ -20,13 +20,11 @@ from app.models.inventory import Inventory
 from app.models.sku import SKU, SkuStatus
 from app.models.warehouse import Warehouse
 from app.models.supplier import Supplier
-from app.models.category import Category
 from app.models.product import Product
-from app.models.purchase_order import PurchaseOrder, PurchaseOrderItem, PurchaseOrderStatus
+from app.models.purchase_order import PurchaseOrder, PurchaseOrderItem
 from app.models.inventory_transaction import InventoryTransaction, TransactionType
 from app.models.user import User
 from app.schemas.replenishment import (
-    ReplenishmentSuggestionCreate,
     ReplenishmentReviewRequest,
     ReplenishmentConvertRequest,
     ReplenishmentGenerateRequest,
@@ -40,9 +38,6 @@ from app.services.crud_base import CRUDBase
 from app.services.purchase_order_service import PurchaseOrderService
 from app.utils.forecast.seasonal import (
     seasonal_forecast,
-    detect_seasonality,
-    calculate_seasonal_indices,
-    seasonal_decompose,
 )
 
 logger = get_logger(__name__)

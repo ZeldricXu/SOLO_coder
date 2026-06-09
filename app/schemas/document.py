@@ -1,6 +1,5 @@
 from datetime import datetime
 from typing import Optional, Any
-from enum import Enum
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.models.inventory_document import DocumentType, DocumentStatus

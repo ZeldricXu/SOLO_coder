@@ -1136,6 +1136,50 @@ class ApprovalService:
 
         return record
 
+    def check_timeouts(self) -> int:
+        timeout_hours = 24
+        now = datetime.utcnow()
+        timeout_threshold = now - timedelta(hours=timeout_hours)
+
+        pending_records = (
+            self.db.query(ApprovalRecord)
+            .join(ApprovalNode, ApprovalRecord.node_id == ApprovalNode.id)
+            .filter(
+                and_(
+                    ApprovalRecord.status == ApprovalStatus.PENDING,
+                    ApprovalRecord.created_at <= timeout_threshold,
+                )
+            )
+            .all()
+        )
+
+        escalated_count = 0
+
+        for record in pending_records:
+            node = record.node
+            if node.auto_upgrade and node.upgrade_user_id:
+                record.status = ApprovalStatus.ESCALATED
+                record.approver_id = node.upgrade_user_id
+                record.created_at = now
+                escalated_count += 1
+
+                self.audit_logger.log(
+                    user_id=None,
+                    action="escalate",
+                    resource_type="approval_record",
+                    resource_id=record.id,
+                    new_value={
+                        "old_approver_id": record.approver_id,
+                        "new_approver_id": node.upgrade_user_id,
+                        "reason": "timeout",
+                    },
+                )
+
+        self.db.flush()
+        cache.delete_pattern("approval:pending:*")
+
+        return escalated_count
+
 
 def create_approval_service(
     db: Session,

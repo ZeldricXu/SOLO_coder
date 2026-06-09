@@ -15,14 +15,10 @@ from app.models.purchase_order import (
 from app.models.inventory import Inventory
 from app.models.inventory_transaction import InventoryTransaction, TransactionType
 from app.models.inventory_alert import (
-    InventoryAlert,
-    AlertRuleType,
     AlertLevel,
-    AlertStatus,
 )
 from app.models.sku import SKU
 from app.models.supplier import Supplier
-from app.models.warehouse import Warehouse
 from app.models.user import User
 from app.models.approval_workflow import (
     ApprovalRecord,
@@ -36,8 +32,6 @@ from app.schemas.purchase_order import (
     PurchaseOrderGenerateItem,
     PurchaseOrderGenerateResponse,
     PurchaseOrderReceiveRequest,
-    PurchaseOrderStatusEnum,
-    ForecastMethodEnum,
 )
 from app.services.forecast_service import ForecastService
 from app.services.approval_service import ApprovalService
@@ -517,7 +511,7 @@ class PurchaseOrderService:
                             "quantity": item.suggested_quantity,
                             "unit_price": item.unit_price,
                             "tax_rate": 0.0,
-                            "remark": f"Auto-generated from stock replenishment suggestion",
+                            "remark": "Auto-generated from stock replenishment suggestion",
                         }
                         for item in supplier_items
                     ]

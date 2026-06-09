@@ -30,6 +30,8 @@ from app.utils.constants import (
     WAREHOUSE_CAPACITY_DANGER_THRESHOLD,
     EXPIRING_WARNING_DAYS,
     EXPIRING_CRITICAL_DAYS,
+    PURCHASE_ORDER_PREFIX,
+    DOCUMENT_PREFIX,
 )
 from app.utils.exceptions import (
     InventoryException,
@@ -54,13 +56,13 @@ from app.utils.helpers import (
     days_between,
 )
 from app.utils.sync_engine import (
-    CDCChangecapture,
+    CDCCaptureEngine,
     ConflictDetectionEngine,
     ConflictResolver,
     ConsistencyChecker,
     SyncDelayMonitor,
 )
-from app.utils.batch_generator import BatchGenerator
+from app.utils.batch_generator import BatchNumberGenerator
 from app.utils.trace_engine import TraceEngine
 
 __all__ = [
@@ -95,6 +97,8 @@ __all__ = [
     "WAREHOUSE_CAPACITY_DANGER_THRESHOLD",
     "EXPIRING_WARNING_DAYS",
     "EXPIRING_CRITICAL_DAYS",
+    "PURCHASE_ORDER_PREFIX",
+    "DOCUMENT_PREFIX",
     "InventoryException",
     "NotFoundException",
     "ConflictException",
@@ -113,11 +117,11 @@ __all__ = [
     "format_date",
     "get_date_range",
     "days_between",
-    "CDCChangecapture",
+    "CDCCaptureEngine",
     "ConflictDetectionEngine",
     "ConflictResolver",
     "ConsistencyChecker",
     "SyncDelayMonitor",
-    "BatchGenerator",
+    "BatchNumberGenerator",
     "TraceEngine",
 ]

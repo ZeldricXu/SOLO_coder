@@ -11,7 +11,7 @@ class InventoryException(Exception):
 
 class InventoryNotFoundException(InventoryException):
     def __init__(self, inventory_id: Optional[int] = None, message: Optional[str] = None):
-        msg = message or f"Inventory not found"
+        msg = message or "Inventory not found"
         if inventory_id:
             msg = f"Inventory with id {inventory_id} not found"
         super().__init__(msg, code=404, details={"inventory_id": inventory_id})
@@ -188,5 +188,28 @@ class PurchaseOrderException(InventoryException):
 
 
 class ApprovalException(InventoryException):
+    def __init__(self, message: str, code: int = 400, details: Optional[dict[str, Any]] = None):
+        super().__init__(message, code=code, details=details)
+
+
+class NotFoundException(InventoryException):
+    def __init__(self, entity: str, entity_id: Optional[int] = None, message: Optional[str] = None):
+        msg = message or f"{entity} not found"
+        if entity_id:
+            msg = f"{entity} with id {entity_id} not found"
+        super().__init__(msg, code=404, details={"entity": entity, "entity_id": entity_id})
+
+
+class ConflictException(InventoryException):
+    def __init__(self, message: str, code: int = 409, details: Optional[dict[str, Any]] = None):
+        super().__init__(message, code=code, details=details)
+
+
+class ValidationException(InventoryException):
+    def __init__(self, message: str, code: int = 400, details: Optional[dict[str, Any]] = None):
+        super().__init__(message, code=code, details=details)
+
+
+class BusinessException(InventoryException):
     def __init__(self, message: str, code: int = 400, details: Optional[dict[str, Any]] = None):
         super().__init__(message, code=code, details=details)

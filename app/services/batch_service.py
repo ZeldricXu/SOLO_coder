@@ -5,7 +5,6 @@ from sqlalchemy import and_, or_, func, desc, asc
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.cache import cache
-from app.core.database import get_db
 from app.core.logging import get_logger
 from app.core.audit import AuditLogger
 from app.models.batch import Batch, InspectionStatus

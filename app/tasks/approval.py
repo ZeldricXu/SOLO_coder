@@ -1,11 +1,8 @@
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
 
 from app.tasks.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.core.logging import get_logger
 from app.services.approval_service import ApprovalService
-from app.models.approval_workflow import ApprovalStatus
 
 logger = get_logger(__name__)
 
@@ -51,7 +48,7 @@ def send_approval_reminder(record_id: int, approver_id: int) -> dict:
             channel="email",
             recipients=[user.email],
             title="审批待处理提醒",
-            message=f"您有一条审批请求已超时未处理，请及时登录系统处理。",
+            message="您有一条审批请求已超时未处理，请及时登录系统处理。",
             data={"approval_record_id": record_id},
         )
     finally:

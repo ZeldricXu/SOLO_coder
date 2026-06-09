@@ -1,9 +1,7 @@
-from datetime import datetime
 import logging
 from typing import Optional, Any
-from sqlalchemy import and_, func, select, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session, selectinload
-from redis import Redis
 
 from app.models.inventory_document import (
     InventoryDocument,
@@ -11,14 +9,12 @@ from app.models.inventory_document import (
     DocumentType,
     DocumentStatus,
 )
-from app.models.inventory import Inventory
 from app.models.inventory_transaction import (
     InventoryTransaction,
     TransactionType,
 )
 from app.models.sku import SKU
 from app.models.batch import Batch
-from app.models.warehouse import Warehouse, Zone
 from app.schemas.document import (
     DocumentCreate,
     DocumentUpdate,
@@ -35,11 +31,8 @@ from app.schemas.document import (
     DocumentTraceItem,
     DocumentStatisticsResponse,
 )
-from app.schemas.warehouse import InventoryTransactionCreate
 from app.utils.exceptions import (
     InventoryException,
-    InventoryNotFoundException,
-    InsufficientInventoryException,
     InvalidTransactionException,
 )
 from app.utils.helpers import (

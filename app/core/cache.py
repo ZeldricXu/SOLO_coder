@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import json
 import pickle
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from redis import Redis
 from rediscluster import RedisCluster
 
@@ -26,7 +28,7 @@ class CacheManager:
             self._redis = Redis.from_url(settings.REDIS_BROKER_URL)
             self._use_cluster = False
 
-    def _get_client(self) -> Redis | RedisCluster:
+    def _get_client(self) -> Union[Redis, RedisCluster]:
         if self._use_cluster and self._cluster:
             return self._cluster
         if self._redis is None:

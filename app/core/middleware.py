@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.core.audit import AuditLogger
-from app.core.security import decode_token, oauth2_scheme
+from app.core.security import decode_token
 from app.core.config import settings
 from app.core.logging import get_logger
 

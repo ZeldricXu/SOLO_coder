@@ -1,11 +1,9 @@
 from typing import Optional
-from sqlalchemy.orm import Session
 
 from app.tasks.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.core.logging import get_logger
 from app.services.replenishment_service import ReplenishmentService
-from app.services.forecast_service import ForecastService
 
 logger = get_logger(__name__)
 

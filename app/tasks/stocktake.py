@@ -1,11 +1,8 @@
-from datetime import datetime, timedelta
-from sqlalchemy.orm import Session
 
 from app.tasks.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.core.logging import get_logger
 from app.services.stocktake_service import StocktakeService
-from app.models.stocktake import StocktakeTaskStatus
 
 logger = get_logger(__name__)
 
@@ -51,7 +48,7 @@ def send_stocktake_task_reminder(task_id: int, assignee_id: int) -> dict:
             channel="email",
             recipients=[user.email],
             title="盘点任务提醒",
-            message=f"您有一个盘点任务待执行，请及时登录系统完成。",
+            message="您有一个盘点任务待执行，请及时登录系统完成。",
             data={"task_id": task_id},
         )
     finally:

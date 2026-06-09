@@ -3,12 +3,6 @@ from enum import Enum as PyEnum
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.models.inventory_alert import (
-    AlertRuleType,
-    ThresholdType,
-    AlertLevel,
-    AlertStatus,
-)
 
 
 class AlertRuleTypeEnum(str, PyEnum):

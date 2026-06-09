@@ -1,6 +1,6 @@
 import itertools
 import hashlib
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from sqlalchemy import select, func, and_
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -12,7 +12,6 @@ from app.models.attribute import AttributeTemplate
 from app.models.inventory import Inventory
 from app.schemas.product import SkuCreate, SkuUpdate, SkuGenerateRequest
 from app.core.cache import cache
-from app.core.config import settings
 
 
 class SkuService(CRUDBase[SKU, SkuCreate, SkuUpdate]):
@@ -132,7 +131,7 @@ class SkuService(CRUDBase[SKU, SkuCreate, SkuUpdate]):
                 })
 
         cache.delete_pattern(f"{self.cache_prefix}:list:*")
-        cache.delete_pattern(f"product:list:*")
+        cache.delete_pattern("product:list:*")
         cache.delete(f"product:{request.product_id}")
 
         return {

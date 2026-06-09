@@ -3,12 +3,6 @@ from enum import Enum as PyEnum
 from typing import Optional, Any, List, Dict
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.models.approval_workflow import (
-    ResourceType,
-    NodeType,
-    ApprovalType,
-    ApprovalStatus,
-)
 from app.schemas.common import APIResponse, PaginatedResponse
 
 

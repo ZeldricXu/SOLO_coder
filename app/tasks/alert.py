@@ -105,7 +105,6 @@ def send_notification(
     message: str,
     data: Optional[dict] = None,
 ) -> dict:
-    from app.core.config import settings
     import httpx
 
     try:

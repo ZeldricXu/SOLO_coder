@@ -7,7 +7,6 @@ from app.services.crud_base import CRUDBase
 from app.models.category import Category
 from app.models.product import Product
 from app.schemas.product import CategoryCreate, CategoryUpdate
-from app.core.cache import cache
 
 
 class CategoryService(CRUDBase[Category, CategoryCreate, CategoryUpdate]):

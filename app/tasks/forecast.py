@@ -1,5 +1,3 @@
-from typing import Optional
-from sqlalchemy.orm import Session
 
 from app.tasks.celery_app import celery_app
 from app.core.database import SessionLocal

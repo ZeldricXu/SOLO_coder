@@ -3,11 +3,6 @@ from enum import Enum as PyEnum
 from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field, ConfigDict
 
-from app.models.replenishment import (
-    ReplenishmentStatus,
-    ForecastPeriod,
-    ForecastMethod,
-)
 
 
 class ReplenishmentStatusEnum(str, PyEnum):

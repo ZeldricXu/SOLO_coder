@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import timedelta
 import logging
 import random
 from typing import Optional, Any
@@ -10,7 +10,6 @@ from app.models.stocktake import (
     StocktakeTask,
     StocktakeResult,
     StocktakeAdjustment,
-    StocktakePlanType,
     StocktakePlanStatus,
     StocktakeTaskStatus,
     StocktakeResultStatus,
@@ -26,14 +25,10 @@ from app.models.inventory_document import (
 )
 from app.models.sku import SKU
 from app.models.product import Product
-from app.models.category import Category
-from app.models.warehouse import Warehouse, Zone
-from app.models.batch import Batch
 from app.models.serial_number import SerialNumber
 from app.schemas.stocktake import (
     StocktakePlanCreate,
     StocktakePlanUpdate,
-    StocktakeTaskCreate,
     CountResultRequest,
     AdjustmentReviewRequest,
     StocktakeGenerateRequest,
@@ -1217,7 +1212,7 @@ class StocktakeService:
             actual_quantity=abs(qty_change),
             unit_cost=float(adjustment.unit_cost),
             total_cost=float(adjustment.total_cost),
-            remark=f"Stocktake adjustment",
+            remark="Stocktake adjustment",
             created_at=get_current_utc_time(),
         )
         self.db.add(doc_item)

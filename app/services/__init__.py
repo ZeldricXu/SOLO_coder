@@ -1,6 +1,6 @@
 from app.services.crud_base import CRUDBase
 from app.services.user_service import UserService
-from app.services.sku_service import SKUService
+from app.services.sku_service import SkuService
 from app.services.product_service import ProductService
 from app.services.attribute_service import AttributeService, AttributeTemplateService
 from app.services.category_service import CategoryService
@@ -15,14 +15,14 @@ from app.services.alert_service import AlertService
 from app.services.replenishment_service import ReplenishmentService
 from app.services.batch_service import BatchService
 from app.services.serial_service import SerialNumberService
-from app.services.document_service import InventoryDocumentService
+from app.services.document_service import DocumentService
 from app.services.stocktake_service import StocktakeService
 from app.services.audit_service import AuditService
 
 __all__ = [
     "CRUDBase",
     "UserService",
-    "SKUService",
+    "SkuService",
     "ProductService",
     "AttributeService",
     "AttributeTemplateService",
@@ -38,7 +38,7 @@ __all__ = [
     "ReplenishmentService",
     "BatchService",
     "SerialNumberService",
-    "InventoryDocumentService",
+    "DocumentService",
     "StocktakeService",
     "AuditService",
 ]

@@ -31,6 +31,7 @@ class ApprovalStatus(PyEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+    ESCALATED = "ESCALATED"
 
 
 class ApprovalWorkflow(Base):
@@ -81,11 +82,16 @@ class ApprovalNode(Base):
     required_role_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("roles.id"), nullable=True, index=True)
     required_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    timeout_hours: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    timeout_action: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    auto_upgrade: Mapped[Optional[bool]] = mapped_column(Boolean, default=False, nullable=True)
+    upgrade_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     workflow: Mapped["ApprovalWorkflow"] = relationship("ApprovalWorkflow", back_populates="nodes")
     required_role: Mapped[Optional["Role"]] = relationship("Role")
     required_user: Mapped[Optional["User"]] = relationship("User")
+    upgrade_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[upgrade_user_id])
     records: Mapped[List["ApprovalRecord"]] = relationship(
         "ApprovalRecord", back_populates="node"
     )

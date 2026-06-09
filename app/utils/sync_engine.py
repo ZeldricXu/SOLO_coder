@@ -15,7 +15,7 @@ from app.utils.constants import (
     SYNC_DELAY_THRESHOLD_SECONDS,
 )
 from app.utils.exceptions import CDCException, SyncDelayAlertException
-from app.utils.helpers import get_current_utc_time, calculate_seconds_between, dict_diff
+from app.utils.helpers import get_current_utc_time, calculate_seconds_between
 
 logger = logging.getLogger(__name__)
 
@@ -251,7 +251,68 @@ class ConflictDetectionEngine:
             raise ValueError(f"Manual resolution required for conflict {conflict.id}")
 
 
-class ConsistencyCheckEngine:
+class ConflictResolver:
+    def __init__(self, db: Session):
+        self.db = db
+
+    def apply_resolution(
+        self,
+        conflict: SyncConflict,
+        source_data: dict[str, Any],
+        target_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        strategy = conflict.resolution_strategy
+
+        if strategy == ResolutionStrategy.SOURCE_WINS:
+            return source_data
+        elif strategy == ResolutionStrategy.TARGET_WINS:
+            return target_data
+        elif hasattr(ResolutionStrategy, "LAST_WRITE_WINS") and strategy == ResolutionStrategy.LAST_WRITE_WINS:
+            return source_data
+        elif hasattr(ResolutionStrategy, "MERGE") and strategy == ResolutionStrategy.MERGE:
+            return self._merge_data(source_data, target_data)
+        elif hasattr(ResolutionStrategy, "REJECT") and strategy == ResolutionStrategy.REJECT:
+            return target_data
+        else:
+            return target_data
+
+    def _merge_data(
+        self,
+        source_data: dict[str, Any],
+        target_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        merged = target_data.copy()
+        for key, value in source_data.items():
+            if key in merged:
+                if isinstance(merged[key], (int, float)) and isinstance(value, (int, float)):
+                    merged[key] = max(merged[key], value)
+                elif value is not None:
+                    merged[key] = value
+            else:
+                merged[key] = value
+        return merged
+
+    def resolve_conflict(
+        self,
+        conflict_id: int,
+        strategy: ResolutionStrategy,
+        resolved_by: Optional[int] = None,
+    ) -> SyncConflict:
+        conflict = self.db.get(SyncConflict, conflict_id)
+        if not conflict:
+            raise ValueError(f"Conflict {conflict_id} not found")
+
+        conflict.resolution_strategy = strategy
+        conflict.resolved_by = resolved_by
+        conflict.resolved_at = get_current_utc_time()
+        conflict.status = ConflictStatus.RESOLVED
+        self.db.flush()
+
+        logger.info(f"Conflict resolved: id={conflict_id}, strategy={strategy}")
+        return conflict
+
+
+class ConsistencyChecker:
     @staticmethod
     def verify_record_consistency(
         source_data: dict[str, Any],
@@ -392,9 +453,9 @@ class SyncDelayMonitor:
         }
 
 
-def create_sync_engine(db: Session) -> tuple[CDCCaptureEngine, ConflictDetectionEngine, ConsistencyCheckEngine, SyncDelayMonitor]:
+def create_sync_engine(db: Session) -> tuple[CDCCaptureEngine, ConflictDetectionEngine, ConsistencyChecker, SyncDelayMonitor]:
     cdc_engine = CDCCaptureEngine(db)
     conflict_engine = ConflictDetectionEngine()
-    consistency_engine = ConsistencyCheckEngine()
+    consistency_engine = ConsistencyChecker()
     delay_monitor = SyncDelayMonitor()
     return cdc_engine, conflict_engine, consistency_engine, delay_monitor

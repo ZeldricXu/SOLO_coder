@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from typing import Optional, Tuple, Dict, Any, Union, List
+from typing import Optional, Tuple, Dict, Any, Union
 
 try:
     from statsmodels.tsa.holtwinters import ExponentialSmoothing

@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Any, Optional
-from pydantic import BaseModel, Field, ConfigDict, field_validator
+from pydantic import BaseModel, Field, ConfigDict
 
 from app.schemas.common import APIResponse, PaginatedResponse
 from app.models.sku import SkuStatus, SkuLifecycleStatus
@@ -327,5 +327,7 @@ class SkuBatchUpdateResponse(APIResponse):
 class SkuLifecycleTransitionResponse(APIResponse[Sku]):
     pass
 
+
+SkuGenerateAttributeItem = AttributeValueItem
 
 CategoryTree.model_rebuild()

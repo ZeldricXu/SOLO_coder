@@ -9,8 +9,6 @@ from app.core.audit import AuditLogger
 from app.schemas.common import (
     PaginatedParams,
     SuccessResponse,
-    BulkOperationRequest,
-    BulkOperationResponse,
     IdResponse,
     APIResponse,
     PaginatedResponse,
