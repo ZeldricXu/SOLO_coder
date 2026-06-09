@@ -1,0 +1,363 @@
+{
+  "$schema": "./src/types/theme.ts",
+  "version": "1.0.0",
+  "defaultTheme": "modern-dark",
+  "themes": {
+    "modern-dark": {
+      "name": "现代深色",
+      "description": "适合长时间编辑的深色专业主题",
+      "ui": {
+        "background": "#0f1218",
+        "surface": "#1a1f2e",
+        "surfaceElevated": "#242b3d",
+        "border": "#2a3040",
+        "textPrimary": "#e9ecef",
+        "textSecondary": "#adb5bd",
+        "textMuted": "#6c757d",
+        "accent": "#00d4ff",
+        "accentHover": "#00b8e0",
+        "warning": "#ff6b35",
+        "success": "#4ade80",
+        "error": "#ef4444",
+        "info": "#60a5fa",
+        "canvasBackground": "#1a1f2e"
+      },
+      "materials": {
+        "defaults": [
+          {
+            "id": "mat-wall-white",
+            "name": "白色墙面",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.95, "g": 0.95, "b": 0.93 },
+              "roughness": 0.85,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-wall-concrete",
+            "name": "清水混凝土",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.5, "g": 0.5, "b": 0.52 },
+              "roughness": 0.9,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-floor-wood",
+            "name": "实木地板",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.72, "g": 0.55, "b": 0.38 },
+              "roughness": 0.5,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-floor-marble",
+            "name": "白色大理石",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.95, "g": 0.95, "b": 0.95 },
+              "roughness": 0.2,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-glass-clear",
+            "name": "透明玻璃",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.9, "g": 0.95, "b": 1.0 },
+              "roughness": 0.05,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-metal-brushed",
+            "name": "拉丝金属",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.85, "g": 0.85, "b": 0.87 },
+              "roughness": 0.3,
+              "metalness": 0.9
+            }
+          },
+          {
+            "id": "mat-fabric-grey",
+            "name": "灰色布艺",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.5, "g": 0.5, "b": 0.52 },
+              "roughness": 0.95,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-leather-black",
+            "name": "黑色皮革",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.15, "g": 0.15, "b": 0.15 },
+              "roughness": 0.4,
+              "metalness": 0.1
+            }
+          }
+        ],
+        "uiHelpers": {
+          "wireframe": { "color": "#ff6b35", "opacity": 0.8 },
+          "selectionOutline": { "color": "#ff6b35", "opacity": 0.3 },
+          "glass": { "color": "#e0f0ff", "transmission": 0.9, "opacity": 0.3 },
+          "preview": { "color": "#00d4ff", "opacity": 0.5 }
+        }
+      },
+      "lighting": {
+        "presets": {
+          "day": {
+            "name": "白天",
+            "ambientIntensity": 0.3,
+            "directionalIntensity": 1.0,
+            "directionalColor": "#fff5e0",
+            "hemisphereSky": "#87ceeb",
+            "hemisphereGround": "#3a2f1f",
+            "hemisphereIntensity": 0.6,
+            "exposure": 1.0
+          },
+          "night": {
+            "name": "夜晚",
+            "ambientIntensity": 0.1,
+            "directionalIntensity": 0.3,
+            "directionalColor": "#b0c0ff",
+            "hemisphereSky": "#0a0a1a",
+            "hemisphereGround": "#0a0a0a",
+            "hemisphereIntensity": 0.2,
+            "exposure": 0.7
+          },
+          "studio": {
+            "name": "摄影棚",
+            "ambientIntensity": 0.5,
+            "directionalIntensity": 0.8,
+            "directionalColor": "#ffffff",
+            "hemisphereSky": "#ffffff",
+            "hemisphereGround": "#808080",
+            "hemisphereIntensity": 0.8,
+            "exposure": 1.2
+          }
+        },
+        "defaultPreset": "day"
+      },
+      "rendering": {
+        "qualityPresets": {
+          "low": {
+            "name": "低",
+            "shadowMapSize": 1024,
+            "pixelRatio": 1,
+            "ssaoEnabled": false,
+            "antialias": false
+          },
+          "medium": {
+            "name": "中",
+            "shadowMapSize": 2048,
+            "pixelRatio": 1,
+            "ssaoEnabled": true,
+            "ssaoSamples": 16,
+            "antialias": true
+          },
+          "high": {
+            "name": "高",
+            "shadowMapSize": 4096,
+            "pixelRatio": 2,
+            "ssaoEnabled": true,
+            "ssaoSamples": 32,
+            "antialias": true
+          }
+        },
+        "defaultQuality": "medium",
+        "toneMapping": "ACESFilmic",
+        "backgroundColor": "#1a1f2e",
+        "fogColor": "#1a1f2e",
+        "fogNear": 20,
+        "fogFar": 50
+      }
+    },
+    "warm-light": {
+      "name": "暖色浅色",
+      "description": "温暖明亮的自然光主题",
+      "ui": {
+        "background": "#fafaf7",
+        "surface": "#ffffff",
+        "surfaceElevated": "#f5f3ef",
+        "border": "#e5e1da",
+        "textPrimary": "#2a2520",
+        "textSecondary": "#6b6055",
+        "textMuted": "#9a9085",
+        "accent": "#d4691a",
+        "accentHover": "#b85915",
+        "warning": "#c53030",
+        "success": "#276749",
+        "error": "#c53030",
+        "info": "#2b6cb0",
+        "canvasBackground": "#e8e4dc"
+      },
+      "materials": {
+        "defaults": [
+          {
+            "id": "mat-wall-white",
+            "name": "米白墙面",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.98, "g": 0.96, "b": 0.92 },
+              "roughness": 0.8,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-wall-concrete",
+            "name": "暖灰墙面",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.7, "g": 0.65, "b": 0.58 },
+              "roughness": 0.85,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-floor-wood",
+            "name": "橡木地板",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.78, "g": 0.62, "b": 0.42 },
+              "roughness": 0.55,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-floor-marble",
+            "name": "米黄大理石",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.96, "g": 0.93, "b": 0.88 },
+              "roughness": 0.25,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-glass-clear",
+            "name": "透明玻璃",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.95, "g": 0.97, "b": 1.0 },
+              "roughness": 0.05,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-metal-brushed",
+            "name": "黄铜金属",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.85, "g": 0.70, "b": 0.45 },
+              "roughness": 0.35,
+              "metalness": 0.85
+            }
+          },
+          {
+            "id": "mat-fabric-grey",
+            "name": "米色布艺",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.80, "g": 0.72, "b": 0.62 },
+              "roughness": 0.95,
+              "metalness": 0.0
+            }
+          },
+          {
+            "id": "mat-leather-black",
+            "name": "棕色皮革",
+            "type": "pbr",
+            "properties": {
+              "color": { "r": 0.45, "g": 0.28, "b": 0.18 },
+              "roughness": 0.45,
+              "metalness": 0.1
+            }
+          }
+        ],
+        "uiHelpers": {
+          "wireframe": { "color": "#d4691a", "opacity": 0.8 },
+          "selectionOutline": { "color": "#d4691a", "opacity": 0.3 },
+          "glass": { "color": "#ffeedd", "transmission": 0.9, "opacity": 0.3 },
+          "preview": { "color": "#d4691a", "opacity": 0.5 }
+        }
+      },
+      "lighting": {
+        "presets": {
+          "day": {
+            "name": "白天",
+            "ambientIntensity": 0.4,
+            "directionalIntensity": 1.1,
+            "directionalColor": "#fff0d0",
+            "hemisphereSky": "#ffe0b0",
+            "hemisphereGround": "#8b6f47",
+            "hemisphereIntensity": 0.7,
+            "exposure": 1.1
+          },
+          "night": {
+            "name": "夜晚",
+            "ambientIntensity": 0.15,
+            "directionalIntensity": 0.4,
+            "directionalColor": "#ffd0a0",
+            "hemisphereSky": "#1a1510",
+            "hemisphereGround": "#151008",
+            "hemisphereIntensity": 0.25,
+            "exposure": 0.8
+          },
+          "studio": {
+            "name": "摄影棚",
+            "ambientIntensity": 0.55,
+            "directionalIntensity": 0.9,
+            "directionalColor": "#fffaf0",
+            "hemisphereSky": "#fff8ee",
+            "hemisphereGround": "#a08868",
+            "hemisphereIntensity": 0.85,
+            "exposure": 1.15
+          }
+        },
+        "defaultPreset": "day"
+      },
+      "rendering": {
+        "qualityPresets": {
+          "low": {
+            "name": "低",
+            "shadowMapSize": 1024,
+            "pixelRatio": 1,
+            "ssaoEnabled": false,
+            "antialias": false
+          },
+          "medium": {
+            "name": "中",
+            "shadowMapSize": 2048,
+            "pixelRatio": 1,
+            "ssaoEnabled": true,
+            "ssaoSamples": 16,
+            "antialias": true
+          },
+          "high": {
+            "name": "高",
+            "shadowMapSize": 4096,
+            "pixelRatio": 2,
+            "ssaoEnabled": true,
+            "ssaoSamples": 32,
+            "antialias": true
+          }
+        },
+        "defaultQuality": "medium",
+        "toneMapping": "ACESFilmic",
+        "backgroundColor": "#e8e4dc",
+        "fogColor": "#e8e4dc",
+        "fogNear": 20,
+        "fogFar": 50
+      }
+    }
+  }
+}

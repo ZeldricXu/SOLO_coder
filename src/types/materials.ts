@@ -1,4 +1,5 @@
 import type { Material, PBRProperties } from './floorplan';
+import { themeManager } from '@/lib/themeManager';
 
 export interface FurnitureModel {
   id: string;
@@ -21,7 +22,7 @@ export interface FurnitureCategory {
   subcategories: string[];
 }
 
-export const DEFAULT_MATERIALS: Material[] = [
+const BUILTIN_MATERIALS: Material[] = [
   {
     id: 'mat-wall-white',
     name: '白色墙面',
@@ -103,6 +104,14 @@ export const DEFAULT_MATERIALS: Material[] = [
     } as PBRProperties,
   },
 ];
+
+export const DEFAULT_MATERIALS: Material[] = (() => {
+  try {
+    return themeManager.getDefaultMaterials();
+  } catch (e) {
+    return BUILTIN_MATERIALS;
+  }
+})();
 
 export const FURNITURE_CATEGORIES: FurnitureCategory[] = [
   {

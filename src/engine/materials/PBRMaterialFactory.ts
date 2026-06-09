@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import type { Material, PBRProperties } from '@/types/floorplan';
-import { DEFAULT_MATERIALS } from '@/types/materials';
+import type { UIHelperMaterials } from '@/types/theme';
+import { themeManager } from '@/lib/themeManager';
 
 export class PBRMaterialFactory {
   private textureLoader: THREE.TextureLoader;
@@ -9,7 +10,22 @@ export class PBRMaterialFactory {
 
   constructor() {
     this.textureLoader = new THREE.TextureLoader();
-    DEFAULT_MATERIALS.forEach((m) => this.materialRegistry.set(m.id, m));
+    this.loadDefaultMaterials();
+  }
+
+  private loadDefaultMaterials(): void {
+    const defaults = themeManager.getDefaultMaterials();
+    defaults.forEach((m) => this.materialRegistry.set(m.id, m));
+  }
+
+  private getUIHelpers(): UIHelperMaterials {
+    return themeManager.getCurrentTheme().materials.uiHelpers;
+  }
+
+  reloadMaterials(): void {
+    this.clearCache();
+    this.materialRegistry.clear();
+    this.loadDefaultMaterials();
   }
 
   createMaterial(
@@ -127,31 +143,34 @@ export class PBRMaterialFactory {
   }
 
   createWireframeMaterial(): THREE.LineBasicMaterial {
+    const helpers = this.getUIHelpers();
     return new THREE.LineBasicMaterial({
-      color: 0xff6b35,
+      color: new THREE.Color(helpers.wireframe.color),
       transparent: true,
-      opacity: 0.8,
+      opacity: helpers.wireframe.opacity,
     });
   }
 
   createSelectionOutline(): THREE.MeshBasicMaterial {
+    const helpers = this.getUIHelpers();
     return new THREE.MeshBasicMaterial({
-      color: 0xff6b35,
+      color: new THREE.Color(helpers.selectionOutline.color),
       transparent: true,
-      opacity: 0.3,
+      opacity: helpers.selectionOutline.opacity,
       side: THREE.DoubleSide,
     });
   }
 
   createGlassMaterial(): THREE.MeshPhysicalMaterial {
+    const helpers = this.getUIHelpers();
     return new THREE.MeshPhysicalMaterial({
-      color: 0xe0f0ff,
+      color: new THREE.Color(helpers.glass.color),
       metalness: 0,
       roughness: 0,
-      transmission: 0.9,
+      transmission: helpers.glass.transmission,
       thickness: 0.05,
       transparent: true,
-      opacity: 0.3,
+      opacity: helpers.glass.opacity,
       envMapIntensity: 1,
       clearcoat: 1,
       clearcoatRoughness: 0,
@@ -160,10 +179,11 @@ export class PBRMaterialFactory {
   }
 
   createPreviewMaterial(): THREE.MeshStandardMaterial {
+    const helpers = this.getUIHelpers();
     return new THREE.MeshStandardMaterial({
-      color: 0x00d4ff,
+      color: new THREE.Color(helpers.preview.color),
       transparent: true,
-      opacity: 0.5,
+      opacity: helpers.preview.opacity,
       roughness: 0.5,
       metalness: 0,
     });
