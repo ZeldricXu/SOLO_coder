@@ -14,16 +14,23 @@ public class NotificationManager {
 
     private static final Logger logger = LoggerFactory.getLogger(NotificationManager.class);
 
-    private final Map<String, NotificationChannel> channels;
+    private final Map<String, Notifier> notifiers;
+    private final TemplateEngine templateEngine;
 
     public NotificationManager() {
-        this.channels = new HashMap<>();
+        this.notifiers = new HashMap<>();
+        this.templateEngine = new TemplateEngine();
     }
 
-    public void addChannel(NotificationChannel channel) {
-        if (channel != null) {
-            this.channels.put(channel.getName(), channel);
+    public void addNotifier(Notifier notifier) {
+        if (notifier != null) {
+            this.notifiers.put(notifier.getName(), notifier);
         }
+    }
+
+    @Deprecated
+    public void addChannel(NotificationChannel channel) {
+        addNotifier(channel);
     }
 
     public void addChannel(NotificationConfig config) {
@@ -31,9 +38,9 @@ public class NotificationManager {
             return;
         }
 
-        NotificationChannel channel = createChannel(config);
-        if (channel != null) {
-            addChannel(channel);
+        Notifier notifier = createNotifier(config);
+        if (notifier != null) {
+            addNotifier(notifier);
         }
     }
 
@@ -45,18 +52,23 @@ public class NotificationManager {
         }
     }
 
-    private NotificationChannel createChannel(NotificationConfig config) {
+    private Notifier createNotifier(NotificationConfig config) {
         switch (config.getType()) {
             case EMAIL:
-                return new EmailNotifier(config);
+                return new EmailNotifier(config, templateEngine);
             case WECHAT_WORK:
-                return new WeChatWorkNotifier(config);
+                return new WeChatWorkNotifier(config, templateEngine);
             case SLACK:
-                return new SlackNotifier(config);
+                return new SlackNotifier(config, templateEngine);
             default:
                 logger.warn("Unsupported channel type: {}", config.getType());
                 return null;
         }
+    }
+
+    @Deprecated
+    private NotificationChannel createChannel(NotificationConfig config) {
+        return (NotificationChannel) createNotifier(config);
     }
 
     public boolean sendNotification(AlertEvent alert, List<String> channelNames) {
@@ -66,17 +78,17 @@ public class NotificationManager {
 
         boolean success = false;
         List<String> channelsToUse = channelNames != null && !channelNames.isEmpty() ?
-            channelNames : new ArrayList<>(channels.keySet());
+            channelNames : new ArrayList<>(notifiers.keySet());
 
         for (String channelName : channelsToUse) {
-            NotificationChannel channel = channels.get(channelName);
-            if (channel == null || !channel.isEnabled()) {
+            Notifier notifier = notifiers.get(channelName);
+            if (notifier == null || !notifier.isEnabled()) {
                 logger.warn("Channel '{}' not found or disabled", channelName);
                 continue;
             }
 
             try {
-                boolean result = channel.send(alert);
+                boolean result = notifier.send(alert);
                 if (result) {
                     success = true;
                     logger.info("Notification sent via channel '{}'", channelName);
@@ -95,23 +107,62 @@ public class NotificationManager {
         return sendNotification(alert, null);
     }
 
+    @Deprecated
     public List<NotificationChannel> getChannels() {
-        return new ArrayList<>(channels.values());
+        List<NotificationChannel> channels = new ArrayList<>();
+        for (Notifier notifier : notifiers.values()) {
+            if (notifier instanceof NotificationChannel) {
+                channels.add((NotificationChannel) notifier);
+            }
+        }
+        return channels;
     }
 
+    public List<Notifier> getNotifiers() {
+        return new ArrayList<>(notifiers.values());
+    }
+
+    @Deprecated
     public NotificationChannel getChannel(String name) {
-        return channels.get(name);
+        Notifier notifier = notifiers.get(name);
+        if (notifier instanceof NotificationChannel) {
+            return (NotificationChannel) notifier;
+        }
+        return null;
+    }
+
+    public Notifier getNotifier(String name) {
+        return notifiers.get(name);
     }
 
     public boolean hasChannel(String name) {
-        return channels.containsKey(name);
+        return notifiers.containsKey(name);
     }
 
     public void removeChannel(String name) {
-        channels.remove(name);
+        notifiers.remove(name);
+    }
+
+    public void resetAll() {
+        for (Notifier notifier : notifiers.values()) {
+            notifier.reset();
+        }
+    }
+
+    public void shutdown() {
+        for (Notifier notifier : notifiers.values()) {
+            if (notifier instanceof AbstractNotifier) {
+                ((AbstractNotifier) notifier).shutdown();
+            }
+        }
+        notifiers.clear();
     }
 
     public void clear() {
-        channels.clear();
+        shutdown();
+    }
+
+    public TemplateEngine getTemplateEngine() {
+        return templateEngine;
     }
 }

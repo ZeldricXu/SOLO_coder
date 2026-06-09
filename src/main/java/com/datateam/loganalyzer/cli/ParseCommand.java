@@ -4,6 +4,7 @@ import com.datateam.loganalyzer.model.LogEvent;
 import com.datateam.loganalyzer.parser.LogFormat;
 import com.datateam.loganalyzer.parser.LogParser;
 import com.datateam.loganalyzer.parser.LogParserFactory;
+import com.datateam.loganalyzer.parser.MultilineAggregator;
 import com.datateam.loganalyzer.parser.MultiLineMerger;
 import com.datateam.loganalyzer.util.FileUtils;
 import com.datateam.loganalyzer.util.JsonUtils;
@@ -84,8 +85,9 @@ public class ParseCommand implements Callable<Integer> {
 
         List<LogEvent> events;
         if (mergeMultiline) {
-            MultiLineMerger merger = new MultiLineMerger(parser);
-            events = merger.processLines(rawLines);
+            MultilineAggregator aggregator = new MultilineAggregator(
+                parser, MultilineAggregator.MergeStrategyType.AUTO);
+            events = aggregator.processLines(rawLines);
         } else {
             events = parser.parseAll(rawLines);
         }

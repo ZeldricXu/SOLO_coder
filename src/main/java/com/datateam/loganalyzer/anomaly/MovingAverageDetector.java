@@ -5,9 +5,11 @@ import com.datateam.loganalyzer.model.TimeSeriesPoint;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-public class MovingAverageDetector {
+public class MovingAverageDetector implements AnomalyDetector {
 
     private int windowSize;
     private double sigmaMultiplier;
@@ -26,6 +28,44 @@ public class MovingAverageDetector {
         this.windowSize = windowSize;
         this.sigmaMultiplier = sigmaMultiplier;
         this.minDataPoints = minDataPoints;
+    }
+
+    @Override
+    public String getName() {
+        return "moving-average";
+    }
+
+    @Override
+    public String getAlgorithmClassName() {
+        return MovingAverageDetector.class.getName();
+    }
+
+    @Override
+    public void configure(Map<String, Object> config) {
+        if (config == null) return;
+        if (config.containsKey("windowSize")) {
+            this.windowSize = ((Number) config.get("windowSize")).intValue();
+        }
+        if (config.containsKey("sigmaMultiplier")) {
+            this.sigmaMultiplier = ((Number) config.get("sigmaMultiplier")).doubleValue();
+        }
+        if (config.containsKey("minDataPoints")) {
+            this.minDataPoints = ((Number) config.get("minDataPoints")).intValue();
+        }
+    }
+
+    @Override
+    public Map<String, Object> getConfiguration() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("windowSize", windowSize);
+        config.put("sigmaMultiplier", sigmaMultiplier);
+        config.put("minDataPoints", minDataPoints);
+        return config;
+    }
+
+    @Override
+    public boolean isReady() {
+        return baseline != null && baseline.getDataSize() >= minDataPoints;
     }
 
     public void train(List<Double> baselineData, String metric) {
@@ -68,6 +108,7 @@ public class MovingAverageDetector {
             if (isAnomaly || Math.abs(normalizedResidual) > sigmaMultiplier * 0.75) {
                 AnomalyResult result = new AnomalyResult();
                 result.setType(AnomalyResult.AnomalyType.MOVING_AVERAGE_RESIDUAL);
+                result.setAlgorithm(getAlgorithmClassName());
                 result.setTimestamp(timestamps != null && i < timestamps.size() ?
                     timestamps.get(i) : Instant.now());
                 result.setObservedValue(value);

@@ -4,13 +4,9 @@ import com.datateam.loganalyzer.model.LogEvent;
 import com.datateam.loganalyzer.model.LogLevel;
 import com.datateam.loganalyzer.util.TimeUtils;
 import io.krakens.grok.api.Grok;
-import io.krakens.grok.api.GrokCompiler;
 import io.krakens.grok.api.Match;
 import io.krakens.grok.api.exception.GrokException;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.InputStream;
 import java.time.Instant;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -20,6 +16,7 @@ public class GrokLogParser extends AbstractLogParser {
 
     private Grok grok;
     private String pattern;
+    private String patternName;
     private String timestampField = "timestamp";
     private String levelField = "level";
     private String messageField = "message";
@@ -28,32 +25,42 @@ public class GrokLogParser extends AbstractLogParser {
     private String threadField = "thread";
 
     public GrokLogParser(String pattern) throws GrokException {
-        this.pattern = pattern;
-        GrokCompiler compiler = GrokCompiler.newInstance();
-        compiler.registerDefaultPatterns();
-        this.grok = compiler.compile(pattern);
+        this(pattern, null, null);
     }
 
     public GrokLogParser(String pattern, String customPatternsDir) throws GrokException {
+        this(pattern, null, customPatternsDir);
+    }
+
+    public GrokLogParser(String pattern, String patternName, String customPatternsDir) throws GrokException {
         this.pattern = pattern;
-        GrokCompiler compiler = GrokCompiler.newInstance();
-        compiler.registerDefaultPatterns();
+        this.patternName = patternName;
+
+        GrokPatternRegistry registry = GrokPatternRegistry.getInstance();
+
         if (customPatternsDir != null) {
-            File dir = new File(customPatternsDir);
-            if (dir.isDirectory()) {
-                File[] files = dir.listFiles((f) -> f.isFile() && !f.isHidden());
-                if (files != null) {
-                    for (File f : files) {
-                        try (InputStream is = new FileInputStream(f)) {
-                            compiler.register(is);
-                        } catch (Exception e) {
-                            // ignore
-                        }
-                    }
-                }
-            }
+            registry.loadCustomPatterns(customPatternsDir);
         }
-        this.grok = compiler.compile(pattern);
+
+        if (patternName != null && registry.hasPattern(patternName)) {
+            this.grok = registry.getCompiledPattern(patternName);
+        } else if (pattern != null) {
+            if (patternName != null) {
+                this.grok = registry.compileAndCache(patternName, pattern);
+            } else {
+                this.grok = registry.compile(pattern);
+            }
+        } else {
+            throw new GrokException("Either pattern or patternName must be provided");
+        }
+    }
+
+    public static GrokLogParser fromPatternName(String patternName) throws GrokException {
+        return new GrokLogParser(null, patternName, null);
+    }
+
+    public static GrokLogParser fromPatternName(String patternName, String customPatternsDir) throws GrokException {
+        return new GrokLogParser(null, patternName, customPatternsDir);
     }
 
     @Override

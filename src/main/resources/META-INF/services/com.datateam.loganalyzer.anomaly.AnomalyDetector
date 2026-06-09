@@ -1,0 +1,2 @@
+com.datateam.loganalyzer.anomaly.ZScoreDetector
+com.datateam.loganalyzer.anomaly.MovingAverageDetector

@@ -40,6 +40,7 @@ public class AlertRule {
     private Operator operator;
     private List<AlertRule> children;
 
+    private String detectorClassName;
     private List<String> notificationChannels;
 
     public AlertRule() {
@@ -203,5 +204,17 @@ public class AlertRule {
 
     public void addNotificationChannel(String channel) {
         this.notificationChannels.add(channel);
+    }
+
+    public String getDetectorClassName() {
+        return detectorClassName;
+    }
+
+    public void setDetectorClassName(String detectorClassName) {
+        this.detectorClassName = detectorClassName;
+    }
+
+    public boolean hasDetectorConfigured() {
+        return detectorClassName != null && !detectorClassName.trim().isEmpty();
     }
 }

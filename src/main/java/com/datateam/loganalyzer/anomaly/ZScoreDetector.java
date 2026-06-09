@@ -5,9 +5,11 @@ import com.datateam.loganalyzer.model.TimeSeriesPoint;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-public class ZScoreDetector {
+public class ZScoreDetector implements AnomalyDetector {
 
     private double threshold;
     private int minDataPoints;
@@ -24,6 +26,40 @@ public class ZScoreDetector {
     public ZScoreDetector(double threshold, int minDataPoints) {
         this.threshold = threshold;
         this.minDataPoints = minDataPoints;
+    }
+
+    @Override
+    public String getName() {
+        return "zscore";
+    }
+
+    @Override
+    public String getAlgorithmClassName() {
+        return ZScoreDetector.class.getName();
+    }
+
+    @Override
+    public void configure(Map<String, Object> config) {
+        if (config == null) return;
+        if (config.containsKey("threshold")) {
+            this.threshold = ((Number) config.get("threshold")).doubleValue();
+        }
+        if (config.containsKey("minDataPoints")) {
+            this.minDataPoints = ((Number) config.get("minDataPoints")).intValue();
+        }
+    }
+
+    @Override
+    public Map<String, Object> getConfiguration() {
+        Map<String, Object> config = new HashMap<>();
+        config.put("threshold", threshold);
+        config.put("minDataPoints", minDataPoints);
+        return config;
+    }
+
+    @Override
+    public boolean isReady() {
+        return baseline != null && baseline.getDataSize() >= minDataPoints;
     }
 
     public void train(List<Double> baselineData, String metric) {
@@ -72,6 +108,7 @@ public class ZScoreDetector {
             if (isAnomaly || Math.abs(zScore) > threshold * 0.75) {
                 AnomalyResult result = new AnomalyResult();
                 result.setType(AnomalyResult.AnomalyType.ZSCORE);
+                result.setAlgorithm(getAlgorithmClassName());
                 result.setTimestamp(timestamps != null && i < timestamps.size() ?
                     timestamps.get(i) : Instant.now());
                 result.setObservedValue(value);

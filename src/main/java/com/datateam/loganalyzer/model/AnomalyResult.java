@@ -3,6 +3,7 @@ package com.datateam.loganalyzer.model;
 import java.time.Instant;
 
 public class AnomalyResult {
+    @Deprecated
     public enum AnomalyType {
         ZSCORE,
         MOVING_AVERAGE_RESIDUAL,
@@ -10,7 +11,9 @@ public class AnomalyResult {
         DROP
     }
 
+    @Deprecated
     private AnomalyType type;
+    private String algorithm;
     private Instant timestamp;
     private double observedValue;
     private double expectedValue;
@@ -31,6 +34,26 @@ public class AnomalyResult {
 
     public void setType(AnomalyType type) {
         this.type = type;
+        if (type != null && this.algorithm == null) {
+            switch (type) {
+                case ZSCORE:
+                    this.algorithm = "com.datateam.loganalyzer.anomaly.ZScoreDetector";
+                    break;
+                case MOVING_AVERAGE_RESIDUAL:
+                    this.algorithm = "com.datateam.loganalyzer.anomaly.MovingAverageDetector";
+                    break;
+                default:
+                    this.algorithm = type.name();
+            }
+        }
+    }
+
+    public String getAlgorithm() {
+        return algorithm != null ? algorithm : (type != null ? type.name() : null);
+    }
+
+    public void setAlgorithm(String algorithm) {
+        this.algorithm = algorithm;
     }
 
     public Instant getTimestamp() {

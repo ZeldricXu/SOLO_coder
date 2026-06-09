@@ -3,19 +3,15 @@ package com.datateam.loganalyzer.anomaly;
 import com.datateam.loganalyzer.model.AnomalyResult;
 import com.datateam.loganalyzer.model.TimeSeriesPoint;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 
 public class AnomalyDetectionEngine {
 
-    private ZScoreDetector zScoreDetector;
-    private MovingAverageDetector movingAverageDetector;
-    private boolean useZScore;
-    private boolean useMovingAverage;
+    private final List<AnomalyDetector> detectors;
+    private final Set<String> enabledAlgorithms;
     private String metric;
     private int baselinePeriodPoints;
+    private final AnomalyDetectorServiceLoader serviceLoader;
 
     public AnomalyDetectionEngine() {
         this("errors");
@@ -23,11 +19,38 @@ public class AnomalyDetectionEngine {
 
     public AnomalyDetectionEngine(String metric) {
         this.metric = metric;
-        this.useZScore = true;
-        this.useMovingAverage = true;
-        this.zScoreDetector = new ZScoreDetector(3.0, 10);
-        this.movingAverageDetector = new MovingAverageDetector(10, 3.0, 20);
+        this.detectors = new ArrayList<>();
+        this.enabledAlgorithms = new LinkedHashSet<>();
         this.baselinePeriodPoints = 30;
+        this.serviceLoader = AnomalyDetectorServiceLoader.getInstance();
+        this.serviceLoader.initialize();
+
+        enableAlgorithm(ZScoreDetector.class.getName());
+        enableAlgorithm(MovingAverageDetector.class.getName());
+    }
+
+    public void enableAlgorithm(String algorithmClassName) {
+        enabledAlgorithms.add(algorithmClassName);
+    }
+
+    public void disableAlgorithm(String algorithmClassName) {
+        enabledAlgorithms.remove(algorithmClassName);
+    }
+
+    public void configureAlgorithm(String algorithmClassName, Map<String, Object> config) {
+        for (AnomalyDetector detector : detectors) {
+            if (detector.getAlgorithmClassName().equals(algorithmClassName) ||
+                detector.getName().equals(algorithmClassName)) {
+                detector.configure(config);
+                return;
+            }
+        }
+
+        AnomalyDetector detector = serviceLoader.getDetector(algorithmClassName, config);
+        if (detector != null) {
+            detectors.add(detector);
+            enabledAlgorithms.add(algorithmClassName);
+        }
     }
 
     public List<AnomalyResult> analyze(List<TimeSeriesPoint> timeSeries) {
@@ -41,6 +64,8 @@ public class AnomalyDetectionEngine {
         if (timeSeries == null || timeSeries.isEmpty()) {
             return allResults;
         }
+
+        initializeDetectors();
 
         List<TimeSeriesPoint> trainingData = new ArrayList<>();
         List<TimeSeriesPoint> detectionData = new ArrayList<>();
@@ -58,19 +83,35 @@ public class AnomalyDetectionEngine {
             }
         }
 
-        if (useZScore) {
-            zScoreDetector.trainFromTimeSeries(trainingData, metric);
-            List<AnomalyResult> zResults = zScoreDetector.detectFromTimeSeries(detectionData, metric);
-            allResults.addAll(zResults);
-        }
-
-        if (useMovingAverage) {
-            movingAverageDetector.trainFromTimeSeries(trainingData, metric);
-            List<AnomalyResult> maResults = movingAverageDetector.detectFromTimeSeries(detectionData, metric);
-            allResults.addAll(maResults);
+        for (AnomalyDetector detector : detectors) {
+            if (enabledAlgorithms.contains(detector.getAlgorithmClassName()) ||
+                enabledAlgorithms.contains(detector.getName())) {
+                detector.trainFromTimeSeries(trainingData, metric);
+                List<AnomalyResult> results = detector.detectFromTimeSeries(detectionData, metric);
+                allResults.addAll(results);
+            }
         }
 
         return deduplicateAndMerge(allResults);
+    }
+
+    private void initializeDetectors() {
+        for (String algoName : enabledAlgorithms) {
+            boolean exists = false;
+            for (AnomalyDetector detector : detectors) {
+                if (detector.getAlgorithmClassName().equals(algoName) ||
+                    detector.getName().equals(algoName)) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                AnomalyDetector detector = serviceLoader.getDetector(algoName);
+                if (detector != null) {
+                    detectors.add(detector);
+                }
+            }
+        }
     }
 
     private List<AnomalyResult> deduplicateAndMerge(List<AnomalyResult> results) {
@@ -110,12 +151,21 @@ public class AnomalyDetectionEngine {
         return finalResults;
     }
 
+    @Deprecated
     public void configureZScore(double threshold, int minDataPoints) {
-        this.zScoreDetector = new ZScoreDetector(threshold, minDataPoints);
+        Map<String, Object> config = new HashMap<>();
+        config.put("threshold", threshold);
+        config.put("minDataPoints", minDataPoints);
+        configureAlgorithm(ZScoreDetector.class.getName(), config);
     }
 
+    @Deprecated
     public void configureMovingAverage(int windowSize, double sigmaMultiplier, int minDataPoints) {
-        this.movingAverageDetector = new MovingAverageDetector(windowSize, sigmaMultiplier, minDataPoints);
+        Map<String, Object> config = new HashMap<>();
+        config.put("windowSize", windowSize);
+        config.put("sigmaMultiplier", sigmaMultiplier);
+        config.put("minDataPoints", minDataPoints);
+        configureAlgorithm(MovingAverageDetector.class.getName(), config);
     }
 
     public void setMetric(String metric) {
@@ -126,23 +176,57 @@ public class AnomalyDetectionEngine {
         return metric;
     }
 
+    @Deprecated
     public void setUseZScore(boolean useZScore) {
-        this.useZScore = useZScore;
+        if (useZScore) {
+            enableAlgorithm(ZScoreDetector.class.getName());
+        } else {
+            disableAlgorithm(ZScoreDetector.class.getName());
+        }
     }
 
+    @Deprecated
     public void setUseMovingAverage(boolean useMovingAverage) {
-        this.useMovingAverage = useMovingAverage;
+        if (useMovingAverage) {
+            enableAlgorithm(MovingAverageDetector.class.getName());
+        } else {
+            disableAlgorithm(MovingAverageDetector.class.getName());
+        }
     }
 
     public void setBaselinePeriodPoints(int baselinePeriodPoints) {
         this.baselinePeriodPoints = baselinePeriodPoints;
     }
 
+    @Deprecated
     public BaselineModel getZScoreBaseline() {
-        return zScoreDetector != null ? zScoreDetector.getBaseline() : null;
+        return getDetectorBaseline(ZScoreDetector.class.getName());
     }
 
+    @Deprecated
     public BaselineModel getMovingAverageBaseline() {
-        return movingAverageDetector != null ? movingAverageDetector.getBaseline() : null;
+        return getDetectorBaseline(MovingAverageDetector.class.getName());
+    }
+
+    private BaselineModel getDetectorBaseline(String detectorName) {
+        for (AnomalyDetector detector : detectors) {
+            if (detector.getAlgorithmClassName().equals(detectorName) ||
+                detector.getName().equals(detectorName)) {
+                return detector.getBaseline();
+            }
+        }
+        return null;
+    }
+
+    public List<AnomalyDetector> getDetectors() {
+        return Collections.unmodifiableList(detectors);
+    }
+
+    public Set<String> getEnabledAlgorithms() {
+        return Collections.unmodifiableSet(enabledAlgorithms);
+    }
+
+    public AnomalyDetectorServiceLoader getServiceLoader() {
+        return serviceLoader;
     }
 }

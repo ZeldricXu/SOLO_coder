@@ -24,11 +24,24 @@ public class NotificationConfig {
     private String webhookUrl;
     private String secret;
 
+    private int maxRetries;
+    private long initialDelayMs;
+    private double backoffMultiplier;
+    private long timeoutMs;
+    private int circuitBreakerThreshold;
+    private long circuitBreakerResetMs;
+
     public NotificationConfig() {
         this.enabled = true;
         this.smtpPort = 587;
         this.smtpAuth = true;
         this.smtpStartTls = true;
+        this.maxRetries = 3;
+        this.initialDelayMs = 1000;
+        this.backoffMultiplier = 2.0;
+        this.timeoutMs = 5000;
+        this.circuitBreakerThreshold = 5;
+        this.circuitBreakerResetMs = 60000;
     }
 
     public String getId() {
@@ -141,5 +154,53 @@ public class NotificationConfig {
 
     public void setSecret(String secret) {
         this.secret = secret;
+    }
+
+    public int getMaxRetries() {
+        return maxRetries;
+    }
+
+    public void setMaxRetries(int maxRetries) {
+        this.maxRetries = maxRetries;
+    }
+
+    public long getInitialDelayMs() {
+        return initialDelayMs;
+    }
+
+    public void setInitialDelayMs(long initialDelayMs) {
+        this.initialDelayMs = initialDelayMs;
+    }
+
+    public double getBackoffMultiplier() {
+        return backoffMultiplier;
+    }
+
+    public void setBackoffMultiplier(double backoffMultiplier) {
+        this.backoffMultiplier = backoffMultiplier;
+    }
+
+    public long getTimeoutMs() {
+        return timeoutMs;
+    }
+
+    public void setTimeoutMs(long timeoutMs) {
+        this.timeoutMs = timeoutMs;
+    }
+
+    public int getCircuitBreakerThreshold() {
+        return circuitBreakerThreshold;
+    }
+
+    public void setCircuitBreakerThreshold(int circuitBreakerThreshold) {
+        this.circuitBreakerThreshold = circuitBreakerThreshold;
+    }
+
+    public long getCircuitBreakerResetMs() {
+        return circuitBreakerResetMs;
+    }
+
+    public void setCircuitBreakerResetMs(long circuitBreakerResetMs) {
+        this.circuitBreakerResetMs = circuitBreakerResetMs;
     }
 }

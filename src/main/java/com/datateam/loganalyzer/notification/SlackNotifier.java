@@ -9,8 +9,6 @@ import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
 import org.apache.http.util.EntityUtils;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -18,57 +16,46 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class SlackNotifier implements NotificationChannel {
+public class SlackNotifier extends AbstractNotifier implements NotificationChannel {
 
-    private static final Logger logger = LoggerFactory.getLogger(SlackNotifier.class);
-
-    private final NotificationConfig config;
-    private final AlertTemplateEngine templateEngine;
     private final CloseableHttpClient httpClient;
 
     public SlackNotifier(NotificationConfig config) {
-        this.config = config;
-        this.templateEngine = new AlertTemplateEngine();
+        super(config);
+        this.httpClient = HttpClients.createDefault();
+    }
+
+    public SlackNotifier(NotificationConfig config, TemplateEngine templateEngine) {
+        super(config, templateEngine);
         this.httpClient = HttpClients.createDefault();
     }
 
     @Override
-    public boolean send(AlertEvent alert) {
-        if (!config.isEnabled()) {
-            logger.warn("Slack channel is disabled, skipping notification");
+    protected boolean doSend(AlertEvent alert) throws Exception {
+        String webhookUrl = config.getWebhookUrl();
+        if (webhookUrl == null || webhookUrl.isEmpty()) {
+            logger.error("Webhook URL is not configured");
             return false;
         }
 
-        try {
-            String webhookUrl = config.getWebhookUrl();
-            if (webhookUrl == null || webhookUrl.isEmpty()) {
-                logger.error("Webhook URL is not configured");
+        Map<String, Object> payload = buildSlackPayload(alert);
+        String jsonPayload = JsonUtils.toJson(payload);
+
+        HttpPost post = new HttpPost(webhookUrl);
+        post.setHeader("Content-Type", "application/json; charset=utf-8");
+        post.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8));
+
+        try (CloseableHttpResponse response = httpClient.execute(post)) {
+            int statusCode = response.getStatusLine().getStatusCode();
+            String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
+
+            if (statusCode == 200) {
+                logger.info("Slack notification sent successfully");
+                return true;
+            } else {
+                logger.error("Slack webhook failed with status {}: {}", statusCode, responseBody);
                 return false;
             }
-
-            Map<String, Object> payload = buildSlackPayload(alert);
-            String jsonPayload = JsonUtils.toJson(payload);
-
-            HttpPost post = new HttpPost(webhookUrl);
-            post.setHeader("Content-Type", "application/json; charset=utf-8");
-            post.setEntity(new StringEntity(jsonPayload, StandardCharsets.UTF_8));
-
-            try (CloseableHttpResponse response = httpClient.execute(post)) {
-                int statusCode = response.getStatusLine().getStatusCode();
-                String responseBody = EntityUtils.toString(response.getEntity(), StandardCharsets.UTF_8);
-
-                if (statusCode == 200) {
-                    logger.info("Slack notification sent successfully");
-                    return true;
-                } else {
-                    logger.error("Slack webhook failed with status {}: {}", statusCode, responseBody);
-                    return false;
-                }
-            }
-
-        } catch (Exception e) {
-            logger.error("Failed to send Slack notification", e);
-            return false;
         }
     }
 
@@ -147,20 +134,5 @@ public class SlackNotifier implements NotificationChannel {
     @Override
     public String getName() {
         return config.getName() != null ? config.getName() : "slack";
-    }
-
-    @Override
-    public NotificationConfig.ChannelType getType() {
-        return NotificationConfig.ChannelType.SLACK;
-    }
-
-    @Override
-    public boolean isEnabled() {
-        return config.isEnabled();
-    }
-
-    @Override
-    public NotificationConfig getConfig() {
-        return config;
     }
 }
