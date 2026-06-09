@@ -1,0 +1,128 @@
+server:
+  log_level: warn
+
+collectors:
+  elasticsearch:
+    - enabled: true
+      name: es-production
+      addresses:
+        - http://elasticsearch-prod-01:9200
+        - http://elasticsearch-prod-02:9200
+        - http://elasticsearch-prod-03:9200
+      index: "logs-*"
+      scroll_size: 1000
+      poll_interval: 30s
+      query: '{"match_all": {}}'
+      time_field: "@timestamp"
+      level_field: level
+      message_field: message
+
+  kafka:
+    - enabled: true
+      name: kafka-production
+      brokers:
+        - kafka-prod-01:9092
+        - kafka-prod-02:9092
+        - kafka-prod-03:9092
+      topic: application-logs
+      group_id: log-analyzer-prod
+      partition: 0
+
+pipeline:
+  worker_count: 16
+  buffer_size: 20000
+
+detection:
+  window_size: 5m
+  slide_step: 30s
+  rules:
+    - id: error-rate-spike-prod
+      name: Error Rate Spike Detection
+      enabled: true
+      type: error_rate
+      service_name: ".*"
+      metric: error_rate
+      threshold: 3.0
+      window_size: 5m
+      algorithm: zscore
+      severity: critical
+      min_observations: 20
+
+    - id: response-time-p99-prod
+      name: P99 Response Time Anomaly
+      enabled: true
+      type: latency
+      service_name: "api-gateway"
+      metric: p99_latency
+      threshold: 4.0
+      window_size: 10m
+      algorithm: mad
+      severity: high
+      min_observations: 50
+
+    - id: specific-error-pattern-prod
+      name: Database Connection Error Pattern
+      enabled: true
+      type: pattern
+      service_name: "order-service"
+      metric: pattern_count
+      threshold: 5.0
+      window_size: 5m
+      algorithm: zscore
+      severity: critical
+      min_observations: 5
+
+notification:
+  channels:
+    - type: dingtalk
+      name: ops-dingtalk-prod
+      enabled: true
+      filter:
+        min_severity: warning
+        services: []
+        alert_types: []
+
+    - type: pagerduty
+      name: pagerduty-oncall-prod
+      enabled: true
+      filter:
+        min_severity: high
+
+    - type: webhook
+      name: internal-webhook-prod
+      enabled: true
+      filter:
+        min_severity: info
+
+storage:
+  clickhouse:
+    addresses:
+      - clickhouse-prod-01:9000
+      - clickhouse-prod-02:9000
+    database: loganalyzer
+    dial_timeout: 10
+    read_timeout: 30
+    write_timeout: 30
+    max_open_conns: 100
+    max_idle_conns: 20
+
+  redis:
+    address: redis-prod:6379
+    pool_size: 100
+    dial_timeout: 10s
+    read_timeout: 5s
+    write_timeout: 5s
+
+  kafka:
+    brokers:
+      - kafka-prod-01:9092
+      - kafka-prod-02:9092
+      - kafka-prod-03:9092
+    topic: log-analyzer-buffer
+    partition: 0
+
+consul:
+  enabled: true
+  address: consul-prod:8500
+  kv_path: loganalyzer/production/config
+  watch_interval: 5s

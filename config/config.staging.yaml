@@ -1,0 +1,108 @@
+server:
+  log_level: info
+
+collectors:
+  elasticsearch:
+    - enabled: true
+      name: es-staging
+      addresses:
+        - http://elasticsearch:9200
+      index: "logs-*"
+      scroll_size: 500
+      poll_interval: 15s
+      query: '{"match_all": {}}'
+      time_field: "@timestamp"
+      level_field: level
+      message_field: message
+
+  kafka:
+    - enabled: true
+      name: kafka-staging
+      brokers:
+        - kafka:9092
+      topic: application-logs-staging
+      group_id: log-analyzer-staging
+      partition: 0
+
+  syslog:
+    - enabled: true
+      name: syslog-staging
+      bind_addr: 0.0.0.0
+      port: 5140
+      protocol: udp
+
+pipeline:
+  worker_count: 8
+  buffer_size: 5000
+
+detection:
+  window_size: 5m
+  slide_step: 1m
+  rules:
+    - id: error-rate-spike-stg
+      name: Error Rate Spike Detection
+      enabled: true
+      type: error_rate
+      service_name: ".*"
+      metric: error_rate
+      threshold: 3.0
+      window_size: 5m
+      algorithm: zscore
+      severity: high
+      min_observations: 10
+
+    - id: response-time-p99-stg
+      name: P99 Response Time Anomaly
+      enabled: true
+      type: latency
+      service_name: "api-gateway"
+      metric: p99_latency
+      threshold: 4.0
+      window_size: 10m
+      algorithm: mad
+      severity: high
+      min_observations: 20
+
+notification:
+  channels:
+    - type: webhook
+      name: staging-webhook
+      enabled: true
+      config:
+        url: "http://alert-service/api/alerts"
+        method: POST
+      filter:
+        min_severity: warning
+
+    - type: dingtalk
+      name: staging-dingtalk
+      enabled: false
+      filter:
+        min_severity: high
+
+storage:
+  clickhouse:
+    addresses:
+      - clickhouse:9000
+    database: loganalyzer_staging
+    dial_timeout: 10
+    read_timeout: 30
+    write_timeout: 30
+    max_open_conns: 50
+    max_idle_conns: 10
+
+  redis:
+    address: redis:6379
+    pool_size: 50
+
+  kafka:
+    brokers:
+      - kafka:9092
+    topic: log-analyzer-buffer-staging
+    partition: 0
+
+consul:
+  enabled: true
+  address: consul:8500
+  kv_path: loganalyzer/staging/config
+  watch_interval: 15s

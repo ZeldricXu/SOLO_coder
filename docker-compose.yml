@@ -1,0 +1,176 @@
+version: "3.9"
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:23.8
+    container_name: loganalyzer-clickhouse
+    ports:
+      - "9000:9000"
+      - "8123:8123"
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: ""
+      CLICKHOUSE_DB: loganalyzer
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD", "clickhouse-client", "--query", "SELECT 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.migrate
+    container_name: loganalyzer-migrate
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "clickhouse://clickhouse:9000?database=loganalyzer&username=default&x-multi-statement=true",
+        "up",
+      ]
+
+  redis:
+    image: redis:7-alpine
+    container_name: loganalyzer-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.3
+    container_name: loganalyzer-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zk_data:/var/lib/zookeeper/data
+      - zk_logs:/var/lib/zookeeper/log
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: loganalyzer-kafka
+    depends_on:
+      zookeeper:
+        condition: service_started
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka:9092,EXTERNAL://localhost:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_LOG4J_LOGGERS: "kafka.controller=INFO,kafka.producer.async.DefaultEventHandler=INFO,state.change.logger=INFO"
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test:
+        ["CMD", "kafka-topics", "--bootstrap-server", "localhost:9092", "--list"]
+      interval: 15s
+      timeout: 10s
+      retries: 15
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.3
+    container_name: loganalyzer-elasticsearch
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms1g -Xmx1g
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    volumes:
+      - es_data:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+
+  consul:
+    image: hashicorp/consul:1.17
+    container_name: loganalyzer-consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -ui -node=server-1 -bootstrap-expect=1 -client=0.0.0.0
+    environment:
+      CONSUL_LOCAL_CONFIG: '{"datacenter":"dc1","data_dir":"/consul/data"}'
+    volumes:
+      - consul_data:/consul/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8500/v1/status/leader"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  loganalyzer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: loganalyzer-app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+      consul:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+      - "9090:9090"
+      - "9091:9091"
+    environment:
+      APP_ENV: development
+      CONFIG_PATH: /config
+      LOGANALYZER_STORAGE_CLICKHOUSE_ADDRESSES: clickhouse:9000
+      LOGANALYZER_STORAGE_CLICKHOUSE_DATABASE: loganalyzer
+      LOGANALYZER_STORAGE_CLICKHOUSE_USERNAME: default
+      LOGANALYZER_STORAGE_CLICKHOUSE_PASSWORD: ""
+      LOGANALYZER_STORAGE_REDIS_ADDRESS: redis:6379
+      LOGANALYZER_STORAGE_REDIS_PASSWORD: ""
+      LOGANALYZER_STORAGE_REDIS_DB: "0"
+      LOGANALYZER_STORAGE_KAFKA_BROKERS: kafka:9092
+      LOGANALYZER_CONSUL_ADDRESS: consul:8500
+      LOGANALYZER_COLLECTORS_ELASTICSEARCH_0_ADDRESSES: http://elasticsearch:9200
+    volumes:
+      - ./config:/config:ro
+    restart: unless-stopped
+
+volumes:
+  clickhouse_data:
+  redis_data:
+  zk_data:
+  zk_logs:
+  kafka_data:
+  es_data:
+  consul_data:

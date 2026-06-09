@@ -1,0 +1,152 @@
+server:
+  log_level: debug
+
+collectors:
+  elasticsearch:
+    - enabled: true
+      name: es-local
+      addresses:
+        - http://localhost:9200
+      index: "logs-*"
+      scroll_size: 100
+      poll_interval: 5s
+      query: '{"match_all": {}}'
+      time_field: "@timestamp"
+      level_field: level
+      message_field: message
+
+  loki:
+    - enabled: false
+      name: loki-local
+      address: http://localhost:3100
+      query: '{job=~".+"}'
+      range: 15m
+      poll_interval: 30s
+      step: 1m
+
+  kafka:
+    - enabled: true
+      name: kafka-local
+      brokers:
+        - localhost:9093
+      topic: application-logs
+      group_id: log-analyzer-dev
+      partition: 0
+
+  syslog:
+    - enabled: true
+      name: syslog-local
+      bind_addr: 0.0.0.0
+      port: 5140
+      protocol: udp
+
+pipeline:
+  worker_count: 2
+  buffer_size: 1000
+  rules:
+    - id: filter-healthcheck
+      name: Filter Healthcheck Logs
+      type: filter
+      enabled: true
+      condition: "/healthcheck|/ping|/metrics"
+      config:
+        mode: exclude
+        field: message
+
+    - id: parse-nginx-access
+      name: Parse Nginx Access Logs
+      type: parse
+      enabled: true
+      service_name: nginx
+      condition: "nginx"
+      config:
+        pattern: '^(\S+) - (\S+) \[([^\]]+)\] "(\S+) (\S+) (\S+)" (\d+) (\d+) "([^"]*)" "([^"]*)"$'
+        fields:
+          - client_ip
+          - remote_user
+          - timestamp
+          - method
+          - path
+          - protocol
+          - status_code
+          - response_size
+          - referer
+          - user_agent
+
+    - id: enrich-error-code
+      name: Enrich Error Code Description
+      type: enrich
+      enabled: true
+      condition: ".*"
+      config:
+        type: error_code
+        error_map:
+          "500": Internal Server Error
+          "404": Not Found
+          "403": Forbidden
+          "401": Unauthorized
+          "400": Bad Request
+          "503": Service Unavailable
+          "504": Gateway Timeout
+
+detection:
+  window_size: 1m
+  slide_step: 2s
+  rules:
+    - id: error-rate-spike-dev
+      name: Error Rate Spike Detection
+      enabled: true
+      type: error_rate
+      service_name: ".*"
+      metric: error_rate
+      threshold: 2.0
+      window_size: 1m
+      algorithm: zscore
+      severity: high
+      min_observations: 5
+
+notification:
+  channels:
+    - type: webhook
+      name: dev-webhook
+      enabled: true
+      config:
+        url: "http://localhost:9000/hooks/dev-alerts"
+        method: POST
+      filter:
+        min_severity: info
+
+storage:
+  clickhouse:
+    addresses:
+      - localhost:9000
+    database: loganalyzer
+    username: default
+    password: ""
+    dial_timeout: 5
+    read_timeout: 10
+    write_timeout: 10
+    max_open_conns: 20
+    max_idle_conns: 5
+
+  redis:
+    address: localhost:6379
+    password: ""
+    db: 0
+    pool_size: 20
+    dial_timeout: 5s
+    read_timeout: 3s
+    write_timeout: 3s
+
+  kafka:
+    brokers:
+      - localhost:9093
+    topic: log-analyzer-buffer-dev
+    partition: 0
+
+consul:
+  enabled: false
+  address: localhost:8500
+  token: ""
+  kv_path: loganalyzer/config
+  watch_interval: 30s

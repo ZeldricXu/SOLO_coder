@@ -1,0 +1,6 @@
+FROM migrate/migrate:v4.17.0
+
+COPY ./migrations /migrations
+
+ENTRYPOINT ["migrate"]
+CMD ["-path", "/migrations", "-database", "clickhouse://localhost:9000?database=loganalyzer&username=default", "up"]

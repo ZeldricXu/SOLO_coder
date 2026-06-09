@@ -5,10 +5,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
 	consul "github.com/hashicorp/consul/api"
+	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -244,23 +246,103 @@ func SetCacheTTL(ttl time.Duration) {
 }
 
 func Load(configPath string) (*Config, error) {
+	env := GetEnv()
+
+	v := viper.New()
+	v.SetConfigType("yaml")
+	v.SetEnvPrefix("LOGANALYZER")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	if configPath == "" {
+		configPath = os.Getenv("CONFIG_PATH")
+		if configPath == "" {
+			configPath = "config"
+		}
+	}
+
 	absPath, err := filepath.Abs(configPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve config path: %w", err)
 	}
 
-	data, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+	baseConfigFile := filepath.Join(absPath, "config.yaml")
+	if _, err := os.Stat(baseConfigFile); err == nil {
+		v.SetConfigFile(baseConfigFile)
+		if err := v.ReadInConfig(); err != nil {
+			return nil, fmt.Errorf("failed to read base config: %w", err)
+		}
+		log.Printf("Loaded base config from: %s", baseConfigFile)
 	}
+
+	envConfigFile := filepath.Join(absPath, fmt.Sprintf("config.%s.yaml", env))
+	if _, err := os.Stat(envConfigFile); err == nil {
+		v.SetConfigFile(envConfigFile)
+		if err := v.MergeInConfig(); err != nil {
+			return nil, fmt.Errorf("failed to merge env config: %w", err)
+		}
+		log.Printf("Merged environment config from: %s", envConfigFile)
+	}
+
+	bindEnvVars(v)
 
 	cfg := &Config{}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+	if err := v.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
+	cfg.Server.Environment = env
+
 	updateGlobalConfig(cfg)
+	log.Printf("Configuration loaded for environment: %s", env)
 	return cfg, nil
+}
+
+func bindEnvVars(v *viper.Viper) {
+	envBindings := []string{
+		"server.http_port",
+		"server.grpc_port",
+		"server.metrics_port",
+		"server.log_level",
+		"storage.clickhouse.addresses",
+		"storage.clickhouse.username",
+		"storage.clickhouse.password",
+		"storage.clickhouse.database",
+		"storage.redis.address",
+		"storage.redis.password",
+		"storage.redis.db",
+		"storage.kafka.brokers",
+		"consul.address",
+		"consul.token",
+		"consul.kv_path",
+		"notification.channels.dingtalk.config.webhook_url",
+		"notification.channels.dingtalk.config.secret",
+		"notification.channels.pagerduty.config.routing_key",
+		"notification.channels.pagerduty.config.service_key",
+		"notification.channels.webhook.config.url",
+		"notification.channels.webhook.config.headers.authorization",
+	}
+
+	for _, key := range envBindings {
+		_ = v.BindEnv(key)
+	}
+}
+
+func GetEnv() string {
+	env := os.Getenv("APP_ENV")
+	if env == "" {
+		env = "development"
+	}
+	switch strings.ToLower(env) {
+	case "dev", "development":
+		return "development"
+	case "stg", "staging":
+		return "staging"
+	case "prod", "production":
+		return "production"
+	default:
+		return env
+	}
 }
 
 func Get() *Config {
