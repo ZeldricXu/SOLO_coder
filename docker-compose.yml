@@ -1,0 +1,142 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: inventory-postgres
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-inventory_user}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-inventory_password}
+      POSTGRES_DB: ${DATABASE_NAME:-inventory_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-inventory_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - inventory-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: inventory-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - inventory-network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventory-api
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - DATABASE_URL=postgresql+psycopg2://${DATABASE_USER:-inventory_user}:${DATABASE_PASSWORD:-inventory_password}@postgres:5432/${DATABASE_NAME:-inventory_db}
+      - REDIS_BROKER_URL=redis://redis:6379/0
+      - REDIS_BACKEND_URL=redis://redis:6379/1
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - inventory-network
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventory-celery-worker
+    command: python -m celery -A app.tasks worker --loglevel=INFO --concurrency=4
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - DATABASE_URL=postgresql+psycopg2://${DATABASE_USER:-inventory_user}:${DATABASE_PASSWORD:-inventory_password}@postgres:5432/${DATABASE_NAME:-inventory_db}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      api:
+        condition: service_started
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - inventory-network
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventory-celery-beat
+    command: python -m celery -A app.tasks beat --loglevel=INFO
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - DATABASE_URL=postgresql+psycopg2://${DATABASE_USER:-inventory_user}:${DATABASE_PASSWORD:-inventory_password}@postgres:5432/${DATABASE_NAME:-inventory_db}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - inventory-network
+
+  grpc-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: inventory-grpc-server
+    command: python -m app.grpc_api.server
+    environment:
+      - APP_ENV=${APP_ENV:-production}
+      - DATABASE_URL=postgresql+psycopg2://${DATABASE_USER:-inventory_user}:${DATABASE_PASSWORD:-inventory_password}@postgres:5432/${DATABASE_NAME:-inventory_db}
+    ports:
+      - "50051:50051"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+    networks:
+      - inventory-network
+
+volumes:
+  postgres-data:
+  redis-data:
+
+networks:
+  inventory-network:
+    driver: bridge

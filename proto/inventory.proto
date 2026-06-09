@@ -1,0 +1,325 @@
+syntax = "proto3";
+
+package inventory;
+
+option java_multiple_files = true;
+option java_package = "com.inventory.grpc";
+option java_outer_classname = "InventoryProto";
+
+service InventoryService {
+  rpc GetInventory(GetInventoryRequest) returns (InventoryResponse) {}
+  rpc UpdateInventory(UpdateInventoryRequest) returns (InventoryResponse) {}
+  rpc ListInventory(ListInventoryRequest) returns (ListInventoryResponse) {}
+  rpc TransferInventory(TransferInventoryRequest) returns (TransferResponse) {}
+  rpc ReserveInventory(ReserveInventoryRequest) returns (ReserveResponse) {}
+  rpc ReleaseReservation(ReleaseReservationRequest) returns (ReleaseResponse) {}
+}
+
+service SyncService {
+  rpc StartSync(StartSyncRequest) returns (SyncResponse) {}
+  rpc GetSyncStatus(GetSyncStatusRequest) returns (SyncResponse) {}
+  rpc ResolveConflict(ResolveConflictRequest) returns (ConflictResponse) {}
+  rpc StreamInventoryChanges(StreamChangesRequest) returns (stream InventoryChange) {}
+}
+
+service SKUService {
+  rpc GetSKU(GetSKURequest) returns (SKUResponse) {}
+  rpc CreateSKU(CreateSKURequest) returns (SKUResponse) {}
+  rpc UpdateSKU(UpdateSKURequest) returns (SKUResponse) {}
+  rpc ListSKUs(ListSKUsRequest) returns (ListSKUsResponse) {}
+  rpc GenerateSKUs(GenerateSKUsRequest) returns (GenerateSKUsResponse) {}
+}
+
+service PurchaseOrderService {
+  rpc GetPurchaseOrder(GetPurchaseOrderRequest) returns (PurchaseOrderResponse) {}
+  rpc CreatePurchaseOrder(CreatePurchaseOrderRequest) returns (PurchaseOrderResponse) {}
+  rpc ApprovePurchaseOrder(ApprovePurchaseOrderRequest) returns (PurchaseOrderResponse) {}
+  rpc GenerateSuggestions(GenerateSuggestionsRequest) returns (GenerateSuggestionsResponse) {}
+}
+
+message GetInventoryRequest {
+  int64 sku_id = 1;
+  int64 warehouse_id = 2;
+  optional int64 zone_id = 3;
+}
+
+message UpdateInventoryRequest {
+  int64 sku_id = 1;
+  int64 warehouse_id = 2;
+  optional int64 zone_id = 3;
+  int32 quantity_change = 4;
+  string transaction_type = 5;
+  optional string reference_type = 6;
+  optional int64 reference_id = 7;
+  optional int64 batch_id = 8;
+  optional string serial_number = 9;
+  optional string reason = 10;
+  int64 operator_id = 11;
+}
+
+message InventoryResponse {
+  int64 inventory_id = 1;
+  int64 sku_id = 2;
+  int64 warehouse_id = 3;
+  int64 zone_id = 4;
+  int32 quantity = 5;
+  int32 reserved_quantity = 6;
+  int32 allocated_quantity = 7;
+  int32 available_quantity = 8;
+  int32 in_transit_quantity = 9;
+  double unit_cost = 10;
+  double total_value = 11;
+  optional string last_counted_at = 12;
+  string created_at = 13;
+  string updated_at = 14;
+}
+
+message ListInventoryRequest {
+  optional int64 warehouse_id = 1;
+  optional int64 sku_id = 2;
+  optional int32 page = 3;
+  optional int32 page_size = 4;
+}
+
+message ListInventoryResponse {
+  repeated InventoryResponse items = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message TransferInventoryRequest {
+  int64 sku_id = 1;
+  int64 from_warehouse_id = 2;
+  int64 to_warehouse_id = 3;
+  optional int64 from_zone_id = 4;
+  optional int64 to_zone_id = 5;
+  int32 quantity = 6;
+  optional int64 batch_id = 7;
+  optional string remark = 8;
+  int64 operator_id = 9;
+}
+
+message TransferResponse {
+  bool success = 1;
+  optional string document_no = 2;
+  optional string error = 3;
+}
+
+message ReserveInventoryRequest {
+  int64 sku_id = 1;
+  int64 warehouse_id = 2;
+  int32 quantity = 3;
+  string reference_type = 4;
+  int64 reference_id = 5;
+  optional int64 batch_id = 6;
+  int64 operator_id = 7;
+}
+
+message ReserveResponse {
+  bool success = 1;
+  optional int64 reservation_id = 2;
+  optional string error = 3;
+}
+
+message ReleaseReservationRequest {
+  int64 sku_id = 1;
+  int64 warehouse_id = 2;
+  int32 quantity = 3;
+  string reference_type = 4;
+  int64 reference_id = 5;
+  int64 operator_id = 6;
+}
+
+message ReleaseResponse {
+  bool success = 1;
+  optional string error = 2;
+}
+
+message StartSyncRequest {
+  int64 source_warehouse_id = 1;
+  int64 target_warehouse_id = 2;
+  string sync_type = 3;
+}
+
+message GetSyncStatusRequest {
+  int64 sync_id = 1;
+}
+
+message SyncResponse {
+  int64 sync_id = 1;
+  string status = 2;
+  optional string sync_type = 3;
+  int32 record_count = 4;
+  int32 success_count = 5;
+  int32 failed_count = 6;
+  optional string started_at = 7;
+  optional string completed_at = 8;
+  optional string error_message = 9;
+}
+
+message ResolveConflictRequest {
+  int64 conflict_id = 1;
+  string resolution_strategy = 2;
+  int64 resolved_by = 3;
+}
+
+message ConflictResponse {
+  bool success = 1;
+  optional string error = 2;
+}
+
+message StreamChangesRequest {
+  optional int64 warehouse_id = 1;
+  optional int64 sku_id = 2;
+}
+
+message InventoryChange {
+  int64 change_id = 1;
+  string change_type = 2;
+  int64 sku_id = 3;
+  int64 warehouse_id = 4;
+  int32 old_quantity = 5;
+  int32 new_quantity = 6;
+  string changed_at = 7;
+  string source_system = 8;
+}
+
+message GetSKURequest {
+  int64 sku_id = 1;
+}
+
+message SKUAttribute {
+  string name = 1;
+  string value = 2;
+}
+
+message CreateSKURequest {
+  int64 product_id = 1;
+  string sku_code = 2;
+  repeated SKUAttribute attributes = 3;
+  double cost_price = 4;
+  double selling_price = 5;
+  optional double weight = 6;
+  optional double volume = 7;
+  int32 safety_stock = 8;
+  int32 reorder_point = 9;
+  int32 lead_time_days = 10;
+}
+
+message UpdateSKURequest {
+  int64 sku_id = 1;
+  optional double cost_price = 2;
+  optional double selling_price = 3;
+  optional int32 safety_stock = 4;
+  optional int32 reorder_point = 5;
+  optional string status = 6;
+  optional string lifecycle_status = 7;
+}
+
+message SKUResponse {
+  int64 sku_id = 1;
+  string sku_code = 2;
+  int64 product_id = 3;
+  repeated SKUAttribute attributes = 4;
+  double cost_price = 5;
+  double selling_price = 6;
+  string status = 7;
+  string lifecycle_status = 8;
+  int32 safety_stock = 9;
+  int32 reorder_point = 10;
+  string created_at = 11;
+  string updated_at = 12;
+}
+
+message ListSKUsRequest {
+  optional int64 product_id = 1;
+  optional string status = 2;
+  optional int32 page = 3;
+  optional int32 page_size = 4;
+}
+
+message ListSKUsResponse {
+  repeated SKUResponse items = 1;
+  int32 total = 2;
+  int32 page = 3;
+  int32 page_size = 4;
+}
+
+message GenerateSKUsRequest {
+  int64 product_id = 1;
+  map<string, repeated string> attribute_combinations = 2;
+  double base_cost_price = 3;
+  double base_selling_price = 4;
+}
+
+message GenerateSKUsResponse {
+  int32 generated_count = 1;
+  repeated SKUResponse skus = 2;
+}
+
+message GetPurchaseOrderRequest {
+  int64 order_id = 1;
+}
+
+message PurchaseOrderItem {
+  int64 sku_id = 1;
+  int32 quantity = 2;
+  double unit_price = 3;
+}
+
+message CreatePurchaseOrderRequest {
+  int64 supplier_id = 1;
+  int64 warehouse_id = 2;
+  repeated PurchaseOrderItem items = 3;
+  optional string expected_date = 4;
+  optional string shipping_method = 5;
+  optional string remark = 6;
+  int64 created_by = 7;
+}
+
+message ApprovePurchaseOrderRequest {
+  int64 order_id = 1;
+  int64 approver_id = 2;
+  bool approved = 3;
+  optional string opinion = 4;
+}
+
+message PurchaseOrderResponse {
+  int64 order_id = 1;
+  string order_no = 2;
+  int64 supplier_id = 3;
+  int64 warehouse_id = 4;
+  string status = 5;
+  double total_amount = 6;
+  repeated PurchaseOrderItem items = 7;
+  string created_at = 8;
+  optional string approved_at = 9;
+}
+
+message GenerateSuggestionsRequest {
+  optional int64 warehouse_id = 1;
+  optional bool auto_create = 2;
+  int64 created_by = 3;
+}
+
+message ReplenishmentSuggestion {
+  int64 suggestion_id = 1;
+  int64 sku_id = 2;
+  int64 supplier_id = 3;
+  int64 warehouse_id = 4;
+  int32 suggested_quantity = 5;
+  double suggested_unit_price = 6;
+  double estimated_total_cost = 7;
+  string reason = 8;
+  int32 current_stock = 9;
+  int32 safety_stock = 10;
+  string expected_delivery_date = 11;
+  string status = 12;
+}
+
+message GenerateSuggestionsResponse {
+  int32 suggestion_count = 1;
+  repeated ReplenishmentSuggestion suggestions = 2;
+  double total_estimated_cost = 3;
+}
