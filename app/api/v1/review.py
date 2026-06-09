@@ -12,6 +12,7 @@ from app.schemas.review import (
     ReviewTaskCompleteRequest,
     FieldCorrection,
     TrainingDataExportRequest,
+    BatchReviewConfirmRequest,
 )
 from app.services.review_service import ReviewService
 
@@ -254,4 +255,67 @@ async def export_training_data(
 
     except Exception as e:
         logger.error(f"Failed to export training data: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/tasks/{task_id}/batch", response_model=APIResponse)
+async def get_batch_review_task(
+    task_id: int,
+    review_service: ReviewService = Depends(get_review_service),
+):
+    try:
+        task = review_service.get_batch_review_task(task_id)
+        if not task:
+            raise HTTPException(status_code=404, detail="Review task not found")
+
+        return APIResponse(success=True, data=task)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get batch review task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tasks/{task_id}/batch-confirm", response_model=APIResponse)
+async def batch_confirm_review(
+    task_id: int,
+    request: BatchReviewConfirmRequest,
+    review_service: ReviewService = Depends(get_review_service),
+):
+    try:
+        request.task_id = task_id
+        result = review_service.batch_confirm_review(request)
+
+        return APIResponse(
+            success=True,
+            message="Batch review completed" if result.get("all_fields_completed") else "Batch review partial",
+            data=result,
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to batch confirm review task {task_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/statistics/efficiency", response_model=APIResponse)
+async def get_review_efficiency_statistics(
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    days: int = Query(30, ge=1, le=365),
+    review_service: ReviewService = Depends(get_review_service),
+):
+    try:
+        stats = review_service.get_review_efficiency_statistics(
+            start_date=start_date,
+            end_date=end_date,
+            days=days,
+        )
+
+        return APIResponse(success=True, data=stats)
+
+    except Exception as e:
+        logger.error(f"Failed to get review efficiency statistics: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

@@ -356,7 +356,7 @@ class MultimodalExtractor:
         field_schema: FieldSchema,
         **kwargs,
     ) -> Optional[Dict[str, Any]]:
-        patterns = self._get_field_patterns(field_name, field_type)
+        patterns = self._get_field_patterns(field_name, field_type, field_schema)
 
         for pattern_info in patterns:
             pattern = pattern_info["pattern"]
@@ -379,7 +379,18 @@ class MultimodalExtractor:
 
         return None
 
-    def _get_field_patterns(self, field_name: str, field_type: FieldDataTypeEnum) -> List[Dict[str, Any]]:
+    def _get_field_patterns(
+        self, field_name: str, field_type: FieldDataTypeEnum, field_schema: Optional[FieldSchema] = None
+    ) -> List[Dict[str, Any]]:
+        if field_schema and field_schema.validation_rules:
+            custom_pattern = field_schema.validation_rules.get("pattern")
+            if custom_pattern:
+                return [{"pattern": custom_pattern, "confidence": 0.85}]
+
+            custom_patterns = field_schema.validation_rules.get("patterns")
+            if custom_patterns and isinstance(custom_patterns, list):
+                return custom_patterns
+
         field_lower = field_name.lower()
 
         patterns_map = {
@@ -410,6 +421,111 @@ class MultimodalExtractor:
             ],
             "phone": [
                 {"pattern": r"(?:电话|手机|联系电话|Phone|Tel)[:：]?\s*(?P<value>1[3-9]\d{9})", "confidence": 0.9},
+            ],
+            "license_plate": [
+                {"pattern": r"(?:车牌号|车牌|车号|牌照)[:：]?\s*(?P<value>[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-Z][·]?[A-Z0-9]{4,5}[A-Z0-9挂学警港澳])", "confidence": 0.95},
+            ],
+            "policy_number": [
+                {"pattern": r"(?:保单号|保险单号|Policy No)[:：]?\s*(?P<value>[A-Z0-9-]{8,30})", "confidence": 0.9},
+            ],
+            "accident_location": [
+                {"pattern": r"(?:事故地点|事故地址|出事地点|发生地点)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s,，.。\-]{5,200})", "confidence": 0.85},
+            ],
+            "accident_date": [
+                {"pattern": r"(?:事故日期|出事日期|发生日期)[:：]?\s*(?P<value>\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)", "confidence": 0.9},
+            ],
+            "accident_type": [
+                {"pattern": r"(?:事故类型|事故性质)[:：]?\s*(?P<value>[\u4e00-\u9fa5]{2,20})", "confidence": 0.85},
+            ],
+            "driver_license": [
+                {"pattern": r"(?:驾驶证号|驾照号|驾驶证)[:：]?\s*(?P<value>\d{17}[\dXx])", "confidence": 0.95},
+            ],
+            "driver_name": [
+                {"pattern": r"(?:驾驶员姓名|司机姓名|驾驶人)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z\s]{2,30})", "confidence": 0.9},
+            ],
+            "vehicle_type": [
+                {"pattern": r"(?:车辆类型|车型)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s]{2,30})", "confidence": 0.85},
+            ],
+            "vehicle_brand": [
+                {"pattern": r"(?:车辆品牌|品牌)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s]{2,30})", "confidence": 0.85},
+            ],
+            "vehicle_model": [
+                {"pattern": r"(?:车辆型号|型号)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s\-]{2,30})", "confidence": 0.85},
+            ],
+            "damage_description": [
+                {"pattern": r"(?:损伤描述|损坏情况|损失描述)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s,，.。\-]{5,500})", "confidence": 0.8},
+            ],
+            "estimated_repair_cost": [
+                {"pattern": r"(?:预估维修费|预计维修费用|定损金额)[:：]?\s*[¥￥$]?\s*(?P<value>\d+(?:[.,]\d+)?)", "confidence": 0.9},
+            ],
+            "medical_record_number": [
+                {"pattern": r"(?:病历号|病案号|住院号)[:：]?\s*(?P<value>[A-Za-z0-9\-]{5,30})", "confidence": 0.9},
+            ],
+            "admission_date": [
+                {"pattern": r"(?:入院日期|住院日期)[:：]?\s*(?P<value>\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)", "confidence": 0.9},
+            ],
+            "discharge_date": [
+                {"pattern": r"(?:出院日期|出院时间)[:：]?\s*(?P<value>\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)", "confidence": 0.9},
+            ],
+            "hospital_name": [
+                {"pattern": r"(?:就诊医院|医院名称|治疗医院)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s]{2,100})", "confidence": 0.9},
+            ],
+            "doctor_name": [
+                {"pattern": r"(?:主治医生|医师|医生)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z\s]{2,50})", "confidence": 0.85},
+            ],
+            "primary_diagnosis": [
+                {"pattern": r"(?:主要诊断|初步诊断|入院诊断)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s，,]{2,200})", "confidence": 0.9},
+            ],
+            "previous_medical_history": [
+                {"pattern": r"(?:既往病史|既往史|过去病史)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s，,。.；;：:！!？?\-]{2,500})", "confidence": 0.85},
+            ],
+            "allergy_history": [
+                {"pattern": r"(?:过敏史|药物过敏史)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s，,。.；;：:！!？?\-]{2,200})", "confidence": 0.85},
+            ],
+            "surgery_performed": [
+                {"pattern": r"(?:手术名称|手术方式|手术)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s，,。.；;：:－\-]{2,200})", "confidence": 0.9},
+            ],
+            "surgery_date": [
+                {"pattern": r"(?:手术日期|手术时间)[:：]?\s*(?P<value>\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)", "confidence": 0.9},
+            ],
+            "total_medical_expenses": [
+                {"pattern": r"(?:医疗总费用|总费用|住院总费用)[:：]?\s*[¥￥$]?\s*(?P<value>\d+(?:[.,]\d+)?)", "confidence": 0.9},
+            ],
+            "insurance_coverage_amount": [
+                {"pattern": r"(?:医保报销金额|统筹支付|医保支付)[:：]?\s*[¥￥$]?\s*(?P<value>\d+(?:[.,]\d+)?)", "confidence": 0.9},
+            ],
+            "self_payment_amount": [
+                {"pattern": r"(?:自付金额|自费金额|个人支付)[:：]?\s*[¥￥$]?\s*(?P<value>\d+(?:[.,]\d+)?)", "confidence": 0.9},
+            ],
+            "claim_amount": [
+                {"pattern": r"(?:申请理赔金额|索赔金额|理赔申请金额)[:：]?\s*[¥￥$]?\s*(?P<value>\d+(?:[.,]\d+)?)", "confidence": 0.9},
+            ],
+            "discharge_summary": [
+                {"pattern": r"(?:出院小结|出院摘要)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s，,。.；;：:！!？?\-]{2,1000})", "confidence": 0.8},
+            ],
+            "medication_prescribed": [
+                {"pattern": r"(?:出院带药|用药|药物)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s，,。.；;：:！!？?\-、\.]{2,500})", "confidence": 0.8},
+            ],
+            "follow_up_date": [
+                {"pattern": r"(?:复诊日期|复查日期)[:：]?\s*(?P<value>\d{4}[-/年]\d{1,2}[-/月]\d{1,2}日?)", "confidence": 0.9},
+            ],
+            "third_party_name": [
+                {"pattern": r"(?:第三方姓名|对方姓名|全责方姓名)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z\s]{2,30})", "confidence": 0.85},
+            ],
+            "third_party_license": [
+                {"pattern": r"(?:第三方车牌|对方车牌)[:：]?\s*(?P<value>[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼使领][A-Z][·]?[A-Z0-9]{4,5}[A-Z0-9挂学警港澳])", "confidence": 0.9},
+            ],
+            "third_party_insurance": [
+                {"pattern": r"(?:第三方保险公司|对方保险公司)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s]{2,50})", "confidence": 0.85},
+            ],
+            "police_report_number": [
+                {"pattern": r"(?:交警报案号|事故编号|报案号)[:：]?\s*(?P<value>[A-Za-z0-9\-]{5,30})", "confidence": 0.9},
+            ],
+            "injury_description": [
+                {"pattern": r"(?:人员伤亡情况|受伤情况|伤情描述)[:：]?\s*(?P<value>[\u4e00-\u9fa5A-Za-z0-9\s，,。.；;：:！!？?\-]{2,500})", "confidence": 0.85},
+            ],
+            "total_claim_amount": [
+                {"pattern": r"(?:总理赔金额|理赔金额|索赔总额)[:：]?\s*[¥￥$]?\s*(?P<value>\d+(?:[.,]\d+)?)", "confidence": 0.9},
             ],
         }
 
@@ -480,7 +596,7 @@ class MultimodalExtractor:
     ) -> Optional[Dict[str, Any]]:
         field_lower = field_name.lower()
 
-        keywords = self._get_field_keywords(field_name)
+        keywords = self._get_field_keywords(field_name, field_schema)
         if not keywords:
             return None
 
@@ -507,7 +623,12 @@ class MultimodalExtractor:
 
         return None
 
-    def _get_field_keywords(self, field_name: str) -> List[str]:
+    def _get_field_keywords(self, field_name: str, field_schema: Optional[FieldSchema] = None) -> List[str]:
+        if field_schema and field_schema.validation_rules:
+            custom_keywords = field_schema.validation_rules.get("keywords")
+            if custom_keywords and isinstance(custom_keywords, list):
+                return custom_keywords
+
         field_lower = field_name.lower()
 
         keywords_map = {

@@ -135,3 +135,56 @@ class TrainingDataExportRequest(BaseModel):
     only_reviewed: bool = True
     include_low_confidence: bool = False
     export_format: str = "json"
+
+
+class BatchReviewConfirmRequest(BaseModel):
+    task_id: int
+    completed_by: str
+    confirm_all: bool = False
+    field_ids_to_confirm: Optional[List[int]] = None
+    corrections: Optional[List[FieldCorrection]] = None
+    review_notes: Optional[str] = None
+
+
+class FieldHighlightInfo(BaseModel):
+    field_id: int
+    field_name: str
+    page_number: Optional[int] = None
+    bounding_box: Optional[Dict[str, float]] = None
+    value: Optional[str] = None
+    confidence: float
+    is_low_confidence: bool
+    validation_status: str
+    color: str
+
+
+class BatchReviewTaskResponse(BaseModel):
+    task_id: int
+    document_id: int
+    document_filename: str
+    document_preview_url: Optional[str] = None
+    page_image_urls: Dict[int, str] = {}
+    extracted_fields: List[Dict[str, Any]] = []
+    low_confidence_fields: List[FieldHighlightInfo] = []
+    field_highlights: List[FieldHighlightInfo] = []
+    status: str
+    started_at: Optional[datetime] = None
+
+
+class DailyReviewStats(BaseModel):
+    date: str
+    total_reviews: int
+    avg_processing_time_seconds: Optional[float] = None
+    pass_rate: float
+    correction_rate: float
+
+
+class ReviewEfficiencyStatistics(BaseModel):
+    total_reviewed: int = 0
+    avg_processing_time_seconds: Optional[float] = None
+    overall_pass_rate: float = 0.0
+    overall_correction_rate: float = 0.0
+    avg_corrections_per_task: float = 0.0
+    daily_trends: List[DailyReviewStats] = []
+    reviewer_leaderboard: List[Dict[str, Any]] = []
+    field_error_distribution: List[Dict[str, Any]] = []

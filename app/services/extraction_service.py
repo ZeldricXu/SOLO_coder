@@ -11,10 +11,15 @@ from app.schemas.extraction import (
     ExtractedFieldCreate,
     ExtractionStatusEnum,
     FieldDataTypeEnum,
+    FieldSchema,
 )
-from app.models.extraction import ExtractionResult, ExtractedField
+from app.models.extraction import ExtractionResult, ExtractedField, ExtractionSchema as ExtractionSchemaModel
 from app.models.document import Document, DocumentStatus
 from app.core.database import get_sync_db
+from app.ml.extractor import MultimodalExtractor
+from app.services.validation_service import ValidationService
+from app.services.review_service import ReviewService
+from app.services.schema_service import ExtractionSchemaService
 
 logger = get_logger(__name__)
 settings = get_settings()
@@ -33,18 +38,20 @@ class ExtractionService:
         if self._initialized:
             return
         self._initialized = True
-        from app.ml.extractor import MultimodalExtractor
-        from app.services.validation_service import ValidationService
-        from app.services.review_service import ReviewService
 
         self.extractor = MultimodalExtractor()
         self.validation_service = ValidationService()
         self.review_service = ReviewService()
+        self.schema_service = ExtractionSchemaService()
 
     def run_extraction(
         self,
         document_id: int,
         extraction_schema: Optional[ExtractionSchema] = None,
+        schema_name: Optional[str] = None,
+        schema_id: Optional[int] = None,
+        business_line: Optional[str] = None,
+        document_type: Optional[str] = None,
         model_version: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
     ) -> ExtractionResult:
@@ -58,7 +65,13 @@ class ExtractionService:
             if not doc:
                 raise ValueError(f"Document not found: {document_id}")
 
-            schema = extraction_schema or self.extractor.get_default_insurance_schema()
+            schema = self._resolve_extraction_schema(
+                extraction_schema=extraction_schema,
+                schema_name=schema_name,
+                schema_id=schema_id,
+                business_line=business_line,
+                document_type=document_type,
+            )
 
             proc_options = ProcessingOptions(**(options or {}))
 
@@ -76,16 +89,36 @@ class ExtractionService:
                 model_version=model_version,
             )
 
-            extraction_result = self.extractor.extract_fields(context)
+            extraction_result_data = self.extractor.extract_fields(context)
+
+            schema_record = None
+            if schema_name or schema_id:
+                if schema_id:
+                    schema_record = db.query(ExtractionSchemaModel).filter(
+                        ExtractionSchemaModel.id == schema_id
+                    ).first()
+                elif schema_name:
+                    schema_record = db.query(ExtractionSchemaModel).filter(
+                        ExtractionSchemaModel.schema_name == schema_name
+                    ).first()
+
+            result_id = extraction_result_data.get("extraction_result_id")
+            if result_id and schema_record:
+                db_extraction_result = db.query(ExtractionResult).filter(
+                    ExtractionResult.id == result_id
+                ).first()
+                if db_extraction_result:
+                    db_extraction_result.schema_id = schema_record.id
+                    db.commit()
 
             validation_result = self.validation_service.validate_extraction_result(
-                extraction_result_id=extraction_result.id,
+                extraction_result_id=result_id,
             )
 
             if validation_result.get("needs_review"):
                 self.review_service.create_review_task(
                     document_id=document_id,
-                    extraction_result_id=extraction_result.id,
+                    extraction_result_id=result_id,
                 )
                 doc.status = DocumentStatus.NEEDS_REVIEW
                 db.commit()
@@ -93,13 +126,65 @@ class ExtractionService:
                 doc.status = DocumentStatus.COMPLETED
                 db.commit()
 
-            return extraction_result
+            return extraction_result_data
 
         except Exception as e:
             logger.error(f"Failed to run extraction for document {document_id}: {e}", exc_info=True)
             raise
         finally:
             db.close()
+
+    def _resolve_extraction_schema(
+        self,
+        extraction_schema: Optional[ExtractionSchema] = None,
+        schema_name: Optional[str] = None,
+        schema_id: Optional[int] = None,
+        business_line: Optional[str] = None,
+        document_type: Optional[str] = None,
+    ) -> ExtractionSchema:
+        if extraction_schema:
+            logger.info(f"Using provided extraction schema: {extraction_schema.schema_name}")
+            return extraction_schema
+
+        if schema_id:
+            schema_resp = self.schema_service.get_schema(schema_id)
+            if schema_resp:
+                logger.info(f"Using schema by ID {schema_id}: {schema_resp.schema_name}")
+                return self._convert_schema_response_to_pydantic(schema_resp)
+
+        if schema_name:
+            schema_resp = self.schema_service.get_schema_by_name(schema_name)
+            if schema_resp:
+                logger.info(f"Using schema by name {schema_name}")
+                return self._convert_schema_response_to_pydantic(schema_resp)
+
+        if business_line or document_type:
+            schema_resp = self.schema_service.get_schema_for_document(
+                business_line=business_line,
+                document_type=document_type,
+            )
+            if schema_resp:
+                logger.info(
+                    f"Using schema for business_line={business_line}, "
+                    f"document_type={document_type}: {schema_resp.schema_name}"
+                )
+                return self._convert_schema_response_to_pydantic(schema_resp)
+
+        logger.info("No schema specified, using default insurance schema")
+        return self.extractor.get_default_insurance_schema()
+
+    def _convert_schema_response_to_pydantic(self, schema_resp) -> ExtractionSchema:
+        fields = []
+        for field_data in schema_resp.fields:
+            fields.append(FieldSchema(**field_data))
+
+        return ExtractionSchema(
+            schema_name=schema_resp.schema_name,
+            schema_version=schema_resp.schema_version,
+            description=schema_resp.description,
+            document_types=schema_resp.document_types,
+            fields=fields,
+        )
 
     def get_extraction_result(
         self,

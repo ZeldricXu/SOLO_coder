@@ -1,0 +1,284 @@
+schema_name: health_insurance_claim
+schema_version: "1.0"
+description: 健康险理赔文档抽取Schema
+document_types:
+  - medical_report
+  - hospital_invoice
+  - discharge_summary
+  - diagnosis_proof
+business_line: health_insurance
+created_by: admin
+created_at: 2026-06-01T00:00:00Z
+is_active: true
+fields:
+  - field_name: policy_number
+    field_type: string
+    description: 保单号
+    required: true
+    examples:
+      - "HL20260012345"
+      - "HEALTH-2026-00123"
+    validation_rules:
+      pattern: "^[A-Z]{2,4}-?\\d{4,}-?\\d{3,}$"
+      min_length: 8
+      max_length: 20
+
+  - field_name: patient_name
+    field_type: string
+    description: 患者姓名
+    required: true
+    examples:
+      - "张三"
+      - "John Smith"
+    validation_rules:
+      min_length: 2
+      max_length: 50
+
+  - field_name: patient_gender
+    field_type: string
+    description: 患者性别
+    required: false
+    examples:
+      - "男"
+      - "女"
+    validation_rules:
+      allowed_values:
+        - 男
+        - 女
+        - 男性
+        - 女性
+        - Male
+        - Female
+
+  - field_name: patient_age
+    field_type: number
+    description: 患者年龄
+    required: false
+    examples:
+      - 35
+      - 45.5
+    validation_rules:
+      min: 0
+      max: 150
+
+  - field_name: patient_id_card
+    field_type: string
+    description: 患者身份证号
+    required: true
+    examples:
+      - "110101199001011234"
+    validation_rules:
+      pattern: "^\\d{17}[\\dXx]$"
+
+  - field_name: patient_phone
+    field_type: string
+    description: 联系电话
+    required: false
+    examples:
+      - "13812345678"
+    validation_rules:
+      pattern: "^1[3-9]\\d{9}$"
+
+  - field_name: medical_record_number
+    field_type: string
+    description: 病历号
+    required: true
+    examples:
+      - "MR2026051500123"
+      - "ZL202605001"
+    validation_rules:
+      min_length: 5
+      max_length: 30
+
+  - field_name: admission_date
+    field_type: date
+    description: 入院日期
+    required: true
+    examples:
+      - "2026-05-10"
+      - "2026/05/10"
+    validation_rules:
+      date_format: "%Y-%m-%d"
+      max_date: "today"
+
+  - field_name: discharge_date
+    field_type: date
+    description: 出院日期
+    required: true
+    examples:
+      - "2026-05-20"
+      - "2026/05/20"
+    validation_rules:
+      date_format: "%Y-%m-%d"
+      max_date: "today"
+
+  - field_name: hospital_name
+    field_type: string
+    description: 就诊医院
+    required: true
+    examples:
+      - "北京协和医院"
+      - "上海瑞金医院"
+    validation_rules:
+      min_length: 2
+      max_length: 100
+
+  - field_name: department
+    field_type: string
+    description: 就诊科室
+    required: true
+    examples:
+      - "心内科"
+      - "骨科"
+      - "内科"
+    validation_rules:
+      min_length: 2
+      max_length: 50
+
+  - field_name: doctor_name
+    field_type: string
+    description: 主治医生
+    required: false
+    examples:
+      - "王医生"
+      - "Dr. Li"
+    validation_rules:
+      min_length: 2
+      max_length: 50
+
+  - field_name: primary_diagnosis
+    field_type: string
+    description: 主要诊断
+    required: true
+    examples:
+      - "冠心病"
+      - "高血压3级"
+      - "2型糖尿病"
+    validation_rules:
+      min_length: 2
+      max_length: 200
+
+  - field_name: diagnosis_code
+    field_type: string
+    description: ICD-10诊断编码
+    required: true
+    examples:
+      - "I25.1"
+      - "I10"
+      - "E11.9"
+    validation_rules:
+      pattern: "^[A-Z]\\d{2}(?:\\.\\d{1,2})?$"
+
+  - field_name: secondary_diagnosis
+    field_type: string
+    description: 次要诊断
+    required: false
+    examples:
+      - "高脂血症"
+      - "糖尿病"
+
+  - field_name: previous_medical_history
+    field_type: string
+    description: 既往病史
+    required: true
+    examples:
+      - "高血压病史10年，糖尿病史5年"
+      - "无特殊病史"
+    validation_rules:
+      min_length: 2
+      max_length: 500
+
+  - field_name: allergy_history
+    field_type: string
+    description: 过敏史
+    required: false
+    examples:
+      - "青霉素过敏"
+      - "无过敏史"
+
+  - field_name: surgery_performed
+    field_type: string
+    description: 手术名称
+    required: false
+    examples:
+      - "冠状动脉支架植入术"
+      - "阑尾切除术"
+
+  - field_name: surgery_date
+    field_type: date
+    description: 手术日期
+    required: false
+    examples:
+      - "2026-05-15"
+    validation_rules:
+      date_format: "%Y-%m-%d"
+      max_date: "today"
+
+  - field_name: total_medical_expenses
+    field_type: number
+    description: 医疗总费用
+    required: true
+    examples:
+      - 15500.50
+      - 85000.00
+    validation_rules:
+      min: 0
+      max: 10000000
+
+  - field_name: insurance_coverage_amount
+    field_type: number
+    description: 医保报销金额
+    required: false
+    examples:
+      - 10000.00
+      - 55000.00
+    validation_rules:
+      min: 0
+      max: 5000000
+
+  - field_name: self_payment_amount
+    field_type: number
+    description: 自付金额
+    required: false
+    examples:
+      - 5500.50
+      - 30000.00
+    validation_rules:
+      min: 0
+      max: 5000000
+
+  - field_name: claim_amount
+    field_type: number
+    description: 申请理赔金额
+    required: true
+    examples:
+      - 5000.00
+      - 25000.00
+    validation_rules:
+      min: 0
+      max: 5000000
+
+  - field_name: discharge_summary
+    field_type: string
+    description: 出院小结摘要
+    required: false
+    examples:
+      - "患者因冠心病入院，行支架植入术，术后恢复良好，准予出院。"
+    validation_rules:
+      max_length: 1000
+
+  - field_name: medication_prescribed
+    field_type: string
+    description: 出院带药
+    required: false
+    examples:
+      - "阿司匹林 100mg qd，氯吡格雷 75mg qd"
+
+  - field_name: follow_up_date
+    field_type: date
+    description: 复诊日期
+    required: false
+    examples:
+      - "2026-06-20"
+    validation_rules:
+      date_format: "%Y-%m-%d"

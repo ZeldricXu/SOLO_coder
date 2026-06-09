@@ -14,6 +14,7 @@ from app.schemas.document import (
 )
 from app.ml.parsers import ParserFactory
 from app.ml.ocr_engine import OCREngine
+from app.ml.document_type_detector import DocumentTypeDetector, DocumentTypeDetectionResult
 from app.core.database import get_sync_db
 from app.models.document import Document, DocumentStatus
 from app.services.storage import StorageService
@@ -27,9 +28,11 @@ class DocumentPreprocessor:
         self,
         ocr_engine: Optional[OCREngine] = None,
         storage_service: Optional[StorageService] = None,
+        document_type_detector: Optional[DocumentTypeDetector] = None,
     ):
         self.ocr_engine = ocr_engine or OCREngine()
         self.storage_service = storage_service or StorageService()
+        self.document_type_detector = document_type_detector or DocumentTypeDetector()
         self.parser_factory = ParserFactory()
 
     def process_document(
@@ -54,9 +57,20 @@ class DocumentPreprocessor:
                 doc_record.original_filename, doc_record.mime_type
             )
             doc_record.document_type = doc_type.value
-            db.commit()
 
-            parser = self.parser_factory.get_parser(doc_type, self.ocr_engine)
+            detection_result = self.document_type_detector.detect_document_type(
+                local_file_path,
+                doc_record.original_filename,
+                doc_record.mime_type,
+            )
+
+            optimized_options = self._apply_document_type_options(options, detection_result)
+
+            parser = self._get_optimized_parser(
+                doc_type,
+                detection_result,
+                optimized_options,
+            )
 
             standardized_doc = parser.parse(
                 local_file_path,
@@ -70,7 +84,10 @@ class DocumentPreprocessor:
                 "preprocessing_time": standardized_doc.preprocessing_time,
                 "ocr_used": any(p.ocr_confidence is not None for p in standardized_doc.pages),
                 "ocr_engines": [self.ocr_engine.get_ocr_metadata()],
+                "document_type_detection": detection_result.to_dict(),
+                "processing_path": detection_result.optimal_processing_path,
             }
+            db.commit()
 
             processed_data_path = self._save_processed_data(
                 document_id, standardized_doc
@@ -83,7 +100,9 @@ class DocumentPreprocessor:
             logger.info(
                 f"Document {document_id} preprocessing complete. "
                 f"Pages: {standardized_doc.page_count}, "
-                f"Text blocks: {sum(len(p.text_blocks) for p in standardized_doc.pages)}"
+                f"Text blocks: {sum(len(p.text_blocks) for p in standardized_doc.pages)}, "
+                f"Processing path: {detection_result.optimal_processing_path}, "
+                f"OCR used: {doc_record.preprocessing_metadata['ocr_used']}"
             )
 
             return standardized_doc
@@ -99,6 +118,56 @@ class DocumentPreprocessor:
             raise
         finally:
             db.close()
+
+    def _apply_document_type_options(
+        self,
+        base_options: ProcessingOptions,
+        detection_result: DocumentTypeDetectionResult,
+    ) -> ProcessingOptions:
+        optimized = ProcessingOptions(**base_options.model_dump())
+
+        if optimized.use_ocr is None:
+            optimized.use_ocr = detection_result.recommended_ocr
+
+        if optimized.use_ocr and detection_result.has_text_layer and not detection_result.is_scanned_document:
+            if detection_result.text_layer_quality >= 0.8:
+                optimized.use_ocr = False
+                logger.info(f"Skipping OCR due to high quality text layer (quality: {detection_result.text_layer_quality:.2f})")
+
+        if optimized.detect_layout is None:
+            optimized.detect_layout = detection_result.has_tables or detection_result.has_handwriting
+
+        if optimized.detect_tables is None:
+            optimized.detect_tables = detection_result.has_tables
+
+        return optimized
+
+    def _get_optimized_parser(
+        self,
+        doc_type,
+        detection_result: DocumentTypeDetectionResult,
+        options: ProcessingOptions,
+    ):
+        if detection_result.optimal_processing_path == "text_only":
+            if hasattr(self.parser_factory, "get_text_only_parser"):
+                parser = self.parser_factory.get_text_only_parser(doc_type)
+                if parser:
+                    return parser
+
+        if detection_result.optimal_processing_path == "ocr_only":
+            if hasattr(self.parser_factory, "get_ocr_only_parser"):
+                parser = self.parser_factory.get_ocr_only_parser(doc_type, self.ocr_engine)
+                if parser:
+                    return parser
+
+        if not options.use_ocr:
+            if hasattr(self.parser_factory, "get_text_only_parser"):
+                parser = self.parser_factory.get_text_only_parser(doc_type)
+                if parser:
+                    logger.info("Using text-only parser (OCR disabled by options)")
+                    return parser
+
+        return self.parser_factory.get_parser(doc_type, self.ocr_engine)
 
     def _download_document(self, doc_record: Document) -> str:
         if doc_record.minio_bucket and doc_record.minio_object_name:

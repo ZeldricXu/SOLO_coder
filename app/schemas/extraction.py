@@ -31,22 +31,76 @@ class FieldValidationStatusEnum(str, Enum):
 
 
 class FieldSchema(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     field_name: str
-    field_type: FieldDataTypeEnum = FieldDataTypeEnum.STRING
+    field_type: FieldDataTypeEnum = Field(default=FieldDataTypeEnum.STRING, alias="data_type")
     description: Optional[str] = None
     required: bool = False
     default_value: Optional[Any] = None
     validation_rules: Optional[Dict[str, Any]] = None
     examples: Optional[List[str]] = None
 
+    @property
+    def data_type(self) -> FieldDataTypeEnum:
+        return self.field_type
 
-class ExtractionSchema(BaseModel):
+    def __getitem__(self, key):
+        if key == "data_type":
+            return self.field_type
+        return getattr(self, key)
+
+    def get(self, key, default=None):
+        if key == "data_type":
+            return self.field_type
+        return getattr(self, key, default)
+
+
+class ExtractionSchemaBase(BaseModel):
     schema_name: str
     schema_version: str = "1.0"
     description: Optional[str] = None
-    fields: List[FieldSchema] = Field(default_factory=list)
+    business_line: Optional[str] = None
     document_types: Optional[List[str]] = None
-    created_at: Optional[datetime] = None
+    fields: List[FieldSchema] = Field(default_factory=list)
+    is_active: bool = True
+    is_default: bool = False
+    created_by: Optional[str] = None
+    yaml_source_path: Optional[str] = None
+    yaml_content: Optional[str] = None
+
+
+ExtractionSchema = ExtractionSchemaBase
+
+
+class ExtractionSchemaCreate(ExtractionSchemaBase):
+    pass
+
+
+class ExtractionSchemaUpdate(BaseModel):
+    schema_name: Optional[str] = None
+    schema_version: Optional[str] = None
+    description: Optional[str] = None
+    business_line: Optional[str] = None
+    document_types: Optional[List[str]] = None
+    fields: Optional[List[FieldSchema]] = None
+    is_active: Optional[bool] = None
+    is_default: Optional[bool] = None
+    yaml_content: Optional[str] = None
+
+
+class ExtractionSchemaResponse(ExtractionSchemaBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class ExtractionSchemaWithStats(ExtractionSchemaResponse):
+    usage_count: int = 0
+    average_confidence: Optional[float] = None
+    last_used_at: Optional[datetime] = None
 
 
 class ExtractedFieldBase(BaseModel):
