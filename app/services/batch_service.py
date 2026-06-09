@@ -110,6 +110,8 @@ class BatchService:
                     )
                     db.add(batch_doc)
 
+            db.flush()
+
             total_pending = db.query(BatchDocument).filter(
                 and_(
                     BatchDocument.batch_id == batch.id,
@@ -137,7 +139,7 @@ class BatchService:
             db.refresh(batch)
 
             logger.info(
-                f"Created batch {batch.id}: {batch_name} with {batch.total_documents} documents "
+                f"Created batch {batch.id}: {job_name} with {batch.total_documents} documents "
                 f"({total_pending} pending, {total_failed} failed)"
             )
 
@@ -230,28 +232,34 @@ class BatchService:
 
             avg_processing_time = None
             completed = batch.completed_documents or 0
+            total = batch.total_documents or 0
+            progress = 0.0
+            if total > 0:
+                progress = (completed / total) * 100
             if completed > 0 and batch.processing_started_at and batch.processing_completed_at:
                 total_time = (batch.processing_completed_at - batch.processing_started_at).total_seconds()
                 avg_processing_time = total_time / completed
 
             return {
                 "id": batch.id,
-                "batch_name": batch.batch_name,
+                "batch_name": batch.job_name,
                 "status": batch.status.value,
-                "priority": batch.priority.value,
+                "priority": batch.priority.value if hasattr(batch.priority, 'value') else batch.priority,
                 "total_documents": batch.total_documents,
                 "pending_documents": batch.pending_documents,
                 "processing_documents": batch.processing_documents,
                 "completed_documents": batch.completed_documents,
                 "failed_documents": batch.failed_documents,
-                "review_documents": batch.review_documents,
-                "storage_path": batch.storage_path,
+                "review_documents": batch.needs_review_documents,
+                "storage_path": batch.zip_file_path,
                 "created_at": batch.created_at,
                 "processing_started_at": batch.processing_started_at,
                 "processing_completed_at": batch.processing_completed_at,
-                "metadata": batch.metadata,
+                "metadata": batch.job_metadata,
                 "status_summary": status_summary,
                 "average_processing_time": avg_processing_time,
+                "progress": progress,
+                "completed": completed,
                 "documents": [
                     {
                         "id": bd.id,
@@ -377,7 +385,7 @@ class BatchService:
             batch_doc.status = status
             if status == BatchDocumentStatusEnum.PROCESSING:
                 batch_doc.started_at = datetime.utcnow()
-            elif status in [BatchDocumentStatusEnum.COMPLETED, BatchDocumentStatusEnum.FAILED, BatchDocumentStatusEnum.REVIEW]:
+            elif status in [BatchDocumentStatusEnum.COMPLETED, BatchDocumentStatusEnum.FAILED, BatchDocumentStatusEnum.NEEDS_REVIEW]:
                 batch_doc.completed_at = datetime.utcnow()
 
             if error_message:
@@ -437,7 +445,7 @@ class BatchService:
         review = db.query(BatchDocument).filter(
             and_(
                 BatchDocument.batch_id == batch_id,
-                BatchDocument.status == BatchDocumentStatusEnum.REVIEW,
+                BatchDocument.status == BatchDocumentStatusEnum.NEEDS_REVIEW,
             )
         ).count()
 
@@ -445,7 +453,7 @@ class BatchService:
         batch.processing_documents = processing
         batch.completed_documents = completed
         batch.failed_documents = failed
-        batch.review_documents = review
+        batch.needs_review_documents = review
 
         if pending == 0 and processing == 0:
             if failed == batch.total_documents:

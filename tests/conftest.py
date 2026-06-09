@@ -103,12 +103,13 @@ def db_session(mock_settings, monkeypatch):
     app.core.database.sync_engine = engine
     app.core.database.SyncSessionLocal = TestingSessionLocal
 
+    original_close = session.close
+    session.close = lambda: None  # Prevent service from closing the shared session
+
     def mock_get_sync_db():
         try:
             yield session
-            session.commit()
         except Exception:
-            session.rollback()
             raise
 
     monkeypatch.setattr(app.core.database, "get_sync_db", mock_get_sync_db)
@@ -130,6 +131,7 @@ def db_session(mock_settings, monkeypatch):
     try:
         yield session
     finally:
+        session.close = original_close  # Restore original close
         session.close()
         app.core.database.sync_engine = original_sync_engine
         app.core.database.SyncSessionLocal = original_sync_session_local

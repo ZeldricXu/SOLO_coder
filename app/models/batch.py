@@ -18,10 +18,10 @@ class BatchStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
-class BatchPriority(str, enum.Enum):
-    HIGH = "high"
-    MEDIUM = "medium"
-    LOW = "low"
+class BatchPriority(int, enum.Enum):
+    HIGH = 0
+    MEDIUM = 5
+    LOW = 10
 
 
 class BatchDocumentStatus(str, enum.Enum):
@@ -87,14 +87,15 @@ class BatchDocument(BaseModel, TimestampMixin):
 
     batch_id = Column(Integer, ForeignKey("batch_jobs.id"), nullable=False, index=True)
     document_id = Column(Integer, ForeignKey("documents.id"), nullable=False, index=True)
+    filename = Column(String(512))
     original_path_in_zip = Column(String(1024))
 
     extraction_result_id = Column(Integer, ForeignKey("extraction_results.id"))
-    processing_status = Column(String(64), default="pending", index=True)
-    processing_order = Column(Integer)
+    status = Column(Enum(BatchDocumentStatus), default=BatchDocumentStatus.PENDING, index=True)
+    position = Column(Integer)
 
-    processing_started_at = Column(DateTime)
-    processing_completed_at = Column(DateTime)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
     error_message = Column(Text)
 
     batch_job = relationship("BatchJob", back_populates="batch_documents")

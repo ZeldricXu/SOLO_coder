@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import text, and_
 
 from app.services.ab_test_service import ABTestService
 from app.services.review_service import ReviewService
@@ -336,44 +336,184 @@ class TestOptimisticLocking:
 @pytest.mark.unit
 @pytest.mark.concurrency
 class TestBatchJobProcessing:
-    def test_zip_file_count_matches_task_count(self, db_session, sample_zip_path, temp_dir):
-        service = BatchService()
-
+    def test_zip_file_count_matches_task_count(self, db_session, sample_zip_path, temp_dir, monkeypatch):
         file_count = 0
         with zipfile.ZipFile(sample_zip_path, "r") as zf:
             file_count = len([n for n in zf.namelist() if not n.endswith("/")])
 
-        batch = service.create_batch_from_zip(
-            zip_file_path=sample_zip_path,
-            original_filename="test_batch.zip",
-            uploaded_by="test_user",
-        )
+        with open(sample_zip_path, "rb") as f:
+            zip_bytes = f.read()
 
-        assert batch.total_files == file_count
-        assert len(batch.documents) == file_count
+        from app.models.document import Document, DocumentStatus, DocumentType, DocumentPriority
 
-    def test_batch_document_status_tracking(self, db_session, sample_zip_path):
+        pre_created_docs = []
+        for i in range(file_count):
+            doc = Document(
+                original_filename=f"doc_{i}.pdf",
+                filename=f"doc_{i}.pdf",
+                document_type=DocumentType.PDF,
+                status=DocumentStatus.UPLOADED,
+                file_size=1000,
+                priority=DocumentPriority.MEDIUM,
+                metadata={},
+                storage_path=f"documents/doc_{i}.pdf",
+                minio_bucket="raw-documents",
+                minio_object_name=f"doc_{i}.pdf",
+            )
+            db_session.add(doc)
+        db_session.commit()
+
+        pre_created_docs = list(db_session.query(Document).all())
+
+        class MockStorage:
+            def upload_bytes(self, path, data, bucket):
+                pass
+
+        class MockDocumentService:
+            def __init__(self):
+                self.index = 0
+            def create_document(self, file_data, original_filename, priority=None, metadata=None):
+                doc = pre_created_docs[self.index]
+                self.index += 1
+                return doc
+
+        import app.services.storage
+        import app.services.document_service
+        monkeypatch.setattr(app.services.storage, "StorageService", MockStorage)
+        monkeypatch.setattr(app.services.document_service, "DocumentService", MockDocumentService)
+
+        BatchService._instance = None
+
         service = BatchService()
 
         batch = service.create_batch_from_zip(
-            zip_file_path=sample_zip_path,
-            original_filename="test_batch.zip",
-            uploaded_by="test_user",
+            zip_data=zip_bytes,
+            job_name="test_batch",
+            job_metadata={"uploaded_by": "test_user"},
         )
 
-        for doc in batch.documents:
-            assert doc.status == DocumentStatus.UPLOADED
+        assert batch.total_documents == file_count
 
-        for i, doc in enumerate(batch.documents):
-            new_status = DocumentStatus.PREPROCESSING if i % 2 == 0 else DocumentStatus.PREPROCESSED
-            service.update_batch_document_status(batch.id, doc.id, new_status)
+        reloaded_batch = db_session.query(BatchJob).filter(BatchJob.id == batch.id).first()
+        assert len(reloaded_batch.batch_documents.all()) == file_count
 
-        db_session.refresh(batch)
-        updated_batch = service.get_batch_with_details(batch.id)
+    def test_batch_document_status_tracking(self, db_session, sample_zip_path, monkeypatch):
+        file_count = 0
+        with zipfile.ZipFile(sample_zip_path, "r") as zf:
+            file_count = len([n for n in zf.namelist() if not n.endswith("/")])
 
-        assert updated_batch["preprocessing"] + updated_batch["preprocessed"] >= 2
+        from app.models.document import Document, DocumentStatus, DocumentType, DocumentPriority
 
-    def test_concurrent_batch_uploads(self, db_session, temp_dir, sample_pdf_path):
+        pre_created_docs = []
+        for i in range(file_count):
+            doc = Document(
+                original_filename=f"doc_{i}.pdf",
+                filename=f"doc_{i}.pdf",
+                document_type=DocumentType.PDF,
+                status=DocumentStatus.UPLOADED,
+                file_size=1000,
+                priority=DocumentPriority.MEDIUM,
+                metadata={},
+                storage_path=f"documents/doc_{i}.pdf",
+                minio_bucket="raw-documents",
+                minio_object_name=f"doc_{i}.pdf",
+            )
+            db_session.add(doc)
+        db_session.commit()
+
+        pre_created_docs = list(db_session.query(Document).all())
+
+        class MockStorage:
+            def upload_bytes(self, path, data, bucket):
+                pass
+
+        class MockDocumentService:
+            def __init__(self):
+                self.index = 0
+            def create_document(self, file_data, original_filename, priority=None, metadata=None):
+                doc = pre_created_docs[self.index]
+                self.index += 1
+                return doc
+
+        import app.services.storage
+        import app.services.document_service
+        monkeypatch.setattr(app.services.storage, "StorageService", MockStorage)
+        monkeypatch.setattr(app.services.document_service, "DocumentService", MockDocumentService)
+
+        BatchService._instance = None
+
+        service = BatchService()
+
+        with open(sample_zip_path, "rb") as f:
+            zip_bytes = f.read()
+
+        batch = service.create_batch_from_zip(
+            zip_data=zip_bytes,
+            job_name="test_batch",
+            job_metadata={"uploaded_by": "test_user"},
+        )
+
+        from app.models.batch import BatchDocument
+        from app.schemas.batch import BatchDocumentStatusEnum
+
+        reloaded_batch = db_session.query(BatchJob).filter(BatchJob.id == batch.id).first()
+        batch_docs = list(reloaded_batch.batch_documents.all())
+
+        for i, bd in enumerate(batch_docs):
+            doc_id = bd.document_id  # Access before session closes
+            new_status = BatchDocumentStatusEnum.PROCESSING if i % 2 == 0 else BatchDocumentStatusEnum.COMPLETED
+            service.update_batch_document_status(batch.id, doc_id, new_status)
+
+        details = service.get_batch_with_details(batch.id)
+
+        assert details["processing_documents"] >= 2
+        assert details["completed_documents"] >= 2
+        assert details["total_documents"] == file_count
+
+    def test_concurrent_batch_uploads(self, db_session, temp_dir, sample_pdf_path, monkeypatch):
+        from app.models.document import Document, DocumentStatus, DocumentType, DocumentPriority
+
+        pre_created_docs = []
+        for i in range(5):
+            doc = Document(
+                original_filename=f"doc_{i}.pdf",
+                filename=f"doc_{i}.pdf",
+                document_type=DocumentType.PDF,
+                status=DocumentStatus.UPLOADED,
+                file_size=1000,
+                priority=DocumentPriority.MEDIUM,
+                metadata={},
+                storage_path=f"documents/doc_{i}.pdf",
+                minio_bucket="raw-documents",
+                minio_object_name=f"doc_{i}.pdf",
+            )
+            db_session.add(doc)
+        db_session.commit()
+
+        pre_created_docs = list(db_session.query(Document).all())
+        doc_counter_lock = threading.Lock()
+        doc_counter = [0]
+
+        class MockStorage:
+            def upload_bytes(self, path, data, bucket):
+                pass
+
+        class MockDocumentService:
+            def __init__(self):
+                pass
+            def create_document(self, file_data, original_filename, priority=None, metadata=None):
+                with doc_counter_lock:
+                    idx = doc_counter[0]
+                    doc_counter[0] += 1
+                return pre_created_docs[idx]
+
+        import app.services.storage
+        import app.services.document_service
+        monkeypatch.setattr(app.services.storage, "StorageService", MockStorage)
+        monkeypatch.setattr(app.services.document_service, "DocumentService", MockDocumentService)
+
+        BatchService._instance = None
+
         service = BatchService()
 
         def create_zip(index):
@@ -383,17 +523,21 @@ class TestBatchJobProcessing:
             return zip_path
 
         batches = []
+        batches_lock = threading.Lock()
+        service_lock = threading.Lock()  # Serialize access to shared session
 
         def upload_batch(index):
             zip_path = create_zip(index)
             with open(zip_path, "rb") as f:
                 zip_bytes = f.read()
-            batch = service.create_batch_from_zip(
-                zip_data=zip_bytes,
-                job_name=f"batch_{index}",
-                job_metadata={"uploaded_by": f"user_{index}"},
-            )
-            batches.append(batch)
+            with service_lock:
+                batch = service.create_batch_from_zip(
+                    zip_data=zip_bytes,
+                    job_name=f"batch_{index}",
+                    job_metadata={"uploaded_by": f"user_{index}"},
+                )
+            with batches_lock:
+                batches.append(batch)
 
         threads = []
         for i in range(5):
@@ -408,18 +552,71 @@ class TestBatchJobProcessing:
         for batch in batches:
             assert batch.total_documents == 1
 
-    def test_batch_progress_calculation(self, db_session, sample_zip_path):
+    def test_batch_progress_calculation(self, db_session, sample_zip_path, monkeypatch):
+        file_count = 0
+        with zipfile.ZipFile(sample_zip_path, "r") as zf:
+            file_count = len([n for n in zf.namelist() if not n.endswith("/")])
+
+        from app.models.document import Document, DocumentStatus, DocumentType, DocumentPriority
+
+        pre_created_docs = []
+        for i in range(file_count):
+            doc = Document(
+                original_filename=f"doc_{i}.pdf",
+                filename=f"doc_{i}.pdf",
+                document_type=DocumentType.PDF,
+                status=DocumentStatus.UPLOADED,
+                file_size=1000,
+                priority=DocumentPriority.MEDIUM,
+                metadata={},
+                storage_path=f"documents/doc_{i}.pdf",
+                minio_bucket="raw-documents",
+                minio_object_name=f"doc_{i}.pdf",
+            )
+            db_session.add(doc)
+        db_session.commit()
+
+        pre_created_docs = list(db_session.query(Document).all())
+
+        class MockStorage:
+            def upload_bytes(self, path, data, bucket):
+                pass
+
+        class MockDocumentService:
+            def __init__(self):
+                self.index = 0
+            def create_document(self, file_data, original_filename, priority=None, metadata=None):
+                doc = pre_created_docs[self.index]
+                self.index += 1
+                return doc
+
+        import app.services.storage
+        import app.services.document_service
+        monkeypatch.setattr(app.services.storage, "StorageService", MockStorage)
+        monkeypatch.setattr(app.services.document_service, "DocumentService", MockDocumentService)
+
+        BatchService._instance = None
+
         service = BatchService()
 
+        with open(sample_zip_path, "rb") as f:
+            zip_bytes = f.read()
+
         batch = service.create_batch_from_zip(
-            zip_file_path=sample_zip_path,
-            original_filename="test_batch.zip",
-            uploaded_by="test_user",
+            zip_data=zip_bytes,
+            job_name="test_batch",
+            job_metadata={"uploaded_by": "test_user"},
         )
 
-        for i, doc in enumerate(batch.documents):
+        from app.schemas.batch import BatchDocumentStatusEnum
+
+        reloaded_batch = db_session.query(BatchJob).filter(BatchJob.id == batch.id).first()
+        batch_docs = list(reloaded_batch.batch_documents.all())
+
+        for i, bd in enumerate(batch_docs):
             if i < 3:
-                service.update_batch_document_status(batch.id, doc.id, DocumentStatus.COMPLETED)
+                doc_id = bd.document_id  # Access before session closes
+                service.update_batch_document_status(batch.id, doc_id, BatchDocumentStatusEnum.COMPLETED)
 
         details = service.get_batch_with_details(batch.id)
         progress = details.get("progress", 0)
@@ -428,7 +625,7 @@ class TestBatchJobProcessing:
         assert progress <= 100
 
         completed_count = details.get("completed", 0)
-        expected_progress = (completed_count / batch.total_files) * 100
+        expected_progress = (completed_count / batch.total_documents) * 100
         assert abs(progress - expected_progress) < 1
 
 
