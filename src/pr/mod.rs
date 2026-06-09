@@ -1,82 +1,114 @@
 use colored::Colorize;
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::header::{HeaderMap, AUTHORIZATION, CONTENT_TYPE};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use tracing::{debug, info};
+use std::sync::Arc;
+use tracing::warn;
 use webbrowser;
 
-use crate::cli::PrCommands;
+use crate::command::{CommandHandler, ModuleCommand};
 use crate::config::Config;
+use crate::context::AppContext;
 use crate::errors::{GitFlowError, Result};
-use crate::git::{extract_jira_issues, parse_commit_for_conventional, CommitInfo, GitRepository};
+use crate::git::{extract_jira_issues, parse_commit_for_conventional, CommitInfo, GitContext};
+use crate::git_hosting::{create_hosting_client, PullRequest as GitHostingPullRequest};
 use crate::jira::JiraClient;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitHubPullRequest {
-    title: String,
-    body: String,
-    head: String,
-    base: String,
-    draft: bool,
+pub mod cli {
+    use clap::Subcommand;
+
+    use super::*;
+
+    #[derive(Subcommand, Debug, Clone)]
+    pub enum PrCommands {
+        #[command(about = "从当前分支创建PR")]
+        Create {
+            #[arg(short, long, help = "目标分支", default_value = "main")]
+            base: String,
+
+            #[arg(short, long, help = "PR标题")]
+            title: Option<String>,
+
+            #[arg(short = 'm', long, help = "PR描述")]
+            body: Option<String>,
+
+            #[arg(short, long, help = "指定reviewer列表，逗号分隔", value_delimiter = ',')]
+            reviewers: Vec<String>,
+
+            #[arg(short = 'l', long, help = "标签列表，逗号分隔", value_delimiter = ',')]
+            labels: Vec<String>,
+
+            #[arg(short = 'D', long, help = "创建草稿PR")]
+            draft: bool,
+
+            #[arg(short, long, help = "关联的JIRA issue")]
+            issue: Option<String>,
+
+            #[arg(short = 'o', long, help = "创建后在浏览器打开")]
+            open: bool,
+
+            #[arg(long, help = "平台: auto/github/gitlab/bitbucket", default_value = "auto", value_parser = ["auto", "github", "gitlab", "bitbucket"])]
+            platform: String,
+        },
+
+        #[command(about = "查看当前分支的PR状态")]
+        Status {
+            #[arg(short, long, help = "显示详细信息")]
+            verbose: bool,
+        },
+    }
+
+    pub struct PrHandler {
+        ctx: AppContext,
+        cmd: PrCommands,
+    }
+
+    impl PrHandler {
+        pub fn new(ctx: AppContext, cmd: PrCommands) -> Self {
+            Self { ctx, cmd }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CommandHandler for PrHandler {
+        async fn handle(&self) -> Result<()> {
+            let config = self.ctx.config.get().await;
+            let manager = PrManager::new(self.ctx.git.clone(), config, self.ctx.http_client.clone());
+            manager.handle(&self.cmd).await
+        }
+    }
+
+    pub struct PrModule;
+
+    impl ModuleCommand for PrModule {
+        type Command = PrCommands;
+        type Handler = PrHandler;
+
+        fn name() -> &'static str {
+            "pr"
+        }
+
+        fn about() -> &'static str {
+            "PR工作流 - 一键创建Pull Request"
+        }
+
+        fn create_handler(ctx: crate::context::AppContext, cmd: &Self::Command) -> Result<Self::Handler> {
+            Ok(PrHandler::new(ctx, cmd.clone()))
+        }
+    }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitHubPullRequestResponse {
-    html_url: String,
-    number: u64,
-    title: String,
-    state: String,
-    body: Option<String>,
-}
+pub use cli::{PrCommands, PrHandler, PrModule};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitLabMergeRequest {
-    title: String,
-    description: String,
-    source_branch: String,
-    target_branch: String,
-    draft: bool,
-    remove_source_branch: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitLabMergeRequestResponse {
-    web_url: String,
-    iid: u64,
-    title: String,
-    state: String,
-    description: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitHubReviewerRequest {
-    reviewers: Vec<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitHubLabelsRequest {
-    labels: Vec<String>,
-}
-
-pub struct PrManager<'a> {
-    git: &'a GitRepository,
-    config: &'a Config,
+pub struct PrManager {
+    git: Arc<GitContext>,
+    config: Config,
     client: Client,
 }
 
-impl<'a> PrManager<'a> {
-    pub fn new(git: &'a GitRepository, config: &'a Config) -> Result<Self> {
-        let client = Client::builder()
-            .timeout(std::time::Duration::from_secs(30))
-            .build()?;
-
-        Ok(Self {
-            git,
-            config,
-            client,
-        })
+impl PrManager {
+    pub fn new(git: Arc<GitContext>, config: Config, client: Client) -> Self {
+        Self { git, config, client }
     }
 
     pub async fn handle(&self, command: &PrCommands) -> Result<()> {
@@ -105,7 +137,7 @@ impl<'a> PrManager<'a> {
                 )
                 .await
             }
-            PrCommands::Status { verbose } => self.status(*verbose).await,
+            PrCommands::Status { verbose } => self.status(*verbose),
         }
     }
 
@@ -149,9 +181,12 @@ impl<'a> PrManager<'a> {
 
         pb.finish_and_clear();
 
+        let hosting = create_hosting_client(&self.config, platform, self.client.clone())?;
+
         println!();
         println!("{} 创建 Pull Request", "📤".cyan());
         println!();
+        println!("  平台: {:?}", hosting.platform());
         println!("  源分支: {} -> 目标分支: {}", current_branch.cyan(), base.yellow());
         println!("  标题: {}", pr_title);
         if !jira_issues.is_empty() {
@@ -159,26 +194,33 @@ impl<'a> PrManager<'a> {
         }
         println!();
 
-        let pr_url = match platform {
-            "github" => {
-                self.create_github_pr(&current_branch, base, &pr_title, &pr_body, draft, reviewers, labels)
-                    .await?
-            }
-            "gitlab" => {
-                self.create_gitlab_mr(&current_branch, base, &pr_title, &pr_body, draft, reviewers, labels)
-                    .await?
-            }
-            _ => {
-                return Err(GitFlowError::GitPlatformError(format!(
-                    "不支持的平台: {}",
-                    platform
-                )))
-            }
+        let pb = ProgressBar::new_spinner();
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
+                .template("{spinner:.green} {msg}")
+                .unwrap(),
+        );
+        pb.set_message(format!("正在创建PR..."));
+        pb.enable_steady_tick(std::time::Duration::from_millis(100));
+
+        let pr = GitHostingPullRequest {
+            title: pr_title,
+            body: pr_body,
+            head: current_branch.clone(),
+            base: base.to_string(),
+            draft,
+            reviewers: reviewers.to_vec(),
+            labels: labels.to_vec(),
         };
+
+        let pr_resp = hosting.create_pull_request(&pr).await?;
+
+        pb.finish_and_clear();
 
         println!();
         println!("{} PR 创建成功!", "✓".green().bold());
-        println!("  URL: {}", pr_url.underline().blue());
+        println!("  URL: {}", pr_resp.url.underline().blue());
         println!();
 
         if self.config.jira.auto_transition && !jira_issues.is_empty() {
@@ -192,7 +234,7 @@ impl<'a> PrManager<'a> {
         }
 
         if open_in_browser {
-            if let Err(e) = webbrowser::open(&pr_url) {
+            if let Err(e) = webbrowser::open(&pr_resp.url) {
                 warn!("无法在浏览器中打开PR: {}", e);
             }
         }
@@ -303,217 +345,7 @@ impl<'a> PrManager<'a> {
         Ok(body)
     }
 
-    async fn create_github_pr(
-        &self,
-        head: &str,
-        base: &str,
-        title: &str,
-        body: &str,
-        draft: bool,
-        reviewers: &[String],
-        labels: &[String],
-    ) -> Result<String> {
-        let github_config = &self.config.git_platform.github;
-        let token = github_config
-            .api_token
-            .as_ref()
-            .ok_or_else(|| GitFlowError::GitPlatformError("GitHub API token未配置".into()))?;
-
-        let base_url = github_config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "https://api.github.com".to_string());
-
-        let owner = github_config
-            .owner
-            .as_ref()
-            .ok_or_else(|| GitFlowError::GitPlatformError("GitHub owner未配置".into()))?;
-        let repo = github_config
-            .repo
-            .as_ref()
-            .ok_or_else(|| GitFlowError::GitPlatformError("GitHub repo未配置".into()))?;
-
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                .template("{spinner:.green} {msg}")
-                .unwrap(),
-        );
-        pb.set_message("正在创建GitHub PR...");
-
-        let url = format!("{}/repos/{}/{}/pulls", base_url, owner, repo);
-        debug!("创建PR: {}", url);
-
-        let pr_request = GitHubPullRequest {
-            title: title.to_string(),
-            body: body.to_string(),
-            head: head.to_string(),
-            base: base.to_string(),
-            draft,
-        };
-
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-        headers.insert(AUTHORIZATION, format!("token {}", token).parse().unwrap());
-        headers.insert("Accept", "application/vnd.github.v3+json".parse().unwrap());
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(headers.clone())
-            .json(&pr_request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error = response.text().await.unwrap_or_default();
-            pb.finish_and_clear();
-            return Err(GitFlowError::GitPlatformError(format!(
-                "创建PR失败 ({}): {}",
-                status, error
-            )));
-        }
-
-        let pr: GitHubPullRequestResponse = response.json().await?;
-        pb.finish_and_clear();
-
-        info!("GitHub PR #{} 已创建", pr.number);
-
-        if !reviewers.is_empty() {
-            let reviewer_url = format!(
-                "{}/repos/{}/{}/pulls/{}/requested_reviewers",
-                base_url, owner, repo, pr.number
-            );
-            let reviewer_request = GitHubReviewerRequest {
-                reviewers: reviewers.to_vec(),
-            };
-            let _ = self
-                .client
-                .post(&reviewer_url)
-                .headers(headers.clone())
-                .json(&reviewer_request)
-                .send()
-                .await;
-        }
-
-        if !labels.is_empty() {
-            let labels_url = format!(
-                "{}/repos/{}/{}/issues/{}/labels",
-                base_url, owner, repo, pr.number
-            );
-            let labels_request = GitHubLabelsRequest {
-                labels: labels.to_vec(),
-            };
-            let _ = self
-                .client
-                .post(&labels_url)
-                .headers(headers.clone())
-                .json(&labels_request)
-                .send()
-                .await;
-        }
-
-        Ok(pr.html_url)
-    }
-
-    async fn create_gitlab_mr(
-        &self,
-        source_branch: &str,
-        target_branch: &str,
-        title: &str,
-        description: &str,
-        draft: bool,
-        reviewers: &[String],
-        labels: &[String],
-    ) -> Result<String> {
-        let gitlab_config = &self.config.git_platform.gitlab;
-        let token = gitlab_config
-            .api_token
-            .as_ref()
-            .ok_or_else(|| GitFlowError::GitPlatformError("GitLab API token未配置".into()))?;
-
-        let base_url = gitlab_config
-            .base_url
-            .clone()
-            .unwrap_or_else(|| "https://gitlab.com".to_string());
-
-        let project_id = gitlab_config
-            .project_id
-            .as_ref()
-            .ok_or_else(|| GitFlowError::GitPlatformError("GitLab project ID未配置".into()))?;
-
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .tick_chars("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏")
-                .template("{spinner:.green} {msg}")
-                .unwrap(),
-        );
-        pb.set_message("正在创建GitLab MR...");
-
-        let url = format!("{}/api/v4/projects/{}/merge_requests", base_url, project_id);
-        debug!("创建MR: {}", url);
-
-        let mr_request = GitLabMergeRequest {
-            title: title.to_string(),
-            description: description.to_string(),
-            source_branch: source_branch.to_string(),
-            target_branch: target_branch.to_string(),
-            draft,
-            remove_source_branch: true,
-        };
-
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, "application/json".parse().unwrap());
-        headers.insert("PRIVATE-TOKEN", token.parse().unwrap());
-
-        let response = self
-            .client
-            .post(&url)
-            .headers(headers.clone())
-            .json(&mr_request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let status = response.status();
-            let error = response.text().await.unwrap_or_default();
-            pb.finish_and_clear();
-            return Err(GitFlowError::GitPlatformError(format!(
-                "创建MR失败 ({}): {}",
-                status, error
-            )));
-        }
-
-        let mr: GitLabMergeRequestResponse = response.json().await?;
-        pb.finish_and_clear();
-
-        info!("GitLab MR !{} 已创建", mr.iid);
-
-        if !reviewers.is_empty() || !labels.is_empty() {
-            let update_url = format!("{}/api/v4/projects/{}/merge_requests/{}", base_url, project_id, mr.iid);
-            let mut update_body = serde_json::Map::new();
-            if !reviewers.is_empty() {
-                update_body.insert("reviewer_ids".to_string(), serde_json::json!([]));
-            }
-            if !labels.is_empty() {
-                update_body.insert("labels".to_string(), serde_json::json!(labels));
-            }
-            let _ = self
-                .client
-                .put(&update_url)
-                .headers(headers.clone())
-                .json(&update_body)
-                .send()
-                .await;
-        }
-
-        Ok(mr.web_url)
-    }
-
-    async fn status(&self, verbose: bool) -> Result<()> {
+    fn status(&self, verbose: bool) -> Result<()> {
         let current_branch = self.git.current_branch()?;
         let base_branch = &self.config.pr.default_base;
 
@@ -552,8 +384,14 @@ impl<'a> PrManager<'a> {
             println!();
         }
 
+        if let Ok(remote) = self.git.get_remote_url(&self.config.general.default_remote) {
+            let platform = crate::git_hosting::detect_platform_from_remote(&remote);
+            println!("  检测到Git平台: {:?}", platform);
+            println!();
+        }
+
         println!("使用以下命令创建PR:");
-        println!("  {}", format!("gitflow pr create --base {}", base_branch).dimmed());
+        println!("  {}", format!("gitflow pr create --base {} --platform auto", base_branch).dimmed());
 
         Ok(())
     }

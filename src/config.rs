@@ -2,8 +2,12 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{debug, info};
 
+use crate::command::{CommandHandler, ModuleCommand};
+use crate::context::AppContext;
 use crate::errors::{GitFlowError, Result};
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -103,6 +107,9 @@ pub struct BranchConfig {
 
     #[serde(default = "default_jira_pattern")]
     pub jira_issue_pattern: String,
+
+    #[serde(default = "default_clean_type_rules")]
+    pub clean_type_rules: std::collections::HashMap<String, i64>,
 }
 
 impl Default for BranchConfig {
@@ -115,6 +122,7 @@ impl Default for BranchConfig {
             auto_delete_merged: false,
             jira_integration: default_jira_integration(),
             jira_issue_pattern: default_jira_pattern(),
+            clean_type_rules: default_clean_type_rules(),
         }
     }
 }
@@ -151,6 +159,16 @@ fn default_jira_integration() -> bool {
 
 fn default_jira_pattern() -> String {
     r"[A-Z]+-\d+".to_string()
+}
+
+fn default_clean_type_rules() -> std::collections::HashMap<String, i64> {
+    let mut rules = std::collections::HashMap::new();
+    rules.insert("feature".to_string(), 0);
+    rules.insert("bugfix".to_string(), 7);
+    rules.insert("hotfix".to_string(), 30);
+    rules.insert("release".to_string(), 90);
+    rules.insert("chore".to_string(), 3);
+    rules
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -486,6 +504,9 @@ pub struct GitPlatformConfig {
 
     #[serde(default)]
     pub gitlab: GitLabConfig,
+
+    #[serde(default)]
+    pub bitbucket: BitbucketConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -516,6 +537,21 @@ pub struct GitLabConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct BitbucketConfig {
+    #[serde(default)]
+    pub api_token: Option<String>,
+
+    #[serde(default)]
+    pub base_url: Option<String>,
+
+    #[serde(default)]
+    pub workspace: Option<String>,
+
+    #[serde(default)]
+    pub repo_slug: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct HooksConfig {
     #[serde(default)]
     pub pre_commit: Option<Vec<String>>,
@@ -527,9 +563,98 @@ pub struct HooksConfig {
     pub pre_push: Option<Vec<String>>,
 }
 
+pub mod cli {
+    use clap::Subcommand;
+
+    use super::*;
+
+    #[derive(Subcommand, Debug, Clone)]
+    pub enum ConfigCommands {
+        #[command(about = "初始化配置文件")]
+        Init {
+            #[arg(short, long, help = "全局配置")]
+            global: bool,
+
+            #[arg(short, long, help = "强制覆盖现有配置")]
+            force: bool,
+        },
+
+        #[command(about = "查看配置")]
+        Show {
+            #[arg(short, long, help = "查看全局配置")]
+            global: bool,
+
+            #[arg(short, long, help = "查看所有合并后的配置")]
+            merged: bool,
+        },
+
+        #[command(about = "设置配置项")]
+        Set {
+            #[arg(help = "配置键，如 commit.types")]
+            key: String,
+
+            #[arg(help = "配置值")]
+            value: String,
+
+            #[arg(short, long, help = "设置全局配置")]
+            global: bool,
+        },
+
+        #[command(about = "获取配置项")]
+        Get {
+            #[arg(help = "配置键")]
+            key: String,
+
+            #[arg(short, long, help = "从全局配置获取")]
+            global: bool,
+        },
+    }
+
+    pub struct ConfigHandler {
+        ctx: AppContext,
+        cmd: ConfigCommands,
+    }
+
+    impl ConfigHandler {
+        pub fn new(ctx: AppContext, cmd: ConfigCommands) -> Self {
+            Self { ctx, cmd }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CommandHandler for ConfigHandler {
+        async fn handle(&self) -> Result<()> {
+            let manager = self.ctx.config.clone();
+            manager.handle(&self.cmd).await
+        }
+    }
+
+    pub struct ConfigModule;
+
+    impl ModuleCommand for ConfigModule {
+        type Command = ConfigCommands;
+        type Handler = ConfigHandler;
+
+        fn name() -> &'static str {
+            "config"
+        }
+
+        fn about() -> &'static str {
+            "配置管理 - 管理全局和项目配置"
+        }
+
+        fn create_handler(ctx: crate::context::AppContext, cmd: &Self::Command) -> Result<Self::Handler> {
+            Ok(ConfigHandler::new(ctx, cmd.clone()))
+        }
+    }
+}
+
+pub use cli::{ConfigCommands, ConfigHandler, ConfigModule};
+
 pub struct ConfigManager {
     global_config_path: PathBuf,
     project_config_path: PathBuf,
+    config: Arc<RwLock<Config>>,
 }
 
 impl ConfigManager {
@@ -541,36 +666,104 @@ impl ConfigManager {
             PathBuf::from(".gitflow.toml")
         });
 
+        let initial_config = Self::load_config_from_paths(&global_config_path, &project_config_path)?;
+
         Ok(Self {
             global_config_path,
             project_config_path,
+            config: Arc::new(RwLock::new(initial_config)),
         })
     }
 
     pub fn with_custom_path(custom_path: &str) -> Result<Self> {
         let path = PathBuf::from(custom_path);
+        let initial_config = Self::load_config_from_paths(&path, &path)?;
         Ok(Self {
             global_config_path: path.clone(),
             project_config_path: path,
+            config: Arc::new(RwLock::new(initial_config)),
         })
     }
 
-    pub fn load(&self) -> Result<Config> {
+    pub fn from_config(config: Config) -> Self {
+        let home_dir = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/tmp"));
+        let global_config_path = home_dir.join(".config").join("gitflow").join("config.toml");
+        let project_config_path = PathBuf::from(".gitflow.toml");
+
+        Self {
+            global_config_path,
+            project_config_path,
+            config: Arc::new(RwLock::new(config)),
+        }
+    }
+
+    pub async fn handle(&self, command: &ConfigCommands) -> Result<()> {
+        match command {
+            ConfigCommands::Init { global, force } => {
+                self.init(*global, *force)
+            }
+            ConfigCommands::Show { global, merged } => {
+                self.show(*global, *merged)
+            }
+            ConfigCommands::Set { key, value, global } => {
+                self.set_value(key, value, *global)
+            }
+            ConfigCommands::Get { key, global } => {
+                let value = self.get_value(key, *global)?;
+                println!("{}", value);
+                Ok(())
+            }
+        }
+    }
+
+    fn show(&self, global: bool, merged: bool) -> Result<()> {
+        let config = if merged {
+            self.load_blocking()?
+        } else if global {
+            self.load_global()?
+        } else {
+            self.load_project()?
+        };
+
+        let toml_str = toml::to_string_pretty(&config)?;
+        println!("{}", toml_str);
+        Ok(())
+    }
+
+    fn load_config_from_paths(global: &Path, project: &Path) -> Result<Config> {
         let mut config = Config::default();
 
-        if self.global_config_path.exists() {
-            debug!("加载全局配置: {:?}", self.global_config_path);
-            let global_config = self.load_from_file(&self.global_config_path)?;
+        if global.exists() {
+            debug!("加载全局配置: {:?}", global);
+            let content = fs::read_to_string(global)?;
+            let global_config: Config = toml::from_str(&content)?;
             config = merge_config(config, global_config);
         }
 
-        if self.project_config_path.exists() {
-            debug!("加载项目配置: {:?}", self.project_config_path);
-            let project_config = self.load_from_file(&self.project_config_path)?;
+        if project.exists() && project != global {
+            debug!("加载项目配置: {:?}", project);
+            let content = fs::read_to_string(project)?;
+            let project_config: Config = toml::from_str(&content)?;
             config = merge_config(config, project_config);
         }
 
         Ok(config)
+    }
+
+    pub async fn get(&self) -> Config {
+        self.config.read().await.clone()
+    }
+
+    pub async fn reload(&self) -> Result<()> {
+        let new_config = Self::load_config_from_paths(&self.global_config_path, &self.project_config_path)?;
+        let mut w = self.config.write().await;
+        *w = new_config;
+        debug!("配置已重新加载");
+        Ok(())
+    }
+
+    pub fn load_blocking(&self) -> Result<Config> {
+        Self::load_config_from_paths(&self.global_config_path, &self.project_config_path)
     }
 
     pub fn load_global(&self) -> Result<Config> {
@@ -643,7 +836,7 @@ impl ConfigManager {
         let config = if global {
             self.load_global()?
         } else {
-            self.load()?
+            self.load_blocking()?
         };
 
         get_config_value(&config, key)
@@ -726,6 +919,7 @@ fn merge_branch_config(base: BranchConfig, overlay: BranchConfig) -> BranchConfi
         auto_delete_merged: overlay.auto_delete_merged || base.auto_delete_merged,
         jira_integration: overlay.jira_integration || base.jira_integration,
         jira_issue_pattern: if !overlay.jira_issue_pattern.is_empty() { overlay.jira_issue_pattern } else { base.jira_issue_pattern },
+        clean_type_rules: if !overlay.clean_type_rules.is_empty() { overlay.clean_type_rules } else { base.clean_type_rules },
     }
 }
 
@@ -811,6 +1005,7 @@ fn merge_git_platform_config(base: GitPlatformConfig, overlay: GitPlatformConfig
     GitPlatformConfig {
         github: merge_github_config(base.github, overlay.github),
         gitlab: merge_gitlab_config(base.gitlab, overlay.gitlab),
+        bitbucket: merge_bitbucket_config(base.bitbucket, overlay.bitbucket),
     }
 }
 
@@ -828,6 +1023,15 @@ fn merge_gitlab_config(base: GitLabConfig, overlay: GitLabConfig) -> GitLabConfi
         api_token: overlay.api_token.or(base.api_token),
         base_url: overlay.base_url.or(base.base_url),
         project_id: overlay.project_id.or(base.project_id),
+    }
+}
+
+fn merge_bitbucket_config(base: BitbucketConfig, overlay: BitbucketConfig) -> BitbucketConfig {
+    BitbucketConfig {
+        api_token: overlay.api_token.or(base.api_token),
+        base_url: overlay.base_url.or(base.base_url),
+        workspace: overlay.workspace.or(base.workspace),
+        repo_slug: overlay.repo_slug.or(base.repo_slug),
     }
 }
 

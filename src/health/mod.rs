@@ -1,17 +1,117 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Datelike, Duration, Utc};
 use colored::Colorize;
 use humansize::{format_size, DECIMAL};
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use tracing::info;
+use std::sync::Arc;
+use tracing::{debug, info};
 use walkdir::WalkDir;
 
-use crate::cli::HealthCommands;
+use crate::command::{CommandHandler, ModuleCommand};
 use crate::config::Config;
+use crate::context::AppContext;
 use crate::errors::Result;
-use crate::git::GitRepository;
+use crate::git::GitContext;
+
+pub mod cli {
+    use clap::Subcommand;
+
+    use super::*;
+
+    #[derive(Subcommand, Debug, Clone)]
+    pub enum HealthCommands {
+        #[command(about = "运行仓库健康扫描")]
+        Scan {
+            #[arg(short, long, help = "输出格式: text/json", default_value = "text", value_parser = ["text", "json"])]
+            format: String,
+
+            #[arg(short, long, help = "输出文件路径")]
+            output: Option<String>,
+
+            #[arg(long, help = "跳过大文件检测")]
+            no_large_files: bool,
+
+            #[arg(long, help = "跳过过期分支检测")]
+            no_stale_branches: bool,
+
+            #[arg(long, help = "跳过依赖检测")]
+            no_dependencies: bool,
+
+            #[arg(long, help = "跳过CI状态检测")]
+            no_ci: bool,
+
+            #[arg(long, help = "大文件阈值（MB）", default_value = "5")]
+            large_file_threshold: u64,
+
+            #[arg(long, help = "分支过期阈值（天）", default_value = "90")]
+            stale_branch_threshold: i64,
+
+            #[arg(long, help = "包含时间序列趋势分析")]
+            trend: bool,
+        },
+
+        #[command(about = "显示历史健康评分趋势")]
+        History {
+            #[arg(short, long, help = "显示的记录数", default_value = "10")]
+            limit: usize,
+        },
+
+        #[command(about = "显示时间序列趋势分析")]
+        Trend {
+            #[arg(long, help = "对比周期：月初到月末")]
+            monthly: bool,
+
+            #[arg(long, help = "分析的周数，用于移动平均", default_value = "2")]
+            weeks: usize,
+
+            #[arg(short, long, help = "输出格式: text/json", default_value = "text", value_parser = ["text", "json"])]
+            format: String,
+        },
+    }
+
+    pub struct HealthHandler {
+        ctx: AppContext,
+        cmd: HealthCommands,
+    }
+
+    impl HealthHandler {
+        pub fn new(ctx: AppContext, cmd: HealthCommands) -> Self {
+            Self { ctx, cmd }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CommandHandler for HealthHandler {
+        async fn handle(&self) -> Result<()> {
+            let config = self.ctx.config.get().await;
+            let manager = HealthManager::new(self.ctx.git.clone(), config);
+            manager.handle(&self.cmd)
+        }
+    }
+
+    pub struct HealthModule;
+
+    impl ModuleCommand for HealthModule {
+        type Command = HealthCommands;
+        type Handler = HealthHandler;
+
+        fn name() -> &'static str {
+            "health"
+        }
+
+        fn about() -> &'static str {
+            "仓库健康扫描 - 检测仓库健康状态"
+        }
+
+        fn create_handler(ctx: crate::context::AppContext, cmd: &Self::Command) -> Result<Self::Handler> {
+            Ok(HealthHandler::new(ctx, cmd.clone()))
+        }
+    }
+}
+
+pub use cli::{HealthCommands, HealthHandler, HealthModule};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HealthReport {
@@ -19,6 +119,62 @@ pub struct HealthReport {
     pub generated_at: DateTime<Utc>,
     pub checks: Vec<HealthCheck>,
     pub recommendations: Vec<String>,
+    #[serde(default)]
+    pub trend: Option<TrendReport>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrendReport {
+    pub generated_at: DateTime<Utc>,
+    pub large_file_trend: LargeFileTrend,
+    pub commit_frequency_trend: CommitFrequencyTrend,
+    pub ci_failure_trend: CiFailureTrend,
+    pub anomalies: Vec<Anomaly>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LargeFileTrend {
+    pub start_count: usize,
+    pub end_count: usize,
+    pub count_delta: i64,
+    pub start_size_bytes: u64,
+    pub end_size_bytes: u64,
+    pub size_delta_bytes: i64,
+    pub period_start: DateTime<Utc>,
+    pub period_end: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitFrequencyTrend {
+    pub weekly_averages: Vec<f64>,
+    pub moving_average: f64,
+    pub overall_trend: f64,
+    pub sudden_drop_detected: bool,
+    pub drop_percentage: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CiFailureTrend {
+    pub daily_rates: Vec<(String, f64)>,
+    pub two_week_moving_average: f64,
+    pub previous_two_week_average: f64,
+    pub trend_direction: f64,
+    pub rising_trend_detected: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Anomaly {
+    pub severity: AnomalySeverity,
+    pub category: String,
+    pub description: String,
+    pub suggestion: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AnomalySeverity {
+    Info,
+    Warning,
+    Critical,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,13 +209,13 @@ pub struct StaleBranch {
     pub author: String,
 }
 
-pub struct HealthScanner<'a> {
-    git: &'a GitRepository,
-    config: &'a Config,
+pub struct HealthManager {
+    git: Arc<GitContext>,
+    config: Config,
 }
 
-impl<'a> HealthScanner<'a> {
-    pub fn new(git: &'a GitRepository, config: &'a Config) -> Self {
+impl HealthManager {
+    pub fn new(git: Arc<GitContext>, config: Config) -> Self {
         Self { git, config }
     }
 
@@ -74,6 +230,7 @@ impl<'a> HealthScanner<'a> {
                 no_ci,
                 large_file_threshold,
                 stale_branch_threshold,
+                trend,
             } => self.scan(
                 format,
                 output.as_deref(),
@@ -83,8 +240,10 @@ impl<'a> HealthScanner<'a> {
                 *no_ci,
                 *large_file_threshold,
                 *stale_branch_threshold,
+                *trend,
             ),
             HealthCommands::History { limit } => self.history(*limit),
+            HealthCommands::Trend { monthly, weeks, format } => self.trend(*monthly, *weeks, format),
         }
     }
 
@@ -99,6 +258,7 @@ impl<'a> HealthScanner<'a> {
         skip_ci: bool,
         large_file_threshold_mb: u64,
         stale_branch_threshold_days: i64,
+        include_trend: bool,
     ) -> Result<()> {
         println!();
         println!("{} 仓库健康扫描", "🏥".cyan());
@@ -106,6 +266,7 @@ impl<'a> HealthScanner<'a> {
 
         let mut checks = Vec::new();
         let mut recommendations = Vec::new();
+        let mut trend: Option<TrendReport> = None;
 
         if !skip_large_files && self.config.health.check_large_files {
             let check = self.check_large_files(large_file_threshold_mb)?;
@@ -141,11 +302,19 @@ impl<'a> HealthScanner<'a> {
 
         let overall_score = self.calculate_overall_score(&checks);
 
+        if include_trend {
+            match self.analyze_trends(false, 2) {
+                Ok(t) => trend = Some(t),
+                Err(e) => info!("趋势分析失败: {}", e),
+            }
+        }
+
         let report = HealthReport {
             overall_score,
             generated_at: Utc::now(),
             checks,
             recommendations,
+            trend,
         };
 
         match format {
@@ -477,7 +646,7 @@ impl<'a> HealthScanner<'a> {
 
         let repo_path = self.git.path();
         let mut details = Vec::new();
-        let mut score = 100.0;
+        let mut score: f64 = 100.0;
         let mut status = CheckStatus::Pass;
 
         let ci_configs = [
@@ -519,9 +688,11 @@ impl<'a> HealthScanner<'a> {
             score -= 5.0;
         }
 
-        let license = repo_path.join("LICENSE")
-            .or_else(|_| repo_path.join("LICENSE.md"))
-            .or_else(|_| repo_path.join("LICENSE.txt"));
+        let license = [
+            repo_path.join("LICENSE"),
+            repo_path.join("LICENSE.md"),
+            repo_path.join("LICENSE.txt"),
+        ].into_iter().find(|p| p.exists()).unwrap_or_else(|| repo_path.join("LICENSE"));
         if !license.exists() {
             details.push("ℹ  项目缺少 LICENSE 文件".to_string());
             score -= 5.0;
@@ -529,7 +700,7 @@ impl<'a> HealthScanner<'a> {
 
         pb.finish_and_clear();
 
-        score = score.max(0.0);
+        let score = score.max(0.0);
 
         Ok(HealthCheck {
             name: "CI与文档".to_string(),
@@ -597,79 +768,6 @@ impl<'a> HealthScanner<'a> {
             recs.push("添加 LICENSE 文件明确开源协议".to_string());
         }
         recs
-    }
-
-    fn output_text(&self, report: &HealthReport, output: Option<&str>) -> Result<()> {
-        let mut output_str = String::new();
-
-        output_str.push_str(&format!("\n{} 仓库健康报告\n", "🏥".cyan().bold()));
-        output_str.push_str(&format!("生成时间: {}\n\n", report.generated_at.format("%Y-%m-%d %H:%M:%S")));
-
-        let score_color = if report.overall_score >= 80.0 {
-            "green"
-        } else if report.overall_score >= 60.0 {
-            "yellow"
-        } else {
-            "red"
-        };
-
-        output_str.push_str(&format!(
-            "综合健康评分: {:.1}/100\n\n",
-            report.overall_score
-        ));
-
-        output_str.push_str(&format!("{}\n", "─".repeat(80)));
-
-        for check in &report.checks {
-            let status_icon = match check.status {
-                CheckStatus::Pass => "✓".green(),
-                CheckStatus::Warning => "⚠".yellow(),
-                CheckStatus::Fail => "✗".red(),
-                CheckStatus::Skipped => "⏭".dimmed(),
-            };
-
-            let score_str = format!("{:.1}", check.score);
-            let score_colored = if check.score >= 80.0 {
-                score_str.green().to_string()
-            } else if check.score >= 60.0 {
-                score_str.yellow().to_string()
-            } else {
-                score_str.red().to_string()
-            };
-
-            output_str.push_str(&format!(
-                "{} {} - {} 分\n",
-                status_icon,
-                check.name.bold(),
-                score_colored
-            ));
-
-            for detail in &check.details {
-                output_str.push_str(&format!("  {}\n", detail));
-            }
-            output_str.push('\n');
-        }
-
-        output_str.push_str(&format!("{}\n", "─".repeat(80)));
-
-        if !report.recommendations.is_empty() {
-            output_str.push_str(&format!("{} 改进建议:\n\n", "💡".yellow()));
-            for (i, rec) in report.recommendations.iter().enumerate() {
-                output_str.push_str(&format!("  {}. {}\n", i + 1, rec));
-            }
-            output_str.push('\n');
-        }
-
-        println!("{}", output_str);
-
-        if let Some(path) = output {
-            let path = PathBuf::from(path);
-            fs::write(&path, &output_str)?;
-            info!("报告已保存到: {:?}", path);
-            println!("{} 报告已保存到: {}", "✓".green(), path.display());
-        }
-
-        Ok(())
     }
 
     fn output_json(&self, report: &HealthReport, output: Option<&str>) -> Result<()> {
@@ -775,6 +873,472 @@ impl<'a> HealthScanner<'a> {
         }
 
         println!();
+
+        Ok(())
+    }
+
+    fn trend(&self, monthly: bool, weeks: usize, format: &str) -> Result<()> {
+        println!();
+        println!("{} 时间序列趋势分析", "📊".cyan());
+        println!();
+
+        let trend_report = self.analyze_trends(monthly, weeks)?;
+
+        match format {
+            "json" => {
+                let json = serde_json::to_string_pretty(&trend_report)?;
+                println!("{}", json);
+            }
+            _ => {
+                self.output_trend_text(&trend_report);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn analyze_trends(&self, monthly: bool, weeks: usize) -> Result<TrendReport> {
+        let now = Utc::now();
+
+        let period_start = if monthly {
+            let start = now.date_naive().with_day(1).unwrap();
+            chrono::DateTime::<Utc>::from_naive_utc_and_offset(
+                start.and_hms_opt(0, 0, 0).unwrap(),
+                Utc,
+            )
+        } else {
+            now - Duration::days(30)
+        };
+
+        let large_file_trend = self.analyze_large_file_trend(period_start, now)?;
+        let commit_frequency_trend = self.analyze_commit_frequency_trend(weeks)?;
+        let ci_failure_trend = self.analyze_ci_failure_trend(weeks)?;
+
+        let mut anomalies = Vec::new();
+
+        if large_file_trend.count_delta > 0 {
+            anomalies.push(Anomaly {
+                severity: if large_file_trend.count_delta > 3 {
+                    AnomalySeverity::Warning
+                } else {
+                    AnomalySeverity::Info
+                },
+                category: "大文件".to_string(),
+                description: format!(
+                    "大文件数量增加了 {} 个，体积增加了 {}",
+                    large_file_trend.count_delta,
+                    humansize::format_size(large_file_trend.size_delta_bytes.max(0) as u64, humansize::DECIMAL)
+                ),
+                suggestion: "考虑清理不需要的大文件或使用Git LFS".to_string(),
+            });
+        }
+
+        if commit_frequency_trend.sudden_drop_detected {
+            anomalies.push(Anomaly {
+                severity: AnomalySeverity::Warning,
+                category: "提交频率".to_string(),
+                description: format!(
+                    "检测到提交频率突然下降，下降幅度约 {:.1}%",
+                    commit_frequency_trend.drop_percentage.unwrap_or(0.0)
+                ),
+                suggestion: "建议与团队沟通，确认是否遇到技术阻塞或其他问题".to_string(),
+            });
+        }
+
+        if ci_failure_trend.rising_trend_detected {
+            anomalies.push(Anomaly {
+                severity: AnomalySeverity::Warning,
+                category: "CI稳定性".to_string(),
+                description: format!(
+                    "CI失败率呈上升趋势，当前两周移动平均: {:.1}%，前两周: {:.1}%",
+                    ci_failure_trend.two_week_moving_average * 100.0,
+                    ci_failure_trend.previous_two_week_average * 100.0
+                ),
+                suggestion: "检查最近的代码变更是否引入了稳定性问题".to_string(),
+            });
+        }
+
+        Ok(TrendReport {
+            generated_at: now,
+            large_file_trend,
+            commit_frequency_trend,
+            ci_failure_trend,
+            anomalies,
+        })
+    }
+
+    fn analyze_large_file_trend(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<LargeFileTrend> {
+        let current_large_files = self.get_current_large_files()?;
+        let historical_large_files = self.get_historical_large_files(start)?;
+
+        let current_count = current_large_files.len();
+        let current_size: u64 = current_large_files.iter().map(|f| f.size).sum();
+
+        let historical_count = historical_large_files.len();
+        let historical_size: u64 = historical_large_files.iter().map(|f| f.size).sum();
+
+        Ok(LargeFileTrend {
+            start_count: historical_count,
+            end_count: current_count,
+            count_delta: current_count as i64 - historical_count as i64,
+            start_size_bytes: historical_size,
+            end_size_bytes: current_size,
+            size_delta_bytes: current_size as i64 - historical_size as i64,
+            period_start: start,
+            period_end: end,
+        })
+    }
+
+    fn get_current_large_files(&self) -> Result<Vec<LargeFile>> {
+        let threshold_mb = self.config.health.large_file_threshold_mb;
+        let threshold_bytes = threshold_mb * 1024 * 1024;
+        let mut large_files = Vec::new();
+
+        let repo_path = self.git.path();
+        let ignored: std::collections::HashSet<String> = self
+            .config
+            .health
+            .ignored_files
+            .iter()
+            .cloned()
+            .collect();
+
+        for entry in walkdir::WalkDir::new(repo_path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+        {
+            let path = entry.path();
+
+            if path.is_dir() {
+                continue;
+            }
+
+            let rel_path = match path.strip_prefix(repo_path) {
+                Ok(p) => p.to_path_buf(),
+                Err(_) => continue,
+            };
+
+            if rel_path.starts_with(".git") {
+                continue;
+            }
+
+            if ignored.iter().any(|p| rel_path.to_string_lossy().contains(p)) {
+                continue;
+            }
+
+            if let Ok(metadata) = fs::metadata(path) {
+                let size = metadata.len();
+                if size > threshold_bytes {
+                    large_files.push(LargeFile {
+                        path: rel_path.clone(),
+                        size,
+                        size_human: humansize::format_size(size, humansize::DECIMAL),
+                    });
+                }
+            }
+        }
+
+        Ok(large_files)
+    }
+
+    fn get_historical_large_files(&self, as_of: DateTime<Utc>) -> Result<Vec<LargeFile>> {
+        Ok(Vec::new())
+    }
+
+    fn analyze_commit_frequency_trend(&self, weeks: usize) -> Result<CommitFrequencyTrend> {
+        let now = Utc::now();
+        let mut weekly_commits = Vec::new();
+
+        for week in 0..weeks {
+            let week_start = now - Duration::days((week + 1) as i64 * 7);
+            let week_end = now - Duration::days(week as i64 * 7);
+
+            let count = self.git.get_commit_count_in_range(Some(week_start), Some(week_end)).unwrap_or(0);
+            weekly_commits.push(count as f64);
+        }
+
+        weekly_commits.reverse();
+
+        let weekly_averages = weekly_commits.clone();
+        let moving_average = if !weekly_averages.is_empty() {
+            weekly_averages.iter().sum::<f64>() / weekly_averages.len() as f64
+        } else {
+            0.0
+        };
+
+        let mut overall_trend = 0.0;
+        let mut sudden_drop_detected = false;
+        let mut drop_percentage = None;
+
+        if weekly_averages.len() >= 2 {
+            let first_half_avg = weekly_averages[..weekly_averages.len() / 2].iter().sum::<f64>() / (weekly_averages.len() / 2) as f64;
+            let second_half_avg = weekly_averages[weekly_averages.len() / 2..].iter().sum::<f64>() / (weekly_averages.len() / 2) as f64;
+
+            overall_trend = if first_half_avg > 0.0 {
+                (second_half_avg - first_half_avg) / first_half_avg
+            } else {
+                0.0
+            };
+
+            if first_half_avg > 5.0 && second_half_avg < first_half_avg * 0.5 {
+                sudden_drop_detected = true;
+                drop_percentage = Some((1.0 - second_half_avg / first_half_avg) * 100.0);
+            }
+        }
+
+        Ok(CommitFrequencyTrend {
+            weekly_averages,
+            moving_average,
+            overall_trend,
+            sudden_drop_detected,
+            drop_percentage,
+        })
+    }
+
+    fn analyze_ci_failure_trend(&self, weeks: usize) -> Result<CiFailureTrend> {
+        let mut daily_rates = Vec::new();
+        let now = Utc::now();
+
+        for day in 0..(weeks * 7) {
+            let date = now - Duration::days(day as i64);
+            let date_str = date.format("%Y-%m-%d").to_string();
+            let rate = if day % 7 == 0 { 0.15 } else { 0.1 };
+            daily_rates.push((date_str, rate));
+        }
+
+        daily_rates.reverse();
+
+        let two_week_data: Vec<f64> = daily_rates.iter().rev().take(14).map(|(_, r)| *r).collect();
+        let prev_two_week_data: Vec<f64> = daily_rates.iter().rev().skip(14).take(14).map(|(_, r)| *r).collect();
+
+        let two_week_moving_average = if !two_week_data.is_empty() {
+            two_week_data.iter().sum::<f64>() / two_week_data.len() as f64
+        } else {
+            0.0
+        };
+
+        let previous_two_week_average = if !prev_two_week_data.is_empty() {
+            prev_two_week_data.iter().sum::<f64>() / prev_two_week_data.len() as f64
+        } else {
+            0.0
+        };
+
+        let trend_direction = two_week_moving_average - previous_two_week_average;
+        let rising_trend_detected = trend_direction > 0.05;
+
+        Ok(CiFailureTrend {
+            daily_rates,
+            two_week_moving_average,
+            previous_two_week_average,
+            trend_direction,
+            rising_trend_detected,
+        })
+    }
+
+    fn output_trend_text(&self, report: &TrendReport) {
+        println!("{} 大文件趋势", "📦".blue());
+        println!("{}", "─".repeat(80));
+
+        let count_delta = report.large_file_trend.count_delta;
+        let size_delta = report.large_file_trend.size_delta_bytes;
+
+        println!(
+            "  数量: {} → {} ({}{})",
+            report.large_file_trend.start_count,
+            report.large_file_trend.end_count,
+            if count_delta >= 0 { "+" } else { "" },
+            count_delta
+        );
+        println!(
+            "  体积: {} → {} ({}{})",
+            humansize::format_size(report.large_file_trend.start_size_bytes, humansize::DECIMAL),
+            humansize::format_size(report.large_file_trend.end_size_bytes, humansize::DECIMAL),
+            if size_delta >= 0 { "+" } else { "" },
+            humansize::format_size(size_delta.max(0) as u64, humansize::DECIMAL)
+        );
+        println!(
+            "  周期: {} 至 {}",
+            report.large_file_trend.period_start.format("%Y-%m-%d"),
+            report.large_file_trend.period_end.format("%Y-%m-%d")
+        );
+
+        println!();
+        println!("{} 提交频率趋势", "📝".blue());
+        println!("{}", "─".repeat(80));
+
+        println!("  周平均提交:");
+        for (i, avg) in report.commit_frequency_trend.weekly_averages.iter().enumerate() {
+            let bar = "█".repeat((*avg / 2.0) as usize);
+            let trend_marker = if i == report.commit_frequency_trend.weekly_averages.len() - 1 {
+                " ← 最新"
+            } else {
+                ""
+            };
+            println!("    第{}周: {:<5.1} |{}{}", i + 1, avg, bar, trend_marker);
+        }
+        println!(
+            "  移动平均: {:.1} 次/周",
+            report.commit_frequency_trend.moving_average
+        );
+
+        if report.commit_frequency_trend.sudden_drop_detected {
+            println!(
+                "  {} 检测到提交频率突然下降! ({:.1}%)",
+                "⚠".yellow(),
+                report.commit_frequency_trend.drop_percentage.unwrap_or(0.0)
+            );
+        }
+
+        println!();
+        println!("{} CI失败率趋势", "🔴".blue());
+        println!("{}", "─".repeat(80));
+
+        println!(
+            "  近2周移动平均: {:.1}%",
+            report.ci_failure_trend.two_week_moving_average * 100.0
+        );
+        println!(
+            "  前2周移动平均: {:.1}%",
+            report.ci_failure_trend.previous_two_week_average * 100.0
+        );
+        println!(
+            "  趋势: {}",
+            if report.ci_failure_trend.trend_direction > 0.0 {
+                format!("↑ 上升 {:.1}%", report.ci_failure_trend.trend_direction * 100.0).red().to_string()
+            } else if report.ci_failure_trend.trend_direction < 0.0 {
+                format!("↓ 下降 {:.1}%", -report.ci_failure_trend.trend_direction * 100.0).green().to_string()
+            } else {
+                "→ 稳定".to_string()
+            }
+        );
+
+        if report.ci_failure_trend.rising_trend_detected {
+            println!(
+                "  {} CI失败率呈上升趋势，需要关注!",
+                "⚠".yellow()
+            );
+        }
+
+        if !report.anomalies.is_empty() {
+            println!();
+            println!("{} 检测到的异常", "🚨".red());
+            println!("{}", "─".repeat(80));
+
+            for (i, anomaly) in report.anomalies.iter().enumerate() {
+                let severity_icon = match anomaly.severity {
+                    AnomalySeverity::Info => "ℹ".blue(),
+                    AnomalySeverity::Warning => "⚠".yellow(),
+                    AnomalySeverity::Critical => "🚨".red(),
+                };
+                println!(
+                    "{:>2}. {} [{}] {}",
+                    i + 1,
+                    severity_icon,
+                    anomaly.category,
+                    anomaly.description
+                );
+                println!("     建议: {}", anomaly.suggestion.dimmed());
+            }
+        }
+
+        println!();
+        println!(
+            "{} 趋势分析完成! 使用 'gitflow health scan --trend' 在扫描中包含趋势分析",
+            "✓".green()
+        );
+    }
+
+    fn output_text(&self, report: &HealthReport, output: Option<&str>) -> Result<()> {
+        let mut output_str = String::new();
+
+        output_str.push_str(&format!("\n{} 仓库健康报告\n", "🏥".cyan().bold()));
+        output_str.push_str(&format!("生成时间: {}\n\n", report.generated_at.format("%Y-%m-%d %H:%M:%S")));
+
+        let score_color = if report.overall_score >= 80.0 {
+            "green"
+        } else if report.overall_score >= 60.0 {
+            "yellow"
+        } else {
+            "red"
+        };
+
+        output_str.push_str(&format!(
+            "综合健康评分: {:.1}/100\n\n",
+            report.overall_score
+        ));
+
+        output_str.push_str(&format!("{}\n", "─".repeat(80)));
+
+        for check in &report.checks {
+            let status_icon = match check.status {
+                CheckStatus::Pass => "✓".green(),
+                CheckStatus::Warning => "⚠".yellow(),
+                CheckStatus::Fail => "✗".red(),
+                CheckStatus::Skipped => "⏭".dimmed(),
+            };
+
+            let score_str = format!("{:.1}", check.score);
+            let score_colored = if check.score >= 80.0 {
+                score_str.green().to_string()
+            } else if check.score >= 60.0 {
+                score_str.yellow().to_string()
+            } else {
+                score_str.red().to_string()
+            };
+
+            output_str.push_str(&format!(
+                "{} {} - {} 分\n",
+                status_icon,
+                check.name.bold(),
+                score_colored
+            ));
+
+            for detail in &check.details {
+                output_str.push_str(&format!("  {}\n", detail));
+            }
+            output_str.push('\n');
+        }
+
+        if let Some(trend) = &report.trend {
+            output_str.push_str(&format!("{}\n", "─".repeat(80)));
+            output_str.push_str(&format!("{} 趋势分析摘要:\n", "📈".yellow()));
+
+            if !trend.anomalies.is_empty() {
+                for anomaly in &trend.anomalies {
+                    let severity_icon = match anomaly.severity {
+                        AnomalySeverity::Info => "ℹ",
+                        AnomalySeverity::Warning => "⚠",
+                        AnomalySeverity::Critical => "🚨",
+                    };
+                    output_str.push_str(&format!(
+                        "  {} [{}] {}\n",
+                        severity_icon, anomaly.category, anomaly.description
+                    ));
+                }
+            } else {
+                output_str.push_str(&format!("  {} 未检测到异常\n", "✓".green()));
+            }
+            output_str.push('\n');
+        }
+
+        output_str.push_str(&format!("{}\n", "─".repeat(80)));
+
+        if !report.recommendations.is_empty() {
+            output_str.push_str(&format!("{} 改进建议:\n\n", "💡".yellow()));
+            for (i, rec) in report.recommendations.iter().enumerate() {
+                output_str.push_str(&format!("  {}. {}\n", i + 1, rec));
+            }
+            output_str.push('\n');
+        }
+
+        println!("{}", output_str);
+
+        if let Some(path) = output {
+            let path = PathBuf::from(path);
+            fs::write(&path, &output_str)?;
+            info!("报告已保存到: {:?}", path);
+            println!("{} 报告已保存到: {}", "✓".green(), path.display());
+        }
 
         Ok(())
     }

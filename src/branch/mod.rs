@@ -3,21 +3,157 @@ use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Confirm, Select};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::collections::HashSet;
+use std::sync::Arc;
 use tracing::{debug, warn};
 
-use crate::cli::BranchCommands;
+use crate::command::{CommandHandler, ModuleCommand};
 use crate::config::{BranchConfig, Config, JiraConfig};
+use crate::context::AppContext;
 use crate::errors::{GitFlowError, Result};
-use crate::git::{get_jira_issue_from_branch, BranchInfo, GitRepository};
+use crate::git::{get_jira_issue_from_branch, BranchInfo, GitContext};
 use crate::jira::{slugify, JiraClient};
 
-pub struct BranchManager<'a> {
-    git: &'a GitRepository,
-    config: &'a Config,
+pub mod cli {
+    use clap::Subcommand;
+
+    use super::*;
+
+    #[derive(Subcommand, Debug, Clone)]
+    pub enum BranchCommands {
+        #[command(about = "创建新分支，支持从JIRA issue自动生成规范分支名")]
+        Create {
+            #[arg(help = "分支名或JIRA issue号")]
+            name: Option<String>,
+
+            #[arg(short, long, help = "基础分支，默认为当前分支")]
+            base: Option<String>,
+
+            #[arg(short = 't', long, help = "分支类型: feature/bugfix/hotfix/release/chore", value_parser = ["feature", "bugfix", "hotfix", "release", "chore"])]
+            r#type: Option<String>,
+
+            #[arg(short = 'i', long, help = "JIRA issue ID")]
+            issue: Option<String>,
+
+            #[arg(short, long, help = "分支描述")]
+            description: Option<String>,
+
+            #[arg(short = 'f', long, help = "强制创建，即使分支已存在")]
+            force: bool,
+        },
+
+        #[command(about = "列出所有分支，显示详细信息")]
+        List {
+            #[arg(short, long, help = "只显示本地分支")]
+            local: bool,
+
+            #[arg(short, long, help = "只显示远程分支")]
+            remote: bool,
+
+            #[arg(short, long, help = "按最后提交时间排序")]
+            sort_by_date: bool,
+
+            #[arg(short = 'm', long, help = "显示已合并的分支")]
+            merged: bool,
+
+            #[arg(short = 'p', long = "pattern", help = "按模式过滤分支名")]
+            pattern: Option<String>,
+        },
+
+        #[command(about = "清理已合并的本地分支，安全删除")]
+        Clean {
+            #[arg(short = 'n', long, help = "模拟执行，不实际删除")]
+            dry_run: bool,
+
+            #[arg(short, long, help = "跳过确认，直接删除")]
+            yes: bool,
+
+            #[arg(long, help = "保留的分支列表，逗号分隔", value_delimiter = ',')]
+            keep: Vec<String>,
+
+            #[arg(short = 't', long, help = "分支年龄阈值（天），默认30天")]
+            age_threshold: Option<i64>,
+
+            #[arg(long, help = "启用自动化清理策略")]
+            auto: bool,
+
+            #[arg(long, help = "按分支年龄自动清理已合并分支")]
+            by_age: bool,
+
+            #[arg(long, help = "按分支类型规则自动清理（如feature/*合并后即删，hotfix/*保留30天）")]
+            by_type: bool,
+
+            #[arg(long, help = "清理上游已被删除的本地tracking分支")]
+            by_remote: bool,
+
+            #[arg(long, help = "分支类型清理规则，格式：type:days（如feature:0,hotfix:30,bugfix:7）", value_delimiter = ',')]
+            type_rules: Vec<String>,
+        },
+
+        #[command(about = "同步分支，与远程保持一致")]
+        Sync {
+            #[arg(short, long, help = "同步后推送到远程")]
+            push: bool,
+
+            #[arg(short, long, help = "同步所有本地分支")]
+            all: bool,
+
+            #[arg(short, long, help = "同步前先拉取最新代码")]
+            pull: bool,
+
+            #[arg(short = 'r', long, help = "使用rebase而非merge")]
+            rebase: bool,
+        },
+    }
+
+    pub struct BranchHandler {
+        ctx: AppContext,
+        cmd: BranchCommands,
+    }
+
+    impl BranchHandler {
+        pub fn new(ctx: AppContext, cmd: BranchCommands) -> Self {
+            Self { ctx, cmd }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CommandHandler for BranchHandler {
+        async fn handle(&self) -> Result<()> {
+            let config = self.ctx.config.get().await;
+            let manager = BranchManager::new(self.ctx.git.clone(), config);
+            manager.handle(&self.cmd).await
+        }
+    }
+
+    pub struct BranchModule;
+
+    impl ModuleCommand for BranchModule {
+        type Command = BranchCommands;
+        type Handler = BranchHandler;
+
+        fn name() -> &'static str {
+            "branch"
+        }
+
+        fn about() -> &'static str {
+            "分支管家 - 管理Git分支"
+        }
+
+        fn create_handler(ctx: crate::context::AppContext, cmd: &Self::Command) -> Result<Self::Handler> {
+            Ok(BranchHandler::new(ctx, cmd.clone()))
+        }
+    }
 }
 
-impl<'a> BranchManager<'a> {
-    pub fn new(git: &'a GitRepository, config: &'a Config) -> Self {
+pub use cli::{BranchCommands, BranchHandler, BranchModule};
+
+pub struct BranchManager {
+    git: Arc<GitContext>,
+    config: Config,
+}
+
+impl BranchManager {
+    pub fn new(git: Arc<GitContext>, config: Config) -> Self {
         Self { git, config }
     }
 
@@ -47,8 +183,13 @@ impl<'a> BranchManager<'a> {
                 yes,
                 keep,
                 age_threshold,
+                auto,
+                by_age,
+                by_type,
+                by_remote,
+                type_rules,
             } => {
-                self.clean(*dry_run, *yes, keep, *age_threshold)
+                self.clean(*dry_run, *yes, keep, *age_threshold, *auto, *by_age, *by_type, *by_remote, type_rules)
             }
             BranchCommands::Sync {
                 push,
@@ -100,7 +241,7 @@ impl<'a> BranchManager<'a> {
             }
         };
 
-        let branch = self.git.create_branch(&branch_name, base, force)?;
+        let _branch = self.git.create_branch(&branch_name, base, force)?;
         self.git.checkout_branch(&branch_name)?;
 
         println!();
@@ -120,7 +261,7 @@ impl<'a> BranchManager<'a> {
     async fn create_from_jira(
         &self,
         issue_key: &str,
-        base: Option<&str>,
+        _base: Option<&str>,
         branch_type: Option<&str>,
         jira_config: &JiraConfig,
         force: bool,
@@ -329,16 +470,34 @@ impl<'a> BranchManager<'a> {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn clean(
         &self,
         dry_run: bool,
         yes: bool,
         keep: &[String],
         age_threshold: Option<i64>,
+        auto: bool,
+        by_age: bool,
+        by_type: bool,
+        by_remote: bool,
+        type_rules_cli: &[String],
     ) -> Result<()> {
         let config = &self.config.branch;
-        let age_threshold = age_threshold.unwrap_or(config.clean_age_threshold_days);
-        let cutoff_date = Utc::now() - Duration::days(age_threshold);
+        let global_age_threshold = age_threshold.unwrap_or(config.clean_age_threshold_days);
+        let now = Utc::now();
+
+        let use_auto = auto || by_age || by_type || by_remote;
+
+        let mut type_rules = config.clean_type_rules.clone();
+        for rule in type_rules_cli {
+            let parts: Vec<&str> = rule.splitn(2, ':').collect();
+            if parts.len() == 2 {
+                if let Ok(days) = parts[1].parse::<i64>() {
+                    type_rules.insert(parts[0].to_string(), days);
+                }
+            }
+        }
 
         let pb = ProgressBar::new_spinner();
         pb.set_style(
@@ -350,13 +509,23 @@ impl<'a> BranchManager<'a> {
         pb.set_message("正在扫描分支...");
 
         let local_branches = self.git.list_branches(true, false, None, false)?;
-        let current_branch = self.git.current_branch().ok();
+        let remote_branches = if by_remote {
+            self.git.list_branches(false, true, None, false)?
+        } else {
+            Vec::new()
+        };
+        let _current_branch = self.git.current_branch().ok();
 
-        let mut branches_to_delete = Vec::new();
+        let mut branches_to_delete: Vec<(BranchInfo, Vec<String>)> = Vec::new();
         let mut keep_set: HashSet<String> = keep.iter().cloned().collect();
         for protected in &config.protected_branches {
             keep_set.insert(protected.clone());
         }
+
+        let remote_short_names: HashSet<String> = remote_branches
+            .iter()
+            .map(|b| b.short_name.clone())
+            .collect();
 
         for branch in local_branches {
             if branch.is_current {
@@ -368,15 +537,70 @@ impl<'a> BranchManager<'a> {
                 continue;
             }
 
-            let is_merged = self
-                .git
-                .is_branch_name_merged(&branch.short_name, &config.protected_branches[0])
-                .unwrap_or(false);
+            let mut reasons = Vec::new();
 
-            let is_old = branch.last_commit_time < cutoff_date;
+            if use_auto {
+                if by_age || auto {
+                    let cutoff = now - Duration::days(global_age_threshold);
+                    let is_merged = self
+                        .git
+                        .is_merged(&branch.short_name, Some(&config.protected_branches[0]))
+                        .unwrap_or(false);
+                    let is_old = branch.last_commit_time < cutoff;
 
-            if is_merged || is_old {
-                branches_to_delete.push((branch, is_merged, is_old));
+                    if is_merged && is_old {
+                        reasons.push(format!("已合并且超过{}天", global_age_threshold));
+                    }
+                }
+
+                if by_type || auto {
+                    let branch_type = branch.short_name.split('/').next().unwrap_or("");
+                    if let Some(&retention_days) = type_rules.get(branch_type) {
+                        let is_merged = self
+                            .git
+                            .is_merged(&branch.short_name, Some(&config.protected_branches[0]))
+                            .unwrap_or(false);
+                        let cutoff = now - Duration::days(retention_days);
+                        let is_old = branch.last_commit_time < cutoff;
+
+                        if is_merged && (retention_days == 0 || is_old) {
+                            if retention_days == 0 {
+                                reasons.push(format!("{}类型合并后即删", branch_type));
+                            } else {
+                                reasons.push(format!("{}类型合并且超过{}天", branch_type, retention_days));
+                            }
+                        }
+                    }
+                }
+
+                if by_remote || auto {
+                    if let Some(upstream) = &branch.upstream {
+                        let upstream_short = upstream.split('/').nth(1).unwrap_or(upstream);
+                        if !remote_short_names.contains(upstream_short) {
+                            reasons.push("上游分支已删除".to_string());
+                        }
+                    }
+                }
+            } else {
+                let cutoff = now - Duration::days(global_age_threshold);
+                let is_merged = self
+                    .git
+                    .is_merged(&branch.short_name, Some(&config.protected_branches[0]))
+                    .unwrap_or(false);
+                let is_old = branch.last_commit_time < cutoff;
+
+                if is_merged || is_old {
+                    if is_merged {
+                        reasons.push("已合并".to_string());
+                    }
+                    if is_old {
+                        reasons.push(format!("超过{}天", global_age_threshold));
+                    }
+                }
+            }
+
+            if !reasons.is_empty() {
+                branches_to_delete.push((branch, reasons));
             }
         }
 
@@ -391,30 +615,48 @@ impl<'a> BranchManager<'a> {
 
         println!();
         println!("{} 找到 {} 个可清理的分支:", "⚠".yellow(), branches_to_delete.len());
-        println!("  年龄阈值: {} 天", age_threshold);
+        if use_auto {
+            let mut strategies = Vec::new();
+            if by_age || auto { strategies.push(format!("按年龄(>{}天)", global_age_threshold)); }
+            if by_type || auto { strategies.push("按类型规则".to_string()); }
+            if by_remote || auto { strategies.push("按remote状态".to_string()); }
+            println!("  清理策略: {}", strategies.join(", "));
+        } else {
+            println!("  年龄阈值: {} 天", global_age_threshold);
+        }
+        if !type_rules.is_empty() && (by_type || auto) {
+            println!("  类型规则:");
+            let mut rule_pairs: Vec<(&String, &i64)> = type_rules.iter().collect();
+            rule_pairs.sort_by(|a, b| a.0.cmp(b.0));
+            for (t, days) in rule_pairs {
+                println!("    {}/{}: {} 天", t, "*", days);
+            }
+        }
         println!();
 
-        for (branch, is_merged, is_old) in &branches_to_delete {
-            let mut reasons = Vec::new();
-            if *is_merged {
-                reasons.push("已合并".green().to_string());
-            }
-            if *is_old {
-                reasons.push("过期".red().to_string());
-            }
+        for (branch, reasons) in &branches_to_delete {
+            let reason_strs: Vec<String> = reasons.iter()
+                .map(|r| r.yellow().to_string())
+                .collect();
 
             println!(
                 "  {} - {} (最后提交: {})",
                 branch.short_name.cyan(),
-                reasons.join(", "),
+                reason_strs.join(", "),
                 format_relative_time(&branch.last_commit_time)
             );
         }
 
         println!();
 
+        let total_bytes_saved: u64 = 0;
+
         if dry_run {
             println!("{} 模拟模式，不会实际删除任何分支", "ℹ".blue());
+            println!("  将删除 {} 个分支", branches_to_delete.len());
+            if total_bytes_saved > 0 {
+                println!("  预计释放空间: {}", humansize::format_size(total_bytes_saved, humansize::DECIMAL));
+            }
             return Ok(());
         }
 
@@ -446,7 +688,7 @@ impl<'a> BranchManager<'a> {
         let mut deleted = 0;
         let mut failed = 0;
 
-        for (branch, _, _) in &branches_to_delete {
+        for (branch, _) in &branches_to_delete {
             delete_pb.set_message(format!("正在删除: {}", branch.short_name));
 
             match self.git.delete_branch(&branch.short_name, false) {
@@ -471,6 +713,8 @@ impl<'a> BranchManager<'a> {
         if failed > 0 {
             println!("  失败: {}", failed.to_string().red());
         }
+        println!();
+        println!("{} 提示: 每周一早上运行 'gitflow branch clean --auto --yes' 可自动化清理", "💡".cyan());
 
         Ok(())
     }
@@ -547,7 +791,7 @@ impl<'a> BranchManager<'a> {
             match self.git.sync_branch(branch_name, remote, use_rebase) {
                 Ok(_) => {
                     if push {
-                        if let Err(e) = self.git.push(remote, branch_name, false) {
+                        if let Err(e) = self.git.push(branch_name, remote, false) {
                             failed.push((branch_name.clone(), format!("推送失败: {}", e)));
                         } else {
                             synced += 1;

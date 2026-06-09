@@ -2,16 +2,116 @@ use colored::Colorize;
 use dialoguer::{theme::ColorfulTheme, Input, Select, Confirm};
 use indicatif::{ProgressBar, ProgressStyle};
 use std::process::Command;
+use std::sync::Arc;
 use tracing::warn;
 
-use crate::cli::CommitCommands;
+use crate::command::{CommandHandler, ModuleCommand};
 use crate::config::Config;
+use crate::context::AppContext;
 use crate::errors::{GitFlowError, Result};
-use crate::git::{parse_commit_for_conventional, ConventionalCommit, GitRepository};
+use crate::git::{parse_commit_for_conventional, ConventionalCommit, GitContext};
 
-pub struct CommitManager<'a> {
-    git: &'a GitRepository,
-    config: &'a Config,
+pub mod cli {
+    use clap::Subcommand;
+
+    use super::*;
+
+    #[derive(Subcommand, Debug, Clone)]
+    pub enum CommitCommands {
+        #[command(about = "检查提交消息格式")]
+        Check {
+            #[arg(help = "提交消息或commit hash", default_value = "HEAD")]
+            message: Option<String>,
+
+            #[arg(short, long, help = "检查文件中的提交消息")]
+            file: Option<String>,
+
+            #[arg(short, long, help = "严格模式，所有规则都必须通过")]
+            strict: bool,
+        },
+
+        #[command(about = "交互式创建符合规范的提交")]
+        Create {
+            #[arg(short, long, help = "跳过lint检查")]
+            no_lint: bool,
+
+            #[arg(short, long, help = "跳过单元测试")]
+            no_test: bool,
+
+            #[arg(short, long, help = "提交类型", value_parser = ["feat", "fix", "docs", "style", "refactor", "perf", "test", "chore", "build", "ci", "revert"])]
+            r#type: Option<String>,
+
+            #[arg(short, long, help = "影响范围")]
+            scope: Option<String>,
+
+            #[arg(short, long, help = "提交摘要")]
+            subject: Option<String>,
+
+            #[arg(short = 'm', long, help = "提交详细描述")]
+            body: Option<String>,
+
+            #[arg(short = 'B', long, help = "不兼容变更说明")]
+            breaking: Option<String>,
+
+            #[arg(short, long, help = "关联的issue列表，逗号分隔", value_delimiter = ',')]
+            issues: Vec<String>,
+        },
+
+        #[command(about = "安装pre-commit hook")]
+        InstallHook {
+            #[arg(short, long, help = "强制覆盖现有hook")]
+            force: bool,
+
+            #[arg(long, help = "hook类型", default_value = "pre-commit", value_parser = ["pre-commit", "commit-msg"])]
+            hook_type: String,
+        },
+    }
+
+    pub struct CommitHandler {
+        ctx: AppContext,
+        cmd: CommitCommands,
+    }
+
+    impl CommitHandler {
+        pub fn new(ctx: AppContext, cmd: CommitCommands) -> Self {
+            Self { ctx, cmd }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CommandHandler for CommitHandler {
+        async fn handle(&self) -> Result<()> {
+            let config = self.ctx.config.get().await;
+            let manager = CommitManager::new(self.ctx.git.clone(), config);
+            manager.handle(&self.cmd)
+        }
+    }
+
+    pub struct CommitModule;
+
+    impl ModuleCommand for CommitModule {
+        type Command = CommitCommands;
+        type Handler = CommitHandler;
+
+        fn name() -> &'static str {
+            "commit"
+        }
+
+        fn about() -> &'static str {
+            "提交管家 - 管理Git提交"
+        }
+
+        fn create_handler(ctx: crate::context::AppContext, cmd: &Self::Command) -> Result<Self::Handler> {
+            Ok(CommitHandler::new(ctx, cmd.clone()))
+        }
+    }
+}
+
+pub use cli::{CommitCommands, CommitHandler, CommitModule};
+
+pub struct CommitManager {
+    git: Arc<GitContext>,
+    config: Config,
 }
 
 #[derive(Debug, Clone)]
@@ -21,8 +121,8 @@ pub struct ValidationResult {
     pub warnings: Vec<String>,
 }
 
-impl<'a> CommitManager<'a> {
-    pub fn new(git: &'a GitRepository, config: &'a Config) -> Self {
+impl CommitManager {
+    pub fn new(git: Arc<GitContext>, config: Config) -> Self {
         Self { git, config }
     }
 

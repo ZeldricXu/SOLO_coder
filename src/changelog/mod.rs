@@ -4,13 +4,98 @@ use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
-use std::path::Path;
-use tracing::debug;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use tracing::{debug, info};
 
-use crate::cli::ChangelogCommands;
+use crate::command::{CommandHandler, ModuleCommand};
 use crate::config::Config;
+use crate::context::AppContext;
 use crate::errors::{GitFlowError, Result};
-use crate::git::{parse_commit_for_conventional, CommitInfo, GitRepository, TagInfo};
+use crate::git::{parse_commit_for_conventional, CommitInfo, GitContext, TagInfo};
+
+pub mod cli {
+    use clap::Subcommand;
+
+    use super::*;
+
+    #[derive(Subcommand, Debug, Clone)]
+    pub enum ChangelogCommands {
+        #[command(about = "生成变更日志")]
+        Generate {
+            #[arg(short, long, help = "版本号，如v1.0.0")]
+            version: Option<String>,
+
+            #[arg(short, long, help = "从指定tag开始")]
+            from: Option<String>,
+
+            #[arg(short, long, help = "到指定tag结束")]
+            to: Option<String>,
+
+            #[arg(short, long, help = "输出文件路径", default_value = "CHANGELOG.md")]
+            output: String,
+
+            #[arg(short, long, help = "追加到现有文件")]
+            append: bool,
+
+            #[arg(long, help = "不包含未发布的变更")]
+            no_unreleased: bool,
+
+            #[arg(short = 'n', long, help = "只显示，不写入文件")]
+            dry_run: bool,
+        },
+
+        #[command(about = "初始化CHANGELOG.md")]
+        Init {
+            #[arg(short, long, help = "输出文件路径", default_value = "CHANGELOG.md")]
+            output: String,
+
+            #[arg(short, long, help = "强制覆盖现有文件")]
+            force: bool,
+        },
+    }
+
+    pub struct ChangelogHandler {
+        ctx: AppContext,
+        cmd: ChangelogCommands,
+    }
+
+    impl ChangelogHandler {
+        pub fn new(ctx: AppContext, cmd: ChangelogCommands) -> Self {
+            Self { ctx, cmd }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CommandHandler for ChangelogHandler {
+        async fn handle(&self) -> Result<()> {
+            let config = self.ctx.config.get().await;
+            let manager = ChangelogManager::new(self.ctx.git.clone(), config);
+            manager.handle(&self.cmd).await
+        }
+    }
+
+    pub struct ChangelogModule;
+
+    impl ModuleCommand for ChangelogModule {
+        type Command = ChangelogCommands;
+        type Handler = ChangelogHandler;
+
+        fn name() -> &'static str {
+            "changelog"
+        }
+
+        fn about() -> &'static str {
+            "变更日志 - 自动生成CHANGELOG.md"
+        }
+
+        fn create_handler(ctx: crate::context::AppContext, cmd: &Self::Command) -> Result<Self::Handler> {
+            Ok(ChangelogHandler::new(ctx, cmd.clone()))
+        }
+    }
+}
+
+pub use cli::{ChangelogCommands, ChangelogHandler, ChangelogModule};
 
 #[derive(Debug, Clone)]
 pub struct ChangelogEntry {
@@ -30,17 +115,17 @@ pub struct ChangelogItem {
     pub issues: Vec<String>,
 }
 
-pub struct ChangelogGenerator<'a> {
-    git: &'a GitRepository,
-    config: &'a Config,
+pub struct ChangelogManager {
+    git: Arc<GitContext>,
+    config: Config,
 }
 
-impl<'a> ChangelogGenerator<'a> {
-    pub fn new(git: &'a GitRepository, config: &'a Config) -> Self {
+impl ChangelogManager {
+    pub fn new(git: Arc<GitContext>, config: Config) -> Self {
         Self { git, config }
     }
 
-    pub fn handle(&self, command: &ChangelogCommands) -> Result<()> {
+    pub async fn handle(&self, command: &ChangelogCommands) -> Result<()> {
         match command {
             ChangelogCommands::Generate {
                 version,
