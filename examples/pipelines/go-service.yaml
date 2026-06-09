@@ -1,0 +1,164 @@
+name: go-service-build
+version: "1.0"
+description: "Go service CI/CD pipeline with code scan, build, test and deploy"
+
+global:
+  image: golang:1.21
+  timeout: 3600
+  retry:
+    max_attempts: 2
+    backoff: 5
+  concurrency:
+    max_parallel: 3
+    strategy: fifo
+
+triggers:
+  - event_source: github
+    event_type: push
+    condition:
+      branch: main
+      paths:
+        - "**/*.go"
+        - "go.mod"
+        - "go.sum"
+
+  - event_source: github
+    event_type: pull_request
+    condition:
+      branch: main
+
+  - event_source: cron
+    event_type: schedule
+    cron:
+      schedule: "0 0 * * *"
+      timezone: "Asia/Shanghai"
+      description: "Daily nightly build"
+
+  - event_source: manual
+    event_type: manual
+
+stages:
+  - name: code-scan
+    type: scan
+    description: "Static code analysis"
+    timeout: 600
+    plugin:
+      name: code-scan
+      version: "1.0.0"
+      config:
+        scan_tool: gosec
+        severity: high
+        fail_on_issues: "true"
+    secrets:
+      - SONARQUBE_TOKEN
+
+  - name: unit-test
+    type: test
+    description: "Run unit tests"
+    depends_on:
+      - code-scan
+    timeout: 1800
+    commands:
+      - go mod download
+      - go test -v -race -coverprofile=coverage.out ./...
+      - go tool cover -func=coverage.out
+    artifacts:
+      paths:
+        - coverage.out
+      retention_days: 30
+    retry:
+      max_attempts: 3
+      backoff: 10
+
+  - name: build
+    type: build
+    description: "Build Go binary"
+    depends_on:
+      - unit-test
+    timeout: 1800
+    plugin:
+      name: go-build
+      version: "1.0.0"
+      config:
+        output: my-service
+        goos: linux
+        goarch: amd64
+    env:
+      - name: CGO_ENABLED
+        value: "0"
+      - name: GO111MODULE
+        value: "on"
+    secrets:
+      - GOPROXY_AUTH
+
+  - name: package
+    type: build
+    description: "Package Docker image"
+    depends_on:
+      - build
+    timeout: 1200
+    commands:
+      - docker build -t my-service:${CI_COMMIT:0:7} .
+      - docker tag my-service:${CI_COMMIT:0:7} my-service:latest
+    secrets:
+      - DOCKER_REGISTRY_USER
+      - DOCKER_REGISTRY_PASSWORD
+
+  - name: deploy-staging
+    type: deploy
+    description: "Deploy to staging environment"
+    depends_on:
+      - package
+    timeout: 600
+    commands:
+      - kubectl set image deployment/my-service my-service=my-service:${CI_COMMIT:0:7} -n staging
+      - kubectl rollout status deployment/my-service -n staging
+    condition: ${CI_BRANCH} == "develop"
+    secrets:
+      - KUBECONFIG_STAGING
+
+  - name: deploy-production
+    type: deploy
+    description: "Deploy to production environment"
+    depends_on:
+      - deploy-staging
+    timeout: 600
+    allow_failure: false
+    commands:
+      - kubectl set image deployment/my-service my-service=my-service:${CI_COMMIT:0:7} -n production
+      - kubectl rollout status deployment/my-service -n production
+    condition: ${CI_BRANCH} == "main"
+    secrets:
+      - KUBECONFIG_PRODUCTION
+
+notifications:
+  - events:
+      - push
+      - pull_request
+    channels:
+      - feishu
+      - dingtalk
+    severity: info
+    template: "Pipeline {{CI_PIPELINE_NAME}} {{CI_STATUS}} for commit {{CI_COMMIT:0:7}}"
+
+  - events:
+      - schedule
+    channels:
+      - email
+    severity: warning
+    condition:
+      event_types:
+        - failure
+
+  - events:
+      - manual
+    channels:
+      - slack
+      - email
+    severity: error
+
+variables:
+  - name: APP_ENV
+    value: production
+  - name: LOG_LEVEL
+    value: info

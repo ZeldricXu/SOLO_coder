@@ -1,0 +1,107 @@
+{
+  "name": "nodejs-app-pipeline",
+  "version": "1.0",
+  "description": "Node.js application CI/CD pipeline",
+  "global": {
+    "image": "node:18",
+    "timeout": 1800,
+    "env": [
+      { "name": "NODE_ENV", "value": "production" },
+      { "name": "NPM_CONFIG_LOGLEVEL", "value": "warn" }
+    ]
+  },
+  "triggers": [
+    {
+      "event_source": "gitlab",
+      "event_type": "push",
+      "condition": {
+        "branch": "master",
+        "paths": ["src/**/*.js", "package.json"]
+      }
+    },
+    {
+      "event_source": "api",
+      "event_type": "manual"
+    }
+  ],
+  "stages": [
+    {
+      "name": "install-deps",
+      "type": "build",
+      "description": "Install npm dependencies",
+      "commands": [
+        "npm ci",
+        "npm prune --production"
+      ],
+      "artifacts": {
+        "paths": ["node_modules/"],
+        "compression": "gzip"
+      }
+    },
+    {
+      "name": "lint",
+      "type": "scan",
+      "description": "Run ESLint",
+      "depends_on": ["install-deps"],
+      "commands": [
+        "npx eslint src/ --ext .js --max-warnings 0"
+      ],
+      "timeout": 300
+    },
+    {
+      "name": "test",
+      "type": "test",
+      "description": "Run unit tests",
+      "depends_on": ["lint"],
+      "commands": [
+        "npm test -- --coverage"
+      ],
+      "artifacts": {
+        "paths": ["coverage/"],
+        "retention_days": 7
+      },
+      "retry": {
+        "max_attempts": 2
+      }
+    },
+    {
+      "name": "build",
+      "type": "build",
+      "description": "Build production bundle",
+      "depends_on": ["test"],
+      "commands": [
+        "npm run build"
+      ],
+      "artifacts": {
+        "paths": ["dist/"],
+        "retention_days": 30
+      }
+    },
+    {
+      "name": "deploy",
+      "type": "deploy",
+      "description": "Deploy to production",
+      "depends_on": ["build"],
+      "commands": [
+        "npx serverless deploy --stage production"
+      ],
+      "secrets": [
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY"
+      ],
+      "timeout": 600
+    }
+  ],
+  "notifications": [
+    {
+      "events": ["push"],
+      "channels": ["slack", "email"],
+      "severity": "info"
+    },
+    {
+      "events": ["manual"],
+      "channels": ["email"],
+      "severity": "error"
+    }
+  ]
+}

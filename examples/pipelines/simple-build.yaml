@@ -1,0 +1,47 @@
+name: simple-build
+version: "1.0"
+description: "Simple build pipeline example using shell commands"
+
+triggers:
+  - event_source: github
+    event_type: push
+    condition:
+      branch: main
+
+stages:
+  - name: checkout
+    type: build
+    commands:
+      - echo "Checking out code..."
+      - git clone ${CI_REPO_URL} .
+      - git checkout ${CI_COMMIT}
+
+  - name: build
+    type: build
+    depends_on:
+      - checkout
+    commands:
+      - echo "Building project..."
+      - make build
+    env:
+      - name: BUILD_VERSION
+        value: ${CI_COMMIT:0:7}
+
+  - name: test
+    type: test
+    depends_on:
+      - build
+    commands:
+      - echo "Running tests..."
+      - make test
+
+  - name: deploy
+    type: deploy
+    depends_on:
+      - test
+    commands:
+      - echo "Deploying to production..."
+      - make deploy
+    condition: ${CI_BRANCH} == "main"
+    secrets:
+      - DEPLOY_KEY

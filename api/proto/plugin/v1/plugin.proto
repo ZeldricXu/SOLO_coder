@@ -1,0 +1,103 @@
+syntax = "proto3";
+
+package cloudci.plugin.v1;
+
+option go_package = "github.com/solocoder/cloudci/api/proto/plugin/v1;pluginv1";
+
+enum StageType {
+  STAGE_TYPE_UNSPECIFIED = 0;
+  STAGE_TYPE_SCAN = 1;
+  STAGE_TYPE_BUILD = 2;
+  STAGE_TYPE_TEST = 3;
+  STAGE_TYPE_DEPLOY = 4;
+  STAGE_TYPE_CUSTOM = 5;
+}
+
+enum StageStatus {
+  STAGE_STATUS_UNSPECIFIED = 0;
+  STAGE_STATUS_PENDING = 1;
+  STAGE_STATUS_RUNNING = 2;
+  STAGE_STATUS_SUCCESS = 3;
+  STAGE_STATUS_FAILED = 4;
+  STAGE_STATUS_CANCELLED = 5;
+  STAGE_STATUS_TIMEOUT = 6;
+}
+
+message PluginInfo {
+  string name = 1;
+  string version = 2;
+  string description = 3;
+  StageType type = 4;
+  string author = 5;
+  repeated string tags = 6;
+  map<string, string> config_schema = 7;
+}
+
+message StageContext {
+  string execution_id = 1;
+  string pipeline_id = 2;
+  string stage_name = 3;
+  StageType stage_type = 4;
+  string working_dir = 5;
+  map<string, string> env = 6;
+  map<string, string> variables = 7;
+  map<string, bytes> secrets = 8;
+  map<string, string> plugin_config = 9;
+  repeated string commands = 10;
+  int64 timeout_seconds = 11;
+  int32 attempt = 12;
+  int32 max_attempts = 13;
+}
+
+message ExecuteRequest {
+  StageContext context = 1;
+}
+
+message LogEntry {
+  int64 timestamp = 1;
+  string level = 2;
+  string message = 3;
+  string stream = 4;
+}
+
+message Artifact {
+  string name = 1;
+  string path = 2;
+  int64 size = 3;
+  string content_type = 4;
+  bytes content = 5;
+}
+
+message ExecuteResponse {
+  StageStatus status = 1;
+  int32 exit_code = 2;
+  string error = 3;
+  repeated LogEntry logs = 4;
+  repeated Artifact artifacts = 5;
+  map<string, string> output = 6;
+  int64 duration_ms = 7;
+}
+
+message HealthCheckRequest {
+  string plugin_name = 1;
+}
+
+message HealthCheckResponse {
+  bool healthy = 1;
+  string message = 2;
+  int64 response_time_ms = 3;
+}
+
+message PluginMetadata {
+  PluginInfo info = 1;
+  string binary_path = 2;
+  int64 pid = 3;
+  string grpc_address = 4;
+}
+
+service StagePlugin {
+  rpc GetPluginInfo(HealthCheckRequest) returns (PluginInfo);
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc Execute(ExecuteRequest) returns (stream ExecuteResponse);
+  rpc Cancel(ExecuteRequest) returns (ExecuteResponse);
+}
