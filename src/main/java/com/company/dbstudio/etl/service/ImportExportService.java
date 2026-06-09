@@ -4,14 +4,19 @@ import com.company.dbstudio.connection.datasource.DataSourceRegistry;
 import com.company.dbstudio.core.ApplicationContext;
 import com.company.dbstudio.core.model.Result;
 import com.company.dbstudio.core.util.JsonUtils;
+import com.company.dbstudio.etl.exporter.AbstractExporter;
+import com.company.dbstudio.etl.exporter.ExporterFactory;
+import com.company.dbstudio.etl.model.Format;
 import com.company.dbstudio.etl.model.ImportExportConfig;
 import com.company.dbstudio.etl.model.ImportExportConfig.*;
+import com.company.dbstudio.etl.model.ProgressInfo;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import javafx.application.Platform;
 import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.streaming.SXSSFSheet;
 import org.apache.poi.xssf.streaming.SXSSFWorkbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 
@@ -34,6 +39,7 @@ public class ImportExportService {
 
     private final DataSourceRegistry dataSourceRegistry;
     private final AtomicBoolean cancelled;
+    private AbstractExporter currentExporter;
 
     public ImportExportService() {
         this.dataSourceRegistry = ApplicationContext.getBean(DataSourceRegistry.class);
@@ -42,20 +48,192 @@ public class ImportExportService {
 
     public void cancel() {
         cancelled.set(true);
+        if (currentExporter != null) {
+            currentExporter.cancel();
+        }
+    }
+
+    public enum ColumnType {
+        INTEGER, LONG, FLOAT, DOUBLE, DECIMAL, BOOLEAN, DATE, TIMESTAMP, STRING, UNKNOWN;
+
+        public boolean isNumeric() {
+            return this == INTEGER || this == LONG || this == FLOAT || this == DOUBLE || this == DECIMAL;
+        }
+
+        public boolean isTemporal() {
+            return this == DATE || this == TIMESTAMP;
+        }
+
+        public boolean isBoolean() {
+            return this == BOOLEAN;
+        }
+    }
+
+    public ColumnType inferColumnType(String value) {
+        if (value == null || value.trim().isEmpty() || "NULL".equalsIgnoreCase(value.trim())) {
+            return ColumnType.UNKNOWN;
+        }
+
+        String trimmed = value.trim();
+
+        if ("true".equalsIgnoreCase(trimmed) || "false".equalsIgnoreCase(trimmed)
+                || "1".equals(trimmed) || "0".equals(trimmed)) {
+            return ColumnType.BOOLEAN;
+        }
+
+        try {
+            Integer.parseInt(trimmed);
+            return ColumnType.INTEGER;
+        } catch (NumberFormatException e) {
+        }
+
+        try {
+            Long.parseLong(trimmed);
+            return ColumnType.LONG;
+        } catch (NumberFormatException e) {
+        }
+
+        try {
+            Float.parseFloat(trimmed);
+            return ColumnType.FLOAT;
+        } catch (NumberFormatException e) {
+        }
+
+        try {
+            Double.parseDouble(trimmed);
+            return ColumnType.DOUBLE;
+        } catch (NumberFormatException e) {
+        }
+
+        if (trimmed.matches("^\\d{4}-\\d{2}-\\d{2}$")) {
+            return ColumnType.DATE;
+        }
+
+        if (trimmed.matches("^\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}.*")) {
+            return ColumnType.TIMESTAMP;
+        }
+
+        if (trimmed.matches("^\\d{4}/\\d{2}/\\d{2}$")) {
+            return ColumnType.DATE;
+        }
+
+        return ColumnType.STRING;
+    }
+
+    public List<ColumnType> inferColumnTypes(List<String[]> sampleRows, boolean hasHeader) {
+        if (sampleRows == null || sampleRows.isEmpty()) {
+            return List.of();
+        }
+
+        int startIndex = hasHeader ? 1 : 0;
+        if (sampleRows.size() <= startIndex) {
+            return List.of();
+        }
+
+        int columnCount = sampleRows.get(startIndex).length;
+        List<ColumnType> types = new ArrayList<>();
+
+        for (int col = 0; col < columnCount; col++) {
+            ColumnType detectedType = ColumnType.UNKNOWN;
+            for (int row = startIndex; row < Math.min(sampleRows.size(), startIndex + 100); row++) {
+                String[] rowData = sampleRows.get(row);
+                if (col < rowData.length) {
+                    ColumnType cellType = inferColumnType(rowData[col]);
+                    if (cellType != ColumnType.UNKNOWN) {
+                        if (detectedType == ColumnType.UNKNOWN) {
+                            detectedType = cellType;
+                        } else if (detectedType != cellType) {
+                            if ((detectedType == ColumnType.INTEGER && cellType == ColumnType.LONG) ||
+                                (detectedType == ColumnType.LONG && cellType == ColumnType.INTEGER)) {
+                                detectedType = ColumnType.LONG;
+                            } else if ((detectedType == ColumnType.FLOAT && cellType == ColumnType.DOUBLE) ||
+                                       (detectedType == ColumnType.DOUBLE && cellType == ColumnType.FLOAT)) {
+                                detectedType = ColumnType.DOUBLE;
+                            } else if (detectedType.isNumeric() && cellType.isNumeric()) {
+                                detectedType = ColumnType.DOUBLE;
+                            } else {
+                                detectedType = ColumnType.STRING;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            types.add(detectedType);
+        }
+
+        return types;
+    }
+
+    public java.nio.charset.Charset detectEncoding(String filePath) {
+        return detectEncoding(new File(filePath));
+    }
+
+    public java.nio.charset.Charset detectEncoding(File file) {
+        byte[] bom = new byte[4];
+        try (java.io.FileInputStream fis = new java.io.FileInputStream(file)) {
+            int read = fis.read(bom);
+            if (read >= 3 && bom[0] == (byte) 0xEF && bom[1] == (byte) 0xBB && bom[2] == (byte) 0xBF) {
+                return java.nio.charset.StandardCharsets.UTF_8;
+            }
+            if (read >= 2 && bom[0] == (byte) 0xFF && bom[1] == (byte) 0xFE) {
+                return java.nio.charset.StandardCharsets.UTF_16LE;
+            }
+            if (read >= 2 && bom[0] == (byte) 0xFE && bom[1] == (byte) 0xFF) {
+                return java.nio.charset.StandardCharsets.UTF_16BE;
+            }
+        } catch (Exception e) {
+        }
+
+        try {
+            byte[] content = java.nio.file.Files.readAllBytes(file.toPath());
+            if (isUTF8(content)) {
+                return java.nio.charset.StandardCharsets.UTF_8;
+            }
+        } catch (Exception e) {
+        }
+
+        try {
+            return java.nio.charset.Charset.forName("GBK");
+        } catch (Exception e) {
+            return java.nio.charset.StandardCharsets.UTF_8;
+        }
+    }
+
+    private boolean isUTF8(byte[] data) {
+        int i = 0;
+        while (i < data.length) {
+            int b = data[i] & 0xFF;
+            if (b < 0x80) {
+                i++;
+            } else if (b < 0xC0) {
+                return false;
+            } else if (b < 0xE0) {
+                if (i + 1 >= data.length) return false;
+                if ((data[i + 1] & 0xC0) != 0x80) return false;
+                i += 2;
+            } else if (b < 0xF0) {
+                if (i + 2 >= data.length) return false;
+                if ((data[i + 1] & 0xC0) != 0x80) return false;
+                if ((data[i + 2] & 0xC0) != 0x80) return false;
+                i += 3;
+            } else if (b < 0xF8) {
+                if (i + 3 >= data.length) return false;
+                if ((data[i + 1] & 0xC0) != 0x80) return false;
+                if ((data[i + 2] & 0xC0) != 0x80) return false;
+                if ((data[i + 3] & 0xC0) != 0x80) return false;
+                i += 4;
+            } else {
+                return false;
+            }
+        }
+        return true;
     }
 
     public Result<Long> exportData(ImportExportConfig config, Consumer<ProgressInfo> progressCallback) {
         cancelled.set(false);
-        try {
-            return switch (config.getFormat()) {
-                case CSV -> exportToCsv(config, progressCallback);
-                case JSON -> exportToJson(config, progressCallback);
-                case EXCEL -> exportToExcel(config, progressCallback);
-                case PARQUET -> exportToParquet(config, progressCallback);
-            };
-        } catch (Exception e) {
-            return Result.failure("导出失败: " + e.getMessage());
-        }
+        currentExporter = ExporterFactory.createExporter(config.getFormat());
+        return currentExporter.export(config, progressCallback);
     }
 
     public void exportDataAsync(ImportExportConfig config,
@@ -88,199 +266,6 @@ public class ImportExportService {
             Result<Long> result = importData(config, progressCallback);
             Platform.runLater(() -> callback.accept(result));
         });
-    }
-
-    private Result<Long> exportToCsv(ImportExportConfig config, Consumer<ProgressInfo> progressCallback) throws Exception {
-        AtomicLong rowCount = new AtomicLong(0);
-        Charset charset = Charset.forName(config.getEncoding());
-
-        try (Connection conn = dataSourceRegistry.getConnection(config.getConnectionId());
-             Statement stmt = createStatement(conn, config);
-             ResultSet rs = executeQuery(stmt, config)) {
-
-            ResultSetMetaData metaData = rs.getMetaData();
-            buildColumnMappings(config, metaData);
-            List<ColumnMapping> included = config.getIncludedMappings();
-
-            try (BufferedWriter writer = new BufferedWriter(
-                    new OutputStreamWriter(
-                            new FileOutputStream(config.getFilePath()), charset))) {
-
-                if (config.isIncludeHeader()) {
-                    String header = included.stream()
-                            .map(ColumnMapping::getTargetColumn)
-                            .map(this::escapeCsvField)
-                            .collect(Collectors.joining(config.getCsvDelimiter()));
-                    writer.write(header);
-                    writer.newLine();
-                }
-
-                List<Object> row = new ArrayList<>();
-                while (rs.next()) {
-                    if (cancelled.get()) break;
-
-                    row.clear();
-                    for (ColumnMapping mapping : included) {
-                        Object value = rs.getObject(mapping.getSourceColumn());
-                        value = applyTransform(value, mapping);
-                        row.add(formatCsvValue(value, mapping, config));
-                    }
-
-                    String line = row.stream()
-                            .map(Object::toString)
-                            .collect(Collectors.joining(config.getCsvDelimiter()));
-                    writer.write(line);
-                    writer.newLine();
-
-                    long count = rowCount.incrementAndGet();
-                    if (count % config.getBatchSize() == 0) {
-                        writer.flush();
-                        reportProgress(progressCallback, count, -1, "已导出 " + count + " 行");
-                    }
-                }
-            }
-
-            reportProgress(progressCallback, rowCount.get(), rowCount.get(), "导出完成，共 " + rowCount.get() + " 行");
-            return Result.success(rowCount.get());
-        }
-    }
-
-    private Result<Long> exportToJson(ImportExportConfig config, Consumer<ProgressInfo> progressCallback) throws Exception {
-        AtomicLong rowCount = new AtomicLong(0);
-        Charset charset = Charset.forName(config.getEncoding());
-
-        try (Connection conn = dataSourceRegistry.getConnection(config.getConnectionId());
-             Statement stmt = createStatement(conn, config);
-             ResultSet rs = executeQuery(stmt, config)) {
-
-            ResultSetMetaData metaData = rs.getMetaData();
-            buildColumnMappings(config, metaData);
-            List<ColumnMapping> included = config.getIncludedMappings();
-
-            try (BufferedWriter writer = new BufferedWriter(
-                    new OutputStreamWriter(
-                            new FileOutputStream(config.getFilePath()), charset))) {
-
-                if (config.isJsonPrettyPrint()) {
-                    writer.write("[\n");
-                } else {
-                    writer.write("[");
-                }
-
-                boolean firstRow = true;
-                ObjectNodeFactory factory = JsonNodeFactory.instance;
-
-                while (rs.next()) {
-                    if (cancelled.get()) break;
-
-                    if (!firstRow) {
-                        writer.write(",");
-                    }
-                    firstRow = false;
-
-                    ObjectNode node = factory.objectNode();
-
-                    for (ColumnMapping mapping : included) {
-                        Object value = rs.getObject(mapping.getSourceColumn());
-                        value = applyTransform(value, mapping);
-                        setJsonNodeValue(node, mapping.getTargetColumn(), value);
-                    }
-
-                    String jsonLine = config.isJsonPrettyPrint()
-                            ? JsonUtils.toJsonPretty(node)
-                            : JsonUtils.toJson(node);
-
-                    if (config.isJsonPrettyPrint()) {
-                        jsonLine = "  " + jsonLine.replace("\n", "\n  ");
-                    }
-
-                    writer.write(jsonLine);
-
-                    long count = rowCount.incrementAndGet();
-                    if (count % config.getBatchSize() == 0) {
-                        writer.flush();
-                        reportProgress(progressCallback, count, -1, "已导出 " + count + " 行");
-                    }
-                }
-
-                if (config.isJsonPrettyPrint()) {
-                    writer.write("\n]");
-                } else {
-                    writer.write("]");
-                }
-            }
-
-            reportProgress(progressCallback, rowCount.get(), rowCount.get(), "导出完成，共 " + rowCount.get() + " 行");
-            return Result.success(rowCount.get());
-        }
-    }
-
-    private Result<Long> exportToExcel(ImportExportConfig config, Consumer<ProgressInfo> progressCallback) throws Exception {
-        AtomicLong rowCount = new AtomicLong(0);
-
-        try (Connection conn = dataSourceRegistry.getConnection(config.getConnectionId());
-             Statement stmt = createStatement(conn, config);
-             ResultSet rs = executeQuery(stmt, config)) {
-
-            ResultSetMetaData metaData = rs.getMetaData();
-            buildColumnMappings(config, metaData);
-            List<ColumnMapping> included = config.getIncludedMappings();
-
-            try (SXSSFWorkbook workbook = new SXSSFWorkbook(config.getBatchSize())) {
-                Sheet sheet = workbook.createSheet(config.getExcelSheetName());
-                sheet.setRandomAccessWindowSize(config.getBatchSize());
-
-                int rowNum = 0;
-
-                if (config.isIncludeHeader()) {
-                    Row headerRow = sheet.createRow(rowNum++);
-                    for (int i = 0; i < included.size(); i++) {
-                        Cell cell = headerRow.createCell(i);
-                        cell.setCellValue(included.get(i).getTargetColumn());
-                    }
-                }
-
-                CellStyle dateStyle = workbook.createCellStyle();
-                CreationHelper createHelper = workbook.getCreationHelper();
-                dateStyle.setDataFormat(createHelper.createDataFormat().getFormat("yyyy-mm-dd hh:mm:ss"));
-
-                while (rs.next()) {
-                    if (cancelled.get()) break;
-
-                    Row row = sheet.createRow(rowNum++);
-
-                    for (int i = 0; i < included.size(); i++) {
-                        ColumnMapping mapping = included.get(i);
-                        Object value = rs.getObject(mapping.getSourceColumn());
-                        value = applyTransform(value, mapping);
-                        setExcelCellValue(row.createCell(i), value, mapping, dateStyle));
-                    }
-
-                    long count = rowCount.incrementAndGet();
-                    if (count % config.getBatchSize() == 0) {
-                        ((SXSSFSheet) sheet).flushRows(config.getBatchSize());
-                        reportProgress(progressCallback, count, -1, "已导出 " + count + " 行");
-                    }
-                }
-
-                for (int i = 0; i < included.size(); i++) {
-                    sheet.autoSizeColumn(i);
-                }
-
-                try (FileOutputStream fos = new FileOutputStream(config.getFilePath())) {
-                    workbook.write(fos);
-                }
-
-                workbook.dispose();
-            }
-
-            reportProgress(progressCallback, rowCount.get(), rowCount.get(), "导出完成，共 " + rowCount.get() + " 行");
-            return Result.success(rowCount.get());
-        }
-    }
-
-    private Result<Long> exportToParquet(ImportExportConfig config, Consumer<ProgressInfo> progressCallback) throws Exception {
-        return Result.failure("Parquet格式暂不支持");
     }
 
     private Result<Long> importFromCsv(ImportExportConfig config, Consumer<ProgressInfo> progressCallback) throws Exception {
@@ -346,7 +331,7 @@ public class ImportExportService {
     private Result<Long> importFromJson(ImportExportConfig config, Consumer<ProgressInfo> progressCallback) throws Exception {
         AtomicLong rowCount = new AtomicLong(0);
 
-        try (Connection conn = dataSourceRegistry.getConnection(config.getConnectionId()))) {
+        try (Connection conn = dataSourceRegistry.getConnection(config.getConnectionId())) {
 
             if (config.isUseTransaction()) {
                 conn.setAutoCommit(false);
@@ -574,7 +559,7 @@ public class ImportExportService {
                 }
             }
             case BASE64_ENCODE -> Base64.getEncoder().encodeToString(value.toString().getBytes(StandardCharsets.UTF_8));
-            case BASE64_DECODE -> new String(Base64.getDecoder().decode(value.toString()), StandardCharsets.UTF_8));
+            case BASE64_DECODE -> new String(Base64.getDecoder().decode(value.toString()), StandardCharsets.UTF_8);
             case CUSTOM -> {
                 if (mapping.getCustomExpression() != null) {
                     yield evaluateCustomExpression(value, mapping.getCustomExpression());
@@ -746,7 +731,7 @@ public class ImportExportService {
             int paramIndex = i + 1;
             JsonNode valueNode = node.get(mapping.getSourceColumn());
             Object value = null;
-            if (valueNode != null && !valueNode.isNull())) {
+            if (valueNode != null && !valueNode.isNull()) {
                 if (valueNode.isTextual()) value = valueNode.asText();
                 else if (valueNode.isInt()) value = valueNode.asInt();
                 else if (valueNode.isLong()) value = valueNode.asLong();
@@ -765,31 +750,7 @@ public class ImportExportService {
         }
     }
 
-    public static class ProgressInfo {
-        private final long currentRows;
-        private final long totalRows;
-        private final String message;
-
-        public ProgressInfo(long currentRows, long totalRows, String message) {
-            this.currentRows = currentRows;
-            this.totalRows = totalRows;
-            this.message = message;
-        }
-
-        public long getCurrentRows() {
-            return currentRows;
-        }
-
-        public long getTotalRows() {
-            return totalRows;
-        }
-
-        public String getMessage() {
-            return message;
-        }
-
-        public double getProgressPercent() {
-            return totalRows > 0 ? (double) currentRows / totalRows * 100 : -1;
-        }
+    public AbstractExporter getCurrentExporter() {
+        return currentExporter;
     }
 }

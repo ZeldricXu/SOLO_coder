@@ -35,6 +35,16 @@ public class SqlEditorView extends BorderPane {
     private final SplitPane mainSplitPane;
     private final Label statusLabel;
     private final ProgressIndicator progressIndicator;
+
+    private final ComboBox<String> connectionCombo;
+    private final Button executeBtn;
+    private final Button executeAllBtn;
+    private final Button explainBtn;
+    private final Button cancelBtn;
+    private final Button formatBtn;
+    private final Button clearBtn;
+    private final Button showHistoryBtn;
+    private final Button showPlanBtn;
     
     private String currentConnectionId;
     private volatile boolean isExecuting;
@@ -43,19 +53,50 @@ public class SqlEditorView extends BorderPane {
         this.connectionManager = ApplicationContext.getBean(ConnectionManager.class);
         this.queryExecutor = new QueryExecutor();
         this.parserService = SqlParserService.getInstance();
-        
+
         this.codeArea = new SqlCodeArea();
         this.resultTabPane = new ResultTabPane();
         this.executionPlanView = new ExecutionPlanView();
         this.historyView = new QueryHistoryView();
-        
+
         this.editorSplitPane = new SplitPane();
         this.mainSplitPane = new SplitPane();
         this.statusLabel = new Label("就绪");
         this.progressIndicator = new ProgressIndicator();
-        
+
+        this.connectionCombo = new ComboBox<>();
+        this.executeBtn = new Button("▶ 执行");
+        this.executeAllBtn = new Button("▶▶ 全部执行");
+        this.explainBtn = new Button("📊 执行计划");
+        this.cancelBtn = new Button("⏹ 取消");
+        this.formatBtn = new Button("🖹 格式化");
+        this.clearBtn = new Button("🗑 清空");
+        this.showHistoryBtn = new Button("📜 历史");
+        this.showPlanBtn = new Button("📈 执行计划视图");
+
+        setIds();
         initializeUI();
         setupEventHandlers();
+    }
+
+    private void setIds() {
+        codeArea.setId("sqlCodeArea");
+        resultTabPane.setId("resultTabPane");
+        executionPlanView.setId("executionPlanView");
+        historyView.setId("historyView");
+        editorSplitPane.setId("editorSplitPane");
+        mainSplitPane.setId("mainSplitPane");
+        statusLabel.setId("statusLabel");
+        progressIndicator.setId("progressIndicator");
+        connectionCombo.setId("connectionCombo");
+        executeBtn.setId("executeBtn");
+        executeAllBtn.setId("executeAllBtn");
+        explainBtn.setId("explainBtn");
+        cancelBtn.setId("cancelBtn");
+        formatBtn.setId("formatBtn");
+        clearBtn.setId("clearBtn");
+        showHistoryBtn.setId("showHistoryBtn");
+        showPlanBtn.setId("showPlanBtn");
     }
 
     private void initializeUI() {
@@ -88,8 +129,8 @@ public class SqlEditorView extends BorderPane {
 
     private ToolBar createToolbar() {
         ToolBar toolBar = new ToolBar();
-        
-        ComboBox<String> connectionCombo = new ComboBox<>();
+        toolBar.setId("sqlEditorToolbar");
+
         connectionCombo.setPromptText("选择连接");
         connectionCombo.setPrefWidth(200);
         refreshConnectionList(connectionCombo);
@@ -100,32 +141,24 @@ public class SqlEditorView extends BorderPane {
                 updateTableAndColumnNames();
             }
         });
-        
-        Button executeBtn = new Button("▶ 执行");
+
         executeBtn.setOnAction(e -> executeCurrentStatement());
-        
-        Button executeAllBtn = new Button("▶▶ 全部执行");
+
         executeAllBtn.setOnAction(e -> executeAll());
-        
-        Button explainBtn = new Button("📊 执行计划");
+
         explainBtn.setOnAction(e -> explainPlan());
-        
-        Button cancelBtn = new Button("⏹ 取消");
+
         cancelBtn.setOnAction(e -> cancelExecution());
         cancelBtn.setDisable(true);
-        
-        Button formatBtn = new Button("🖹 格式化");
+
         formatBtn.setOnAction(e -> formatSql());
-        
-        Button clearBtn = new Button("🗑 清空");
+
         clearBtn.setOnAction(e -> clearEditor());
-        
-        Button showHistoryBtn = new Button("📜 历史");
+
         showHistoryBtn.setOnAction(e -> toggleHistoryView());
-        
-        Button showPlanBtn = new Button("📈 执行计划视图");
+
         showPlanBtn.setOnAction(e -> togglePlanView());
-        
+
         toolBar.getItems().addAll(
                 new Label("连接:"), connectionCombo,
                 new Separator(),

@@ -208,6 +208,13 @@ public class ConnectionConfig extends BaseModel {
         return this.properties.get(key);
     }
 
+    public String buildJdbcUrl() {
+        if (type == null) {
+            throw new IllegalStateException("Connection type is not set");
+        }
+        return type.buildUrl(host, port, database);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

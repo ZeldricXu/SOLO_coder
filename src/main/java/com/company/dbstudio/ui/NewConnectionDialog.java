@@ -1,15 +1,17 @@
 package com.company.dbstudio.ui;
 
-import com.company.dbstudio.connection.ConnectionConfig;
-import com.company.dbstudio.connection.ConnectionType;
+import com.company.dbstudio.connection.model.ConnectionConfig;
+import com.company.dbstudio.connection.model.ConnectionType;
 import com.company.dbstudio.connection.model.PoolConfig;
 import com.company.dbstudio.connection.model.SshConfig;
 import com.company.dbstudio.connection.model.SslConfig;
+import com.company.dbstudio.ui.form.DynamicFormGenerator;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -19,11 +21,8 @@ public class NewConnectionDialog extends Dialog<ConnectionConfig> {
 
     private TextField nameField;
     private ComboBox<ConnectionType> typeCombo;
-    private TextField hostField;
-    private TextField portField;
-    private TextField databaseField;
-    private TextField usernameField;
-    private PasswordField passwordField;
+    private DynamicFormGenerator formGenerator;
+    private GridPane basicGrid;
 
     private CheckBox sshEnableCheck;
     private TextField sshHostField;
@@ -81,30 +80,30 @@ public class NewConnectionDialog extends Dialog<ConnectionConfig> {
         Tab tab = new Tab("基本信息");
         tab.setClosable(false);
 
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new javafx.geometry.Insets(10));
+        basicGrid = new GridPane();
+        basicGrid.setHgap(10);
+        basicGrid.setVgap(10);
+        basicGrid.setPadding(new javafx.geometry.Insets(10));
 
         int row = 0;
-        grid.add(new Label("连接名称:"), 0, row);
+        basicGrid.add(new Label("连接名称:"), 0, row);
         nameField = new TextField();
         nameField.setPromptText("输入连接显示名称");
-        grid.add(nameField, 1, row);
+        basicGrid.add(nameField, 1, row);
 
         row++;
-        grid.add(new Label("分组:"), 0, row);
+        basicGrid.add(new Label("分组:"), 0, row);
         groupField = new TextField();
         groupField.setPromptText("可选，用于分类管理");
-        grid.add(groupField, 1, row);
+        basicGrid.add(groupField, 1, row);
 
         row++;
-        grid.add(new Label("收藏:"), 0, row);
+        basicGrid.add(new Label("收藏:"), 0, row);
         favoriteCheck = new CheckBox("标记为收藏");
-        grid.add(favoriteCheck, 1, row);
+        basicGrid.add(favoriteCheck, 1, row);
 
         row++;
-        grid.add(new Label("数据库类型:"), 0, row);
+        basicGrid.add(new Label("数据库类型:"), 0, row);
         typeCombo = new ComboBox<>();
         typeCombo.getItems().addAll(
                 ConnectionType.MYSQL,
@@ -114,41 +113,49 @@ public class NewConnectionDialog extends Dialog<ConnectionConfig> {
                 ConnectionType.THRIFT
         );
         typeCombo.setValue(ConnectionType.MYSQL);
-        typeCombo.valueProperty().addListener((obs, oldVal, newVal) -> updateDefaultPort(newVal));
-        grid.add(typeCombo, 1, row);
+        typeCombo.valueProperty().addListener((obs, oldVal, newVal) -> onDatabaseTypeChanged(newVal));
+        basicGrid.add(typeCombo, 1, row);
 
         row++;
-        grid.add(new Label("主机地址:"), 0, row);
-        hostField = new TextField("127.0.0.1");
-        grid.add(hostField, 1, row);
-
-        row++;
-        grid.add(new Label("端口:"), 0, row);
-        portField = new TextField("3306");
-        grid.add(portField, 1, row);
-
-        row++;
-        grid.add(new Label("数据库名:"), 0, row);
-        databaseField = new TextField();
-        databaseField.setPromptText("可选");
-        grid.add(databaseField, 1, row);
-
-        row++;
-        grid.add(new Label("用户名:"), 0, row);
-        usernameField = new TextField();
-        grid.add(usernameField, 1, row);
-
-        row++;
-        grid.add(new Label("密码:"), 0, row);
-        passwordField = new PasswordField();
-        grid.add(passwordField, 1, row);
+        formGenerator = new DynamicFormGenerator(ConnectionType.MYSQL);
+        int nextRow = formGenerator.generateBasicFields(basicGrid, row);
+        nextRow = formGenerator.generateJdbcPropertiesFields(basicGrid, nextRow);
 
         Button testBtn = new Button("测试连接");
         testBtn.setOnAction(e -> testConnection());
-        grid.add(testBtn, 1, row + 1);
+        basicGrid.add(testBtn, 1, nextRow);
 
-        tab.setContent(grid);
+        tab.setContent(basicGrid);
         return tab;
+    }
+
+    private void onDatabaseTypeChanged(ConnectionType newType) {
+        int startRow = findDynamicFieldsStartRow();
+        if (startRow > 0) {
+            basicGrid.getChildren().removeIf(node -> {
+                Integer row = GridPane.getRowIndex(node);
+                return row != null && row >= startRow;
+            });
+        }
+
+        formGenerator = new DynamicFormGenerator(newType);
+        int nextRow = formGenerator.generateBasicFields(basicGrid, startRow);
+        nextRow = formGenerator.generateJdbcPropertiesFields(basicGrid, nextRow);
+
+        Button testBtn = new Button("测试连接");
+        testBtn.setOnAction(e -> testConnection());
+        basicGrid.add(testBtn, 1, nextRow);
+    }
+
+    private int findDynamicFieldsStartRow() {
+        int maxRow = 0;
+        for (var child : basicGrid.getChildren()) {
+            Integer row = GridPane.getRowIndex(child);
+            if (row != null && row > maxRow) {
+                maxRow = row;
+            }
+        }
+        return 4;
     }
 
     private Tab createPoolTab() {
@@ -273,20 +280,22 @@ public class NewConnectionDialog extends Dialog<ConnectionConfig> {
         return tab;
     }
 
-    private void updateDefaultPort(ConnectionType type) {
-        portField.setText(type.getDefaultPort());
-    }
-
     private void populateFields(ConnectionConfig existing) {
         nameField.setText(existing.getName());
         typeCombo.setValue(existing.getType());
-        hostField.setText(existing.getHost());
-        portField.setText(String.valueOf(existing.getPort()));
-        databaseField.setText(existing.getDatabase());
-        usernameField.setText(existing.getUsername());
-        passwordField.setText(existing.getPassword());
         groupField.setText(existing.getGroup());
         favoriteCheck.setSelected(existing.isFavorite());
+
+        formGenerator.setFieldValue("host", existing.getHost());
+        formGenerator.setPortValue(existing.getPort());
+        formGenerator.setFieldValue("database", existing.getDatabase());
+        formGenerator.setFieldValue("service", existing.getDatabase());
+        formGenerator.setFieldValue("username", existing.getUsername());
+        formGenerator.setFieldValue("password", existing.getPassword());
+
+        if (existing.getProperties() != null) {
+            formGenerator.applyJdbcProperties(existing.getProperties());
+        }
 
         if (existing.getPoolConfig() != null) {
             maxConnSpinner.getValueFactory().setValue(existing.getPoolConfig().getMaxPoolSize());
@@ -317,17 +326,21 @@ public class NewConnectionDialog extends Dialog<ConnectionConfig> {
 
         config.setName(nameField.getText().trim());
         config.setType(typeCombo.getValue());
-        config.setHost(hostField.getText().trim());
-        try {
-            config.setPort(Integer.parseInt(portField.getText().trim()));
-        } catch (NumberFormatException e) {
-            config.setPort(typeCombo.getValue().getDefaultPortInt());
+        config.setHost(formGenerator.getFieldValue("host"));
+        config.setPort(formGenerator.getPortValue());
+        config.setDatabase(formGenerator.getFieldValue("database"));
+        if (formGenerator.getFieldValue("service") != null) {
+            config.setDatabase(formGenerator.getFieldValue("service"));
         }
-        config.setDatabase(databaseField.getText().trim());
-        config.setUsername(usernameField.getText().trim());
-        config.setPassword(passwordField.getText());
+        config.setUsername(formGenerator.getFieldValue("username"));
+        config.setPassword(formGenerator.getFieldValue("password"));
         config.setGroup(groupField.getText().trim());
         config.setFavorite(favoriteCheck.isSelected());
+
+        Map<String, String> jdbcProps = formGenerator.collectJdbcProperties();
+        if (!jdbcProps.isEmpty()) {
+            config.setProperties(jdbcProps);
+        }
 
         PoolConfig poolConfig = new PoolConfig();
         poolConfig.setMaxPoolSize(maxConnSpinner.getValue());
