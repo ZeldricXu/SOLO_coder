@@ -136,6 +136,7 @@ const workflowRoutes: FastifyPluginAsync = async (fastify) => {
           workflowId: z.string(),
           contentId: z.string(),
           startedBy: z.string(),
+          contentData: z.record(z.unknown()).optional(),
         }),
         tags: ['Workflow'],
         summary: 'Start a workflow instance',
@@ -147,6 +148,52 @@ const workflowRoutes: FastifyPluginAsync = async (fastify) => {
     ) => {
       const instance = await workflowService.startWorkflow(request.tenant, request.body);
       reply.status(201).send(instance);
+    }
+  );
+
+  fastify.post(
+    '/workflows/preview-approvers',
+    {
+      schema: {
+        body: z.object({
+          workflowId: z.string(),
+          contentId: z.string(),
+          startedBy: z.string(),
+          contentData: z.record(z.unknown()).optional(),
+        }),
+        tags: ['Workflow'],
+        summary: 'Preview dynamic approvers before starting workflow',
+      },
+    },
+    async (
+      request: FastifyRequest<{ Body: StartWorkflowInput }> & { tenant: TenantContext }
+    ) => {
+      const workflow = await workflowService.getWorkflow(
+        request.tenant.tenantId,
+        request.body.workflowId
+      );
+      if (!workflow) {
+        return { error: 'Workflow not found' };
+      }
+
+      const nodes = workflow.nodes as unknown as import('@types/index').WorkflowNode[];
+      const resolved = await (workflowService as any).resolveApprovalNodes(
+        request.tenant.tenantId,
+        nodes,
+        request.body.contentId,
+        request.body.startedBy,
+        request.body.contentData
+      );
+
+      return {
+        workflowId: request.body.workflowId,
+        nodes: resolved.map(r => ({
+          nodeId: r.nodeId,
+          approvers: r.approvers,
+          resolvedFrom: r.resolution.resolvedFrom,
+          warnings: r.resolution.warnings,
+        })),
+      };
     }
   );
 

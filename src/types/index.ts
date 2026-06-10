@@ -66,6 +66,18 @@ export interface ContentVersion {
   message?: string;
 }
 
+export interface DynamicApproverConfig {
+  source: 'static' | 'ldap' | 'org_api' | 'role_based';
+  roles?: Array<{
+    role: string;
+    source: 'static' | 'ldap' | 'org_api' | 'role_based';
+    config?: Record<string, unknown>;
+  }>;
+  staticFallback: string[];
+  cacheTtlSeconds?: number;
+  config?: Record<string, unknown>;
+}
+
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
@@ -73,6 +85,7 @@ export interface WorkflowNode {
   config: {
     approvalType?: ApprovalType;
     approvers?: string[];
+    dynamicApprovers?: DynamicApproverConfig;
     approvalPercentage?: number;
     condition?: string;
     branches?: Array<{ condition: string; nodeId: string }>;

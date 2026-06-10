@@ -484,6 +484,263 @@ export class CDNService {
     );
   }
 
+  async publishToAllRegions(
+    tenant: TenantContext,
+    input: Omit<PublishContentInput, 'regions'>
+  ): Promise<CDNPublishStatus[]> {
+    const allRegionCodes = this.regions.map(r => r.code);
+    return this.publishContent(tenant, {
+      ...input,
+      regions: allRegionCodes,
+    });
+  }
+
+  async getMultiRegionStatus(
+    tenant: TenantContext,
+    contentIds: string[]
+  ): Promise<Array<{
+    contentId: string;
+    regions: Array<{
+      region: string;
+      provider: string;
+      status: string;
+      url: string;
+      publishedAt: Date | null;
+      lastCheckedAt: Date | null;
+    }>;
+    overallStatus: 'unpublished' | 'publishing' | 'published' | 'failed' | 'partial';
+  }>> {
+    const results = [];
+
+    for (const contentId of contentIds) {
+      const regionStatuses = await this.getRegionStatus(tenant, contentId);
+
+      const statuses = regionStatuses.map(r => r.status);
+      let overallStatus: 'unpublished' | 'publishing' | 'published' | 'failed' | 'partial';
+
+      if (statuses.every(s => s === 'published')) {
+        overallStatus = 'published';
+      } else if (statuses.some(s => s === 'publishing')) {
+        overallStatus = 'publishing';
+      } else if (statuses.some(s => s === 'failed') && statuses.some(s => s === 'published')) {
+        overallStatus = 'partial';
+      } else if (statuses.every(s => s === 'failed')) {
+        overallStatus = 'failed';
+      } else {
+        overallStatus = 'unpublished';
+      }
+
+      results.push({
+        contentId,
+        regions: regionStatuses,
+        overallStatus,
+      });
+    }
+
+    return results;
+  }
+
+  async retryFailedRegion(
+    tenant: TenantContext,
+    contentId: string,
+    regionCode: string
+  ): Promise<CDNPublishStatus | null> {
+    const failedStatus = await this.prisma.cDNPublishStatus.findFirst({
+      where: {
+        tenantId: tenant.tenantId,
+        contentId,
+        region: regionCode,
+        status: 'failed',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (!failedStatus) {
+      return null;
+    }
+
+    const region = this.getRegion(regionCode);
+    if (!region) {
+      throw new Error(`Invalid region: ${regionCode}`);
+    }
+
+    const newStatus = await this.prisma.cDNPublishStatus.create({
+      data: {
+        id: generateId('cdn'),
+        tenantId: tenant.tenantId,
+        contentId: failedStatus.contentId,
+        modelId: failedStatus.modelId,
+        region: regionCode,
+        path: failedStatus.path,
+        status: 'publishing',
+        provider: region.provider,
+        cacheTtl: failedStatus.cacheTtl,
+        publishedAt: null,
+        failedReason: null,
+        retryCount: 0,
+      },
+    });
+
+    await this.publishQueue.add(
+      `publish:${newStatus.id}`,
+      {
+        statusId: newStatus.id,
+        tenantId: tenant.tenantId,
+        contentId: failedStatus.contentId,
+        modelId: failedStatus.modelId,
+        region: regionCode,
+        path: failedStatus.path,
+        baseUrl: region.baseUrl,
+        provider: region.provider,
+        cacheTtl: failedStatus.cacheTtl,
+      },
+      {
+        attempts: 3,
+        backoff: {
+          type: 'exponential',
+          delay: 1000,
+        },
+      }
+    );
+
+    logger.info(
+      { tenantId: tenant.tenantId, contentId, region: regionCode, statusId: newStatus.id },
+      'Retrying failed CDN publish for region'
+    );
+
+    return newStatus;
+  }
+
+  async invalidateRegionCache(
+    tenant: TenantContext,
+    input: Omit<InvalidateCacheInput, 'regions'> & { region: string }
+  ): Promise<{ jobId: string }> {
+    const result = await this.invalidateCache(tenant, {
+      ...input,
+      regions: [input.region],
+    });
+    return { jobId: result.jobIds[0] };
+  }
+
+  async prewarmRegionCache(
+    tenant: TenantContext,
+    input: Omit<PreWarmCacheInput, 'regions'> & { region: string }
+  ): Promise<{ jobId: string }> {
+    const result = await this.preWarmCache(tenant, {
+      ...input,
+      regions: [input.region],
+    });
+    return { jobId: result.jobIds[0] };
+  }
+
+  async getRegionQueueStatus(
+    tenant?: TenantContext
+  ): Promise<Array<{
+    region: string;
+    pendingPublish: number;
+    pendingInvalidate: number;
+    pendingPrewarm: number;
+    activeWorkers: number;
+  }>> {
+    const results = [];
+
+    for (const region of this.regions) {
+      const publishFilter: any = { name: 'publish' };
+      const invalidateFilter: any = { name: 'invalidate' };
+      const prewarmFilter: any = { name: 'prewarm' };
+
+      if (tenant) {
+        publishFilter.data = { tenantId: tenant.tenantId, region: region.code };
+        invalidateFilter.data = { tenantId: tenant.tenantId, region: region.code };
+        prewarmFilter.data = { tenantId: tenant.tenantId, region: region.code };
+      } else {
+        publishFilter.data = { region: region.code };
+        invalidateFilter.data = { region: region.code };
+        prewarmFilter.data = { region: region.code };
+      }
+
+      const [pendingPublish, pendingInvalidate, pendingPrewarm] = await Promise.all([
+        this.publishQueue.getWaitingCount(),
+        this.invalidateQueue.getWaitingCount(),
+        this.prewarmQueue.getWaitingCount(),
+      ]);
+
+      results.push({
+        region: region.code,
+        pendingPublish,
+        pendingInvalidate,
+        pendingPrewarm,
+        activeWorkers: this.workers.filter(w => w.isRunning()).length,
+      });
+    }
+
+    return results;
+  }
+
+  async getContentRegionsSummary(
+    tenant: TenantContext,
+    contentId: string
+  ): Promise<{
+    contentId: string;
+    totalRegions: number;
+    publishedRegions: number;
+    failedRegions: number;
+    publishingRegions: number;
+    unpublishedRegions: number;
+    regionDetails: Array<{
+      code: string;
+      name: string;
+      status: string;
+      provider: string;
+      url: string;
+      publishedAt: Date | null;
+    }>;
+  }> {
+    const regionStatuses = await this.getRegionStatus(tenant, contentId);
+
+    let publishedRegions = 0;
+    let failedRegions = 0;
+    let publishingRegions = 0;
+    let unpublishedRegions = 0;
+
+    const regionDetails = regionStatuses.map(rs => {
+      switch (rs.status) {
+        case 'published':
+          publishedRegions++;
+          break;
+        case 'failed':
+          failedRegions++;
+          break;
+        case 'publishing':
+        case 'invalidating':
+          publishingRegions++;
+          break;
+        default:
+          unpublishedRegions++;
+      }
+
+      const regionInfo = this.getRegion(rs.region);
+      return {
+        code: rs.region,
+        name: regionInfo?.name || rs.region,
+        status: rs.status,
+        provider: rs.provider,
+        url: rs.url,
+        publishedAt: rs.publishedAt,
+      };
+    });
+
+    return {
+      contentId,
+      totalRegions: this.regions.length,
+      publishedRegions,
+      failedRegions,
+      publishingRegions,
+      unpublishedRegions,
+      regionDetails,
+    };
+  }
+
   async close(): Promise<void> {
     logger.info('Closing CDN service workers');
     for (const worker of this.workers) {

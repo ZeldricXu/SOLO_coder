@@ -4,6 +4,7 @@ import { generateApprovalSignature, generateId } from '@utils/crypto';
 import { logger } from '@utils/logger';
 import { TenantContext, WorkflowNode } from '@types/index';
 import { config } from '@config/index';
+import { approverResolver, ApproverResolutionResult } from './approver-resolver';
 
 export interface CreateWorkflowInput {
   modelId: string;
@@ -28,6 +29,13 @@ export interface StartWorkflowInput {
   workflowId: string;
   contentId: string;
   startedBy: string;
+  contentData?: Record<string, unknown>;
+}
+
+export interface ResolvedApprover {
+  nodeId: string;
+  approvers: string[];
+  resolution: ApproverResolutionResult;
 }
 
 export interface ApproveNodeInput {
@@ -121,8 +129,13 @@ export class WorkflowService {
 
     for (const node of nodes) {
       if (node.type === 'approval') {
-        if (!node.config.approvers || node.config.approvers.length === 0) {
-          throw new Error(`Approval node ${node.id} must have approvers`);
+        const hasStaticApprovers = node.config.approvers && node.config.approvers.length > 0;
+        const hasDynamicApprovers = node.config.dynamicApprovers?.staticFallback?.length ?? 0 > 0;
+        if (!hasStaticApprovers && !hasDynamicApprovers) {
+          throw new Error(`Approval node ${node.id} must have either approvers or dynamicApprovers with staticFallback`);
+        }
+        if (node.config.dynamicApprovers && !node.config.dynamicApprovers.source) {
+          throw new Error(`Approval node ${node.id} dynamicApprovers must specify source`);
         }
         if (node.config.approvalType === 'percentage' && !node.config.approvalPercentage) {
           throw new Error(`Approval node ${node.id} with percentage type must have approvalPercentage`);
@@ -255,6 +268,18 @@ export class WorkflowService {
 
     const firstApprovalNode = this.findNextApprovalNode(nodes, startNode);
 
+    const resolvedApprovers = await this.resolveApprovalNodes(
+      tenant.tenantId,
+      nodes,
+      input.contentId,
+      input.startedBy,
+      input.contentData
+    );
+
+    const resolvedApproversMap = Object.fromEntries(
+      resolvedApprovers.map(r => [r.nodeId, r])
+    );
+
     const instance = await this.prisma.workflowInstance.create({
       data: {
         id: generateId('wfi'),
@@ -265,6 +290,7 @@ export class WorkflowService {
         status: 'running',
         approvals: [],
         startedBy: input.startedBy,
+        resolvedApprovers: resolvedApproversMap as unknown as Prisma.JsonValue,
       },
     });
 
@@ -274,11 +300,105 @@ export class WorkflowService {
     });
 
     logger.info(
-      { tenantId: tenant.tenantId, workflowId: input.workflowId, contentId: input.contentId },
-      'Started workflow instance'
+      {
+        tenantId: tenant.tenantId,
+        workflowId: input.workflowId,
+        contentId: input.contentId,
+        resolvedApprovers: resolvedApprovers.length,
+      },
+      'Started workflow instance with dynamic approvers'
     );
 
     return instance;
+  }
+
+  private async resolveApprovalNodes(
+    tenantId: string,
+    nodes: WorkflowNode[],
+    contentId: string,
+    submittedBy: string,
+    contentData?: Record<string, unknown>
+  ): Promise<ResolvedApprover[]> {
+    const approvalNodes = nodes.filter(n => n.type === 'approval');
+    const results: ResolvedApprover[] = [];
+
+    for (const node of approvalNodes) {
+      let approvers: string[] = [];
+      let resolution: ApproverResolutionResult | null = null;
+
+      if (node.config.dynamicApprovers) {
+        try {
+          resolution = await approverResolver.resolveApprovers({
+            tenantId,
+            contentId,
+            submittedBy,
+            dynamicConfig: node.config.dynamicApprovers,
+            contentData,
+          });
+          approvers = resolution.approvers;
+        } catch (error) {
+          logger.error(
+            { error, nodeId: node.id, tenantId },
+            'Failed to resolve dynamic approvers, using static fallback'
+          );
+          approvers = node.config.dynamicApprovers.staticFallback;
+          resolution = {
+            approvers,
+            source: 'static',
+            resolvedFrom: 'static_fallback',
+            cacheHit: false,
+            warnings: [`Dynamic resolution failed: ${(error as Error).message}`],
+          };
+        }
+      } else {
+        approvers = node.config.approvers || [];
+        resolution = {
+          approvers,
+          source: 'static',
+          resolvedFrom: 'static_config',
+          cacheHit: false,
+        };
+      }
+
+      if (node.config.approvers && node.config.approvers.length > 0) {
+        approvers = [...new Set([...approvers, ...node.config.approvers])];
+      }
+
+      results.push({
+        nodeId: node.id,
+        approvers,
+        resolution,
+      });
+
+      logger.debug(
+        {
+          nodeId: node.id,
+          approvers,
+          resolvedFrom: resolution?.resolvedFrom,
+        },
+        'Approvers resolved for node'
+      );
+    }
+
+    return results;
+  }
+
+  private getEffectiveApprovers(
+    instance: WorkflowInstance,
+    nodeId: string
+  ): string[] {
+    const resolvedApprovers = (instance as any).resolvedApprovers as Record<string, ResolvedApprover>;
+    if (resolvedApprovers && resolvedApprovers[nodeId]) {
+      return resolvedApprovers[nodeId].approvers;
+    }
+
+    const nodes = (instance as any).definition?.nodes as unknown as WorkflowNode[];
+    const node = nodes?.find(n => n.id === nodeId);
+    if (node?.config.approvers) {
+      return node.config.approvers;
+    }
+
+    return [];
   }
 
   private findNextApprovalNode(nodes: WorkflowNode[], currentNode: WorkflowNode): WorkflowNode | null {
@@ -331,7 +451,8 @@ export class WorkflowService {
       throw new Error('Current node is not an approval node');
     }
 
-    if (!currentNode.config.approvers?.includes(input.userId)) {
+    const effectiveApprovers = this.getEffectiveApprovers(instance, input.nodeId);
+    if (!effectiveApprovers.includes(input.userId)) {
       throw new Error('User is not authorized to approve this node');
     }
 
@@ -376,7 +497,7 @@ export class WorkflowService {
 
     const nodeApprovals = approvals.filter(a => a.nodeId === input.nodeId && a.decision === 'approved');
     const approvalType = currentNode.config.approvalType || 'all';
-    const approvers = currentNode.config.approvers || [];
+    const approvers = effectiveApprovers;
 
     let approved = false;
 
