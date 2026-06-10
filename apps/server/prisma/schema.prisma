@@ -156,18 +156,6 @@ model RunMetric {
   @@index([runId, name, timestamp])
 }
 
-model LineageEdge {
-  id        String @id @default(uuid())
-  sourceId  String
-  sourceType String // experiment | model | dataset | feature_set
-  targetId  String
-  targetType String
-  relation  String // parent | child | uses | produces
-
-  @@index([sourceId, targetId])
-  @@index([targetId])
-}
-
 // ==================== 特征存储 ====================
 model FeatureSet {
   id               String              @id @default(uuid())
@@ -222,8 +210,8 @@ model FeatureStatistics {
   median         Float?
   nullCount      BigInt?
   uniqueCount    BigInt?
-  histogramBins  Float[]?
-  histogramCounts BigInt[]?
+  histogramBins  Float[]  @default([])
+  histogramCounts BigInt[] @default([])
   lastUpdated    DateTime         @default(now())
 
   @@index([featureSetId, featureName])
@@ -423,4 +411,105 @@ model InferenceMetrics {
 
   @@index([modelId, version, timestamp])
   @@index([success])
+}
+
+// ==================== 模型流水线 ====================
+model ModelPipeline {
+  id            String         @id @default(uuid())
+  name          String
+  description   String?
+  projectId     String
+  ownerId       String
+  team          String
+  status        String         @default("draft") // draft | active | archived
+  steps         PipelineStep[]
+  entryPoint    String
+  outputStep    String
+  tags          String[]       @default([])
+  metadata      Json           @default("{}")
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  lastRunAt     DateTime?
+  runCount      Int            @default(0)
+  avgLatencyMs  Float?
+  successRate   Float?
+
+  @@index([projectId, status])
+  @@index([team])
+  @@fulltext([name, description])
+}
+
+model PipelineStep {
+  id              String        @id @default(uuid())
+  pipelineId      String
+  pipeline        ModelPipeline @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  stepId          String
+  name            String
+  type            String        // model | transform | condition | aggregator
+  description     String?
+  modelId         String?
+  version         String?
+  inputMapping    Json
+  outputMapping   Json
+  condition       Json?
+  aggregatorConfig Json?
+  transformConfig Json?
+  dependsOn       String[]      @default([])
+  timeoutMs       Int           @default(30000)
+  retryCount      Int           @default(0)
+  enabled         Boolean       @default(true)
+  orderIndex      Int           @default(0)
+
+  @@index([pipelineId])
+  @@index([modelId])
+  @@unique([pipelineId, stepId])
+}
+
+// ==================== 实验继承链 ====================
+model LineageEdge {
+  id           String   @id @default(uuid())
+  sourceRunId  String
+  targetRunId  String
+  type         String   // parent_child | baseline | derived
+  relationship String   // direct | baseline | variant
+  metricDeltas Json     @default("{}")
+  createdAt    DateTime @default(now())
+
+  @@index([sourceRunId])
+  @@index([targetRunId])
+  @@unique([sourceRunId, targetRunId, type])
+}
+
+// ==================== 向量索引与搜索 ====================
+model VectorIndex {
+  id            String           @id @default(uuid())
+  featureSetId  String
+  featureSet    FeatureSet       @relation(fields: [featureSetId], references: [id], onDelete: Cascade)
+  featureName   String
+  config        Json
+  status        String           @default("building") // building | ready | failed | updating
+  size          Int              @default(0)
+  dimension     Int
+  memoryUsageBytes BigInt        @default(0)
+  buildProgress Float?
+  lastBuildTime DateTime?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([featureSetId, status])
+  @@unique([featureSetId, featureName])
+}
+
+model VectorRecord {
+  id            String     @id @default(uuid())
+  indexId       String
+  vectorIndex   VectorIndex @relation(fields: [indexId], references: [id], onDelete: Cascade)
+  entityKey     String
+  vector        Unsupported("vector")?
+  features      Json       @default("{}")
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([indexId, entityKey])
+  @@unique([indexId, entityKey])
 }

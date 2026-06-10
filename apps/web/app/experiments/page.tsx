@@ -29,6 +29,11 @@ export default function ExperimentsPage() {
   const [comparisonData, setComparisonData] = useState<any>(null);
   const [showLineage, setShowLineage] = useState(false);
   const [lineageData, setLineageData] = useState<any>(null);
+  const [showEvolutionTree, setShowEvolutionTree] = useState(false);
+  const [evolutionTreeData, setEvolutionTreeData] = useState<any>(null);
+  const [evolutionDirection, setEvolutionDirection] = useState<'both' | 'up' | 'down'>('both');
+  const [evolutionDepth, setEvolutionDepth] = useState(3);
+  const [primaryMetric, setPrimaryMetric] = useState('accuracy');
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
 
@@ -129,6 +134,120 @@ export default function ExperimentsPage() {
     } catch (error) {
       toast.error('Failed to load lineage');
     }
+  };
+
+  const handleShowEvolutionTree = async (runId: string) => {
+    try {
+      const res = await api.experiments.getEvolutionTree(runId, {
+        depth: evolutionDepth,
+        direction: evolutionDirection,
+        primaryMetric,
+        improvementDirection: 'higher',
+      });
+
+      const treeData = res.data;
+      const { nodes: rfNodes, edges: rfEdges } = buildEvolutionTreeGraph(treeData);
+
+      setEvolutionTreeData({ ...treeData, reactFlowNodes: rfNodes, reactFlowEdges: rfEdges });
+      setShowEvolutionTree(true);
+    } catch (error) {
+      toast.error('Failed to load evolution tree');
+    }
+  };
+
+  const buildEvolutionTreeGraph = (treeData: any) => {
+    const nodes: Node[] = [];
+    const edges: Edge[] = [];
+    const allNodes = treeData.allNodes || {};
+
+    const nodeLevels = new Map<number, string[]>();
+    Object.values(allNodes).forEach((node: any) => {
+      const depth = node.depth || 0;
+      if (!nodeLevels.has(depth)) {
+        nodeLevels.set(depth, []);
+      }
+      nodeLevels.get(depth)!.push(node.runId);
+    });
+
+    const sortedLevels = Array.from(nodeLevels.keys()).sort((a, b) => a - b);
+    const levelWidth = 280;
+    const nodeHeight = 120;
+
+    sortedLevels.forEach((level) => {
+      const nodeIds = nodeLevels.get(level)!;
+      const startY = (nodeIds.length - 1) * nodeHeight / -2;
+
+      nodeIds.forEach((nodeId, idx) => {
+        const nodeData = allNodes[nodeId];
+        const metricDelta = nodeData?.metricDeltas?.[primaryMetric];
+        const isImprovement = metricDelta?.isImprovement;
+        const changeText = metricDelta
+          ? `${metricDelta.relativeChange >= 0 ? '+' : ''}${(metricDelta.relativeChange * 100).toFixed(1)}%`
+          : '';
+
+        nodes.push({
+          id: nodeId,
+          position: {
+            x: (level - (sortedLevels[0] || 0)) * levelWidth,
+            y: startY + idx * nodeHeight,
+          },
+          data: {
+            label: (
+              <div className="p-2 min-w-[200px]">
+                <div className="font-semibold text-sm mb-1">{nodeData?.runName || nodeId.slice(0, 8)}</div>
+                <div className="text-xs text-gray-500 mb-2">{nodeData?.experimentName || ''}</div>
+                {metricDelta && (
+                  <div className={`text-xs font-mono px-2 py-1 rounded ${
+                    isImprovement ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+                  }`}>
+                    {primaryMetric}: {metricDelta.currentValue.toFixed(4)}
+                    <span className="ml-1">
+                      {isImprovement ? '↑' : '↓'} {changeText}
+                    </span>
+                  </div>
+                )}
+                <div className="text-xs text-gray-400 mt-2">
+                  {nodeData?.status} · depth {nodeData?.depth}
+                </div>
+              </div>
+            ),
+          },
+          style: {
+            background: nodeData?.direction === 'current'
+              ? '#fef3c7'
+              : nodeData?.direction === 'up'
+              ? '#dbeafe'
+              : '#d1fae5',
+            border: `2px solid ${
+              nodeData?.direction === 'current'
+                ? '#f59e0b'
+                : nodeData?.direction === 'up'
+                ? '#3b82f6'
+                : '#10b981'
+            }`,
+            borderRadius: '12px',
+            padding: '0px',
+            width: 220,
+          },
+        });
+      });
+    });
+
+    (treeData.edges || []).forEach((edge: any, i: number) => {
+      edges.push({
+        id: `edge-${i}`,
+        source: edge.source,
+        target: edge.target,
+        animated: true,
+        style: { stroke: '#94a3b8', strokeWidth: 2 },
+      });
+    });
+
+    return { nodes, edges };
+  };
+
+  const refreshEvolutionTree = async (runId: string) => {
+    await handleShowEvolutionTree(runId);
   };
 
   const toggleRunSelection = (runId: string) => {
@@ -300,6 +419,13 @@ export default function ExperimentsPage() {
                         >
                           <GitBranch className="w-4 h-4 text-gray-500" />
                         </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleShowEvolutionTree(run.id); }}
+                          className="p-1.5 hover:bg-gray-100 rounded"
+                          title="View evolution tree"
+                        >
+                          <BarChart3 className="w-4 h-4 text-purple-500" />
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -452,6 +578,120 @@ export default function ExperimentsPage() {
               <Controls />
               <MiniMap />
             </ReactFlow>
+          </div>
+        </div>
+      )}
+
+      {showEvolutionTree && evolutionTreeData && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-6xl h-[80vh] flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-bold flex items-center gap-2">
+                <GitBranch className="w-5 h-5 text-purple-600" />
+                Experiment Evolution Tree
+              </h2>
+              <button onClick={() => setShowEvolutionTree(false)} className="btn-secondary">Close</button>
+            </div>
+
+            <div className="flex items-center gap-4 mb-4 p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">Direction:</label>
+                <select
+                  value={evolutionDirection}
+                  onChange={(e) => setEvolutionDirection(e.target.value as any)}
+                  className="input text-sm py-1.5"
+                >
+                  <option value="both">Both Directions</option>
+                  <option value="up">Upward (Ancestors)</option>
+                  <option value="down">Downward (Descendants)</option>
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">Depth:</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={10}
+                  value={evolutionDepth}
+                  onChange={(e) => setEvolutionDepth(parseInt(e.target.value) || 3)}
+                  className="input text-sm py-1.5 w-20"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600">Primary Metric:</label>
+                <input
+                  type="text"
+                  value={primaryMetric}
+                  onChange={(e) => setPrimaryMetric(e.target.value)}
+                  className="input text-sm py-1.5 w-32"
+                  placeholder="accuracy"
+                />
+              </div>
+              <button
+                onClick={() => {
+                  const currentRoot = evolutionTreeData.rootNodes?.[0]?.runId;
+                  if (currentRoot) refreshEvolutionTree(currentRoot);
+                }}
+                className="btn-primary text-sm py-1.5"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <div className="flex gap-4 mb-4">
+              <div className="flex items-center gap-2 text-xs">
+                <span className="w-3 h-3 bg-amber-200 border-2 border-amber-500 rounded"></span>
+                <span className="text-gray-600">Current</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="w-3 h-3 bg-blue-200 border-2 border-blue-500 rounded"></span>
+                <span className="text-gray-600">Ancestors</span>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="w-3 h-3 bg-emerald-200 border-2 border-emerald-500 rounded"></span>
+                <span className="text-gray-600">Descendants</span>
+              </div>
+              <div className="text-xs text-gray-500 ml-auto">
+                Total: {evolutionTreeData.totalRuns} runs · {evolutionTreeData.totalExperiments} experiments · Depth: {evolutionTreeData.maxDepth}
+              </div>
+            </div>
+
+            <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
+              <ReactFlow
+                nodes={evolutionTreeData.reactFlowNodes || []}
+                edges={evolutionTreeData.reactFlowEdges || []}
+                fitView
+                nodesDraggable
+              >
+                <Background />
+                <Controls />
+                <MiniMap
+                  nodeColor={(node) => {
+                    const n = node.data?.nodeData;
+                    return n?.direction === 'current' ? '#f59e0b' : n?.direction === 'up' ? '#3b82f6' : '#10b981';
+                  }}
+                />
+              </ReactFlow>
+            </div>
+
+            {evolutionTreeData.generationSummary && evolutionTreeData.generationSummary.length > 0 && (
+              <div className="mt-4 p-3 bg-gray-50 rounded-lg">
+                <h3 className="text-sm font-semibold text-gray-700 mb-2">Generation Summary</h3>
+                <div className="flex gap-2 overflow-x-auto">
+                  {evolutionTreeData.generationSummary.map((gen: any, idx: number) => (
+                    <div key={idx} className="min-w-[120px] p-2 bg-white rounded border border-gray-200">
+                      <div className="text-xs text-gray-500">Generation {gen.generation}</div>
+                      <div className="text-lg font-bold">{gen.runCount} runs</div>
+                      {gen.primaryMetricValue !== undefined && (
+                        <div className="text-xs text-gray-600 mt-1">
+                          Best: {gen.primaryMetricValue.toFixed(4)}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

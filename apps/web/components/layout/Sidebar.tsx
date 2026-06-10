@@ -12,6 +12,8 @@ import {
   Activity,
   ChevronLeft,
   ChevronRight,
+  GitMerge,
+  Search,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/store/app';
@@ -24,6 +26,8 @@ const navigation = [
   { name: 'A/B Testing', href: '/abtests', icon: SplitSquareVertical, page: 'abtests' },
   { name: 'Monitoring', href: '/monitoring', icon: Activity, page: 'monitoring' },
   { name: 'Alerts', href: '/alerts', icon: AlertTriangle, page: 'alerts' },
+  { name: 'Pipelines', href: '/pipelines', icon: GitMerge, page: 'pipelines' },
+  { name: 'Vector Search', href: '/vector-search', icon: Search, page: 'vector-search' },
 ];
 
 export function Sidebar() {

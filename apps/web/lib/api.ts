@@ -77,6 +77,40 @@ export const api = {
       apiClient.post('/api/v1/runs/compare', { runIds }),
     getLineage: (runId: string, depth?: number) =>
       apiClient.get(`/api/v1/runs/${runId}/lineage`, { params: { depth } }),
+    getEvolutionTree: (runId: string, params?: Record<string, unknown>) =>
+      apiClient.get(`/api/v1/runs/${runId}/evolution-tree`, { params }),
+    getExperimentEvolutionTree: (experimentId: string, params?: Record<string, unknown>) =>
+      apiClient.get(`/api/v1/experiments/${experimentId}/evolution-tree`, { params }),
+    compareLineage: (data: unknown) =>
+      apiClient.post('/api/v1/lineage/compare', data),
+    forkExperiment: (data: unknown) =>
+      apiClient.post('/api/v1/experiments/fork', data),
+    getLineageStats: (projectId?: string) =>
+      apiClient.get('/api/v1/lineage/stats', { params: { projectId } }),
+  },
+
+  pipelines: {
+    list: (params?: Record<string, unknown>) =>
+      apiClient.get('/api/v1/pipelines', { params }),
+    get: (id: string) => apiClient.get(`/api/v1/pipelines/${id}`),
+    create: (data: unknown) => apiClient.post('/api/v1/pipelines', data),
+    update: (id: string, data: unknown) =>
+      apiClient.patch(`/api/v1/pipelines/${id}`, data),
+    delete: (id: string) => apiClient.delete(`/api/v1/pipelines/${id}`),
+    validate: (id: string) => apiClient.post(`/api/v1/pipelines/${id}/validate`),
+    run: (data: unknown) => apiClient.post('/api/v1/pipelines/run', data),
+  },
+
+  vectorSearch: {
+    createIndex: (data: unknown) => apiClient.post('/api/v1/vector-indexes', data),
+    getIndex: (id: string) => apiClient.get(`/api/v1/vector-indexes/${id}`),
+    listIndexes: (featureSetId: string) =>
+      apiClient.get(`/api/v1/feature-sets/${featureSetId}/vector-indexes`),
+    deleteIndex: (id: string) => apiClient.delete(`/api/v1/vector-indexes/${id}`),
+    search: (data: unknown) => apiClient.post('/api/v1/vector-search', data),
+    rangeQuery: (data: unknown) => apiClient.post('/api/v1/vector-search/range', data),
+    ingest: (data: unknown) => apiClient.post('/api/v1/vector-indexes/ingest', data),
+    getStats: () => apiClient.get('/api/v1/vector-stats'),
   },
 
   features: {

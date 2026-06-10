@@ -10,9 +10,12 @@ import { connectRedis, disconnectRedis } from './config/redis';
 import { registerModelRoutes } from './model/registry';
 import { registerInferenceRoutes } from './inference/gateway';
 import { registerExperimentRoutes } from './experiment/service';
+import { registerLineageRoutes } from './experiment/lineage-service';
 import { registerFeatureStoreRoutes } from './feature-store/service';
+import { registerVectorSearchRoutes } from './feature-store/vector-search';
 import { registerABTestRoutes } from './abtest/engine';
 import { registerMonitoringRoutes } from './monitoring/service';
+import { registerPipelineRoutes } from './pipeline/service';
 import { grpcServer } from './grpc/server';
 
 export class MLOpsServer {
@@ -140,9 +143,12 @@ export class MLOpsServer {
     await registerModelRoutes(this.app);
     await registerInferenceRoutes(this.app);
     await registerExperimentRoutes(this.app);
+    await registerLineageRoutes(this.app);
     await registerFeatureStoreRoutes(this.app);
+    await registerVectorSearchRoutes(this.app);
     await registerABTestRoutes(this.app);
     await registerMonitoringRoutes(this.app);
+    await registerPipelineRoutes(this.app);
 
     this.app.get('/api/v1/routes', async () => {
       return this.app.printRoutes();
