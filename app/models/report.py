@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from app import db
 import json
 
@@ -18,6 +18,8 @@ class ReportSchedule(db.Model):
     include_data = db.Column(db.Boolean, default=False)
     timezone = db.Column(db.String(50), default='Asia/Shanghai')
     is_active = db.Column(db.Boolean, default=True)
+    start_time = db.Column(db.DateTime)
+    end_time = db.Column(db.DateTime)
     last_run_at = db.Column(db.DateTime)
     next_run_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
@@ -45,13 +47,40 @@ class ReportSchedule(db.Model):
         self.recipients = recipients
 
     def get_next_run_time(self):
+        now = datetime.utcnow()
+
+        if self.end_time and now >= self.end_time:
+            self.is_active = False
+            return None
+
+        if self.start_time and now < self.start_time:
+            return self.start_time
+
         if self.cron_expression:
             from croniter import croniter
-            iter = croniter(self.cron_expression, datetime.utcnow())
-            return iter.get_next(datetime)
+            iter = croniter(self.cron_expression, now)
+            next_run = iter.get_next(datetime)
+            if self.end_time and next_run > self.end_time:
+                return None
+            return next_run
         elif self.interval_minutes:
-            return datetime.utcnow() + timedelta(minutes=self.interval_minutes)
+            next_run = now + timedelta(minutes=self.interval_minutes)
+            if self.end_time and next_run > self.end_time:
+                if now < self.end_time:
+                    return self.end_time
+                return None
+            if self.start_time and next_run < self.start_time:
+                return self.start_time
+            return next_run
         return None
+
+    def is_within_window(self):
+        now = datetime.utcnow()
+        if self.start_time and now < self.start_time:
+            return False
+        if self.end_time and now > self.end_time:
+            return False
+        return True
 
     def to_dict(self):
         return {
@@ -68,6 +97,9 @@ class ReportSchedule(db.Model):
             'include_data': self.include_data,
             'timezone': self.timezone,
             'is_active': self.is_active,
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'is_within_window': self.is_within_window(),
             'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,
             'next_run_at': self.next_run_at.isoformat() if self.next_run_at else None,
             'created_at': self.created_at.isoformat() if self.created_at else None,

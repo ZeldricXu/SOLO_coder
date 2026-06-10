@@ -7,9 +7,13 @@ from app.models import Report, ReportSchedule, Dashboard
 
 def create_report_schedule(user_id, name, dashboard_id, recipients, cron_expression=None,
                           interval_minutes=None, report_type='pdf', include_snapshot=True,
-                          include_data=False, timezone='Asia/Shanghai'):
+                          include_data=False, timezone='Asia/Shanghai',
+                          start_time=None, end_time=None):
     if not cron_expression and not interval_minutes:
         raise ValueError('必须指定cron表达式或间隔时间')
+
+    if start_time and end_time and start_time >= end_time:
+        raise ValueError('开始时间必须早于结束时间')
 
     dashboard = Dashboard.query.get(dashboard_id)
     if not dashboard:
@@ -25,6 +29,8 @@ def create_report_schedule(user_id, name, dashboard_id, recipients, cron_express
         include_snapshot=include_snapshot,
         include_data=include_data,
         timezone=timezone,
+        start_time=start_time,
+        end_time=end_time,
         is_active=True
     )
     schedule.set_recipients(recipients)
@@ -42,7 +48,15 @@ def update_report_schedule(schedule_id, **kwargs):
         raise ValueError('定时任务不存在')
 
     allowed_fields = ['name', 'cron_expression', 'interval_minutes', 'report_type',
-                      'include_snapshot', 'include_data', 'timezone', 'is_active']
+                      'include_snapshot', 'include_data', 'timezone', 'is_active',
+                      'start_time', 'end_time']
+
+    if 'start_time' in kwargs or 'end_time' in kwargs:
+        new_start = kwargs.get('start_time', schedule.start_time)
+        new_end = kwargs.get('end_time', schedule.end_time)
+        if new_start and new_end and new_start >= new_end:
+            raise ValueError('开始时间必须早于结束时间')
+
     for field, value in kwargs.items():
         if field in allowed_fields:
             setattr(schedule, field, value)

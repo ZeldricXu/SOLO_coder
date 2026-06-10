@@ -19,6 +19,7 @@ class Chart(db.Model):
     position = db.Column(db.JSON)
     refresh_interval = db.Column(db.Integer)
     is_active = db.Column(db.Boolean, default=True)
+    link_config = db.Column(db.JSON)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -121,6 +122,17 @@ class Chart(db.Model):
     def set_position(self, position):
         self.position = position
 
+    def get_link_config(self):
+        if isinstance(self.link_config, str):
+            try:
+                return json.loads(self.link_config)
+            except json.JSONDecodeError:
+                return {}
+        return self.link_config or {}
+
+    def set_link_config(self, config):
+        self.link_config = config
+
     def get_echarts_option(self, data=None):
         config = self.get_chart_config()
         if data and 'series' in config:
@@ -182,6 +194,7 @@ class Chart(db.Model):
             'query_params': self.get_query_params(),
             'chart_config': self.get_chart_config(),
             'position': self.get_position(),
+            'link_config': self.get_link_config(),
             'refresh_interval': self.refresh_interval,
             'is_active': self.is_active,
             'created_at': self.created_at.isoformat() if self.created_at else None,

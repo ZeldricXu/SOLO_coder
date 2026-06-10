@@ -536,3 +536,153 @@ def merge_queries(queries):
         merged['execution_time'] += query_result.get('execution_time', 0)
 
     return merged
+
+
+def sample_time_series_data(data, target_points=100, method='avg'):
+    if not data or not data.get('values'):
+        return data
+
+    values = data.get('values', [])
+    categories = data.get('categories', [])
+    series_list = data.get('series', [])
+
+    if len(values) <= target_points:
+        return data
+
+    sampled_data = {
+        'categories': [],
+        'values': [],
+        'series': []
+    }
+
+    if categories and len(categories) == len(values):
+        bucket_size = len(values) // target_points
+        if bucket_size < 2:
+            bucket_size = 2
+
+        for i in range(0, len(values), bucket_size):
+            bucket_values = values[i:i + bucket_size]
+            bucket_cats = categories[i:i + bucket_size]
+
+            if method == 'avg':
+                sampled_value = sum(bucket_values) / len(bucket_values)
+            elif method == 'max':
+                sampled_value = max(bucket_values)
+            elif method == 'min':
+                sampled_value = min(bucket_values)
+            elif method == 'first':
+                sampled_value = bucket_values[0]
+            elif method == 'last':
+                sampled_value = bucket_values[-1]
+            else:
+                sampled_value = sum(bucket_values) / len(bucket_values)
+
+            sampled_data['values'].append(round(sampled_value, 4))
+            sampled_data['categories'].append(bucket_cats[len(bucket_cats) // 2])
+
+        if series_list:
+            for series in series_list:
+                series_data = series.get('data', [])
+                sampled_series = {'name': series.get('name', ''), 'data': []}
+                for i in range(0, len(series_data), bucket_size):
+                    bucket = series_data[i:i + bucket_size]
+                    if bucket:
+                        if method == 'avg':
+                            val = sum(bucket) / len(bucket)
+                        elif method == 'max':
+                            val = max(bucket)
+                        elif method == 'min':
+                            val = min(bucket)
+                        else:
+                            val = sum(bucket) / len(bucket)
+                        sampled_series['data'].append(round(val, 4))
+                sampled_data['series'].append(sampled_series)
+
+    sampled_data['rows'] = data.get('rows', [])[:len(sampled_data['values'])] if data.get('rows') else []
+    sampled_data['columns'] = data.get('columns', [])
+    sampled_data['row_count'] = len(sampled_data['values'])
+    sampled_data['sampled'] = True
+    sampled_data['original_count'] = len(values)
+
+    return sampled_data
+
+
+def paginate_data(data, page=1, per_page=20):
+    if not data:
+        return data
+
+    total = data.get('row_count', 0)
+    rows = data.get('rows', [])
+
+    if not rows:
+        return {
+            **data,
+            'paginated': True,
+            'page': page,
+            'per_page': per_page,
+            'total': total,
+            'pages': 0,
+            'has_next': False,
+            'has_prev': False,
+        }
+
+    total_pages = (total + per_page - 1) // per_page if total > 0 else 0
+    page = max(1, min(page, total_pages if total_pages > 0 else 1))
+
+    start_idx = (page - 1) * per_page
+    end_idx = min(start_idx + per_page, len(rows))
+
+    paginated_rows = rows[start_idx:end_idx]
+
+    paginated_data = {
+        **data,
+        'rows': paginated_rows,
+        'paginated': True,
+        'page': page,
+        'per_page': per_page,
+        'total': total,
+        'pages': total_pages,
+        'has_next': page < total_pages,
+        'has_prev': page > 1,
+    }
+
+    if 'values' in data and data['values']:
+        paginated_data['values'] = data['values'][start_idx:end_idx]
+    if 'categories' in data and data['categories']:
+        paginated_data['categories'] = data['categories'][start_idx:end_idx]
+    if 'series' in data and data['series']:
+        paginated_series = []
+        for s in data['series']:
+            s_data = s.get('data', [])
+            paginated_series.append({
+                'name': s.get('name', ''),
+                'data': s_data[start_idx:end_idx]
+            })
+        paginated_data['series'] = paginated_series
+    if 'row_count' in paginated_data:
+        paginated_data['row_count'] = len(paginated_rows)
+
+    return paginated_data
+
+
+def execute_query_with_options(datasource, query_template, params=None,
+                         sample=None, sample_points=100, sample_method='avg',
+                         page=None, per_page=20):
+    result = execute_query(datasource, query_template, params)
+
+    if not result.get('success'):
+        return result
+
+    data = result.get('data', {})
+
+    if sample:
+        data = sample_time_series_data(data, target_points=sample_points, method=sample_method)
+        result['data'] = data
+        result['sampled'] = True
+
+    if page is not None:
+        data = paginate_data(data, page=page, per_page=per_page)
+        result['data'] = data
+        result['paginated'] = True
+
+    return result

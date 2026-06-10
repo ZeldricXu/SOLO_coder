@@ -5,7 +5,8 @@ from app.models import Chart, DataSource
 
 def create_chart(user_id, dashboard_id, name, chart_type, position=None,
                  datasource_id=None, query_template=None, query_params=None,
-                 chart_config=None, description=None, refresh_interval=None, is_active=True):
+                 chart_config=None, link_config=None, description=None,
+                 refresh_interval=None, is_active=True):
     if chart_type not in Chart.CHART_TYPES:
         raise ValueError(f'不支持的图表类型: {chart_type}')
 
@@ -34,6 +35,8 @@ def create_chart(user_id, dashboard_id, name, chart_type, position=None,
         chart.set_position(position)
     else:
         chart.set_position({'x': 0, 'y': 0, 'w': 6, 'h': 4})
+    if link_config:
+        chart.set_link_config(link_config)
 
     db.session.add(chart)
     db.session.commit()
@@ -57,6 +60,8 @@ def update_chart(chart_id, **kwargs):
         chart.set_chart_config(kwargs['chart_config'])
     if 'position' in kwargs:
         chart.set_position(kwargs['position'])
+    if 'link_config' in kwargs:
+        chart.set_link_config(kwargs['link_config'])
 
     chart.updated_at = datetime.utcnow()
     db.session.add(chart)
@@ -105,20 +110,44 @@ def get_dashboard_charts(dashboard_id):
     return Chart.query.filter_by(dashboard_id=dashboard_id, is_active=True).order_by(Chart.created_at).all()
 
 
-def get_chart_data(chart_id, params=None):
+def get_chart_data(chart_id, params=None, sample=None, sample_points=None,
+                  sample_method='avg', page=None, per_page=None):
     chart = Chart.query.get(chart_id)
     if not chart:
         raise ValueError('图表不存在')
 
     if not chart.datasource_id:
-        return {'success': True, 'data': {'categories': [], 'values': [], 'series': []}}
+        result = {'success': True, 'data': {'categories': [], 'values': [], 'series': []}}
+        if page is not None:
+            result['data']['paginated'] = True
+            result['data']['page'] = page
+            result['data']['per_page'] = per_page or 20
+            result['data']['total'] = 0
+            result['data']['pages'] = 0
+            result['data']['has_next'] = False
+            result['data']['has_prev'] = False
+        return result
 
     datasource = DataSource.query.get(chart.datasource_id)
     if not datasource:
         return {'success': False, 'error': '数据源不存在'}
 
     merged_params = {**(chart.get_query_params() or {}), **(params or {})}
-    result = datasource.execute_query(chart.query_template or '', merged_params)
+
+    if sample or page is not None:
+        from app.services.datasource_service import execute_query_with_options
+        result = execute_query_with_options(
+            datasource,
+            chart.query_template or '',
+            merged_params,
+            sample=sample,
+            sample_points=sample_points or 100,
+            sample_method=sample_method,
+            page=page,
+            per_page=per_page or 20
+        )
+    else:
+        result = datasource.execute_query(chart.query_template or '', merged_params)
 
     if result.get('success'):
         echarts_option = chart.get_echarts_option(result.get('data'))
@@ -178,3 +207,82 @@ def copy_chart(source_chart_id, new_dashboard_id, user_id):
     db.session.add(new_chart)
     db.session.commit()
     return new_chart
+
+
+def trigger_chart_link(source_chart_id, event_data):
+    source_chart = Chart.query.get(source_chart_id)
+    if not source_chart:
+        raise ValueError('源图表不存在')
+
+    link_config = source_chart.get_link_config()
+    if not link_config:
+        return {'success': True, 'linked_charts': [], 'message': '未配置联动关系'}
+
+    target_chart_ids = link_config.get('target_charts', [])
+    source_field = link_config.get('source_field', 'value')
+    target_param = link_config.get('target_param', 'filter')
+
+    if not target_chart_ids:
+        return {'success': True, 'linked_charts': [], 'message': '未配置目标图表'}
+
+    event_value = event_data.get(source_field) if isinstance(event_data, dict) else event_data
+    if event_value is None:
+        return {'success': False, 'error': f'缺少联动字段: {source_field}'}
+
+    updated_charts = []
+    failed_charts = []
+
+    for chart_id in target_chart_ids:
+        try:
+            target_chart = Chart.query.get(chart_id)
+            if not target_chart:
+                failed_charts.append({'chart_id': chart_id, 'error': '图表不存在'})
+                continue
+
+            if target_chart.dashboard_id != source_chart.dashboard_id:
+                failed_charts.append({'chart_id': chart_id, 'error': '不在同一看板'})
+                continue
+
+            current_params = target_chart.get_query_params() or {}
+            current_params[target_param] = event_value
+            target_chart.set_query_params(current_params)
+            target_chart.updated_at = datetime.utcnow()
+            db.session.add(target_chart)
+            db.session.commit()
+
+            data_result = get_chart_data(chart_id)
+            if data_result.get('success'):
+                try:
+                    from app.api.sse import push_sse_update
+                    push_sse_update(
+                        target_chart.dashboard_id,
+                        'chart_link_update',
+                        {
+                            'chart_id': chart_id,
+                            'source_chart_id': source_chart_id,
+                            'event_data': event_data,
+                            'data': data_result.get('data'),
+                            'echarts_option': data_result.get('echarts_option')
+                        }
+                    )
+                except Exception:
+                    pass
+
+            updated_charts.append({
+                'chart_id': chart_id,
+                'chart_name': target_chart.name,
+                'param': target_param,
+                'value': event_value
+            })
+
+        except Exception as e:
+            failed_charts.append({'chart_id': chart_id, 'error': str(e)})
+            db.session.rollback()
+
+    return {
+        'success': True,
+        'linked_charts': updated_charts,
+        'failed_charts': failed_charts,
+        'source_chart': source_chart_id,
+        'event_data': event_data
+    }
