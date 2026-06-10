@@ -238,7 +238,7 @@ func NewMatchRequestFactory() *MatchRequestFactory {
 }
 
 func (f *MatchRequestFactory) Human(userID string, gameType common.GameType, elo float64) *common.MatchRequest {
-	return &common.MatchRequest{
+	req := &common.MatchRequest{
 		UserID:     common.UserID(userID),
 		GameType:   gameType,
 		Elo:        elo,
@@ -246,6 +246,45 @@ func (f *MatchRequestFactory) Human(userID string, gameType common.GameType, elo
 		RequestedAt: time.Now(),
 		Priority:   0,
 	}
+	req.Rank = common.EloToRank(elo)
+	return req
+}
+
+func (f *MatchRequestFactory) HumanWithRank(userID string, gameType common.GameType, elo float64, rank common.RankTier) *common.MatchRequest {
+	return &common.MatchRequest{
+		UserID:      common.UserID(userID),
+		GameType:    gameType,
+		Elo:         elo,
+		Rank:        rank,
+		Level:       10,
+		RequestedAt: time.Now(),
+		Priority:    0,
+	}
+}
+
+func (f *MatchRequestFactory) Bronze(userID string, gameType common.GameType) *common.MatchRequest {
+	return f.HumanWithRank(userID, gameType, 1100, common.RankBronze)
+}
+
+func (f *MatchRequestFactory) Silver(userID string, gameType common.GameType) *common.MatchRequest {
+	return f.HumanWithRank(userID, gameType, 1300, common.RankSilver)
+}
+
+func (f *MatchRequestFactory) Gold(userID string, gameType common.GameType) *common.MatchRequest {
+	return f.HumanWithRank(userID, gameType, 1500, common.RankGold)
+}
+
+func (f *MatchRequestFactory) Diamond(userID string, gameType common.GameType) *common.MatchRequest {
+	return f.HumanWithRank(userID, gameType, 1700, common.RankDiamond)
+}
+
+func (f *MatchRequestFactory) Master(userID string, gameType common.GameType) *common.MatchRequest {
+	return f.HumanWithRank(userID, gameType, 1900, common.RankMaster)
+}
+
+func (f *MatchRequestFactory) WithRequestedAt(req *common.MatchRequest, t time.Time) *common.MatchRequest {
+	req.RequestedAt = t
+	return req
 }
 
 func (f *MatchRequestFactory) Many(count int, gameType common.GameType, baseElo float64, spread float64) []*common.MatchRequest {

@@ -90,6 +90,49 @@ type MatchRequest struct {
 	GameType   GameType `json:"game_type" bson:"game_type"`
 	Elo        float64  `json:"elo" bson:"elo"`
 	Level      int      `json:"level" bson:"level"`
+	Rank       RankTier `json:"rank" bson:"rank"`
 	RequestedAt time.Time `json:"requested_at" bson:"requested_at"`
 	Priority   int      `json:"priority" bson:"priority"`
+}
+
+type RankTier int
+
+const (
+	RankBronze   RankTier = 1
+	RankSilver   RankTier = 2
+	RankGold     RankTier = 3
+	RankDiamond  RankTier = 4
+	RankMaster   RankTier = 5
+)
+
+func (r RankTier) String() string {
+	switch r {
+	case RankBronze:
+		return "bronze"
+	case RankSilver:
+		return "silver"
+	case RankGold:
+		return "gold"
+	case RankDiamond:
+		return "diamond"
+	case RankMaster:
+		return "master"
+	default:
+		return "unknown"
+	}
+}
+
+func EloToRank(elo float64) RankTier {
+	switch {
+	case elo < 1200:
+		return RankBronze
+	case elo < 1400:
+		return RankSilver
+	case elo < 1600:
+		return RankGold
+	case elo < 1800:
+		return RankDiamond
+	default:
+		return RankMaster
+	}
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/studio/gameroom/pkg/common"
 	"github.com/studio/gameroom/pkg/game"
+	"github.com/studio/gameroom/pkg/observer/interaction"
 )
 
 type Room struct {
@@ -25,6 +26,8 @@ type Room struct {
 
 	Observers  map[common.UserID]*Observer
 	Actions    []common.GameAction
+
+	Interaction *interaction.InteractionManager
 
 	mu         sync.RWMutex
 	turnTimer  *time.Timer
@@ -429,7 +432,21 @@ func (r *Room) Disband(reason string) {
 	r.State = common.StateDisbanded
 	r.GameCtx.State = common.StateDisbanded
 	r.stopAllTimers()
+
+	if r.Interaction != nil {
+		r.Interaction.UnregisterRoom(r.ID)
+	}
+
 	r.touch()
+}
+
+func (r *Room) SetInteraction(im *interaction.InteractionManager) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Interaction = im
+	if im != nil {
+		im.RegisterRoom(r.ID)
+	}
 }
 
 func (r *Room) stopAllTimers() {
