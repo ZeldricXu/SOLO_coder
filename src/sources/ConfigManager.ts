@@ -174,8 +174,21 @@ class DefaultSource extends BaseConfigSource {
     this.data = options.defaults || {}
   }
 
+  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
+    const result: ConfigData = {}
+    for (const [key, value] of Object.entries(obj)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
+      } else {
+        result[fullKey] = value as ConfigValue
+      }
+    }
+    return result
+  }
+
   async load(): Promise<ConfigData> {
-    return { ...this.data }
+    return this.flattenData(this.data as Record<string, unknown>)
   }
 
   async get(key: string): Promise<ConfigValue | undefined> {
@@ -199,6 +212,6 @@ class DefaultSource extends BaseConfigSource {
   }
 
   async listKeys(): Promise<string[]> {
-    return Object.keys(this.data)
+    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

@@ -129,9 +129,9 @@ export class ConfigMapSource extends BaseConfigSource {
 
       const cmData = response.body?.data || {}
       const parsed = this.parseConfigMapData(cmData)
-      this.data = this.flattenData(parsed)
+      this.data = parsed
       this.loaded = true
-      return this.data
+      return this.flattenData(parsed)
     } catch (error) {
       if ((error as { response?: { statusCode: number } }).response?.statusCode === 404) {
         this.data = {}
@@ -285,6 +285,6 @@ export class ConfigMapSource extends BaseConfigSource {
     if (!this.loaded) {
       await this.load()
     }
-    return Object.keys(this.data)
+    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

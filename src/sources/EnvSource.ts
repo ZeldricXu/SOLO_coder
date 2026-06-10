@@ -62,6 +62,19 @@ export class EnvSource extends BaseConfigSource {
     return normalized.replace(/_/g, '.')
   }
 
+  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
+    const result: ConfigData = {}
+    for (const [key, value] of Object.entries(obj)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
+      } else {
+        result[fullKey] = value as ConfigValue
+      }
+    }
+    return result
+  }
+
   async load(): Promise<ConfigData> {
     this.data = {}
 
@@ -90,7 +103,7 @@ export class EnvSource extends BaseConfigSource {
     }
 
     this.loaded = true
-    return this.data
+    return this.flattenData(this.data as Record<string, unknown>)
   }
 
   async get(key: string): Promise<ConfigValue | undefined> {
@@ -166,6 +179,6 @@ export class EnvSource extends BaseConfigSource {
     if (!this.loaded) {
       await this.load()
     }
-    return Object.keys(this.data)
+    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

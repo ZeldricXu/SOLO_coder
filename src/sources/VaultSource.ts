@@ -75,9 +75,9 @@ export class VaultSource extends BaseConfigSource {
     try {
       const result = await this.client.read(this.options.path)
       const rawData = result?.data?.data || result?.data || {}
-      this.data = this.flattenData(rawData)
+      this.data = rawData as ConfigData
       this.loaded = true
-      return this.data
+      return this.flattenData(rawData)
     } catch (error) {
       throw new Error(`Failed to load from Vault: ${(error as Error).message}`)
     }
@@ -153,6 +153,6 @@ export class VaultSource extends BaseConfigSource {
     if (!this.loaded) {
       await this.load()
     }
-    return Object.keys(this.data)
+    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

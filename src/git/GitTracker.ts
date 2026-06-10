@@ -88,6 +88,19 @@ export class GitTracker {
     return paths
   }
 
+  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
+    const result: ConfigData = {}
+    for (const [key, value] of Object.entries(obj)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
+      } else {
+        result[fullKey] = value as ConfigValue
+      }
+    }
+    return result
+  }
+
   async loadEnvironmentSnapshot(environment: string, commitHash?: string): Promise<ConfigData | null> {
     if (commitHash) {
       return this.loadSnapshotAtCommit(environment, commitHash)
@@ -97,7 +110,8 @@ export class GitTracker {
     if (!fs.existsSync(filePath)) return null
 
     try {
-      return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as ConfigData
+      const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>
+      return this.flattenData(raw)
     } catch {
       return null
     }

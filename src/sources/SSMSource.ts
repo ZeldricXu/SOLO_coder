@@ -81,6 +81,22 @@ export class SSMSource extends BaseConfigSource {
     return JSON.stringify(value)
   }
 
+  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
+    const result: ConfigData = {}
+
+    for (const [key, value] of Object.entries(obj)) {
+      const fullKey = prefix ? `${prefix}.${key}` : key
+
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
+      } else {
+        result[fullKey] = value as ConfigValue
+      }
+    }
+
+    return result
+  }
+
   async load(): Promise<ConfigData> {
     await this.initClient()
 
@@ -116,7 +132,7 @@ export class SSMSource extends BaseConfigSource {
       } while (nextToken)
 
       this.loaded = true
-      return this.data
+      return this.flattenData(this.data as Record<string, unknown>)
     } catch (error) {
       throw new Error(`Failed to load from SSM: ${(error as Error).message}`)
     }
@@ -179,6 +195,6 @@ export class SSMSource extends BaseConfigSource {
     if (!this.loaded) {
       await this.load()
     }
-    return Object.keys(this.data)
+    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

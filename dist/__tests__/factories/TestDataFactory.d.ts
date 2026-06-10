@@ -1,0 +1,13 @@
+import { ConfigData } from '../../types';
+import { SchemaConfig } from '../../schemas/SchemaValidator';
+export declare function createDevConfig(overrides?: Partial<ConfigData>): ConfigData;
+export declare function createStagingConfig(overrides?: Partial<ConfigData>): ConfigData;
+export declare function createProdConfig(overrides?: Partial<ConfigData>): ConfigData;
+export declare function createEmptyConfig(): ConfigData;
+export declare function createLargeConfig(): ConfigData;
+export declare function createEnvFileContent(pairs: Record<string, string>): string;
+export declare function createDevEnvContent(): string;
+export declare function createSchemaConfig(overrides?: Partial<SchemaConfig>): SchemaConfig;
+export declare function createNginxTemplate(): string;
+export declare function createDockerComposeTemplate(): string;
+export declare function createAppPropertiesTemplate(): string;

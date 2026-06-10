@@ -122,10 +122,27 @@ export class SchemaValidator {
     return schema
   }
 
+  private unflattenData(data: ConfigData): ConfigData {
+    const result: ConfigData = {}
+    for (const [key, value] of Object.entries(data)) {
+      const parts = key.split('.')
+      let current = result
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (!(parts[i] in current) || typeof current[parts[i]] !== 'object' || current[parts[i]] === null || Array.isArray(current[parts[i]])) {
+          current[parts[i]] = {}
+        }
+        current = current[parts[i]] as ConfigData
+      }
+      current[parts[parts.length - 1]] = value
+    }
+    return result
+  }
+
   validate(data: ConfigData, environment: string): ValidationReport {
     const errors: ValidationError[] = []
 
-    const result = this.zodSchema.safeParse(data)
+    const nestedData = this.unflattenData(data)
+    const result = this.zodSchema.safeParse(nestedData)
 
     if (result.success) {
       return {
@@ -157,7 +174,7 @@ export class SchemaValidator {
         environment,
         message: issue.message,
         expected,
-        actual: this.getActualValue(data, issue.path),
+        actual: this.getActualValue(nestedData, issue.path),
         schemaPath: path,
       })
     }
