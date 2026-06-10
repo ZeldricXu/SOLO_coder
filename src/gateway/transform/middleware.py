@@ -56,14 +56,26 @@ class TransformMiddleware(BaseHTTPMiddleware):
             "timestamp": getattr(request.state, "start_time", 0),
         }
 
-        modified_headers = dict(request.headers)
+        if getattr(request.state, "security_sanitized", False) and hasattr(request.state, "sanitized_headers"):
+            modified_headers = dict(request.state.sanitized_headers)
+        else:
+            modified_headers = dict(request.headers)
         modified_headers = await self.pipeline.transform_request_headers(modified_headers, path, context)
 
-        modified_query = request.url.query
+        if getattr(request.state, "security_sanitized", False) and hasattr(request.state, "sanitized_query") and request.state.sanitized_query is not None:
+            modified_query = request.state.sanitized_query
+        else:
+            modified_query = request.url.query
         if modified_query:
             modified_query = await self.pipeline.transform_request_query(modified_query, path, context)
 
-        modified_body = await request.body()
+        if getattr(request.state, "security_sanitized", False) and hasattr(request.state, "sanitized_body") and request.state.sanitized_body is not None:
+            modified_body = request.state.sanitized_body
+        elif hasattr(request.state, "cached_body"):
+            modified_body = request.state.cached_body
+        else:
+            modified_body = await request.body()
+            request.state.cached_body = modified_body
         if modified_body:
             modified_body = await self.pipeline.transform_request_body(modified_body, path, context)
 

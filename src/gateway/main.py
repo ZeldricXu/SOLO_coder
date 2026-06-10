@@ -21,6 +21,8 @@ from gateway.circuit_breaker import CircuitBreakerMiddleware
 from gateway.transform import TransformMiddleware, CORSMiddleware
 from gateway.analytics import get_analytics_collector, AnalyticsMiddleware
 from gateway.developer_portal import portal_router
+from gateway.security import SecurityFilterMiddleware, get_security_filter
+from gateway.notifications.webhook import get_webhook_notifier
 
 setup_logging()
 logger = get_logger("main")
@@ -140,6 +142,7 @@ class ProxyMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(SecurityFilterMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RouteMatchingMiddleware)
 app.add_middleware(RateLimitMiddleware)
@@ -228,6 +231,20 @@ async def startup_event():
     except Exception as e:
         logger.error("Failed to start analytics collector", error=str(e))
 
+    try:
+        security_filter = get_security_filter()
+        await security_filter.initialize()
+        logger.info("Security filter initialized", enabled=settings.security_filter.enabled)
+    except Exception as e:
+        logger.error("Failed to initialize security filter", error=str(e))
+
+    try:
+        webhook_notifier = get_webhook_notifier()
+        await webhook_notifier.initialize()
+        logger.info("Webhook notifier initialized", enabled=settings.webhook.enabled)
+    except Exception as e:
+        logger.error("Failed to initialize webhook notifier", error=str(e))
+
     logger.info("API Gateway started successfully",
                 host=settings.gateway.host,
                 port=settings.gateway.port)
@@ -250,6 +267,20 @@ async def shutdown_event():
         logger.info("Analytics collector stopped")
     except Exception as e:
         logger.error("Error stopping analytics collector", error=str(e))
+
+    try:
+        security_filter = get_security_filter()
+        await security_filter.shutdown()
+        logger.info("Security filter shutdown")
+    except Exception as e:
+        logger.error("Error shutting down security filter", error=str(e))
+
+    try:
+        webhook_notifier = get_webhook_notifier()
+        await webhook_notifier.shutdown()
+        logger.info("Webhook notifier shutdown")
+    except Exception as e:
+        logger.error("Error shutting down webhook notifier", error=str(e))
 
     try:
         proxy_client = get_proxy_client()

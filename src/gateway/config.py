@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -68,6 +68,13 @@ class JWTSettings(BaseSettings):
     audience: str = "api-services"
 
 
+class RateLimitDimension(BaseSettings):
+    name: str
+    resolver: str
+    enabled: bool = True
+    pattern: Optional[str] = None
+
+
 class RateLimitSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="RATE_LIMIT_", extra="ignore")
 
@@ -76,6 +83,17 @@ class RateLimitSettings(BaseSettings):
     burst_multiplier: float = 2.0
     window_seconds: int = 60
     redis_key_prefix: str = "rate_limit:"
+
+    multi_dimension_enabled: bool = False
+    dimensions: List[RateLimitDimension] = Field(default_factory=lambda: [
+        RateLimitDimension(name="user_id", resolver="user_id", enabled=True),
+        RateLimitDimension(name="api_path", resolver="api_path", enabled=True),
+        RateLimitDimension(name="ip", resolver="ip", enabled=False),
+        RateLimitDimension(name="api_key", resolver="api_key", enabled=False),
+        RateLimitDimension(name="service_name", resolver="header", enabled=False, pattern="X-Service-Name"),
+    ])
+    dimension_separator: str = ":"
+    pattern_rules: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class CircuitBreakerSettings(BaseSettings):
@@ -120,6 +138,95 @@ class GatewaySettings(BaseSettings):
     cors_headers: List[str] = Field(default_factory=lambda: ["*"])
 
 
+class SecurityFilterSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="SECURITY_FILTER_", extra="ignore")
+
+    enabled: bool = False
+    mode: str = "block"
+    default_action: str = "block"
+    scan_body: bool = True
+    scan_query: bool = True
+    scan_headers: bool = True
+
+    owasp_top10_enabled: bool = True
+    custom_rules_path: Optional[str] = None
+
+    remote_rules_enabled: bool = False
+    remote_rules_url: Optional[str] = None
+    remote_rules_refresh_interval: int = 300
+    remote_rules_auth_token: Optional[str] = None
+
+    sql_injection_enabled: bool = True
+    xss_enabled: bool = True
+    path_traversal_enabled: bool = True
+    command_injection_enabled: bool = True
+    ssrf_enabled: bool = False
+
+    blocked_response_code: int = 403
+    blocked_response_message: str = "Request blocked by security filter"
+
+    log_blocked_requests: bool = True
+    log_cleaned_requests: bool = False
+
+
+class WebhookSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="WEBHOOK_", extra="ignore")
+
+    enabled: bool = False
+    url: Optional[str] = None
+    secret: Optional[str] = None
+    timeout: int = 5
+    max_retries: int = 3
+    retry_backoff: float = 1.0
+
+    events: List[str] = Field(default_factory=lambda: [
+        "api_key.created",
+        "api_key.approved",
+        "api_key.rejected",
+        "api_key.activated",
+        "api_key.expired",
+    ])
+
+
+class DeveloperPortalSettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="PORTAL_", extra="ignore")
+
+    enabled: bool = True
+
+    api_key_plans: List[Dict[str, Any]] = Field(default_factory=lambda: [
+        {
+            "id": "free",
+            "name": "Free Tier",
+            "description": "Free tier for developers",
+            "rate_limit_quota": 100,
+            "price": 0,
+            "requires_approval": True,
+        },
+        {
+            "id": "basic",
+            "name": "Basic Plan",
+            "description": "Basic plan for small teams",
+            "rate_limit_quota": 1000,
+            "price": 99,
+            "requires_approval": True,
+        },
+        {
+            "id": "enterprise",
+            "name": "Enterprise Plan",
+            "description": "Enterprise plan for large organizations",
+            "rate_limit_quota": 10000,
+            "price": 999,
+            "requires_approval": True,
+        },
+    ])
+
+    approval_required: bool = True
+    auto_activate_on_approval: bool = True
+
+    notification_email_from: Optional[str] = None
+    notification_email_template: Optional[str] = None
+
+
 class AnalyticsSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="ANALYTICS_", extra="ignore")
 
@@ -139,6 +246,9 @@ class Settings(BaseSettings):
     circuit_breaker: CircuitBreakerSettings = Field(default_factory=CircuitBreakerSettings)
     gateway: GatewaySettings = Field(default_factory=GatewaySettings)
     analytics: AnalyticsSettings = Field(default_factory=AnalyticsSettings)
+    security_filter: SecurityFilterSettings = Field(default_factory=SecurityFilterSettings)
+    webhook: WebhookSettings = Field(default_factory=WebhookSettings)
+    portal: DeveloperPortalSettings = Field(default_factory=DeveloperPortalSettings)
 
     model_config = SettingsConfigDict(env_nested_delimiter="__", extra="ignore")
 

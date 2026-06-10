@@ -1,10 +1,12 @@
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 import time
 import hashlib
+import fnmatch
 
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
+from starlette.requests import Request
 
 from gateway.config import get_settings
 from gateway.db.redis_client import get_redis
@@ -93,6 +95,7 @@ class RateLimitResult:
     total_requests: int
     allowed_requests: int
     used_burst: bool = False
+    rate_limit_key: Optional[str] = None
 
 
 class RateLimiter:
@@ -234,6 +237,70 @@ class RateLimiter:
         await self.redis.delete(api_key, api_burst_key)
 
         logger.info("Rate limit reset", user_id=user_id, api_path=api_path)
+
+    async def check_rate_limit_multi_dimension(self, request: Request, api_path: str,
+                                         custom_user_limit: Optional[int] = None,
+                                         custom_api_limit: Optional[int] = None) -> RateLimitResult:
+        from gateway.rate_limit.resolvers import get_rate_limit_key_resolver
+
+        resolver = get_rate_limit_key_resolver()
+        keys = await resolver.resolve_for_limiter(request, api_path)
+
+        now = int(time.time())
+        window = self.rl_settings.window_seconds
+        burst_multiplier = self.rl_settings.burst_multiplier
+
+        user_limit = custom_user_limit or self.rl_settings.default_user_limit
+        api_limit = custom_api_limit or self.rl_settings.default_api_limit
+
+        results = []
+        for key in keys:
+            full_key = f"{self.rl_settings.redis_key_prefix}{key}"
+            burst_key = f"{self.rl_settings.redis_key_prefix}burst:{key}"
+
+            limit = self._get_limit_for_key(key, user_limit, api_limit)
+            result = await self._execute_check(
+                full_key, burst_key, limit, limit, burst_multiplier, now, window
+            )
+            results.append((key, result))
+
+        if not results:
+            return RateLimitResult(
+                allowed=True,
+                remaining=api_limit,
+                limit=api_limit,
+                retry_after=0,
+                total_requests=0,
+                allowed_requests=0,
+            )
+
+        final_allowed = all(r[1].allowed for r in results)
+        final_result = min(results, key=lambda x: x[1].remaining)
+
+        return RateLimitResult(
+            allowed=final_allowed,
+            remaining=final_result[1].remaining,
+            limit=final_result[1].limit,
+            retry_after=max(r[1].retry_after for r in results),
+            total_requests=sum(r[1].total_requests for r in results),
+            allowed_requests=sum(r[1].allowed_requests for r in results),
+            used_burst=any(r[1].remaining < 0 for r in results),
+            rate_limit_key=final_result[0],
+        )
+
+    def _get_limit_for_key(self, key: str, user_limit: int, api_limit: int) -> int:
+        pattern_rules = self.rl_settings.pattern_rules
+        for rule in pattern_rules:
+            pattern = rule.get("pattern")
+            if pattern and fnmatch.fnmatch(key, pattern):
+                custom_limit = rule.get("limit")
+                if custom_limit:
+                    return int(custom_limit)
+
+        key_lower = key.lower()
+        if "user_" in key_lower or "user:" in key_lower:
+            return user_limit
+        return api_limit
 
 
 _limiter_instance: Optional[RateLimiter] = None

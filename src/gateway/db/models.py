@@ -82,6 +82,12 @@ class APIKey(Base):
     user_id = Column(String(100), nullable=False, index=True)
     tenant_id = Column(String(100), nullable=True, index=True)
 
+    plan_id = Column(String(50), nullable=True)
+    application_note = Column(Text, nullable=True)
+    approval_note = Column(Text, nullable=True)
+    rejection_reason = Column(Text, nullable=True)
+    contact_email = Column(String(255), nullable=True)
+
     scopes = Column(JSON, nullable=False, default=list)
     allowed_paths = Column(JSON, nullable=True)
     rate_limit_quota = Column(Integer, nullable=True)
