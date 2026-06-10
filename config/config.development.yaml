@@ -1,0 +1,70 @@
+log:
+  level: debug
+  format: console
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  mode: debug
+
+database:
+  host: localhost
+  port: 5432
+  user: cloudci
+  name: cloudci
+  sslmode: disable
+  max_open_conns: 20
+  max_idle_conns: 5
+
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  pool_size: 10
+
+minio:
+  endpoint: localhost:9000
+  bucket: cloudci-artifacts
+  secure: false
+
+vault:
+  addr: http://localhost:8200
+  secret_path: secret/cloudci
+
+scheduler:
+  max_concurrent: 5
+  default_timeout: 3600
+  queue_size: 100
+
+plugin:
+  dir: ./plugins
+  registry_file: ./plugins/registry.json
+
+notification:
+  dingtalk:
+    webhook: ""
+  feishu:
+    webhook: ""
+  slack:
+    webhook: ""
+  smtp:
+    port: 587
+
+retention:
+  artifact_days: 30
+  log_days: 90
+
+artifact:
+  retention_days: 30
+  keep_last: 100
+  max_size_mb: 512
+
+logstore:
+  enable_postgres: true
+  enable_redis: true
+  redis_channel: logs
+  retention_days: 90
+  batch_size: 50
+
+webhook:
+  secret: ""

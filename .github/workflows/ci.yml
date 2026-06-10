@@ -1,0 +1,359 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  GO_VERSION: '1.22'
+
+jobs:
+  lint:
+    name: Lint (golangci-lint)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v4
+        with:
+          version: v1.56.2
+          args: --timeout=10m --config=.golangci.yml
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+  test:
+    name: Unit and Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: lint
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: cloudci
+          POSTGRES_PASSWORD: cloudci
+          POSTGRES_DB: cloudci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U cloudci -d cloudci_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 10s
+
+      minio:
+        image: minio/minio:RELEASE.2024-01-01T16-36-33Z
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+        ports:
+          - 9000:9000
+        options: >-
+          --health-cmd "mc ready local"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 5
+          --health-start-period 30s
+          --entrypoint sh
+          -c "mkdir -p /data/cloudci-test && minio server /data"
+
+      vault:
+        image: vault:1.13.3
+        env:
+          VAULT_DEV_ROOT_TOKEN_ID: root
+          VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+        ports:
+          - 8200:8200
+        capabilities:
+          add:
+            - IPC_LOCK
+        options: >-
+          --health-cmd "vault status"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 20s
+          --entrypoint vault
+          - "server -dev -dev-root-token-id=root"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Install golang-migrate
+        run: |
+          curl -L https://github.com/golang-migrate/migrate/releases/download/v4.17.0/migrate.linux-amd64.tar.gz | tar xz
+          sudo mv migrate /usr/local/bin/
+          migrate -version
+
+      - name: Initialize MinIO bucket
+        run: |
+          sleep 10
+          curl -O https://dl.min.io/client/mc/release/linux-amd64/mc
+          chmod +x mc
+          sudo mv mc /usr/local/bin/
+          mc alias set local http://localhost:9000 minioadmin minioadmin
+          mc mb --ignore-existing local/cloudci-artifacts
+          mc anonymous set download local/cloudci-artifacts
+
+      - name: Initialize Vault
+        run: |
+          sleep 5
+          vault secrets enable -path=secret kv-v2 || true
+          vault kv put secret/cloudci/test \
+            username=testuser \
+            password=testpass
+        env:
+          VAULT_ADDR: http://localhost:8200
+          VAULT_TOKEN: root
+
+      - name: Run database migrations
+        run: |
+          migrate -path=./migrations \
+            -database=postgres://cloudci:cloudci@localhost:5432/cloudci_test?sslmode=disable \
+            up
+
+      - name: Run Unit Tests
+        env:
+          APP_ENV: test
+          CLOUDCI_DATABASE_HOST: localhost
+          CLOUDCI_DATABASE_PORT: 5432
+          CLOUDCI_DATABASE_USER: cloudci
+          CLOUDCI_DATABASE_PASSWORD: cloudci
+          CLOUDCI_DATABASE_NAME: cloudci_test
+          CLOUDCI_DATABASE_SSLMODE: disable
+          CLOUDCI_REDIS_HOST: localhost
+          CLOUDCI_REDIS_PORT: 6379
+          CLOUDCI_REDIS_PASSWORD: ""
+          CLOUDCI_MINIO_ENDPOINT: localhost:9000
+          CLOUDCI_MINIO_ACCESS_KEY: minioadmin
+          CLOUDCI_MINIO_SECRET_KEY: minioadmin
+          CLOUDCI_MINIO_SECURE: "false"
+          CLOUDCI_VAULT_ADDR: http://localhost:8200
+          CLOUDCI_VAULT_TOKEN: root
+          CLOUDCI_WEBHOOK_SECRET: test-secret
+        run: |
+          go test -v -race -covermode=atomic -coverprofile=coverage.out \
+            -coverpkg=./internal/... \
+            ./internal/... \
+            -count=1 -timeout=30m
+
+      - name: Run Integration Tests
+        env:
+          APP_ENV: test
+          CLOUDCI_DATABASE_HOST: localhost
+          CLOUDCI_DATABASE_PORT: 5432
+          CLOUDCI_DATABASE_USER: cloudci
+          CLOUDCI_DATABASE_PASSWORD: cloudci
+          CLOUDCI_DATABASE_NAME: cloudci_test
+          CLOUDCI_DATABASE_SSLMODE: disable
+          CLOUDCI_REDIS_HOST: localhost
+          CLOUDCI_REDIS_PORT: 6379
+          CLOUDCI_REDIS_PASSWORD: ""
+          CLOUDCI_MINIO_ENDPOINT: localhost:9000
+          CLOUDCI_MINIO_ACCESS_KEY: minioadmin
+          CLOUDCI_MINIO_SECRET_KEY: minioadmin
+          CLOUDCI_MINIO_SECURE: "false"
+          CLOUDCI_VAULT_ADDR: http://localhost:8200
+          CLOUDCI_VAULT_TOKEN: root
+          CLOUDCI_WEBHOOK_SECRET: test-secret
+        run: |
+          go test -v -race -covermode=atomic -coverprofile=coverage-integration.out \
+            -coverpkg=./internal/... \
+            ./tests/... \
+            -count=1 -timeout=30m -tags=integration
+        continue-on-error: true
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            coverage.out
+            coverage-integration.out
+            **/testdata/
+
+      - name: Publish Test Results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: |
+            **/*.xml
+
+      - name: Upload coverage to Codecov
+        if: github.event_name != 'pull_request'
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out,coverage-integration.out
+          flags: unit,integration
+
+  build:
+    name: Build Binary and Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: test
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true)
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Build binary
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: amd64
+          GOTOOLCHAIN: auto
+        run: |
+          VERSION=${GITHUB_REF_NAME:-dev}
+          COMMIT=${GITHUB_SHA:-unknown}
+          BUILD_TIME=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          go build -ldflags="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
+            -o bin/cloudci \
+            ./cmd/cloudci
+
+          mkdir -p dist
+          cp bin/cloudci dist/cloudci
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            VERSION=${GITHUB_REF_NAME:-dev}
+            COMMIT=${GITHUB_SHA:-unknown}
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cloudci-binary
+          path: |
+            dist/
+            bin/
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add your deployment script here
+          # e.g., kubectl apply, AWS ECS deploy, etc.
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: ${{ secrets.PRODUCTION_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Production
+        run: |
+          echo "Deploying to production environment..."
+          # Add your deployment script here
+          # e.g., kubectl apply, AWS ECS deploy, etc.
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            dist/cloudci

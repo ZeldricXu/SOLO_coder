@@ -1,23 +1,29 @@
-# Binaries
-bin/
-dist/
+# Git
+.git
+.gitignore
+.github
+
+# Go
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-
-# Test
 *.test
 *.out
 *.prof
+*.log
 coverage.out
 coverage.html
-coverage-integration.out
-
-# Go
 go.sum.old
-vendor/
+
+# Build artifacts
+bin/
+dist/
+build/
+target/
+*.tar.gz
+*.zip
 
 # IDE
 .idea/
@@ -32,36 +38,39 @@ vendor/
 # OS
 .DS_Store
 Thumbs.db
+ehthumbs.db
 
 # Environment
 .env
 .env.local
 .env.*.local
 
+# Test
+coverage/
+cover/
+.nyc_output/
+**/testdata/
+
 # Logs
 logs/
-*.log
 *.log.*
-
-# Build
-target/
-build/
+/var/log/
+*.log
 
 # Database
 *.db
 *.sqlite
 *.sqlite3
 
+# Cache
+.cache/
+.tmp/
+temp/
+node_modules/
+
 # Plugins
 plugins/*
 !plugins/.gitkeep
 
-# Proto generated
-*.pb.go
-
-# Cache
-.cache/
-.tmp/
-
-# Config local overrides
+# Config (will be copied from config dir)
 config/*.yaml.local

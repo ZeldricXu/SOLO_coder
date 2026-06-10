@@ -1,0 +1,73 @@
+log:
+  level: info
+  format: json
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  mode: release
+
+database:
+  host: localhost
+  port: 5432
+  user: cloudci
+  name: cloudci_staging
+  sslmode: require
+  max_open_conns: 50
+  max_idle_conns: 10
+
+redis:
+  host: localhost
+  port: 6379
+  db: 1
+  pool_size: 30
+
+minio:
+  endpoint: localhost:9000
+  bucket: cloudci-artifacts-staging
+  secure: false
+
+vault:
+  addr: http://localhost:8200
+  secret_path: secret/cloudci/staging
+
+scheduler:
+  max_concurrent: 10
+  default_timeout: 3600
+  queue_size: 500
+
+plugin:
+  dir: /opt/cloudci/plugins
+  registry_file: /opt/cloudci/plugins/registry.json
+
+notification:
+  dingtalk:
+    webhook: ""
+  feishu:
+    webhook: ""
+  slack:
+    webhook: ""
+  smtp:
+    host: ""
+    port: 587
+    user: ""
+    from: ""
+
+retention:
+  artifact_days: 30
+  log_days: 90
+
+artifact:
+  retention_days: 30
+  keep_last: 100
+  max_size_mb: 1024
+
+logstore:
+  enable_postgres: true
+  enable_redis: true
+  redis_channel: logs
+  retention_days: 90
+  batch_size: 100
+
+webhook:
+  secret: ""

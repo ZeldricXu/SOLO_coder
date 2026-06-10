@@ -1,0 +1,234 @@
+version: '3.8'
+
+x-common-env: &common-env
+  TZ: Asia/Shanghai
+  APP_ENV: development
+
+x-cloudci-env: &cloudci-env
+  <<: *common-env
+  CLOUDCI_DATABASE_HOST: postgres
+  CLOUDCI_DATABASE_PORT: 5432
+  CLOUDCI_DATABASE_USER: cloudci
+  CLOUDCI_DATABASE_PASSWORD: ${CLOUDCI_DATABASE_PASSWORD:-cloudci}
+  CLOUDCI_DATABASE_NAME: cloudci
+  CLOUDCI_DATABASE_SSLMODE: disable
+  CLOUDCI_REDIS_HOST: redis
+  CLOUDCI_REDIS_PORT: 6379
+  CLOUDCI_REDIS_PASSWORD: ${CLOUDCI_REDIS_PASSWORD:-}
+  CLOUDCI_MINIO_ENDPOINT: minio:9000
+  CLOUDCI_MINIO_ACCESS_KEY: ${CLOUDCI_MINIO_ACCESS_KEY:-minioadmin}
+  CLOUDCI_MINIO_SECRET_KEY: ${CLOUDCI_MINIO_SECRET_KEY:-minioadmin}
+  CLOUDCI_MINIO_SECURE: "false"
+  CLOUDCI_VAULT_ADDR: http://vault:8200
+  CLOUDCI_VAULT_TOKEN: ${CLOUDCI_VAULT_TOKEN:-root}
+  CLOUDCI_WEBHOOK_SECRET: ${CLOUDCI_WEBHOOK_SECRET:-cloudci-secret}
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: cloudci-postgres
+    environment:
+      <<: *common-env
+      POSTGRES_USER: cloudci
+      POSTGRES_PASSWORD: ${CLOUDCI_DATABASE_PASSWORD:-cloudci}
+      POSTGRES_DB: cloudci
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cloudci -d cloudci"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - cloudci-net
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: cloudci-redis
+    environment:
+      <<: *common-env
+      REDIS_PASSWORD: ${CLOUDCI_REDIS_PASSWORD:-}
+    command: >
+      sh -c "
+        if [ -n \"$$REDIS_PASSWORD\" ]; then
+          redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass $$REDIS_PASSWORD
+        else
+          redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+        fi
+      "
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - cloudci-net
+
+  minio:
+    image: minio/minio:RELEASE.2024-01-01T16-36-33Z
+    container_name: cloudci-minio
+    environment:
+      <<: *common-env
+      MINIO_ROOT_USER: ${CLOUDCI_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${CLOUDCI_MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BROWSER_REDIRECT_URL: http://localhost:9001
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 1m
+    restart: unless-stopped
+    networks:
+      - cloudci-net
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-01-01T16-36-33Z
+    container_name: cloudci-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      MINIO_ROOT_USER: ${CLOUDCI_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${CLOUDCI_MINIO_SECRET_KEY:-minioadmin}
+    entrypoint: >
+      sh -c "
+        mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+        mc mb --ignore-existing local/cloudci-artifacts;
+        mc anonymous set download local/cloudci-artifacts;
+        echo 'MinIO bucket created successfully'
+      "
+    networks:
+      - cloudci-net
+
+  vault:
+    image: vault:1.13.3
+    container_name: cloudci-vault
+    environment:
+      <<: *common-env
+      VAULT_DEV_ROOT_TOKEN_ID: ${CLOUDCI_VAULT_TOKEN:-root}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    command: server -dev -dev-root-token-id=${CLOUDCI_VAULT_TOKEN:-root}
+    ports:
+      - "8200:8200"
+    volumes:
+      - vault_data:/vault/data
+    cap_add:
+      - IPC_LOCK
+    healthcheck:
+      test: ["CMD", "vault", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    networks:
+      - cloudci-net
+
+  vault-init:
+    image: vault:1.13.3
+    container_name: cloudci-vault-init
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${CLOUDCI_VAULT_TOKEN:-root}
+    entrypoint: >
+      sh -c "
+        vault secrets enable -path=secret kv-v2 || true;
+        vault kv put secret/cloudci/example \
+          username=admin \
+          password=secret123;
+        echo 'Vault initialized successfully'
+      "
+    networks:
+      - cloudci-net
+
+  migrate:
+    image: migrate/migrate:v4.17.0
+    container_name: cloudci-migrate
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+    volumes:
+      - ./migrations:/migrations
+    command: >
+      -path=/migrations
+      -database=postgres://cloudci:${CLOUDCI_DATABASE_PASSWORD:-cloudci}@postgres:5432/cloudci?sslmode=disable
+      up
+    networks:
+      - cloudci-net
+
+  cloudci:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-unknown}
+    container_name: cloudci-server
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      vault:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      <<: *cloudci-env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config:/etc/cloudci/config:ro
+      - ./plugins:/opt/cloudci/plugins
+      - cloudci_logs:/var/log/cloudci
+    healthcheck:
+      test: ["CMD", "cloudci", "healthcheck", "--host", "127.0.0.1", "--port", "8080", "--timeout", "5"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 45s
+    restart: unless-stopped
+    networks:
+      - cloudci-net
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  vault_data:
+  cloudci_logs:
+
+networks:
+  cloudci-net:
+    driver: bridge
+    name: cloudci-net

@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -140,6 +141,19 @@ func Load() (*Config, error) {
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
+	env := GetEnv()
+	v.SetConfigName(fmt.Sprintf("config.%s", env))
+	v.SetConfigType("yaml")
+	v.AddConfigPath(".")
+	v.AddConfigPath("./config")
+	v.AddConfigPath("/etc/cloudci")
+
+	if err := v.ReadInConfig(); err != nil {
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			return nil, fmt.Errorf("failed to read config file: %w", err)
+		}
+	}
+
 	v.SetDefault("log.level", "info")
 	v.SetDefault("log.format", "json")
 	v.SetDefault("server.host", "0.0.0.0")
@@ -175,6 +189,14 @@ func Load() (*Config, error) {
 
 	globalConfig = cfg
 	return cfg, nil
+}
+
+func GetEnv() string {
+	env := os.Getenv("APP_ENV")
+	if env == "" {
+		env = "development"
+	}
+	return env
 }
 
 func Get() *Config {
