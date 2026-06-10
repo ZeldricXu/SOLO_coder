@@ -1,0 +1,30 @@
+{
+  "name": "test-pipeline-json",
+  "version": "1.0.0",
+  "description": "JSON format pipeline definition",
+  "stages": [
+    {
+      "name": "init",
+      "type": "build",
+      "commands": ["echo init"]
+    },
+    {
+      "name": "test",
+      "type": "test",
+      "depends_on": ["init"],
+      "commands": ["go test ./..."]
+    },
+    {
+      "name": "deploy",
+      "type": "deploy",
+      "depends_on": ["test"],
+      "commands": ["echo deploy"]
+    }
+  ],
+  "triggers": [
+    {
+      "event_source": "manual",
+      "event_type": "manual"
+    }
+  ]
+}

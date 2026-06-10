@@ -89,7 +89,8 @@ func (p *Parser) validateDefinition(def *types.PipelineDefinition, yamlNode *yam
 			Path:    "stages",
 			Message: "at least one stage is required",
 		})
-		return result, nil
+		return result, errors.New(errors.ErrCodeValidation,
+			fmt.Sprintf("pipeline validation failed with %d errors", len(result.Errors)))
 	}
 
 	stageNames := make(map[string]bool)
@@ -258,6 +259,48 @@ func (p *Parser) ToJSON(def *types.PipelineDefinition) ([]byte, error) {
 
 func (p *Parser) ToYAML(def *types.PipelineDefinition) ([]byte, error) {
 	return yaml.Marshal(def)
+}
+
+func (p *Parser) TopologicalSort(stages []types.StageDefinition) ([]string, error) {
+	inDegree := make(map[string]int)
+	graph := make(map[string][]string)
+
+	for _, stage := range stages {
+		if _, exists := inDegree[stage.Name]; !exists {
+			inDegree[stage.Name] = 0
+		}
+		for _, dep := range stage.DependsOn {
+			graph[dep] = append(graph[dep], stage.Name)
+			inDegree[stage.Name]++
+		}
+	}
+
+	queue := make([]string, 0)
+	for name, degree := range inDegree {
+		if degree == 0 {
+			queue = append(queue, name)
+		}
+	}
+
+	result := make([]string, 0)
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		result = append(result, current)
+
+		for _, neighbor := range graph[current] {
+			inDegree[neighbor]--
+			if inDegree[neighbor] == 0 {
+				queue = append(queue, neighbor)
+			}
+		}
+	}
+
+	if len(result) != len(stages) {
+		return nil, errors.ValidationError("circular dependency detected in topological sort")
+	}
+
+	return result, nil
 }
 
 var (

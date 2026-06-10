@@ -310,12 +310,12 @@ func (s *Scheduler) findReadyStages(stages []types.StageDefinition, completed, f
 		anyDepFailed := false
 
 		for _, dep := range stage.DependsOn {
-			if !completed[dep] {
-				allDepsCompleted = false
-				break
-			}
 			if failed[dep] {
 				anyDepFailed = true
+				break
+			}
+			if !completed[dep] {
+				allDepsCompleted = false
 				break
 			}
 		}

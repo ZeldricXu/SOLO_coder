@@ -16,10 +16,76 @@ import (
 	"gorm.io/gorm"
 )
 
+type VaultKVv2 interface {
+	Get(ctx context.Context, path string) (*api.KVSecret, error)
+}
+
+type VaultClient interface {
+	Health() (*api.HealthResponse, error)
+	KVv2(mount string) VaultKVv2
+}
+
+type DBClient interface {
+	WithContext(ctx context.Context) *gorm.DB
+	Where(query interface{}, args ...interface{}) *gorm.DB
+	First(dest interface{}, conds ...interface{}) *gorm.DB
+	Model(value interface{}) *gorm.DB
+	Updates(values interface{}) *gorm.DB
+	Create(value interface{}) *gorm.DB
+}
+
+type vaultClientWrapper struct {
+	client *api.Client
+}
+
+func (v *vaultClientWrapper) Health() (*api.HealthResponse, error) {
+	return v.client.Sys().Health()
+}
+
+func (v *vaultClientWrapper) KVv2(mount string) VaultKVv2 {
+	return v.client.KVv2(mount)
+}
+
+type dbWrapper struct {
+	db *gorm.DB
+}
+
+func (d *dbWrapper) WithContext(ctx context.Context) *gorm.DB {
+	return d.db.WithContext(ctx)
+}
+
+func (d *dbWrapper) Where(query interface{}, args ...interface{}) *gorm.DB {
+	return d.db.Where(query, args...)
+}
+
+func (d *dbWrapper) First(dest interface{}, conds ...interface{}) *gorm.DB {
+	return d.db.First(dest, conds...)
+}
+
+func (d *dbWrapper) Model(value interface{}) *gorm.DB {
+	return d.db.Model(value)
+}
+
+func (d *dbWrapper) Updates(values interface{}) *gorm.DB {
+	return d.db.Updates(values)
+}
+
+func (d *dbWrapper) Create(value interface{}) *gorm.DB {
+	return d.db.Create(value)
+}
+
 type SecretManager struct {
-	cfg        *config.VaultConfig
-	vaultClient *api.Client
-	db         *gorm.DB
+	cfg         *config.VaultConfig
+	vaultClient VaultClient
+	db          DBClient
+}
+
+func NewSecretManagerWithDeps(cfg *config.VaultConfig, vaultClient VaultClient, db DBClient) *SecretManager {
+	return &SecretManager{
+		cfg:         cfg,
+		vaultClient: vaultClient,
+		db:          db,
+	}
 }
 
 func NewSecretManager(cfg *config.VaultConfig) (*SecretManager, error) {
@@ -39,9 +105,9 @@ func NewSecretManager(cfg *config.VaultConfig) (*SecretManager, error) {
 	client.SetToken(cfg.Token)
 
 	sm := &SecretManager{
-		cfg:        cfg,
-		vaultClient: client,
-		db:         storage.GetDB(),
+		cfg:         cfg,
+		vaultClient: &vaultClientWrapper{client: client},
+		db:          &dbWrapper{db: storage.GetDB()},
 	}
 
 	if err := sm.checkVaultConnection(); err != nil {
@@ -53,7 +119,7 @@ func NewSecretManager(cfg *config.VaultConfig) (*SecretManager, error) {
 }
 
 func (sm *SecretManager) checkVaultConnection() error {
-	_, err := sm.vaultClient.Sys().Health()
+	_, err := sm.vaultClient.Health()
 	return err
 }
 
@@ -196,11 +262,12 @@ func (sm *SecretManager) logUsage(
 	}
 }
 
-func (sm *SecretManager) getAccessedBy(ctx context.Context) string {
-	type ctxKey string
-	const userKey ctxKey = "user"
+type ctxKey string
 
-	if user, ok := ctx.Value(userKey).(string); ok {
+const UserContextKey ctxKey = "user"
+
+func (sm *SecretManager) getAccessedBy(ctx context.Context) string {
+	if user, ok := ctx.Value(UserContextKey).(string); ok {
 		return user
 	}
 

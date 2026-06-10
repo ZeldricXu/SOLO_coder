@@ -577,6 +577,13 @@ func getString(m map[string]interface{}, key string) string {
 	for _, k := range keys {
 		if currMap, ok := current.(map[string]interface{}); ok {
 			current = currMap[k]
+		} else if currArray, ok := current.([]interface{}); ok {
+			idx := 0
+			if _, err := fmt.Sscanf(k, "%d", &idx); err == nil && idx < len(currArray) {
+				current = currArray[idx]
+			} else {
+				return ""
+			}
 		} else {
 			return ""
 		}

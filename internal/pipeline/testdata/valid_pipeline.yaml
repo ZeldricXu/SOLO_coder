@@ -1,0 +1,90 @@
+name: test-pipeline-valid
+version: "1.0.0"
+description: "Valid test pipeline for unit tests"
+
+stages:
+  - name: scan-code
+    type: scan
+    description: "Scan source code for vulnerabilities"
+    commands:
+      - "echo 'Running code scan'"
+      - "gosec ./..."
+    timeout: 1800
+    allow_failure: false
+    env:
+      - name: SCAN_ENV
+        value: "production"
+
+  - name: build-app
+    type: build
+    description: "Build Go application"
+    depends_on:
+      - scan-code
+    commands:
+      - "echo 'Building application'"
+      - "go build -o app ./cmd/app/"
+    timeout: 3600
+    plugin:
+      name: go-build
+      version: "1.0.0"
+      config:
+        output_binary: "app"
+        go_version: "1.22"
+
+  - name: unit-test
+    type: test
+    description: "Run unit tests"
+    depends_on:
+      - scan-code
+    commands:
+      - "echo 'Running unit tests'"
+      - "go test -v ./..."
+    timeout: 1800
+    secrets:
+      - DB_PASSWORD
+      - API_KEY
+
+  - name: integration-test
+    type: test
+    description: "Run integration tests"
+    depends_on:
+      - unit-test
+      - build-app
+    commands:
+      - "echo 'Running integration tests'"
+      - "go test -v --tags=integration ./..."
+    timeout: 3600
+    allow_failure: true
+
+  - name: deploy-staging
+    type: deploy
+    description: "Deploy to staging environment"
+    depends_on:
+      - integration-test
+    commands:
+      - "echo 'Deploying to staging'"
+      - "kubectl apply -f k8s/staging/"
+    timeout: 1800
+    env:
+      - name: ENV
+        value: "staging"
+    secrets:
+      - KUBECONFIG
+
+triggers:
+  - event_source: github
+    event_type: push
+    condition:
+      branch: main
+
+  - event_source: gitlab
+    event_type: push
+    condition:
+      branch: develop
+
+  - event_source: cron
+    event_type: schedule
+    cron:
+      schedule: "0 0 * * *"
+      variables:
+        SCHEDULED: "true"

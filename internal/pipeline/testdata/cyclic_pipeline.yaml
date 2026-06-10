@@ -1,0 +1,18 @@
+name: cyclic-pipeline
+version: "1.0.0"
+description: "Pipeline with cyclic dependency - should fail validation"
+
+stages:
+  - name: stage-a
+    type: build
+    depends_on:
+      - stage-b
+    commands:
+      - "echo A"
+
+  - name: stage-b
+    type: test
+    depends_on:
+      - stage-a
+    commands:
+      - "echo B"
