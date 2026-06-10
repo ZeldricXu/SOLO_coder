@@ -141,6 +141,13 @@ class BoundaryManager:
             A, b = bc.apply_scalar(A, b, phi, scalar_name, flow, mesh)
         return A, b
 
+    def apply_compressible_bc(self, Q, flow, mesh):
+        """Apply boundary conditions for compressible flows."""
+        for bc in self.boundary_conditions.values():
+            if hasattr(bc, 'apply_compressible'):
+                Q = bc.apply_compressible(Q, flow, mesh)
+        return Q
+
     def get_bc(self, name):
         return self.boundary_conditions.get(name)
 
@@ -213,6 +220,171 @@ class PressureInletBC(BoundaryCondition):
             b[cid] = 1e15 * self.total_pressure
         return A, b
 
+    def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
+        return A, b
+
+
+class FarfieldBC(BoundaryCondition):
+    """Farfield boundary condition for compressible flows using Riemann invariants."""
+    
+    def __init__(self, boundary_name, rho=1.225, velocity=(0.0, 0.0), pressure=101325, 
+                 gamma=1.4, gas_constant=287.0):
+        super().__init__(boundary_name, bc_type='farfield')
+        self.rho = rho
+        self.velocity = np.asarray(velocity, dtype=np.float64)
+        self.pressure = pressure
+        self.gamma = gamma
+        self.gas_constant = gas_constant
+        self.speed_of_sound = np.sqrt(gamma * pressure / rho)
+    
+    def set_freestream(self, rho, velocity, pressure):
+        """Set freestream conditions."""
+        self.rho = rho
+        self.velocity = np.asarray(velocity, dtype=np.float64)
+        self.pressure = pressure
+        self.speed_of_sound = np.sqrt(self.gamma * pressure / rho)
+    
+    def apply_compressible(self, Q, flow, mesh):
+        """Apply farfield boundary condition to conservative variables."""
+        from ..solver.fluxes import conservative_to_primitive, primitive_to_conservative
+        
+        cells = self.get_boundary_cells(mesh)
+        
+        for fid in self.faces:
+            cid = mesh.owner[fid]
+            normal = mesh.face_normals[fid]
+            
+            rho_inner, u_inner, p_inner = conservative_to_primitive(Q[cid])
+            c_inner = np.sqrt(self.gamma * p_inner / rho_inner)
+            u_norm_inner = np.dot(u_inner, normal)
+            
+            u_norm_far = np.dot(self.velocity, normal)
+            
+            R_plus = u_norm_inner + 2 * c_inner / (self.gamma - 1)
+            R_minus = u_norm_far - 2 * self.speed_of_sound / (self.gamma - 1)
+            
+            if u_norm_inner > 0:
+                u_norm_new = 0.5 * (R_plus + R_minus)
+                c_new = 0.25 * (self.gamma - 1) * (R_plus - R_minus)
+                rho_new = self.rho * (c_new / self.speed_of_sound) ** (2 / (self.gamma - 1))
+                p_new = rho_new * c_new ** 2 / self.gamma
+                u_new = u_inner.copy()
+                u_new -= u_norm_inner * normal
+                u_new += u_norm_new * normal
+            else:
+                u_norm_new = 0.5 * (R_plus + R_minus)
+                c_new = 0.25 * (self.gamma - 1) * (R_plus - R_minus)
+                rho_new = rho_inner * (c_new / c_inner) ** (2 / (self.gamma - 1))
+                p_new = rho_new * c_new ** 2 / self.gamma
+                u_new = u_inner.copy()
+                u_new -= u_norm_inner * normal
+                u_new += u_norm_new * normal
+            
+            Q[cid] = primitive_to_conservative(rho_new, u_new, p_new)
+        
+        return Q
+    
+    def apply_velocity(self, A, b, direction, flow, mesh):
+        """Apply velocity BC for incompressible solvers (zero gradient)."""
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbor_cells = mesh.get_neighbors(cid)
+            if len(neighbor_cells) > 0:
+                interior_value = np.mean(flow.u[neighbor_cells, direction])
+                A = _set_matrix_value(A, cid, cid, 1e15)
+                b[cid] = 1e15 * interior_value
+        return A, b
+    
+    def apply_pressure(self, A, b, flow, mesh):
+        """Apply pressure BC for incompressible solvers (set to freestream)."""
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            A = _set_matrix_value(A, cid, cid, 1e15)
+            b[cid] = 1e15 * self.pressure
+        return A, b
+    
+    def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
+        return A, b
+
+
+class SupersonicInletBC(BoundaryCondition):
+    """Supersonic inlet boundary condition for compressible flows."""
+    
+    def __init__(self, boundary_name, rho, velocity, pressure, gamma=1.4):
+        super().__init__(boundary_name, bc_type='supersonic_inlet')
+        self.rho = rho
+        self.velocity = np.asarray(velocity, dtype=np.float64)
+        self.pressure = pressure
+        self.gamma = gamma
+    
+    def apply_compressible(self, Q, flow, mesh):
+        """Set all conservative variables to inlet values."""
+        from ..solver.fluxes import primitive_to_conservative
+        
+        cells = self.get_boundary_cells(mesh)
+        Q_inlet = primitive_to_conservative(self.rho, self.velocity, self.pressure)
+        
+        for cid in cells:
+            Q[cid] = Q_inlet
+        
+        return Q
+    
+    def apply_velocity(self, A, b, direction, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        vel_dir = self.velocity[direction] if len(self.velocity) > direction else 0.0
+        for cid in cells:
+            A = _set_matrix_value(A, cid, cid, 1e15)
+            b[cid] = 1e15 * vel_dir
+        return A, b
+    
+    def apply_pressure(self, A, b, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            A = _set_matrix_value(A, cid, cid, 1e15)
+            b[cid] = 1e15 * self.pressure
+        return A, b
+    
+    def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
+        return A, b
+
+
+class SupersonicOutletBC(BoundaryCondition):
+    """Supersonic outlet boundary condition (extrapolation)."""
+    
+    def __init__(self, boundary_name):
+        super().__init__(boundary_name, bc_type='supersonic_outlet')
+    
+    def apply_compressible(self, Q, flow, mesh):
+        """Extrapolate from interior (supersonic exit, no BC needed)."""
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbors = mesh.get_neighbors(cid)
+            if len(neighbors) > 0:
+                interior_neighbors = [n for n in neighbors if n not in cells]
+                if len(interior_neighbors) > 0:
+                    Q[cid] = np.mean(Q[interior_neighbors], axis=0)
+        return Q
+    
+    def apply_velocity(self, A, b, direction, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbor_cells = mesh.get_neighbors(cid)
+            if len(neighbor_cells) > 0:
+                interior_value = np.mean(flow.u[neighbor_cells, direction])
+                A = _set_matrix_value(A, cid, cid, 1e15)
+                b[cid] = 1e15 * interior_value
+        return A, b
+    
+    def apply_pressure(self, A, b, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbor_cells = mesh.get_neighbors(cid)
+            if len(neighbor_cells) > 0:
+                interior_value = np.mean(flow.p[neighbor_cells])
+                A = _set_matrix_value(A, cid, cid, 1e15)
+                b[cid] = 1e15 * interior_value
+        return A, b
+    
     def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
         return A, b
 
@@ -514,5 +686,170 @@ class UDFBoundaryCondition(BoundaryCondition):
                 b[cid] = 1e15 * val
         return A, b
 
+    def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
+        return A, b
+
+
+class FarfieldBC(BoundaryCondition):
+    """Farfield boundary condition for compressible flows using Riemann invariants."""
+    
+    def __init__(self, boundary_name, rho=1.225, velocity=(0.0, 0.0), pressure=101325, 
+                 gamma=1.4, gas_constant=287.0):
+        super().__init__(boundary_name, bc_type='farfield')
+        self.rho = rho
+        self.velocity = np.asarray(velocity, dtype=np.float64)
+        self.pressure = pressure
+        self.gamma = gamma
+        self.gas_constant = gas_constant
+        self.speed_of_sound = np.sqrt(gamma * pressure / rho)
+    
+    def set_freestream(self, rho, velocity, pressure):
+        """Set freestream conditions."""
+        self.rho = rho
+        self.velocity = np.asarray(velocity, dtype=np.float64)
+        self.pressure = pressure
+        self.speed_of_sound = np.sqrt(self.gamma * pressure / rho)
+    
+    def apply_compressible(self, Q, flow, mesh):
+        """Apply farfield boundary condition to conservative variables."""
+        from ..solver.fluxes import conservative_to_primitive, primitive_to_conservative
+        
+        cells = self.get_boundary_cells(mesh)
+        
+        for fid in self.faces:
+            cid = mesh.owner[fid]
+            normal = mesh.face_normals[fid]
+            
+            rho_inner, u_inner, p_inner = conservative_to_primitive(Q[cid])
+            c_inner = np.sqrt(self.gamma * p_inner / rho_inner)
+            u_norm_inner = np.dot(u_inner, normal)
+            
+            u_norm_far = np.dot(self.velocity, normal)
+            
+            R_plus = u_norm_inner + 2 * c_inner / (self.gamma - 1)
+            R_minus = u_norm_far - 2 * self.speed_of_sound / (self.gamma - 1)
+            
+            if u_norm_inner > 0:
+                u_norm_new = 0.5 * (R_plus + R_minus)
+                c_new = 0.25 * (self.gamma - 1) * (R_plus - R_minus)
+                rho_new = self.rho * (c_new / self.speed_of_sound) ** (2 / (self.gamma - 1))
+                p_new = rho_new * c_new ** 2 / self.gamma
+                u_new = u_inner.copy()
+                u_new -= u_norm_inner * normal
+                u_new += u_norm_new * normal
+            else:
+                u_norm_new = 0.5 * (R_plus + R_minus)
+                c_new = 0.25 * (self.gamma - 1) * (R_plus - R_minus)
+                rho_new = rho_inner * (c_new / c_inner) ** (2 / (self.gamma - 1))
+                p_new = rho_new * c_new ** 2 / self.gamma
+                u_new = u_inner.copy()
+                u_new -= u_norm_inner * normal
+                u_new += u_norm_new * normal
+            
+            Q[cid] = primitive_to_conservative(rho_new, u_new, p_new)
+        
+        return Q
+    
+    def apply_velocity(self, A, b, direction, flow, mesh):
+        """Apply velocity BC for incompressible solvers (zero gradient)."""
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbor_cells = mesh.get_neighbors(cid)
+            if len(neighbor_cells) > 0:
+                interior_value = np.mean(flow.u[neighbor_cells, direction])
+                A = _set_matrix_value(A, cid, cid, 1e15)
+                b[cid] = 1e15 * interior_value
+        return A, b
+    
+    def apply_pressure(self, A, b, flow, mesh):
+        """Apply pressure BC for incompressible solvers (set to freestream)."""
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            A = _set_matrix_value(A, cid, cid, 1e15)
+            b[cid] = 1e15 * self.pressure
+        return A, b
+    
+    def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
+        return A, b
+
+
+class SupersonicInletBC(BoundaryCondition):
+    """Supersonic inlet boundary condition for compressible flows."""
+    
+    def __init__(self, boundary_name, rho, velocity, pressure, gamma=1.4):
+        super().__init__(boundary_name, bc_type='supersonic_inlet')
+        self.rho = rho
+        self.velocity = np.asarray(velocity, dtype=np.float64)
+        self.pressure = pressure
+        self.gamma = gamma
+    
+    def apply_compressible(self, Q, flow, mesh):
+        """Set all conservative variables to inlet values."""
+        from ..solver.fluxes import primitive_to_conservative
+        
+        cells = self.get_boundary_cells(mesh)
+        Q_inlet = primitive_to_conservative(self.rho, self.velocity, self.pressure)
+        
+        for cid in cells:
+            Q[cid] = Q_inlet
+        
+        return Q
+    
+    def apply_velocity(self, A, b, direction, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        vel_dir = self.velocity[direction] if len(self.velocity) > direction else 0.0
+        for cid in cells:
+            A = _set_matrix_value(A, cid, cid, 1e15)
+            b[cid] = 1e15 * vel_dir
+        return A, b
+    
+    def apply_pressure(self, A, b, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            A = _set_matrix_value(A, cid, cid, 1e15)
+            b[cid] = 1e15 * self.pressure
+        return A, b
+    
+    def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
+        return A, b
+
+
+class SupersonicOutletBC(BoundaryCondition):
+    """Supersonic outlet boundary condition (extrapolation)."""
+    
+    def __init__(self, boundary_name):
+        super().__init__(boundary_name, bc_type='supersonic_outlet')
+    
+    def apply_compressible(self, Q, flow, mesh):
+        """Extrapolate from interior (supersonic exit, no BC needed)."""
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbors = mesh.get_neighbors(cid)
+            if len(neighbors) > 0:
+                interior_neighbors = [n for n in neighbors if n not in cells]
+                if len(interior_neighbors) > 0:
+                    Q[cid] = np.mean(Q[interior_neighbors], axis=0)
+        return Q
+    
+    def apply_velocity(self, A, b, direction, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbor_cells = mesh.get_neighbors(cid)
+            if len(neighbor_cells) > 0:
+                interior_value = np.mean(flow.u[neighbor_cells, direction])
+                A = _set_matrix_value(A, cid, cid, 1e15)
+                b[cid] = 1e15 * interior_value
+        return A, b
+    
+    def apply_pressure(self, A, b, flow, mesh):
+        cells = self.get_boundary_cells(mesh)
+        for cid in cells:
+            neighbor_cells = mesh.get_neighbors(cid)
+            if len(neighbor_cells) > 0:
+                interior_value = np.mean(flow.p[neighbor_cells])
+                A = _set_matrix_value(A, cid, cid, 1e15)
+                b[cid] = 1e15 * interior_value
+        return A, b
+    
     def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
         return A, b

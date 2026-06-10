@@ -7,7 +7,10 @@ from .streamline import (
     trace_streamline, trace_streamlines, compute_stream_function,
     compute_particle_pathline
 )
-from .animation import animate_field, create_flow_animation, export_animation
+from .animation import (
+    animate_field, create_flow_animation, export_animation,
+    TimeSeriesAnimator, animate_vectors, animate_streamlines
+)
 
 __all__ = [
     'plot_along_line', 'plot_velocity_profile', 'plot_pressure_distribution',
@@ -15,5 +18,6 @@ __all__ = [
     'compute_vorticity', 'extract_vortices', 'compute_q_criterion', 'compute_lambda2',
     'trace_streamline', 'trace_streamlines', 'compute_stream_function',
     'compute_particle_pathline',
-    'animate_field', 'create_flow_animation', 'export_animation'
+    'animate_field', 'create_flow_animation', 'export_animation',
+    'TimeSeriesAnimator', 'animate_vectors', 'animate_streamlines'
 ]

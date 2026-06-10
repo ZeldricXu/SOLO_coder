@@ -20,6 +20,7 @@ class Mesh:
         self.neighbour = []
         self.boundary_faces = {}
         self.boundary_map = {}
+        self.cell_face_ids = []
         self._compute_geometry()
 
     @property
@@ -79,6 +80,7 @@ class Mesh:
         self.faces = []
         self.owner = []
         self.neighbour = []
+        self.cell_face_ids = [[] for _ in range(self.n_cells)]
         for cid, cell in enumerate(self.cells):
             cell_faces = self._get_cell_faces(cell)
             for face in cell_faces:
@@ -92,7 +94,12 @@ class Mesh:
                     self.owner.append(cid)
                     self.neighbour.append(-1)
                     face_map[key] = fid
+                self.cell_face_ids[cid].append(fid)
         self.n_faces = len(self.faces)
+    
+    def get_cell_faces(self, cell_id):
+        """Get the indices of faces adjacent to the given cell."""
+        return self.cell_face_ids[cell_id]
 
     def _get_cell_faces(self, cell):
         n = len(cell)

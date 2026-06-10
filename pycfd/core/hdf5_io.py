@@ -37,9 +37,38 @@ class HDF5Writer:
         grp.attrs['n_cells'] = mesh.n_cells
         grp.attrs['n_faces'] = mesh.n_faces
         grp.attrs['n_nodes'] = mesh.n_nodes
+        if hasattr(mesh, 'nx') and mesh.nx is not None:
+            grp.attrs['nx'] = mesh.nx
+        if hasattr(mesh, 'ny') and mesh.ny is not None:
+            grp.attrs['ny'] = mesh.ny
+        if hasattr(mesh, 'nz') and mesh.nz is not None:
+            grp.attrs['nz'] = mesh.nz
+        if hasattr(mesh, 'x_range') and mesh.x_range is not None:
+            grp.attrs['x_range'] = mesh.x_range
+        if hasattr(mesh, 'y_range') and mesh.y_range is not None:
+            grp.attrs['y_range'] = mesh.y_range
+        if hasattr(mesh, 'z_range') and mesh.z_range is not None:
+            grp.attrs['z_range'] = mesh.z_range
         grp.create_dataset('points', data=mesh.points)
-        grp.create_dataset('faces', data=mesh.faces.astype(np.int64))
-        grp.create_dataset('cells', data=mesh.cells.astype(np.int64))
+        
+        if isinstance(mesh.faces, np.ndarray):
+            grp.create_dataset('faces', data=mesh.faces.astype(np.int64))
+        else:
+            max_face_nodes = max(len(f) for f in mesh.faces) if mesh.faces else 0
+            faces_arr = np.full((len(mesh.faces), max_face_nodes), -1, dtype=np.int64)
+            for i, f in enumerate(mesh.faces):
+                faces_arr[i, :len(f)] = f
+            grp.create_dataset('faces', data=faces_arr)
+        
+        if isinstance(mesh.cells, np.ndarray):
+            grp.create_dataset('cells', data=mesh.cells.astype(np.int64))
+        else:
+            max_cell_nodes = max(len(c) for c in mesh.cells) if mesh.cells else 0
+            cells_arr = np.full((len(mesh.cells), max_cell_nodes), -1, dtype=np.int64)
+            for i, c in enumerate(mesh.cells):
+                cells_arr[i, :len(c)] = c
+            grp.create_dataset('cells', data=cells_arr)
+        
         grp.create_dataset('cell_centers', data=mesh.cell_centers)
         grp.create_dataset('face_centers', data=mesh.face_centers)
         grp.create_dataset('face_normals', data=mesh.face_normals)
