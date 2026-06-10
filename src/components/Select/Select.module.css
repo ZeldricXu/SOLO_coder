@@ -155,3 +155,10 @@
 .helperText.error {
   color: var(--color-error);
 }
+
+.emptyState {
+  padding: var(--spacing-md);
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}

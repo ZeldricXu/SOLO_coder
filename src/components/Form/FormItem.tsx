@@ -7,10 +7,11 @@ import styles from './Form.module.css';
 export const FormItem = forwardRef<HTMLDivElement, FormItemProps>(
   ({ label, required, error, helperText, disabled, children, htmlFor }, ref) => {
     const labelId = generateId('form-label');
+    const inputId = htmlFor || generateId('form-input');
     const errorId = generateId('form-error');
     const helperId = generateId('form-helper');
 
-    const forId = htmlFor || labelId;
+    const forId = inputId;
 
     const describedBy = [
       error ? errorId : null,

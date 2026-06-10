@@ -9,7 +9,7 @@ export type ToastPosition =
   | 'bottom-right';
 
 export interface ToastOptions {
-  id: string;
+  id?: string;
   type: ToastType;
   message: React.ReactNode;
   duration?: number;
@@ -21,7 +21,8 @@ export interface ToastOptions {
   };
 }
 
-export interface ToastProps extends ToastOptions {
+export interface ToastProps extends Omit<ToastOptions, 'id'> {
+  id?: string;
   onClose: () => void;
 }
 
@@ -32,7 +33,7 @@ export interface ToastContainerProps {
 }
 
 export interface ToastContextValue {
-  toast: (options: Omit<ToastOptions, 'id'>) => string;
+  toast: (options: ToastOptions) => string;
   dismiss: (id: string) => void;
   dismissAll: () => void;
 }

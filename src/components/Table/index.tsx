@@ -87,6 +87,7 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
     typeof pagination === 'object' ? pagination.pageSize : 10,
   );
   const filterDropdownRef = useRef<HTMLDivElement>(null);
+  const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
 
   const getRowKey = useCallback(
     (record: T, index: number): string | number => {
@@ -229,6 +230,19 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
     );
   }, [rowSelection, paginatedData, getRowKey]);
 
+  const someSelected = useMemo(() => {
+    if (!rowSelection || paginatedData.length === 0) return false;
+    return paginatedData.some((record, index) =>
+      rowSelection.selectedRowKeys.includes(getRowKey(record, index)),
+    );
+  }, [rowSelection, paginatedData, getRowKey]);
+
+  React.useEffect(() => {
+    if (selectAllCheckboxRef.current) {
+      selectAllCheckboxRef.current.indeterminate = someSelected && !allSelected;
+    }
+  }, [someSelected, allSelected]);
+
   useEscapeKey(() => setFilterDropdownKey(null), filterDropdownKey !== null);
 
   const tableClasses = cn(
@@ -247,15 +261,21 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
 
   return (
     <div ref={ref} className={cn(loading && styles.loading)}>
-      {loading && <div className={styles.loadingSpinner} />}
+      {loading && (
+        <div className={styles.loadingOverlay}>
+          <div className={styles.loadingSpinner} />
+          <span className={styles.loadingText}>加载中...</span>
+        </div>
+      )}
 
       <div style={{ overflowX: 'auto' }}>
-        <table className={tableClasses} role="table" aria-label="数据表格">
+        <table className={tableClasses} role="grid" aria-label="数据表格">
           <thead className={styles.header}>
             <tr role="row">
               {rowSelection ? (
                 <th className={cn(styles.headerCell, styles.checkboxCell)} role="columnheader">
                   <input
+                    ref={selectAllCheckboxRef}
                     type="checkbox"
                     checked={allSelected}
                     onChange={(e) => handleSelectAll(e.target.checked)}
@@ -392,6 +412,7 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
                 <td
                   colSpan={columns.length + (rowSelection ? 1 : 0)}
                   className={styles.empty}
+                  data-testid="empty-state"
                 >
                   {emptyText}
                 </td>

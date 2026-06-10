@@ -1,9 +1,9 @@
-import React, { forwardRef, useCallback, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SelectProps, SelectOption } from './types';
 import { cn } from '@utils/cn';
 import { useControllableState } from '@hooks/useControllableState';
 import { useEscapeKey, generateId, getLiveRegionProps } from '@a11y';
-import { useFloating, flip, shift, autoUpdate } from '@floating-ui/react';
+import { useFloating, flip, shift, autoUpdate, useDismiss } from '@floating-ui/react';
 import styles from './Select.module.css';
 
 const ChevronDown: React.FC<{ className?: string }> = ({ className }) => (
@@ -56,12 +56,16 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(
     const [activeIndex, setActiveIndex] = useState(0);
     const triggerRef = useRef<HTMLDivElement>(null);
 
-    const { x, y, strategy, refs } = useFloating({
+    const { x, y, strategy, refs, context } = useFloating({
       open: isOpen,
       onOpenChange: setIsOpen,
       placement: 'bottom-start',
       middleware: [flip(), shift()],
       whileElementsMounted: autoUpdate,
+    });
+
+    useDismiss(context, {
+      outsidePress: true,
     });
 
     useEscapeKey(() => setIsOpen(false), isOpen);
@@ -134,8 +138,11 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(
       (e: React.MouseEvent) => {
         e.stopPropagation();
         setInternalValue('');
+        if (onChange) {
+          onChange('', null);
+        }
       },
-      [setInternalValue],
+      [setInternalValue, onChange],
     );
 
     const triggerClasses = cn(
@@ -157,7 +164,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(
           </label>
         ) : null}
 
-        <div ref={triggerRef} style={{ position: 'relative' }}>
+        <div ref={refs.setReference} style={{ position: 'relative' }}>
           <button
             ref={ref}
             id={selectId}
@@ -170,6 +177,7 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(
             aria-expanded={isOpen}
             aria-labelledby={label ? labelId : undefined}
             aria-controls={isOpen ? listboxId : undefined}
+            aria-invalid={hasError}
           >
             <span className={cn(styles.value, !selectedOption && styles.placeholder)}>
               {selectedOption ? selectedOption.label : placeholder}
@@ -195,25 +203,34 @@ export const Select = forwardRef<HTMLButtonElement, SelectProps>(
                 width: refs.reference.current?.getBoundingClientRect().width,
               }}
             >
-              {options.map((option, index) => (
-                <div
-                  key={option.value}
-                  id={`${selectId}-option-${option.value}`}
-                  role="option"
-                  aria-selected={option.value === internalValue}
-                  aria-disabled={option.disabled}
-                  className={cn(
-                    styles.option,
-                    option.value === internalValue && styles.active,
-                    option.disabled && styles.disabled,
-                  )}
-                  onClick={() => handleOptionClick(option)}
-                  onMouseEnter={() => setActiveIndex(index)}
-                >
-                  {option.icon ? <span className={styles.optionIcon}>{option.icon}</span> : null}
-                  <span>{option.label}</span>
-                </div>
-              ))}
+              {options.length === 0 ? (
+                <div className={styles.emptyState}>暂无数据</div>
+              ) : (
+                options.map((option, index) => {
+                  const enabledIndex = options
+                    .slice(0, index + 1)
+                    .filter((o) => !o.disabled).length - 1;
+                  return (
+                  <div
+                    key={option.value}
+                    id={`${selectId}-option-${option.value}`}
+                    role="option"
+                    aria-selected={option.value === internalValue}
+                    aria-disabled={option.disabled}
+                    className={cn(
+                      styles.option,
+                      option.value === internalValue && styles.active,
+                      option.disabled && styles.disabled,
+                    )}
+                    onClick={() => handleOptionClick(option)}
+                    onMouseEnter={() => !option.disabled && setActiveIndex(enabledIndex)}
+                  >
+                    {option.icon ? <span className={styles.optionIcon}>{option.icon}</span> : null}
+                    <span>{option.label}</span>
+                  </div>
+                  );
+                })
+              )}
             </div>
           ) : null}
         </div>

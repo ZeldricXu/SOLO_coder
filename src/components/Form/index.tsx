@@ -21,9 +21,9 @@ export const Form = forwardRef<HTMLFormElement, FormProps<FieldValues>>(
     const formId = generateId('form');
 
     const handleSubmit = useCallback(
-      (e: React.FormEvent<HTMLFormElement>) => {
+      async (e: React.FormEvent<HTMLFormElement>) => {
         e.preventDefault();
-        form.handleSubmit(onSubmit)(e);
+        await form.handleSubmit(onSubmit)(e);
       },
       [form, onSubmit],
     );

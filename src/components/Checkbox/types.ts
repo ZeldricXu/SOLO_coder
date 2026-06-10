@@ -6,11 +6,20 @@ export interface CheckboxProps extends ComponentBaseProps, Omit<React.InputHTMLA
   error?: string | boolean;
 }
 
+export interface CheckboxGroupOption {
+  label: React.ReactNode;
+  value: string;
+  disabled?: boolean;
+}
+
 export interface CheckboxGroupProps extends ComponentBaseProps {
   value?: string[];
   defaultValue?: string[];
   onChange?: (value: string[]) => void;
   disabled?: boolean;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   name?: string;
+  options?: CheckboxGroupOption[];
+  orientation?: 'vertical' | 'horizontal';
+  label?: React.ReactNode;
 }

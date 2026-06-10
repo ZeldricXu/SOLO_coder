@@ -22,7 +22,8 @@ export const useToast = (): ToastContextValue => {
   return context;
 };
 
-interface ToastState extends ToastOptions {
+interface ToastState extends Omit<ToastOptions, 'id'> {
+  id: string;
   isExiting?: boolean;
 }
 
@@ -43,17 +44,17 @@ export const ToastContainer: React.FC<React.PropsWithChildren<ToastContainerProp
 }) => {
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
-  const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>(new Map());
+  const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const toast = useCallback(
-    (options: Omit<ToastOptions, 'id'>): string => {
-      const id = generateId('toast');
+    (options: ToastOptions): string => {
+      const id = options.id || generateId('toast');
       const newToast: ToastState = {
-        id,
         type: 'default',
         duration,
         position,
         ...options,
+        id,
       };
 
       setToasts((prev) => {

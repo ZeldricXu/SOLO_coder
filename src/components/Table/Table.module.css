@@ -128,32 +128,34 @@
   position: relative;
 }
 
-.loading::after {
-  content: '';
+.loadingOverlay {
   position: absolute;
   inset: 0;
   background-color: rgba(255, 255, 255, 0.7);
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--spacing-sm);
+  z-index: 1;
 }
 
 .loadingSpinner {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
   width: 32px;
   height: 32px;
   border: 3px solid var(--color-border);
   border-top-color: var(--color-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  z-index: 1;
+}
+
+.loadingText {
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
 }
 
 @keyframes spin {
-  to { transform: translate(-50%, -50%) rotate(360deg); }
+  to { transform: rotate(360deg); }
 }
 
 .empty {

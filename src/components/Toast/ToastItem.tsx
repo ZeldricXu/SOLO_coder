@@ -1,4 +1,4 @@
-import React, { forwardRef, useEffect, useCallback } from 'react';
+import React, { forwardRef, useEffect, useCallback, useRef } from 'react';
 import type { ToastProps } from './types';
 import { cn } from '@utils/cn';
 import styles from './Toast.module.css';
@@ -50,16 +50,18 @@ const iconMap: Record<string, React.FC> = {
 export const ToastItem = forwardRef<HTMLDivElement, ToastProps & { isExiting?: boolean }>(
   ({ type, message, duration = 3000, onClose, action, isExiting }, ref) => {
     const Icon = iconMap[type] || InfoIcon;
+    const onCloseRef = useRef(onClose);
+    onCloseRef.current = onClose;
 
     useEffect(() => {
       if (duration === Infinity || duration <= 0) return;
 
       const timer = setTimeout(() => {
-        onClose();
+        onCloseRef.current();
       }, duration);
 
       return () => clearTimeout(timer);
-    }, [duration, onClose]);
+    }, [duration]);
 
     const handleKeyDown = useCallback(
       (e: React.KeyboardEvent) => {

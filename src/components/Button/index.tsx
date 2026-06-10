@@ -56,14 +56,18 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
         id={buttonId}
         type={type}
         className={classes}
-        disabled={disabled}
+        disabled={disabled || loading}
         onClick={loading ? undefined : onClick}
         onKeyDown={handleKeyDown}
+        aria-busy={loading ? true : undefined}
         {...ariaProps}
         {...props}
       >
-        {loading && !leftIcon ? <Spinner /> : leftIcon}
-        {!loading && leftIcon}
+        {loading ? (
+          <Spinner />
+        ) : (
+          leftIcon
+        )}
         <span>{children}</span>
         {rightIcon}
       </button>

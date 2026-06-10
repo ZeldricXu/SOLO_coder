@@ -53,6 +53,7 @@
 }
 
 .checkbox {
+  position: relative;
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -142,4 +143,11 @@
 .groupRow {
   flex-direction: row;
   flex-wrap: wrap;
+}
+
+.groupLabel {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--color-text-primary);
+  margin-bottom: var(--spacing-xs);
 }

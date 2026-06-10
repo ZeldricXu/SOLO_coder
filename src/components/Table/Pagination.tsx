@@ -75,7 +75,7 @@ export const Pagination: React.FC<PaginationProps> = ({
   if (total <= 0) return null;
 
   return (
-    <div className={styles.pagination}>
+    <div className={styles.pagination} role="navigation" aria-label="分页导航">
       <span className={styles.pageInfo}>
         共 {total} 条
       </span>

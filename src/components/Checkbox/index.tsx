@@ -33,9 +33,13 @@ export const CheckboxGroup: React.FC<CheckboxGroupProps> = ({
   children,
   name,
   className,
+  options,
+  orientation = 'vertical',
+  label,
 }) => {
   const [groupValue, setGroupValue] = useControllableState(value, defaultValue, onChange);
   const groupName = name || generateId('checkbox-group');
+  const groupLabelId = generateId('checkbox-group-label');
 
   const handleChange = useCallback(
     (itemValue: string) => {
@@ -50,12 +54,36 @@ export const CheckboxGroup: React.FC<CheckboxGroupProps> = ({
     [setGroupValue],
   );
 
+  const groupClasses = cn(
+    styles.group,
+    orientation === 'horizontal' && styles.groupRow,
+    className,
+  );
+
   return (
     <CheckboxGroupContext.Provider
       value={{ name: groupName, value: groupValue, disabled, onChange: handleChange }}
     >
-      <div className={cn(styles.group, className)} role="group">
-        {children}
+      <div
+        className={groupClasses}
+        role="group"
+        aria-labelledby={label ? groupLabelId : undefined}
+      >
+        {label ? (
+          <div id={groupLabelId} className={styles.groupLabel}>
+            {label}
+          </div>
+        ) : null}
+        {options
+          ? options.map((opt) => (
+              <Checkbox
+                key={opt.value}
+                label={opt.label}
+                value={opt.value}
+                disabled={opt.disabled}
+              />
+            ))
+          : children}
       </div>
     </CheckboxGroupContext.Provider>
   );
@@ -129,12 +157,12 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
         if (e.key === ' ' || e.key === 'Enter') {
           e.preventDefault();
           const syntheticEvent = {
-            target: { checked: !isChecked },
+            target: { checked: !isChecked, value: value ?? '' },
           } as React.ChangeEvent<HTMLInputElement>;
           handleChange(syntheticEvent);
         }
       },
-      [isDisabled, isChecked, handleChange],
+      [isDisabled, isChecked, handleChange, value],
     );
 
     const iconSize = size === 'sm' ? 12 : size === 'md' ? 14 : 16;

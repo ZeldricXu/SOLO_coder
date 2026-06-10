@@ -24,11 +24,12 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
       defaultValue,
       onChange,
       'aria-label': ariaLabel,
+      id: customId,
       ...props
     },
     ref,
   ) => {
-    const inputId = generateId('input');
+    const inputId = customId || generateId('input');
     const labelId = generateId('input-label');
     const errorId = generateId('input-error');
     const helperId = generateId('input-helper');
@@ -42,12 +43,22 @@ export const Input = forwardRef<HTMLInputElement, InputProps>(
 
     const handleChange = useCallback(
       (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (disabled) {
+          return;
+        }
+
+        let newValue = e.target.value;
+        if (maxLength && newValue.length > maxLength) {
+          newValue = newValue.slice(0, maxLength);
+          e.target.value = newValue;
+        }
+
         if (!isControlled) {
-          setInternalValue(e.target.value);
+          setInternalValue(newValue);
         }
         onChange?.(e);
       },
-      [isControlled, onChange],
+      [disabled, isControlled, maxLength, onChange],
     );
 
     const hasError = Boolean(error);

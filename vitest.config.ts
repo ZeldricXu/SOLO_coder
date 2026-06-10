@@ -21,6 +21,11 @@ export default defineConfig({
     setupFiles: ['./tests/setup.ts'],
     include: ['**/*.test.{ts,tsx}'],
     exclude: ['node_modules', 'dist'],
+    css: {
+      modules: {
+        classNameStrategy: 'non-scoped',
+      },
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
