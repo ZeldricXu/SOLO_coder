@@ -1,0 +1,42 @@
+app:
+  name: log-analyzer
+  version: 1.0.0
+  logLevel: INFO
+  timeZone: UTC
+
+parser:
+  defaultFormat: AUTO
+  defaultPatternName: LOG4J_COMMON
+  enableMultiline: true
+  multilineStrategy: AUTO
+  maxLineLength: 1048576
+  truncateLongLines: true
+
+aggregator:
+  defaultGranularity: 1m
+  defaultWindow: 5m
+  maxCacheSize: 100000
+
+detection:
+  baselinePeriodMinutes: 60
+  defaultZScoreThreshold: 3.0
+  defaultMovingAverageWindow: 10
+  defaultMovingAverageSigma: 3.0
+  minDataPoints: 30
+  enabledAlgorithms:
+    - com.datateam.loganalyzer.anomaly.ZScoreDetector
+    - com.datateam.loganalyzer.anomaly.MovingAverageDetector
+
+alert:
+  defaultCooldownSeconds: 300
+  enableEscalation: true
+  escalationDelayMinutes: 10
+  defaultSeverity: WARNING
+
+notification:
+  maxRetries: 3
+  initialDelayMs: 1000
+  backoffMultiplier: 2.0
+  timeoutMs: 5000
+  circuitBreakerThreshold: 5
+  circuitBreakerResetMs: 60000

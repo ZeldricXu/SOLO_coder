@@ -1,0 +1,64 @@
+email:
+  subject: "[ALERT] ${severity} - ${ruleName} - ${serviceName}"
+  body: |
+    <h2>⚠️ Alert Triggered</h2>
+    <p><strong>Rule:</strong> ${ruleName}</p>
+    <p><strong>Severity:</strong> ${severity}</p>
+    <p><strong>Service:</strong> ${serviceName}</p>
+    <p><strong>Metric:</strong> ${metric}</p>
+    <p><strong>Value:</strong> ${value}</p>
+    <p><strong>Threshold:</strong> ${threshold}</p>
+    <p><strong>Time:</strong> ${timestamp}</p>
+    {{#if description}}
+    <p><strong>Description:</strong> ${description}</p>
+    {{/if}}
+    <hr/>
+    <h3>Top Errors:</h3>
+    <ul>
+    {{#each topErrors}}
+      <li>${count}x - ${message}</li>
+    {{/each}}
+    </ul>
+
+wechat:
+  content: |
+    【${severity}】${ruleName}
+    
+    📊 指标: ${metric}
+    📈 当前值: ${value}
+    🎯 阈值: ${threshold}
+    ⏰ 时间: ${timestamp}
+    🔍 服务: ${serviceName}
+    
+    {{#if description}}
+    📝 描述: ${description}
+    {{/if}}
+    
+    🔗 查看详情: ${dashboardUrl}
+
+slack:
+  title: "[${severity}] ${ruleName}"
+  color: "#FF0000"
+  fields:
+    - title: "Service"
+      value: "${serviceName}"
+      short: true
+    - title: "Metric"
+      value: "${metric}"
+      short: true
+    - title: "Current Value"
+      value: "${value}"
+      short: true
+    - title: "Threshold"
+      value: "${threshold}"
+      short: true
+    - title: "Timestamp"
+      value: "${timestamp}"
+      short: false
+    {{#if description}}
+    - title: "Description"
+      value: "${description}"
+      short: false
+    {{/if}}
+  footer: "Log Analyzer Alert System"
+  footer_icon: ":warning:"

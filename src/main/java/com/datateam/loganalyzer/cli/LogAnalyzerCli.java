@@ -1,9 +1,11 @@
 package com.datateam.loganalyzer.cli;
 
+import com.datateam.loganalyzer.config.ConfigManager;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 
+import java.io.IOException;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -28,13 +30,23 @@ public class LogAnalyzerCli implements Callable<Integer> {
     @Option(names = {"-q", "--quiet"}, description = "Quiet mode, only output errors")
     private boolean quiet;
 
+    @Option(names = {"-X", "--config-dir"}, description = "External configuration directory path",
+            paramLabel = "<dir>")
+    private String configDir;
+
+    private static ConfigManager configManager;
+
     public static void main(String[] args) {
-        int exitCode = new CommandLine(new LogAnalyzerCli()).execute(args);
+        LogAnalyzerCli cli = new LogAnalyzerCli();
+        CommandLine cmd = new CommandLine(cli);
+        int exitCode = cmd.execute(args);
         System.exit(exitCode);
     }
 
     @Override
     public Integer call() throws Exception {
+        initializeConfig();
+
         System.out.println("Log Analyzer CLI - 使用 -h 查看帮助信息");
         System.out.println("");
         System.out.println("可用的子命令:");
@@ -44,7 +56,33 @@ public class LogAnalyzerCli implements Callable<Integer> {
         System.out.println("  alert     - 告警规则评估和推送");
         System.out.println("  report    - 生成日志分析报告");
         System.out.println("  monitor   - 实时监控模式（解析+检测+告警+报告）");
+
+        if (configDir != null) {
+            System.out.println("");
+            System.out.println("外部配置目录: " + configDir);
+            System.out.println("加载状态: " + (ConfigManager.getInstance().hasExternalConfig() ? "成功" : "未找到"));
+        }
         return 0;
+    }
+
+    private void initializeConfig() {
+        if (configManager == null) {
+            configManager = ConfigManager.getInstance();
+
+            if (configDir != null) {
+                try {
+                    configManager.loadExternalConfig(configDir);
+                    if (verbose) {
+                        System.out.println("Loaded external configuration from: " + configDir);
+                    }
+                } catch (IOException e) {
+                    System.err.println("Warning: Failed to load external configuration: " + e.getMessage());
+                    if (verbose) {
+                        e.printStackTrace();
+                    }
+                }
+            }
+        }
     }
 
     public boolean isVerbose() {
@@ -53,5 +91,13 @@ public class LogAnalyzerCli implements Callable<Integer> {
 
     public boolean isQuiet() {
         return quiet;
+    }
+
+    public String getConfigDir() {
+        return configDir;
+    }
+
+    public static ConfigManager getConfigManager() {
+        return configManager;
     }
 }

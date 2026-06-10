@@ -1,0 +1,32 @@
+{
+  "resources": [
+    {
+      "pattern": "META-INF/services/com.datateam.loganalyzer.anomaly.AnomalyDetector"
+    },
+    {
+      "pattern": "META-INF/native-image/.*"
+    },
+    {
+      "pattern": "alert-rules-example.json"
+    },
+    {
+      "pattern": "notifications-example.json"
+    },
+    {
+      "pattern": "application.yaml"
+    },
+    {
+      "pattern": "grok-patterns/.*"
+    },
+    {
+      "pattern": "templates/.*"
+    },
+    {
+      "pattern": "config/.*\\.yaml"
+    },
+    {
+      "pattern": "config/.*\\.yml"
+    }
+  ],
+  "bundles": []
+}

@@ -1,0 +1,63 @@
+- id: high-error-rate
+  name: High Error Rate
+  description: Triggered when error rate exceeds threshold
+  severity: CRITICAL
+  enabled: true
+  metric: ERROR
+  detectorClassName: com.datateam.loganalyzer.anomaly.ZScoreDetector
+  condition:
+    type: threshold
+    operator: GT
+    value: 10
+  threshold: 10
+  cooldownSeconds: 300
+  notificationChannels:
+    - email-alerts
+    - wechat-alerts
+  configuration:
+    zscore:
+      threshold: 3.0
+    baseline:
+      periodMinutes: 60
+
+- id: sudden-spike
+  name: Sudden Traffic Spike
+  description: Detects sudden spikes in request volume
+  severity: WARNING
+  enabled: true
+  metric: total
+  detectorClassName: com.datateam.loganalyzer.anomaly.MovingAverageDetector
+  condition:
+    type: anomaly
+    operator: GT
+    value: 0
+  threshold: 0
+  cooldownSeconds: 600
+  notificationChannels:
+    - slack-alerts
+  configuration:
+    movingAverage:
+      windowSize: 10
+      sigma: 3.0
+    baseline:
+      periodMinutes: 30
+
+- id: service-unavailable
+  name: Service Availability Drop
+  description: Service availability drops below threshold
+  severity: CRITICAL
+  enabled: false
+  metric: availability
+  detectorClassName: com.datateam.loganalyzer.anomaly.ZScoreDetector
+  condition:
+    type: threshold
+    operator: LT
+    value: 99.9
+  threshold: 99.9
+  cooldownSeconds: 120
+  notificationChannels:
+    - email-alerts
+    - pagerduty
+  configuration:
+    zscore:
+      threshold: 2.0

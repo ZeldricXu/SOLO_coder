@@ -1,0 +1,38 @@
+id: default-notification
+name: Default Notification Configuration
+enabled: true
+
+email:
+  smtpHost: smtp.example.com
+  smtpPort: 587
+  smtpUser: alerts@example.com
+  smtpPassword: ${SMTP_PASSWORD}
+  smtpAuth: true
+  smtpStartTls: true
+  fromAddress: alerts@example.com
+  toAddresses: oncall@example.com,dev-team@example.com
+
+wechatWork:
+  webhookUrl: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_WEBHOOK_KEY
+  secret: ${WECHAT_SECRET}
+  mentionedList:
+    - "@all"
+
+slack:
+  webhookUrl: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+  channel: "#alerts"
+  username: LogAnalyzer
+  iconEmoji: ":warning:"
+
+retry:
+  maxRetries: 3
+  initialDelayMs: 1000
+  backoffMultiplier: 2.0
+
+timeout:
+  connectionTimeoutMs: 5000
+  readTimeoutMs: 10000
+
+circuitBreaker:
+  failureThreshold: 5
+  resetTimeoutMs: 60000

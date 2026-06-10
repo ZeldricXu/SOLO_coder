@@ -1,0 +1,76 @@
+app:
+  name: log-analyzer
+  version: 1.0.0
+  logLevel: INFO
+  timeZone: Asia/Shanghai
+
+parser:
+  defaultFormat: AUTO
+  defaultPatternName: LOG4J_COMMON
+  customPatternsDir: ./patterns
+  enableMultiline: true
+  multilineStrategy: AUTO
+  maxLineLength: 1048576
+  truncateLongLines: true
+
+aggregator:
+  defaultGranularity: 1m
+  defaultWindow: 5m
+  maxCacheSize: 100000
+
+detection:
+  baselinePeriodMinutes: 60
+  defaultZScoreThreshold: 3.0
+  defaultMovingAverageWindow: 10
+  defaultMovingAverageSigma: 3.0
+  minDataPoints: 30
+  enabledAlgorithms:
+    - com.datateam.loganalyzer.anomaly.ZScoreDetector
+    - com.datateam.loganalyzer.anomaly.MovingAverageDetector
+
+alert:
+  defaultCooldownSeconds: 300
+  enableEscalation: true
+  escalationDelayMinutes: 10
+  defaultSeverity: WARNING
+
+notification:
+  channels:
+    - id: email-alerts
+      name: Email Alerts
+      type: EMAIL
+      enabled: true
+      smtpHost: smtp.example.com
+      smtpPort: 587
+      smtpAuth: true
+      smtpStartTls: true
+      fromAddress: alerts@example.com
+      toAddresses: oncall@example.com
+      maxRetries: 3
+      initialDelayMs: 1000
+      backoffMultiplier: 2.0
+      timeoutMs: 5000
+      circuitBreakerThreshold: 5
+      circuitBreakerResetMs: 60000
+    - id: wechat-alerts
+      name: WeChat Work Alerts
+      type: WECHAT_WORK
+      enabled: false
+      webhookUrl: https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=YOUR_KEY
+      maxRetries: 3
+      initialDelayMs: 1000
+      backoffMultiplier: 2.0
+      timeoutMs: 5000
+      circuitBreakerThreshold: 5
+      circuitBreakerResetMs: 60000
+    - id: slack-alerts
+      name: Slack Alerts
+      type: SLACK
+      enabled: false
+      webhookUrl: https://hooks.slack.com/services/YOUR/WEBHOOK/URL
+      maxRetries: 3
+      initialDelayMs: 1000
+      backoffMultiplier: 2.0
+      timeoutMs: 5000
+      circuitBreakerThreshold: 5
+      circuitBreakerResetMs: 60000

@@ -1,0 +1,8 @@
+custom:
+  CUSTOM_LOG4J: "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{DATA:logger} %{GREEDYDATA:message}"
+  
+  CUSTOM_ACCESS_LOG: "%{IPORHOST:clientip} %{DATA:ident} %{DATA:auth} \[%{HTTPDATE:timestamp}\] \"%{WORD:method} %{DATA:request} HTTP/%{NUMBER:httpversion}\" %{NUMBER:response} %{NUMBER:bytes}"
+  
+  CUSTOM_ERROR_LOG: "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} \\[%{DATA:thread}\\] %{DATA:logger} - %{GREEDYDATA:message}"
+  
+  CUSTOM_JSON: "\\{\"timestamp\":\"%{DATA:timestamp}\",\"level\":\"%{DATA:level}\",\"message\":\"%{DATA:message}\".*\\}"

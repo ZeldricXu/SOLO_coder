@@ -1,0 +1,32 @@
+[
+  {
+    "name": "com.datateam.loganalyzer.model.LogEvent"
+  },
+  {
+    "name": "com.datateam.loganalyzer.model.AnomalyResult"
+  },
+  {
+    "name": "com.datateam.loganalyzer.model.AlertRule"
+  },
+  {
+    "name": "com.datateam.loganalyzer.model.AlertEvent"
+  },
+  {
+    "name": "com.datateam.loganalyzer.model.NotificationConfig"
+  },
+  {
+    "name": "com.datateam.loganalyzer.model.TimeSeriesPoint"
+  },
+  {
+    "name": "com.datateam.loganalyzer.model.BaselineModel"
+  },
+  {
+    "name": "java.util.ArrayList"
+  },
+  {
+    "name": "java.util.HashMap"
+  },
+  {
+    "name": "java.util.LinkedHashMap"
+  }
+]
