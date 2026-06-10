@@ -1,5 +1,9 @@
 import * as Diff from 'diff';
 import { isObject, isArray } from 'lodash';
+import { Worker } from 'worker_threads';
+import * as path from 'path';
+import { logger } from './logger';
+import { config } from '@config/index';
 
 export interface DiffChange {
   field: string;
@@ -13,7 +17,21 @@ export interface DiffResult {
   oldSnapshot: Record<string, unknown>;
   newSnapshot: Record<string, unknown>;
   patch: string;
+  skipped?: boolean;
+  skipReason?: string;
+  viaWorker?: boolean;
 }
+
+export interface DiffComputeOptions {
+  useWorker?: boolean;
+  workerTimeoutMs?: number;
+  maxSizeBytes?: number;
+  maxFieldCount?: number;
+}
+
+const DEFAULT_MAX_SIZE_BYTES = 1024 * 1024;
+const DEFAULT_MAX_FIELD_COUNT = 10000;
+const DEFAULT_WORKER_TIMEOUT_MS = 30000;
 
 function flattenObject(
   obj: Record<string, unknown>,
@@ -34,7 +52,64 @@ function flattenObject(
   return result;
 }
 
-export function computeDiff(
+function estimateSizeBytes(snapshot: Record<string, unknown>): number {
+  try {
+    return Buffer.byteLength(JSON.stringify(snapshot), 'utf8');
+  } catch {
+    return Number.MAX_SAFE_INTEGER;
+  }
+}
+
+function shouldSkipDiff(
+  oldSnapshot: Record<string, unknown>,
+  newSnapshot: Record<string, unknown>,
+  options: DiffComputeOptions
+): { skip: boolean; reason?: string; oldSize: number; newSize: number; fieldCount: number } {
+  const maxSizeBytes = options.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES;
+  const maxFieldCount = options.maxFieldCount ?? DEFAULT_MAX_FIELD_COUNT;
+
+  const oldSize = estimateSizeBytes(oldSnapshot);
+  const newSize = estimateSizeBytes(newSnapshot);
+  const totalSize = oldSize + newSize;
+
+  try {
+    const fieldCount =
+      Object.keys(flattenObject(oldSnapshot)).length +
+      Object.keys(flattenObject(newSnapshot)).length;
+
+    if (totalSize > maxSizeBytes) {
+      return {
+        skip: true,
+        reason: `Total snapshot size (${(totalSize / 1024).toFixed(2)} KB) exceeds threshold (${(maxSizeBytes / 1024).toFixed(2)} KB)`,
+        oldSize,
+        newSize,
+        fieldCount,
+      };
+    }
+
+    if (fieldCount > maxFieldCount) {
+      return {
+        skip: true,
+        reason: `Total field count (${fieldCount}) exceeds threshold (${maxFieldCount})`,
+        oldSize,
+        newSize,
+        fieldCount,
+      };
+    }
+
+    return { skip: false, oldSize, newSize, fieldCount };
+  } catch (error: any) {
+    return {
+      skip: true,
+      reason: `Error during pre-check: ${error?.message || 'unknown'}`,
+      oldSize,
+      newSize,
+      fieldCount: 0,
+    };
+  }
+}
+
+function computeDiffSync(
   oldSnapshot: Record<string, unknown>,
   newSnapshot: Record<string, unknown>
 ): DiffResult {
@@ -62,6 +137,157 @@ export function computeDiff(
   const patch = Diff.createPatch('content', oldJson, newJson);
 
   return { changes, oldSnapshot, newSnapshot, patch };
+}
+
+function computeDiffViaWorker(
+  oldSnapshot: Record<string, unknown>,
+  newSnapshot: Record<string, unknown>,
+  timeoutMs: number = DEFAULT_WORKER_TIMEOUT_MS
+): Promise<DiffResult> {
+  return new Promise((resolve) => {
+    let worker: Worker | null = null;
+    let timeoutId: NodeJS.Timeout | null = null;
+
+    const cleanup = () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      if (worker) {
+        worker.terminate().catch(() => {});
+        worker = null;
+      }
+    };
+
+    const fallbackToSync = (reason: string) => {
+      logger.warn(
+        { reason },
+        `Diff worker ${reason}, falling back to sync computation`
+      );
+      cleanup();
+      try {
+        resolve(computeDiffSync(oldSnapshot, newSnapshot));
+      } catch (error: any) {
+        resolve({
+          changes: [],
+          oldSnapshot,
+          newSnapshot,
+          patch: '',
+          skipped: true,
+          skipReason: `Fallback diff failed: ${error?.message || 'unknown'}`,
+        });
+      }
+    };
+
+    try {
+      const workerPath = path.resolve(__dirname, '..', 'workers', 'diff.worker.js');
+      const workerTsPath = path.resolve(__dirname, '..', 'workers', 'diff.worker.ts');
+
+      worker = new Worker(workerPath, {
+        workerData: { oldSnapshot, newSnapshot },
+      });
+
+      timeoutId = setTimeout(() => {
+        fallbackToSync(`timed out after ${timeoutMs}ms`);
+      }, timeoutMs);
+
+      worker.on('message', (result: any) => {
+        cleanup();
+        if (result.error) {
+          logger.error(
+            { error: result.error },
+            'Diff worker reported error, falling back to sync'
+          );
+          try {
+            resolve(computeDiffSync(oldSnapshot, newSnapshot));
+          } catch (syncError: any) {
+            resolve({
+              changes: [],
+              oldSnapshot,
+              newSnapshot,
+              patch: '',
+              skipped: true,
+              skipReason: `Worker and sync both failed: ${syncError?.message || result.error}`,
+            });
+          }
+        } else {
+          resolve({
+            changes: result.changes,
+            patch: result.patch,
+            oldSnapshot: result.oldSnapshot,
+            newSnapshot: result.newSnapshot,
+            viaWorker: true,
+          });
+        }
+      });
+
+      worker.on('error', (error) => {
+        fallbackToSync(`failed with error: ${error?.message || 'unknown'}`);
+      });
+
+      worker.on('exit', (code) => {
+        if (code !== 0 && timeoutId) {
+          fallbackToSync(`exited with code ${code}`);
+        }
+      });
+    } catch (error: any) {
+      fallbackToSync(`failed to start: ${error?.message || 'unknown'}`);
+    }
+  });
+}
+
+export async function computeDiff(
+  oldSnapshot: Record<string, unknown>,
+  newSnapshot: Record<string, unknown>,
+  options: DiffComputeOptions = {}
+): Promise<DiffResult> {
+  const useWorker = options.useWorker ?? true;
+  const maxSizeBytes = options.maxSizeBytes ?? DEFAULT_MAX_SIZE_BYTES;
+  const maxFieldCount = options.maxFieldCount ?? DEFAULT_MAX_FIELD_COUNT;
+  const workerTimeoutMs = options.workerTimeoutMs ?? DEFAULT_WORKER_TIMEOUT_MS;
+
+  const preCheck = shouldSkipDiff(oldSnapshot, newSnapshot, {
+    maxSizeBytes,
+    maxFieldCount,
+  });
+
+  if (preCheck.skip) {
+    logger.warn(
+      {
+        skipReason: preCheck.reason,
+        oldSizeKb: (preCheck.oldSize / 1024).toFixed(2),
+        newSizeKb: (preCheck.newSize / 1024).toFixed(2),
+        fieldCount: preCheck.fieldCount,
+      },
+      'Diff computation skipped due to size threshold, storing full snapshot only'
+    );
+
+    return {
+      changes: [],
+      oldSnapshot,
+      newSnapshot,
+      patch: '',
+      skipped: true,
+      skipReason: preCheck.reason,
+    };
+  }
+
+  const largePayloadThreshold = maxSizeBytes * 0.3;
+  const shouldUseWorker =
+    useWorker && (preCheck.oldSize + preCheck.newSize) > largePayloadThreshold;
+
+  if (shouldUseWorker) {
+    logger.debug(
+      {
+        totalSizeKb: ((preCheck.oldSize + preCheck.newSize) / 1024).toFixed(2),
+        fieldCount: preCheck.fieldCount,
+      },
+      'Using worker thread for diff computation'
+    );
+    return computeDiffViaWorker(oldSnapshot, newSnapshot, workerTimeoutMs);
+  }
+
+  return computeDiffSync(oldSnapshot, newSnapshot);
 }
 
 export function applyPatch(

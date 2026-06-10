@@ -159,6 +159,82 @@ export class WorkflowNotifier {
       );
     }
   }
+
+  async notifyWorkflowRebuilt(
+    oldInstance: WorkflowInstance,
+    newInstance: WorkflowInstance,
+    affectedApprovers: Array<{ userId: string; action: 'added' | 'removed' | 'changed' }>,
+    triggeredBy: string
+  ): Promise<void> {
+    try {
+      logger.info(
+        {
+          oldInstanceId: oldInstance.id,
+          newInstanceId: newInstance.id,
+          contentId: oldInstance.contentId,
+          affectedApproverCount: affectedApprovers.length,
+          triggeredBy,
+        },
+        'Notifying workflow rebuilt due to definition change'
+      );
+
+      await webhookService.dispatchEvent(
+        oldInstance.tenantId,
+        'content.workflow.updated',
+        {
+          eventType: 'workflow.rebuilt',
+          oldWorkflowInstanceId: oldInstance.id,
+          newWorkflowInstanceId: newInstance.id,
+          contentId: oldInstance.contentId,
+          workflowId: oldInstance.definitionId,
+          triggeredBy,
+          rebuiltAt: new Date(),
+          affectedApprovers: affectedApprovers.map(a => ({
+            userId: a.userId,
+            action: a.action,
+          })),
+          summary: `Workflow was automatically rebuilt due to approval chain changes. ${affectedApprovers.filter(a => a.action === 'added').length} approver(s) added, ${affectedApprovers.filter(a => a.action === 'removed').length} approver(s) removed.`,
+        }
+      );
+
+      const addedApprovers = affectedApprovers.filter(a => a.action === 'added').map(a => a.userId);
+      if (addedApprovers.length > 0) {
+        logger.info(
+          { newInstanceId: newInstance.id, addedApprovers },
+          'Notifying newly added approvers of pending approval task'
+        );
+      }
+
+      const removedApprovers = affectedApprovers.filter(a => a.action === 'removed').map(a => a.userId);
+      if (removedApprovers.length > 0) {
+        logger.info(
+          { oldInstanceId: oldInstance.id, removedApprovers },
+          'Notifying removed approvers of task cancellation'
+        );
+
+        for (const userId of removedApprovers) {
+          await webhookService.dispatchEvent(
+            oldInstance.tenantId,
+            'content.workflow.rejected',
+            {
+              eventType: 'approver.removed',
+              workflowInstanceId: oldInstance.id,
+              newWorkflowInstanceId: newInstance.id,
+              contentId: oldInstance.contentId,
+              removedApproverId: userId,
+              reason: 'Approval chain updated by administrator',
+              notifiedAt: new Date(),
+            }
+          );
+        }
+      }
+    } catch (error) {
+      logger.error(
+        { error, oldInstanceId: oldInstance.id, newInstanceId: newInstance.id },
+        'Failed to notify workflow rebuilt'
+      );
+    }
+  }
 }
 
 export const workflowNotifier = new WorkflowNotifier();

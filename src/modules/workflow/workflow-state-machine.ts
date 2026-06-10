@@ -1,12 +1,13 @@
 import { WorkflowInstance, WorkflowNode } from '@types/index';
 import { WorkflowDefinition } from '@prisma/client';
 import { connectionPool } from '../tenant/connection-pool';
-import { generateApprovalSignature } from '@utils/crypto';
+import { generateApprovalSignature, generateId } from '@utils/crypto';
 import { logger } from '@utils/logger';
 import { config } from '@config/index';
 import { workflowNotifier } from './workflow-notifier';
 import { workflowApproverResolver } from './workflow-approver-resolver';
 import { Prisma } from '@prisma/client';
+import { workflowConfigLoader } from './workflow-config-loader';
 
 export interface ApproveNodeInput {
   instanceId: string;
@@ -51,6 +52,8 @@ export class WorkflowStateMachine {
         currentNodeId: firstApprovalNode?.id || workflow.endNodeId,
         status: 'running', approvals: [], startedBy,
         resolvedApprovers: resolvedMap as unknown as Prisma.JsonValue,
+        definitionVersion: workflow.version,
+        definitionSnapshot: workflow.nodes as unknown as Prisma.JsonValue,
       },
     });
 
@@ -73,6 +76,20 @@ export class WorkflowStateMachine {
     if (!instance) throw new Error('Workflow instance not found');
     if (instance.status !== 'running') throw new Error('Workflow is not running');
     if (input.nodeId !== instance.currentNodeId) throw new Error('Not at expected approval node');
+
+    const conflictCheck = await this.checkWorkflowDefinitionConflict(instance);
+    if (conflictCheck.hasConflict) {
+      logger.warn(
+        {
+          instanceId: instance.id,
+          oldVersion: conflictCheck.oldVersion,
+          newVersion: conflictCheck.newVersion,
+          contentId: instance.contentId,
+        },
+        'Workflow definition conflict detected, rebuilding instance...'
+      );
+      return this.rebuildWorkflowInstance(tenantId, instance, conflictCheck.newDefinition, input);
+    }
 
     const nodes = instance.definition.nodes as unknown as WorkflowNode[];
     const currentNode = nodes.find(n => n.id === input.nodeId);
@@ -273,6 +290,267 @@ export class WorkflowStateMachine {
     const ts = Date.now().toString(36);
     const rand = Math.random().toString(36).substring(2, 10);
     return `wfi_${ts}${rand}`;
+  }
+
+  private async checkWorkflowDefinitionConflict(
+    instance: WorkflowInstance & { definition: WorkflowDefinition }
+  ): Promise<{
+    hasConflict: boolean;
+    oldVersion: number;
+    newVersion: number;
+    newDefinition: WorkflowDefinition | null;
+    approversChanged: boolean;
+    changedNodes: string[];
+  }> {
+    const instanceVersion = (instance as any).definitionVersion || 1;
+    const currentDefinition = instance.definition;
+
+    if (instanceVersion !== currentDefinition.version) {
+      const latestDefinition = await workflowConfigLoader.getWorkflow(
+        instance.tenantId,
+        instance.definitionId
+      );
+
+      if (latestDefinition && latestDefinition.version > instanceVersion) {
+        const approversChanged = this.checkApproverChanges(
+          (instance as any).definitionSnapshot as WorkflowNode[],
+          latestDefinition.nodes as unknown as WorkflowNode[],
+          instance.currentNodeId
+        );
+
+        return {
+          hasConflict: approversChanged.hasChanges,
+          oldVersion: instanceVersion,
+          newVersion: latestDefinition.version,
+          newDefinition: latestDefinition,
+          approversChanged: approversChanged.hasChanges,
+          changedNodes: approversChanged.changedNodes,
+        };
+      }
+    }
+
+    return {
+      hasConflict: false,
+      oldVersion: instanceVersion,
+      newVersion: currentDefinition.version,
+      newDefinition: null,
+      approversChanged: false,
+      changedNodes: [],
+    };
+  }
+
+  private checkApproverChanges(
+    oldNodes: WorkflowNode[],
+    newNodes: WorkflowNode[],
+    currentNodeId: string
+  ): { hasChanges: boolean; changedNodes: string[] } {
+    const changedNodes: string[] = [];
+    const oldNodeMap = new Map(oldNodes.map(n => [n.id, n]));
+    const newNodeMap = new Map(newNodes.map(n => [n.id, n]));
+
+    for (const [nodeId, oldNode] of oldNodeMap) {
+      if (oldNode.type !== 'approval') continue;
+
+      const newNode = newNodeMap.get(nodeId);
+      if (!newNode) {
+        changedNodes.push(nodeId);
+        continue;
+      }
+
+      const oldApprovers = JSON.stringify(oldNode.config.approvers || []);
+      const newApprovers = JSON.stringify(newNode.config.approvers || []);
+      const oldDynamic = JSON.stringify(oldNode.config.dynamicApprovers || {});
+      const newDynamic = JSON.stringify(newNode.config.dynamicApprovers || {});
+      const oldType = oldNode.config.approvalType;
+      const newType = newNode.config.approvalType;
+
+      if (oldApprovers !== newApprovers || oldDynamic !== newDynamic || oldType !== newType) {
+        changedNodes.push(nodeId);
+      }
+    }
+
+    return {
+      hasChanges: changedNodes.length > 0,
+      changedNodes,
+    };
+  }
+
+  private async rebuildWorkflowInstance(
+    tenantId: string,
+    oldInstance: WorkflowInstance & { definition: WorkflowDefinition },
+    newDefinition: WorkflowDefinition,
+    input: ApproveNodeInput
+  ): Promise<WorkflowInstance> {
+    const content = await this.prisma.contentEntry.findUnique({
+      where: { id: oldInstance.contentId },
+      select: { data: true, status: true },
+    });
+
+    if (!content) {
+      throw new Error('Content not found for workflow rebuild');
+    }
+
+    const existingApprovals = oldInstance.approvals as Array<{
+      nodeId: string;
+      userId: string;
+      decision: string;
+      comment?: string;
+      timestamp: Date;
+      signature: string;
+    }>;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.workflowInstance.update({
+        where: { id: oldInstance.id },
+        data: {
+          status: 'cancelled',
+          completedAt: new Date(),
+          cancellationReason: `Workflow definition updated from v${oldInstance.definition?.version} to v${newDefinition.version}. Rebuilt automatically.`,
+        },
+      });
+
+      const nodes = newDefinition.nodes as unknown as WorkflowNode[];
+      const firstApprovalNode = this.findNextApprovalNode(
+        nodes,
+        nodes.find(n => n.id === newDefinition.startNodeId)!
+      );
+
+      const resolvedApprovers = await workflowApproverResolver.resolveApprovalNodes(
+        tenantId, nodes, oldInstance.contentId, oldInstance.startedBy,
+        content.data as Record<string, unknown>
+      );
+      const resolvedMap = Object.fromEntries(resolvedApprovers.map(r => [r.nodeId, r]));
+
+      const migratedApprovals = await this.migrateExistingApprovals(
+        existingApprovals,
+        resolvedMap,
+        nodes
+      );
+
+      const newInstanceId = generateId('wfi');
+      await tx.workflowInstance.create({
+        data: {
+          id: newInstanceId,
+          definitionId: newDefinition.id,
+          tenantId,
+          contentId: oldInstance.contentId,
+          currentNodeId: firstApprovalNode?.id || newDefinition.endNodeId,
+          status: 'running',
+          approvals: migratedApprovals as unknown as Prisma.JsonValue,
+          startedBy: oldInstance.startedBy,
+          resolvedApprovers: resolvedMap as unknown as Prisma.JsonValue,
+          definitionVersion: newDefinition.version,
+          definitionSnapshot: newDefinition.nodes as unknown as Prisma.JsonValue,
+          rebuiltFromInstanceId: oldInstance.id,
+        },
+      });
+
+      logger.info(
+        {
+          oldInstanceId: oldInstance.id,
+          newInstanceId,
+          tenantId,
+          contentId: oldInstance.contentId,
+          migratedApprovalCount: migratedApprovals.length,
+        },
+        'Workflow instance rebuilt due to definition change'
+      );
+    });
+
+    const newInstance = await this.prisma.workflowInstance.findFirst({
+      where: { rebuiltFromInstanceId: oldInstance.id },
+      include: { definition: true },
+    });
+
+    if (!newInstance) {
+      throw new Error('Failed to find rebuilt workflow instance');
+    }
+
+    const affectedApprovers = this.getAffectedApprovers(
+      oldInstance,
+      newInstance
+    );
+
+    workflowNotifier.notifyWorkflowRebuilt(
+      oldInstance,
+      newInstance,
+      affectedApprovers,
+      input.userId
+    );
+
+    return this.approveNode(tenantId, {
+      ...input,
+      instanceId: newInstance.id,
+    });
+  }
+
+  private async migrateExistingApprovals(
+    existingApprovals: Array<{
+      nodeId: string;
+      userId: string;
+      decision: string;
+      comment?: string;
+      timestamp: Date;
+      signature: string;
+    }>,
+    newResolvedApprovers: Record<string, ResolvedApprover>,
+    newNodes: WorkflowNode[]
+  ): Promise<Array<{
+    nodeId: string;
+    userId: string;
+    decision: string;
+    comment?: string;
+    timestamp: Date;
+    signature: string;
+    migrated?: boolean;
+  }>> {
+    const newNodeMap = new Map(newNodes.map(n => [n.id, n]));
+    const migratedApprovals: Array<any> = [];
+
+    for (const approval of existingApprovals) {
+      const newNode = newNodeMap.get(approval.nodeId);
+      if (!newNode || newNode.type !== 'approval') continue;
+
+      const newApprovers = newResolvedApprovers[approval.nodeId]?.approvers || [];
+      if (!newApprovers.includes(approval.userId)) continue;
+
+      migratedApprovals.push({
+        ...approval,
+        migrated: true,
+      });
+    }
+
+    return migratedApprovals;
+  }
+
+  private getAffectedApprovers(
+    oldInstance: WorkflowInstance & { definition: WorkflowDefinition },
+    newInstance: WorkflowInstance & { definition: WorkflowDefinition }
+  ): Array<{ userId: string; action: 'added' | 'removed' | 'changed' }> {
+    const oldResolved = (oldInstance as any).resolvedApprovers as Record<string, ResolvedApprover>;
+    const newResolved = (newInstance as any).resolvedApprovers as Record<string, ResolvedApprover>;
+    const affected = new Map<string, 'added' | 'removed' | 'changed'>();
+
+    const allNodeIds = new Set([...Object.keys(oldResolved || {}), ...Object.keys(newResolved || {})]);
+
+    for (const nodeId of allNodeIds) {
+      const oldApprovers = new Set(oldResolved?.[nodeId]?.approvers || []);
+      const newApprovers = new Set(newResolved?.[nodeId]?.approvers || []);
+
+      for (const userId of oldApprovers) {
+        if (!newApprovers.has(userId)) {
+          affected.set(userId, 'removed');
+        }
+      }
+
+      for (const userId of newApprovers) {
+        if (!oldApprovers.has(userId)) {
+          affected.set(userId, 'added');
+        }
+      }
+    }
+
+    return Array.from(affected.entries()).map(([userId, action]) => ({ userId, action }));
   }
 }
 

@@ -1,6 +1,7 @@
 import { FastifyPluginAsync, FastifyRequest, FastifyReply } from 'fastify';
 import fp from 'fastify-plugin';
 import { tenantResolver } from './tenant-resolver';
+import { tenantAsyncContext } from './tenant-async-context';
 import { TenantContext } from '@types/index';
 import { logger } from '@utils/logger';
 
@@ -50,6 +51,26 @@ const tenantContextPlugin: FastifyPluginAsync = async (fastify) => {
     });
 
     requestLogger.debug('Tenant context resolved');
+  });
+
+  fastify.addHook('preHandler', async (request: FastifyRequest, reply, done) => {
+    if (!request.tenant || isPublicRoute(request.url)) {
+      done();
+      return;
+    }
+
+    const originalHandler = reply.context.handler;
+    reply.context.handler = async (request: FastifyRequest, reply: FastifyReply) => {
+      return tenantAsyncContext.run(
+        {
+          tenantId: request.tenant.tenantId,
+          tenantCode: request.tenant.tenantCode,
+          dbSchema: request.tenant.dbSchema,
+        },
+        () => originalHandler(request, reply) as Promise<any>
+      );
+    };
+    done();
   });
 };
 

@@ -44,13 +44,23 @@ export class VersionControlService {
     let diffResult: DiffResult | undefined;
     let diffPatch: string | undefined;
     let message = input.message;
+    let diffSkipped = false;
+    let diffSkipReason: string | undefined;
 
     if (input.previousSnapshot) {
-      diffResult = computeDiff(input.previousSnapshot, input.snapshot);
+      diffResult = await computeDiff(input.previousSnapshot, input.snapshot, {
+        useWorker: true,
+      });
       diffPatch = diffResult.patch;
-      
+      diffSkipped = !!diffResult.skipped;
+      diffSkipReason = diffResult.skipReason;
+
       if (!message && diffResult.changes.length > 0) {
         message = generateVersionMessage(diffResult.changes);
+      }
+
+      if (diffSkipped && !message) {
+        message = `Version ${nextVersion} (diff skipped: ${diffSkipReason?.slice(0, 100) || 'size exceeded'})`;
       }
     }
 
@@ -66,7 +76,9 @@ export class VersionControlService {
         diffPatch,
         message,
         createdBy: input.createdBy,
-      },
+        diffSkipped,
+        diffSkipReason,
+      } as any,
     });
 
     if (!diffResult) {

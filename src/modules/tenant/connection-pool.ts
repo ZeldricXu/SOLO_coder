@@ -4,6 +4,7 @@ import postgres from 'postgres';
 import { PrismaClient } from '@prisma/client';
 import { config } from '@config/index';
 import { logger } from '@utils/logger';
+import { tenantAsyncContext } from './tenant-async-context';
 
 interface TenantConnection {
   pool: Pool;
@@ -50,15 +51,61 @@ class ConnectionPoolManager {
   }
 
   getTenantPool(tenantId: string, dbSchema: string): Pool {
+    this.validateTenantContext(tenantId, dbSchema);
     return this.getOrCreateTenantConnection(tenantId, dbSchema).pool;
   }
 
   getTenantDrizzle(tenantId: string, dbSchema: string): PostgresJsDatabase {
+    this.validateTenantContext(tenantId, dbSchema);
     return this.getOrCreateTenantConnection(tenantId, dbSchema).drizzle;
   }
 
   getTenantPrisma(tenantId: string, dbSchema: string): PrismaClient {
+    this.validateTenantContext(tenantId, dbSchema);
     return this.getOrCreateTenantConnection(tenantId, dbSchema).prisma;
+  }
+
+  private validateTenantContext(tenantId: string, dbSchema: string): void {
+    const contextTenantId = tenantAsyncContext.getTenantId();
+    const contextDbSchema = tenantAsyncContext.getDbSchema();
+    const requestId = tenantAsyncContext.getRequestId();
+
+    if (contextTenantId && contextTenantId !== tenantId) {
+      const error = new Error(
+        `TENANT CONTEXT MISMATCH: Expected tenant ${contextTenantId}, but requested tenant ${tenantId}`
+      );
+      error.name = 'TenantContextMismatchError';
+      logger.error(
+        {
+          error,
+          expectedTenantId: contextTenantId,
+          requestedTenantId: tenantId,
+          requestId,
+          contextDbSchema,
+          requestedDbSchema: dbSchema,
+        },
+        'CRITICAL SECURITY ALERT: Tenant context mismatch detected'
+      );
+      throw error;
+    }
+
+    if (contextDbSchema && contextDbSchema !== dbSchema) {
+      const error = new Error(
+        `DB SCHEMA MISMATCH: Expected schema ${contextDbSchema}, but requested schema ${dbSchema}`
+      );
+      error.name = 'DbSchemaMismatchError';
+      logger.error(
+        {
+          error,
+          expectedDbSchema: contextDbSchema,
+          requestedDbSchema: dbSchema,
+          tenantId,
+          requestId,
+        },
+        'CRITICAL SECURITY ALERT: DB schema mismatch detected'
+      );
+      throw error;
+    }
   }
 
   private getOrCreateTenantConnection(tenantId: string, dbSchema: string): TenantConnection {

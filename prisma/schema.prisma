@@ -187,17 +187,19 @@ model ContentEntry {
 }
 
 model ContentVersion {
-  id         String        @id @default(uuid())
-  tenantId   String
-  contentId  String
-  modelId    String
-  version    Int
-  snapshot   Json
-  status     ContentStatus
-  diffPatch  String?
-  message    String?
-  createdBy  String
-  createdAt  DateTime      @default(now())
+  id              String        @id @default(uuid())
+  tenantId        String
+  contentId       String
+  modelId         String
+  version         Int
+  snapshot        Json
+  status          ContentStatus
+  diffPatch       String?
+  diffSkipped     Boolean       @default(false)
+  diffSkipReason  String?
+  message         String?
+  createdBy       String
+  createdAt       DateTime      @default(now())
 
   tenant  Tenant        @relation(fields: [tenantId], references: [id])
   content ContentEntry  @relation(fields: [contentId], references: [id])
@@ -231,16 +233,21 @@ model WorkflowDefinition {
 }
 
 model WorkflowInstance {
-  id             String   @id @default(uuid())
-  definitionId   String
-  tenantId       String
-  contentId      String
-  currentNodeId  String
-  status         String   @default("running")
-  approvals      Json
-  startedBy      String
-  startedAt      DateTime @default(now())
-  completedAt    DateTime?
+  id                  String   @id @default(uuid())
+  definitionId        String
+  tenantId            String
+  contentId           String
+  currentNodeId       String
+  status              String   @default("running")
+  approvals           Json
+  startedBy           String
+  startedAt           DateTime @default(now())
+  completedAt         DateTime?
+  resolvedApprovers   Json?
+  definitionVersion   Int      @default(1)
+  definitionSnapshot  Json?
+  rebuiltFromInstanceId String?
+  cancellationReason  String?
 
   tenant     Tenant             @relation(fields: [tenantId], references: [id])
   definition WorkflowDefinition @relation(fields: [definitionId], references: [id])
@@ -249,6 +256,7 @@ model WorkflowInstance {
   @@index([tenantId])
   @@index([contentId])
   @@index([status])
+  @@index([rebuiltFromInstanceId])
 }
 
 model SearchConfig {
