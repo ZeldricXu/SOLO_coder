@@ -23,12 +23,13 @@ def format_sse(event, data):
 @sse_bp.route('/dashboard/<int:dashboard_id>')
 @login_required
 def sse_dashboard(dashboard_id):
-    if not current_user.has_dashboard_access(dashboard_id, 'view'):
-        return jsonify({'error': '无权限访问'}), 403
-
+    from app.services.dashboard_service import get_dashboard
     dashboard = get_dashboard(dashboard_id)
     if not dashboard:
         return jsonify({'error': '看板不存在'}), 404
+
+    if not current_user.has_dashboard_access(dashboard_id, 'view'):
+        return jsonify({'error': '无权限访问'}), 403
 
     heartbeat_interval = current_app.config['SSE_HEARTBEAT_INTERVAL']
     refresh_interval = dashboard.refresh_interval or 30
@@ -105,6 +106,11 @@ def sse_dashboard(dashboard_id):
 @sse_bp.route('/push/<int:dashboard_id>', methods=['POST'])
 @login_required_api
 def push_data(dashboard_id):
+    from app.models import Dashboard
+    dashboard = Dashboard.query.get(dashboard_id)
+    if not dashboard:
+        return jsonify({'error': '看板不存在'}), 404
+
     if not current_user.has_dashboard_access(dashboard_id, 'edit'):
         return jsonify({'error': '无权限推送'}), 403
 

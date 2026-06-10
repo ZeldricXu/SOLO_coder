@@ -69,6 +69,11 @@ class ProductionConfig(Config):
 class TestingConfig(Config):
     TESTING = True
     SQLALCHEMY_DATABASE_URI = 'sqlite:///:memory:'
+    ENCRYPTION_KEY = 'test-encryption-key-32chars-minimum!!!'
+    REDIS_URL = 'redis://localhost:6379/15'
+    CELERY_BROKER_URL = 'redis://localhost:6379/14'
+    CELERY_RESULT_BACKEND = 'redis://localhost:6379/13'
+    WTF_CSRF_ENABLED = False
 
 
 config = {

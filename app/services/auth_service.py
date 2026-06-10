@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from app import db
 from app.models import User, Role
@@ -7,7 +8,13 @@ from email_validator import validate_email, EmailNotValidError
 
 def register_user(email, password, name, role_name='viewer'):
     try:
-        valid = validate_email(email)
+        is_testing = os.getenv('FLASK_ENV') == 'testing' or os.getenv('TESTING') == 'true'
+        valid = validate_email(
+            email,
+            check_deliverability=not is_testing,
+            test_environment=is_testing,
+            globally_deliverable=not is_testing
+        )
         email = valid.normalized
     except EmailNotValidError as e:
         raise ValueError(f'邮箱格式不正确: {str(e)}')
@@ -110,3 +117,49 @@ def get_user_list(page=1, per_page=20, search=None):
             (User.email.like(f'%{search}%'))
         )
     return query.order_by(User.created_at.desc()).paginate(page=page, per_page=per_page)
+
+
+def can_edit_dashboard(user, dashboard):
+    if not user or not dashboard:
+        return False
+    if dashboard.owner_id == user.id:
+        return True
+    if user.has_permission('all'):
+        return True
+    if dashboard.team_id:
+        from app.models import TeamMember
+        tm = TeamMember.query.filter_by(team_id=dashboard.team_id, user_id=user.id).first()
+        if tm and tm.role in ['admin', 'editor']:
+            return True
+    from app.models import DashboardShare
+    share = DashboardShare.query.filter_by(
+        dashboard_id=dashboard.id,
+        user_id=user.id
+    ).first()
+    if share and share.can_edit:
+        return True
+    return False
+
+
+def can_view_dashboard(user, dashboard):
+    if not user or not dashboard:
+        return False
+    if dashboard.owner_id == user.id:
+        return True
+    if user.has_permission('all'):
+        return True
+    if dashboard.is_public:
+        return True
+    if dashboard.team_id:
+        from app.models import TeamMember
+        tm = TeamMember.query.filter_by(team_id=dashboard.team_id, user_id=user.id).first()
+        if tm:
+            return True
+    from app.models import DashboardShare
+    share = DashboardShare.query.filter_by(
+        dashboard_id=dashboard.id,
+        user_id=user.id
+    ).first()
+    if share:
+        return True
+    return False

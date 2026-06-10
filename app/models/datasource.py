@@ -36,8 +36,10 @@ class DataSource(db.Model):
     }
 
     def _get_cipher(self):
+        import base64
         key = current_app.config['SECRET_KEY'].ljust(32)[:32].encode()
-        return Fernet(Fernet.generate_key() if len(key) != 32 else key)
+        key = base64.urlsafe_b64encode(key)
+        return Fernet(key)
 
     def get_connection_config(self):
         if not self.connection_config:

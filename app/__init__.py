@@ -3,7 +3,7 @@ import redis as redis_lib
 from flask import Flask, render_template
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
-from flask_login import LoginManager
+from flask_login import LoginManager, login_required
 from flask_wtf.csrf import CSRFProtect
 from flask_cors import CORS
 from celery import Celery
