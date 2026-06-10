@@ -213,44 +213,86 @@ func (p *Parser) validateDefinition(def *types.PipelineDefinition, yamlNode *yam
 }
 
 func (p *Parser) validateDependencies(stages []types.StageDefinition, result *ParseResult) error {
-	graph := make(map[string][]string)
-	for _, stage := range stages {
-		graph[stage.Name] = stage.DependsOn
+	if cycle := DetectCycle(stages); cycle != nil {
+		result.Errors = append(result.Errors, ValidationError{
+			Path:    "stages",
+			Message: fmt.Sprintf("circular dependency detected: %s", formatCycle(cycle)),
+		})
 	}
+	return nil
+}
 
+func DetectCycle(stages []types.StageDefinition) []string {
+	graph := buildAdjacencyList(stages)
 	visited := make(map[string]bool)
 	recStack := make(map[string]bool)
+	path := make([]string, 0)
 
-	var hasCycle func(string) bool
-	hasCycle = func(node string) bool {
+	var dfs func(string) []string
+	dfs = func(node string) []string {
 		visited[node] = true
 		recStack[node] = true
+		path = append(path, node)
 
 		for _, dep := range graph[node] {
 			if !visited[dep] {
-				if hasCycle(dep) {
-					return true
+				if cycle := dfs(dep); cycle != nil {
+					return cycle
 				}
 			} else if recStack[dep] {
-				result.Errors = append(result.Errors, ValidationError{
-					Path:    "stages",
-					Message: fmt.Sprintf("circular dependency detected: %s -> %s", dep, node),
-				})
-				return true
+				cycleStart := -1
+				for i, n := range path {
+					if n == dep {
+						cycleStart = i
+						break
+					}
+				}
+				if cycleStart != -1 {
+					return append(path[cycleStart:], dep)
+				}
 			}
 		}
 
 		recStack[node] = false
-		return false
+		path = path[:len(path)-1]
+		return nil
 	}
 
 	for _, stage := range stages {
 		if !visited[stage.Name] {
-			hasCycle(stage.Name)
+			if cycle := dfs(stage.Name); cycle != nil {
+				return cycle
+			}
 		}
 	}
 
 	return nil
+}
+
+func buildAdjacencyList(stages []types.StageDefinition) map[string][]string {
+	graph := make(map[string][]string)
+	for _, stage := range stages {
+		graph[stage.Name] = stage.DependsOn
+	}
+	return graph
+}
+
+func formatCycle(cycle []string) string {
+	if len(cycle) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	nodes := cycle
+	if len(nodes) > 1 && nodes[len(nodes)-1] == nodes[0] {
+		nodes = nodes[:len(nodes)-1]
+	}
+	for i, node := range nodes {
+		if i > 0 {
+			sb.WriteString(" -> ")
+		}
+		sb.WriteString(node)
+	}
+	return sb.String()
 }
 
 func (p *Parser) ToJSON(def *types.PipelineDefinition) ([]byte, error) {

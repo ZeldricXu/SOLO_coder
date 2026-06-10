@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/viper"
 )
@@ -62,9 +63,10 @@ type MinIOConfig struct {
 }
 
 type VaultConfig struct {
-	Addr        string `mapstructure:"addr"`
-	Token       string `mapstructure:"token"`
-	SecretPath  string `mapstructure:"secret_path"`
+	Addr        string        `mapstructure:"addr"`
+	Token       string        `mapstructure:"token"`
+	SecretPath  string        `mapstructure:"secret_path"`
+	CacheTTL    time.Duration `mapstructure:"cache_ttl"`
 }
 
 type SchedulerConfig struct {

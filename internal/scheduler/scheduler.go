@@ -53,6 +53,96 @@ type StageResult struct {
 	Duration int64
 }
 
+type DAGScheduler struct {
+	stages        map[string]types.StageDefinition
+	adjacencyList map[string][]string
+	inDegree      map[string]int
+	completed     map[string]bool
+	failed        map[string]bool
+	readyQueue    []string
+	mu            sync.Mutex
+}
+
+func NewDAGScheduler(stages []types.StageDefinition) *DAGScheduler {
+	dag := &DAGScheduler{
+		stages:        make(map[string]types.StageDefinition),
+		adjacencyList: make(map[string][]string),
+		inDegree:      make(map[string]int),
+		completed:     make(map[string]bool),
+		failed:        make(map[string]bool),
+		readyQueue:    make([]string, 0),
+	}
+
+	for _, stage := range stages {
+		dag.stages[stage.Name] = stage
+		dag.inDegree[stage.Name] = 0
+	}
+
+	for _, stage := range stages {
+		for _, dep := range stage.DependsOn {
+			dag.adjacencyList[dep] = append(dag.adjacencyList[dep], stage.Name)
+			dag.inDegree[stage.Name]++
+		}
+	}
+
+	for name, degree := range dag.inDegree {
+		if degree == 0 {
+			dag.readyQueue = append(dag.readyQueue, name)
+		}
+	}
+
+	return dag
+}
+
+func (d *DAGScheduler) GetReadyStages() []types.StageDefinition {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	ready := make([]types.StageDefinition, 0, len(d.readyQueue))
+	for _, name := range d.readyQueue {
+		if !d.completed[name] && !d.failed[name] {
+			ready = append(ready, d.stages[name])
+		}
+	}
+	d.readyQueue = d.readyQueue[:0]
+	return ready
+}
+
+func (d *DAGScheduler) MarkCompleted(stageName string, failed bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.completed[stageName] = true
+	if failed {
+		d.failed[stageName] = true
+	}
+
+	for _, neighbor := range d.adjacencyList[stageName] {
+		if failed {
+			d.failed[neighbor] = true
+			d.completed[neighbor] = true
+			continue
+		}
+
+		d.inDegree[neighbor]--
+		if d.inDegree[neighbor] == 0 && !d.completed[neighbor] {
+			d.readyQueue = append(d.readyQueue, neighbor)
+		}
+	}
+}
+
+func (d *DAGScheduler) IsComplete() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for name := range d.stages {
+		if !d.completed[name] {
+			return false
+		}
+	}
+	return true
+}
+
 func NewScheduler(cfg *config.SchedulerConfig, pluginMgr *plugin.PluginManager) *Scheduler {
 	s := &Scheduler{
 		cfg:                cfg,
@@ -256,21 +346,22 @@ func (s *Scheduler) createStageExecutions(executionID types.ID, stages []types.S
 
 func (s *Scheduler) executeStages(ctx context.Context, exec *models.PipelineExecution, def *types.PipelineDefinition, stageExecs map[string]*models.StageExecution) map[string]StageResult {
 	results := make(map[string]StageResult)
-	completed := make(map[string]bool)
 	failed := make(map[string]bool)
 	skipped := make(map[string]bool)
 	var mu sync.Mutex
-	var wg sync.WaitGroup
 
 	stageResults := make(chan StageResult, len(def.Stages))
 
+	dag := NewDAGScheduler(def.Stages)
+
 	for {
-		readyStages := s.findReadyStages(def.Stages, completed, failed, skipped)
+		readyStages := dag.GetReadyStages()
 
 		if len(readyStages) == 0 {
 			break
 		}
 
+		var wg sync.WaitGroup
 		for _, stageDef := range readyStages {
 			shouldRun, skipReason, err := s.checkStageCondition(stageDef, results, exec)
 			if err != nil {
@@ -286,7 +377,6 @@ func (s *Scheduler) executeStages(ctx context.Context, exec *models.PipelineExec
 			if !shouldRun {
 				mu.Lock()
 				skipped[stageDef.Name] = true
-				completed[stageDef.Name] = true
 				se := stageExecs[stageDef.Name]
 				se.Status = types.StageStatusSkipped
 				se.CompletedAt = timePtr(time.Now())
@@ -297,6 +387,7 @@ func (s *Scheduler) executeStages(ctx context.Context, exec *models.PipelineExec
 				}
 				s.logStore.AppendLog(exec.ID, se.ID, "INFO",
 					fmt.Sprintf("Stage skipped: %s", skipReason), "")
+				dag.MarkCompleted(stageDef.Name, true)
 				mu.Unlock()
 				continue
 			}
@@ -309,7 +400,7 @@ func (s *Scheduler) executeStages(ctx context.Context, exec *models.PipelineExec
 				case <-ctx.Done():
 					mu.Lock()
 					results[sd.Name] = StageResult{Status: types.StageStatusCancelled}
-					completed[sd.Name] = true
+					dag.MarkCompleted(sd.Name, true)
 					mu.Unlock()
 					return
 				default:
@@ -319,10 +410,11 @@ func (s *Scheduler) executeStages(ctx context.Context, exec *models.PipelineExec
 
 				mu.Lock()
 				results[sd.Name] = result
-				completed[sd.Name] = true
-				if result.Status != types.StageStatusSuccess && !sd.AllowFailure {
+				stageFailed := result.Status != types.StageStatusSuccess && !sd.AllowFailure
+				if stageFailed {
 					failed[sd.Name] = true
 				}
+				dag.MarkCompleted(sd.Name, stageFailed)
 				mu.Unlock()
 
 				stageResults <- result

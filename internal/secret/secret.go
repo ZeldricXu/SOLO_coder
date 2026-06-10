@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/vault/api"
@@ -78,14 +79,29 @@ type SecretManager struct {
 	cfg         *config.VaultConfig
 	vaultClient VaultClient
 	db          DBClient
+	cache       *secretCache
+}
+
+type secretCacheEntry struct {
+	value     string
+	version   int
+	expiresAt time.Time
+}
+
+type secretCache struct {
+	entries map[string]*secretCacheEntry
+	ttl     time.Duration
+	mu      sync.RWMutex
 }
 
 func NewSecretManagerWithDeps(cfg *config.VaultConfig, vaultClient VaultClient, db DBClient) *SecretManager {
-	return &SecretManager{
+	sm := &SecretManager{
 		cfg:         cfg,
 		vaultClient: vaultClient,
 		db:          db,
 	}
+	sm.initCache()
+	return sm
 }
 
 func NewSecretManager(cfg *config.VaultConfig) (*SecretManager, error) {
@@ -109,6 +125,7 @@ func NewSecretManager(cfg *config.VaultConfig) (*SecretManager, error) {
 		vaultClient: &vaultClientWrapper{client: client},
 		db:          &dbWrapper{db: storage.GetDB()},
 	}
+	sm.initCache()
 
 	if err := sm.checkVaultConnection(); err != nil {
 		logger.Warn("vault connection check failed", zap.Error(err))
@@ -116,6 +133,79 @@ func NewSecretManager(cfg *config.VaultConfig) (*SecretManager, error) {
 
 	logger.Info("secret manager initialized successfully")
 	return sm, nil
+}
+
+func (sm *SecretManager) initCache() {
+	ttl := 5 * time.Minute
+	if sm.cfg.CacheTTL > 0 {
+		ttl = sm.cfg.CacheTTL
+	}
+
+	sm.cache = &secretCache{
+		entries: make(map[string]*secretCacheEntry),
+		ttl:     ttl,
+	}
+
+	go sm.cache.startCleanupLoop()
+}
+
+func (c *secretCache) startCleanupLoop() {
+	ticker := time.NewTicker(c.ttl / 2)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		c.cleanupExpired()
+	}
+}
+
+func (c *secretCache) cleanupExpired() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	now := time.Now()
+	for key, entry := range c.entries {
+		if now.After(entry.expiresAt) {
+			delete(c.entries, key)
+		}
+	}
+}
+
+func (c *secretCache) get(key string) (string, int, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	entry, exists := c.entries[key]
+	if !exists {
+		return "", 0, false
+	}
+
+	if time.Now().After(entry.expiresAt) {
+		return "", 0, false
+	}
+
+	return entry.value, entry.version, true
+}
+
+func (c *secretCache) set(key string, value string, version int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.entries[key] = &secretCacheEntry{
+		value:     value,
+		version:   version,
+		expiresAt: time.Now().Add(c.ttl),
+	}
+}
+
+func (c *secretCache) invalidate(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	delete(c.entries, key)
+}
+
+func (sm *SecretManager) cacheKey(secret *models.Secret) string {
+	return fmt.Sprintf("%s:%s", secret.VaultPath, secret.VaultKey)
 }
 
 func (sm *SecretManager) checkVaultConnection() error {
@@ -195,6 +285,35 @@ func (sm *SecretManager) checkSecretExpired(secret *models.Secret, now time.Time
 }
 
 func (sm *SecretManager) readFromVault(ctx context.Context, secret *models.Secret) (string, int, error) {
+	cacheKey := sm.cacheKey(secret)
+	if sm.cache != nil {
+		if value, version, ok := sm.cache.get(cacheKey); ok {
+			logger.Debug("cache hit for secret",
+				zap.String("secret", secret.Name),
+				zap.String("cache_key", cacheKey))
+			return value, version, nil
+		}
+		logger.Debug("cache miss for secret",
+			zap.String("secret", secret.Name),
+			zap.String("cache_key", cacheKey))
+	}
+
+	value, version, err := sm.fetchFromVault(ctx, secret)
+	if err != nil {
+		return "", 0, err
+	}
+
+	if sm.cache != nil {
+		sm.cache.set(cacheKey, value, version)
+		logger.Debug("cache set for secret",
+			zap.String("secret", secret.Name),
+			zap.String("cache_key", cacheKey))
+	}
+
+	return value, version, nil
+}
+
+func (sm *SecretManager) fetchFromVault(ctx context.Context, secret *models.Secret) (string, int, error) {
 	vaultPath := secret.VaultPath
 	if vaultPath == "" {
 		vaultPath = fmt.Sprintf("%s/%s", sm.cfg.SecretPath, secret.Name)
@@ -225,11 +344,17 @@ func (sm *SecretManager) readFromVault(ctx context.Context, secret *models.Secre
 func (sm *SecretManager) updateSecretVersion(ctx context.Context, secret *models.Secret, version int) error {
 	if secret.Version != version {
 		now := time.Now()
-		return sm.db.WithContext(ctx).Model(secret).Updates(map[string]interface{}{
+		err := sm.db.WithContext(ctx).Model(secret).Updates(map[string]interface{}{
 			"version":    version,
 			"rotated_at": &now,
 			"updated_at": now,
 		}).Error
+		if err == nil && sm.cache != nil {
+			sm.cache.invalidate(sm.cacheKey(secret))
+			logger.Debug("cache invalidated for secret",
+				zap.String("secret", secret.Name))
+		}
+		return err
 	}
 	return nil
 }
