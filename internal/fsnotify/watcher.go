@@ -76,8 +76,17 @@ func (w *Watcher) Start() error {
 	go w.eventLoop()
 	go w.processLoop()
 
-	if err := w.watcher.Start(100 * time.Millisecond); err != nil {
-		return err
+	startErr := make(chan error, 1)
+	go func() {
+		startErr <- w.watcher.Start(100 * time.Millisecond)
+	}()
+
+	select {
+	case err := <-startErr:
+		if err != nil {
+			return err
+		}
+	case <-time.After(300 * time.Millisecond):
 	}
 
 	w.running = true
@@ -127,11 +136,6 @@ func (w *Watcher) handleRawEvent(event *watcher.Event) {
 		return
 	}
 
-	realPath, err := w.resolveSymlink(path)
-	if err != nil || realPath == "" {
-		return
-	}
-
 	var op models.FileOp
 	switch event.Op {
 	case watcher.Create, watcher.Move:
@@ -144,6 +148,15 @@ func (w *Watcher) handleRawEvent(event *watcher.Event) {
 		op = models.FileOpRename
 	default:
 		return
+	}
+
+	realPath := path
+	if op != models.FileOpDelete {
+		resolved, err := w.resolveSymlink(path)
+		if err != nil || resolved == "" {
+			return
+		}
+		realPath = resolved
 	}
 
 	fileEvent := &models.FileEvent{

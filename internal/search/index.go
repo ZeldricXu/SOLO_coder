@@ -38,9 +38,9 @@ func (idx *Indexer) IndexNote(noteID uint, title, content string) error {
 	tokens := segment.Segment(text, idx.useCJK)
 
 	termMap := make(map[string][]int)
-	for _, tok := range tokens {
+	for tokenIdx, tok := range tokens {
 		term := strings.ToLower(tok.Text)
-		termMap[term] = append(termMap[term], tok.Position)
+		termMap[term] = append(termMap[term], tokenIdx)
 	}
 
 	for term, positions := range termMap {

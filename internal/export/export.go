@@ -147,7 +147,10 @@ func (m *ExportManager) matchFolders(notePath string, folders []string) bool {
 }
 
 func (m *ExportManager) loadNoteContent(note *models.Note) (string, error) {
-	fullPath := filepath.Join(m.cfg.VaultPath, note.Path)
+	fullPath := note.Path
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(m.cfg.VaultPath, note.Path)
+	}
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", err

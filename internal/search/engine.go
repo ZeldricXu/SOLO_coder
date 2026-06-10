@@ -2,6 +2,7 @@ package search
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,6 +29,7 @@ type SearchEngine struct {
 	highlighter *Highlighter
 	db          *db.Database
 	useCJK      bool
+	vaultPath   string
 }
 
 type docScore struct {
@@ -48,6 +50,7 @@ func NewSearchEngine(database *db.Database, cfg *config.Config) *SearchEngine {
 		highlighter: DefaultHighlighter(),
 		db:          database,
 		useCJK:      cfg.Search.UseCJK,
+		vaultPath:   cfg.VaultPath,
 	}
 }
 
@@ -514,6 +517,17 @@ func (e *SearchEngine) buildResults(scores []docScore, terms []string) ([]models
 func (e *SearchEngine) loadNoteContent(note *models.Note) (string, error) {
 	if note.Content != "" {
 		return note.Content, nil
+	}
+
+	if e.vaultPath != "" && note.Path != "" {
+		fullPath := note.Path
+		if !filepath.IsAbs(fullPath) {
+			fullPath = filepath.Join(e.vaultPath, note.Path)
+		}
+		data, err := os.ReadFile(fullPath)
+		if err == nil {
+			return string(data), nil
+		}
 	}
 
 	return "", fmt.Errorf("content not loaded")

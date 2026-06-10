@@ -125,7 +125,7 @@ func UniqueStrings(strs []string) []string {
 
 func Slugify(s string) string {
 	s = strings.ToLower(s)
-	s = regexp.MustCompile(`[^a-z0-9\u4e00-\u9fff]+`).ReplaceAllString(s, "-")
+	s = regexp.MustCompile(`[^a-z0-9一-龥]+`).ReplaceAllString(s, "-")
 	s = strings.Trim(s, "-")
 	return s
 }

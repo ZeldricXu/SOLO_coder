@@ -27,12 +27,7 @@ func NewWikiRenderer(cfg *config.Config) *WikiRenderer {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
-			extension.Table,
-			extension.Strikethrough,
-			extension.Linkify,
-			extension.TaskList,
 			&WikiLinkExtension{},
-			&KaTeXExtension{},
 		),
 		goldmark.WithParserOptions(
 			parser.WithAutoHeadingID(),

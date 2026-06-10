@@ -143,7 +143,10 @@ func (e *SiteExporter) prepareSiteNotes(notes []*models.Note) ([]*SiteNote, erro
 }
 
 func (e *SiteExporter) loadNoteContent(note *models.Note) (string, error) {
-	fullPath := filepath.Join(e.cfg.VaultPath, note.Path)
+	fullPath := note.Path
+	if !filepath.IsAbs(fullPath) {
+		fullPath = filepath.Join(e.cfg.VaultPath, note.Path)
+	}
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
 		return "", err
