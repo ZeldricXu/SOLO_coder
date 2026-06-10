@@ -1,0 +1,14 @@
+process.env.NODE_ENV = 'test';
+process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/cms_test';
+process.env.TENANT_DATABASE_URL_TEMPLATE = 'postgresql://test:test@localhost:5432/tenant_{tenant_id}';
+process.env.REDIS_URL = 'redis://localhost:6379';
+process.env.REDIS_HOST = 'localhost';
+process.env.REDIS_PORT = '6379';
+process.env.ELASTICSEARCH_NODE = 'http://localhost:9200';
+process.env.JWT_SECRET = 'test-jwt-secret-key-for-testing-purposes';
+process.env.BULLMQ_REDIS_URL = 'redis://localhost:6379';
+process.env.CDN_BASE_URL = 'https://cdn.test.local';
+process.env.CDN_API_KEY = 'test-cdn-api-key';
+process.env.PORT = '3001';
+process.env.HOST = '0.0.0.0';
+process.env.LOG_LEVEL = 'error';

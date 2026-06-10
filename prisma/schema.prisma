@@ -102,10 +102,14 @@ model Tenant {
   deletedAt DateTime?
 
   contentModels     ContentModel[]
+  contents          ContentEntry[]
+  contentVersions   ContentVersion[]
   workflowDefs      WorkflowDefinition[]
+  workflowInsts     WorkflowInstance[]
   webhooks          WebhookConfig[]
   tenantUsage       TenantUsage[]
   searchConfigs     SearchConfig[]
+  cdnPublishStatus  CDNPublishStatus[]
 
   @@index([status])
   @@index([code])

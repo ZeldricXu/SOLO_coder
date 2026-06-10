@@ -362,6 +362,94 @@ export class SchemaValidator {
       .filter(([, field]) => field.unique)
       .map(([name]) => name);
   }
+
+  diffSchemas(
+    oldSchema: ContentSchema,
+    newSchema: ContentSchema
+  ): { requiresMigration: boolean; changes: string[]; compatible: boolean } {
+    const changes: string[] = [];
+    let requiresMigration = false;
+    let compatible = true;
+
+    const oldFields = new Set(Object.keys(oldSchema.properties));
+    const newFields = new Set(Object.keys(newSchema.properties));
+
+    for (const field of newFields) {
+      if (!oldFields.has(field)) {
+        const fieldDef = newSchema.properties[field];
+        changes.push(`Added field '${field}' (${fieldDef.type})`);
+        requiresMigration = true;
+        if (fieldDef.required && fieldDef.default === undefined) {
+          compatible = false;
+          changes.push(`  WARNING: New required field '${field}' has no default value`);
+        }
+      }
+    }
+
+    for (const field of oldFields) {
+      if (!newFields.has(field)) {
+        changes.push(`Removed field '${field}'`);
+        requiresMigration = true;
+      }
+    }
+
+    for (const field of newFields) {
+      if (oldFields.has(field)) {
+        const oldField = oldSchema.properties[field];
+        const newField = newSchema.properties[field];
+
+        if (oldField.type !== newField.type) {
+          changes.push(`Changed field '${field}' type: ${oldField.type} -> ${newField.type}`);
+          requiresMigration = true;
+        }
+
+        if (oldField.required !== newField.required) {
+          if (newField.required) {
+            changes.push(`Set field '${field}' as NOT NULL`);
+            requiresMigration = true;
+          } else {
+            changes.push(`Set field '${field}' as NULLABLE`);
+            requiresMigration = true;
+          }
+        }
+
+        if (oldField.unique !== newField.unique) {
+          if (newField.unique) {
+            changes.push(`Added UNIQUE constraint on field '${field}'`);
+            requiresMigration = true;
+          } else {
+            changes.push(`Removed UNIQUE constraint from field '${field}'`);
+            requiresMigration = true;
+          }
+        }
+
+        if ((oldField.indexed || oldField.unique) !== (newField.indexed || newField.unique)) {
+          if (newField.indexed || newField.unique) {
+            changes.push(`Added index on field '${field}'`);
+            requiresMigration = true;
+          } else {
+            changes.push(`Removed index from field '${field}'`);
+            requiresMigration = true;
+          }
+        }
+      }
+    }
+
+    const oldRequired = new Set(oldSchema.required);
+    const newRequired = new Set(newSchema.required);
+    for (const req of newRequired) {
+      if (!oldRequired.has(req)) {
+        changes.push(`Added required field constraint: '${req}'`);
+      }
+    }
+    for (const req of oldRequired) {
+      if (!newRequired.has(req)) {
+        changes.push(`Removed required field constraint: '${req}'`);
+      }
+    }
+
+    return { requiresMigration, changes, compatible };
+  }
 }
 
 export const schemaValidator = new SchemaValidator();

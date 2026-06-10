@@ -376,6 +376,62 @@ const contentModelRoutes: FastifyPluginAsync = async (fastify) => {
       return { id: request.params.contentId, data };
     }
   );
+
+  fastify.get(
+    '/models/:modelId/schema/history',
+    {
+      schema: {
+        params: z.object({ modelId: z.string() }),
+        querystring: z.object({
+          page: z.coerce.number().int().positive().default(1),
+          pageSize: z.coerce.number().int().positive().max(100).default(20),
+        }),
+        tags: ['Content Models'],
+        summary: 'Get schema version history',
+      },
+    },
+    async (
+      request: FastifyRequest<{
+        Params: { modelId: string };
+        Querystring: { page: number; pageSize: number };
+      }> & { tenant: TenantContext }
+    ) => {
+      return contentModelService.getSchemaVersionHistory(
+        request.tenant.tenantId,
+        request.params.modelId,
+        request.query.page,
+        request.query.pageSize
+      );
+    }
+  );
+
+  fastify.get(
+    '/models/:modelId/schema/version/:version',
+    {
+      schema: {
+        params: z.object({ modelId: z.string(), version: z.coerce.number().int().positive() }),
+        tags: ['Content Models'],
+        summary: 'Get schema by specific version',
+      },
+    },
+    async (
+      request: FastifyRequest<{
+        Params: { modelId: string; version: number };
+      }> & { tenant: TenantContext },
+      reply: FastifyReply
+    ) => {
+      const schema = await contentModelService.getSchemaByVersion(
+        request.tenant.tenantId,
+        request.params.modelId,
+        request.params.version
+      );
+      if (!schema) {
+        reply.status(404).send({ error: 'Schema version not found' });
+        return;
+      }
+      return schema;
+    }
+  );
 };
 
 export default contentModelRoutes;

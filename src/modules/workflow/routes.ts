@@ -168,32 +168,7 @@ const workflowRoutes: FastifyPluginAsync = async (fastify) => {
     async (
       request: FastifyRequest<{ Body: StartWorkflowInput }> & { tenant: TenantContext }
     ) => {
-      const workflow = await workflowService.getWorkflow(
-        request.tenant.tenantId,
-        request.body.workflowId
-      );
-      if (!workflow) {
-        return { error: 'Workflow not found' };
-      }
-
-      const nodes = workflow.nodes as unknown as import('@types/index').WorkflowNode[];
-      const resolved = await (workflowService as any).resolveApprovalNodes(
-        request.tenant.tenantId,
-        nodes,
-        request.body.contentId,
-        request.body.startedBy,
-        request.body.contentData
-      );
-
-      return {
-        workflowId: request.body.workflowId,
-        nodes: resolved.map(r => ({
-          nodeId: r.nodeId,
-          approvers: r.approvers,
-          resolvedFrom: r.resolution.resolvedFrom,
-          warnings: r.resolution.warnings,
-        })),
-      };
+      return workflowService.previewApprovers(request.tenant, request.body);
     }
   );
 

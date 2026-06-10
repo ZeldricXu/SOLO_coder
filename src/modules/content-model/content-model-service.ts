@@ -1,10 +1,12 @@
 import { ContentModel, ContentEntry, ContentStatus } from '@prisma/client';
 import { connectionPool } from '../tenant/connection-pool';
 import { schemaValidator } from './schema-validator';
-import { tableManager } from './table-manager';
 import { ContentSchema, TenantContext } from '@types/index';
 import { logger } from '@utils/logger';
 import { generateId } from '@utils/crypto';
+import { schemaRegistry } from './schema-registry';
+import { tableManagerListener } from './table-manager-listener';
+import { Prisma } from '@prisma/client';
 
 export interface CreateContentModelInput {
   name: string;
@@ -34,57 +36,23 @@ export interface UpdateContentInput {
 export class ContentModelService {
   private prisma = connectionPool.getPlatformPrisma();
 
+  constructor() {
+    tableManagerListener.start();
+  }
+
   async createContentModel(
     tenant: TenantContext,
     input: CreateContentModelInput
   ): Promise<ContentModel> {
-    const existing = await this.prisma.contentModel.findFirst({
-      where: { tenantId: tenant.tenantId, code: input.code, deletedAt: null },
-    });
-
-    if (existing) {
-      throw new Error(`Content model with code ${input.code} already exists`);
-    }
-
-    const schemaValidation = schemaValidator.validateSchemaDefinition(input.schema);
-    if (!schemaValidation.valid) {
-      throw new Error(`Invalid schema: ${schemaValidation.errors.join(', ')}`);
-    }
-
-    const tableName = `content_${input.code.toLowerCase().replace(/[^a-z0-9_]/g, '_')}`;
-    const modelId = generateId('model');
-
-    const pool = connectionPool.getTenantPool(tenant.tenantId, tenant.dbSchema);
-    await tableManager.createContentTable(pool, tenant.dbSchema, tableName, input.schema);
-
-    const model = await this.prisma.contentModel.create({
-      data: {
-        id: modelId,
-        tenantId: tenant.tenantId,
-        name: input.name,
-        code: input.code,
-        description: input.description,
-        tableName,
-        schemaJson: input.schema as unknown as Prisma.JsonValue,
-        version: 1,
-        isPublished: true,
-      },
-    });
-
-    logger.info({ tenantId: tenant.tenantId, modelId, code: input.code }, 'Created content model');
-    return model;
+    return schemaRegistry.createSchema(tenant, input);
   }
 
   async getContentModel(tenantId: string, modelId: string): Promise<ContentModel | null> {
-    return this.prisma.contentModel.findFirst({
-      where: { id: modelId, tenantId, deletedAt: null },
-    });
+    return schemaRegistry.getSchema(tenantId, modelId);
   }
 
   async getContentModelByCode(tenantId: string, code: string): Promise<ContentModel | null> {
-    return this.prisma.contentModel.findFirst({
-      where: { tenantId, code, deletedAt: null },
-    });
+    return schemaRegistry.getSchemaByCode(tenantId, code);
   }
 
   async listContentModels(
@@ -92,19 +60,7 @@ export class ContentModelService {
     page = 1,
     pageSize = 50
   ): Promise<{ models: ContentModel[]; total: number }> {
-    const where = { tenantId, deletedAt: null };
-
-    const [models, total] = await Promise.all([
-      this.prisma.contentModel.findMany({
-        where,
-        skip: (page - 1) * pageSize,
-        take: pageSize,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.contentModel.count({ where }),
-    ]);
-
-    return { models, total };
+    return schemaRegistry.listSchemas(tenantId, page, pageSize);
   }
 
   async updateContentModel(
@@ -112,124 +68,45 @@ export class ContentModelService {
     modelId: string,
     input: UpdateContentModelInput
   ): Promise<{ model: ContentModel; migrationChanges: string[]; warnings: string[] }> {
-    const model = await this.getContentModel(tenant.tenantId, modelId);
-    if (!model) {
-      throw new Error('Content model not found');
-    }
-
-    const oldSchema = model.schemaJson as unknown as ContentSchema;
-    let migrationChanges: string[] = [];
-    let warnings: string[] = [];
-
-    if (input.schema) {
-      const schemaValidation = schemaValidator.validateSchemaDefinition(input.schema);
-      if (!schemaValidation.valid) {
-        throw new Error(`Invalid schema: ${schemaValidation.errors.join(', ')}`);
-      }
-
-      const pool = connectionPool.getTenantPool(tenant.tenantId, tenant.dbSchema);
-      const alterResult = await tableManager.alterContentTable(
-        pool,
-        tenant.dbSchema,
-        model.tableName,
-        oldSchema,
-        input.schema
-      );
-      migrationChanges = alterResult.changes;
-
-      if (alterResult.applied) {
-        await tableManager.recordMigration(
-          pool,
-          tenant.dbSchema,
-          `v${model.version + 1}`,
-          `Schema update for ${model.code}`
-        );
-
-        const entries = await this.prisma.contentEntry.findMany({
-          where: {
-            tenantId: tenant.tenantId,
-            modelId,
-            deletedAt: null,
-          },
-          select: { id: true, data: true, publishedData: true },
-        });
-
-        for (const entry of entries) {
-          const migrateResult = schemaValidator.migrateContent(
-            entry.data as Record<string, unknown>,
-            oldSchema,
-            input.schema
-          );
-          warnings = [...warnings, ...migrateResult.warnings.map(w => `Entry ${entry.id}: ${w}`)];
-
-          await this.prisma.contentEntry.update({
-            where: { id: entry.id },
-            data: {
-              data: migrateResult.content as unknown as Prisma.JsonValue,
-              updatedAt: new Date(),
-            },
-          });
-
-          if (entry.publishedData) {
-            const publishedMigrateResult = schemaValidator.migrateContent(
-              entry.publishedData as Record<string, unknown>,
-              oldSchema,
-              input.schema
-            );
-            await this.prisma.contentEntry.update({
-              where: { id: entry.id },
-              data: {
-                publishedData: publishedMigrateResult.content as unknown as Prisma.JsonValue,
-              },
-            });
-          }
-        }
-      }
-    }
-
-    const updatedModel = await this.prisma.contentModel.update({
-      where: { id: modelId },
-      data: {
-        name: input.name,
-        description: input.description,
-        schemaJson: input.schema ? input.schema as unknown as Prisma.JsonValue : undefined,
-        version: { increment: input.schema ? 1 : 0 },
-      },
-    });
-
-    logger.info(
-      { tenantId: tenant.tenantId, modelId, migrationChanges, warnings },
-      'Updated content model'
-    );
-
-    return { model: updatedModel, migrationChanges, warnings };
+    return schemaRegistry.updateSchema(tenant, modelId, input);
   }
 
   async deleteContentModel(tenantId: string, modelId: string): Promise<void> {
-    const model = await this.getContentModel(tenantId, modelId);
-    if (!model) return;
+    return schemaRegistry.deleteSchema(tenantId, modelId);
+  }
 
-    const tenant = await this.prisma.tenant.findUnique({ where: { id: tenantId } });
-    if (tenant) {
-      const pool = connectionPool.getTenantPool(tenantId, tenant.dbSchema);
-      await tableManager.dropContentTable(pool, tenant.dbSchema, model.tableName);
-    }
+  async getSchemaVersionHistory(
+    tenantId: string,
+    modelId: string,
+    page = 1,
+    pageSize = 20
+  ): Promise<{
+    history: Array<{
+      version: number;
+      schema: ContentSchema;
+      createdAt: Date;
+      createdBy?: string;
+      description?: string;
+      migrationChanges?: string[];
+    }>;
+    total: number;
+  }> {
+    return schemaRegistry.getSchemaVersionHistory(tenantId, modelId, page, pageSize);
+  }
 
-    await this.prisma.$transaction([
-      this.prisma.contentVersion.deleteMany({ where: { modelId, tenantId } }),
-      this.prisma.contentEntry.deleteMany({ where: { modelId, tenantId } }),
-      this.prisma.workflowInstance.deleteMany({
-        where: { content: { modelId, tenantId } },
-      }),
-      this.prisma.workflowDefinition.deleteMany({ where: { modelId, tenantId } }),
-      this.prisma.searchConfig.deleteMany({ where: { modelId, tenantId } }),
-      this.prisma.contentModel.update({
-        where: { id: modelId },
-        data: { deletedAt: new Date() },
-      }),
-    ]);
-
-    logger.info({ tenantId, modelId }, 'Deleted content model');
+  async getSchemaByVersion(
+    tenantId: string,
+    modelId: string,
+    version: number
+  ): Promise<{
+    version: number;
+    schema: ContentSchema;
+    createdAt: Date;
+    createdBy?: string;
+    description?: string;
+    migrationChanges?: string[];
+  } | null> {
+    return schemaRegistry.getSchemaByVersion(tenantId, modelId, version);
   }
 
   async createContent(
@@ -237,13 +114,11 @@ export class ContentModelService {
     modelId: string,
     input: CreateContentInput
   ): Promise<ContentEntry> {
-    const model = await this.getContentModel(tenant.tenantId, modelId);
-    if (!model) {
-      throw new Error('Content model not found');
-    }
-
-    const schema = model.schemaJson as unknown as ContentSchema;
-    const validation = schemaValidator.validateContent(input.data, schema);
+    const validation = await schemaRegistry.validateContentAgainstSchema(
+      tenant.tenantId,
+      modelId,
+      input.data
+    );
     if (!validation.valid) {
       throw new Error(`Invalid content: ${validation.errors.join(', ')}`);
     }
@@ -330,8 +205,11 @@ export class ContentModelService {
       }
     }
 
-    const schema = model.schemaJson as unknown as ContentSchema;
-    const validation = schemaValidator.validateContent(input.data, schema);
+    const validation = await schemaRegistry.validateContentAgainstSchema(
+      tenant.tenantId,
+      modelId,
+      input.data
+    );
     if (!validation.valid) {
       throw new Error(`Invalid content: ${validation.errors.join(', ')}`);
     }
@@ -439,8 +317,11 @@ export class ContentModelService {
       total,
     };
   }
+
+  async close(): Promise<void> {
+    tableManagerListener.stop();
+    logger.info('Content model service closed');
+  }
 }
 
 export const contentModelService = new ContentModelService();
-
-import { Prisma } from '@prisma/client';

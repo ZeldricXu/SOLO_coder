@@ -2,7 +2,8 @@ import { WebhookConfig, WebhookDelivery } from '@prisma/client';
 import { Queue, Worker } from 'bullmq';
 import { connectionPool } from '../tenant/connection-pool';
 import { redisManager } from '../tenant/redis-manager';
-import { generateId, generateHmacSignature, verifyHmacSignature } from '@utils/crypto';
+import { generateId } from '@utils/crypto';
+import { generateWebhookSignature, verifyWebhookSignature, createWebhookSigner, SignAlgorithm } from '@utils/webhook-signer';
 import { logger } from '@utils/logger';
 import { config } from '@config/index';
 import { TenantContext } from '@types/index';
@@ -227,10 +228,10 @@ export class WebhookService {
       },
     });
 
-    const signature = generateHmacSignature(
+    const signature = generateWebhookSignature(
       JSON.stringify(payload),
       webhook.secret,
-      'sha256'
+      (webhook.signatureAlgorithm as SignAlgorithm) || 'HMAC-SHA256'
     );
 
     await this.deliveryQueue.add(
@@ -240,6 +241,7 @@ export class WebhookService {
         url: webhook.url,
         payload,
         signature,
+        signatureAlgorithm: (webhook.signatureAlgorithm as SignAlgorithm) || 'HMAC-SHA256',
         timeout: webhook.timeout,
         maxRetries: webhook.maxRetries,
       },
@@ -312,10 +314,10 @@ export class WebhookService {
     }
 
     const payload = delivery.payload as unknown as WebhookPayload;
-    const signature = generateHmacSignature(
+    const signature = generateWebhookSignature(
       JSON.stringify(payload),
       webhook.secret,
-      'sha256'
+      (webhook.signatureAlgorithm as SignAlgorithm) || 'HMAC-SHA256'
     );
 
     await this.deliveryQueue.add(
@@ -325,6 +327,7 @@ export class WebhookService {
         url: webhook.url,
         payload,
         signature,
+        signatureAlgorithm: (webhook.signatureAlgorithm as SignAlgorithm) || 'HMAC-SHA256',
         timeout: webhook.timeout,
         maxRetries: webhook.maxRetries,
       },
@@ -373,10 +376,10 @@ export class WebhookService {
       },
     };
 
-    const signature = generateHmacSignature(
+    const signature = generateWebhookSignature(
       JSON.stringify(testPayload),
       webhook.secret,
-      'sha256'
+      (webhook.signatureAlgorithm as SignAlgorithm) || 'HMAC-SHA256'
     );
 
     try {
@@ -395,9 +398,11 @@ export class WebhookService {
   verifyWebhookSignature(
     payload: string,
     signatureHeader: string,
-    secret: string
+    secret: string,
+    algorithm: SignAlgorithm = 'HMAC-SHA256'
   ): boolean {
-    return verifyHmacSignature(payload, signatureHeader, secret, 'sha256');
+    const result = verifyWebhookSignature(payload, signatureHeader, secret, algorithm);
+    return result.valid;
   }
 
   private async deliverWebhook(
