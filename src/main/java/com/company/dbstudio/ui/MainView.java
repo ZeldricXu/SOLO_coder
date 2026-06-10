@@ -15,6 +15,8 @@ import com.company.dbstudio.sql.service.ExecutionPlanParser;
 import com.company.dbstudio.sql.service.QueryExecutor;
 import com.company.dbstudio.sql.service.SqlParserService;
 import com.company.dbstudio.sql.ui.SqlEditorView;
+import com.company.dbstudio.update.UpdateNotifier;
+import com.company.dbstudio.update.VersionManager;
 import javafx.application.Platform;
 import javafx.geometry.Orientation;
 import javafx.scene.Node;
@@ -31,6 +33,7 @@ public class MainView {
     private final BorderPane root;
     private final ConnectionManager connectionManager;
     private final DialogManager dialogManager;
+    private final UpdateNotifier updateNotifier;
 
     private SplitPane mainSplit;
     private TreeView<String> connectionTree;
@@ -41,11 +44,13 @@ public class MainView {
         this.root = new BorderPane();
         this.connectionManager = ApplicationContext.getBean(ConnectionManager.class);
         this.dialogManager = ApplicationContext.getBean(DialogManager.class);
+        this.updateNotifier = new UpdateNotifier();
 
         registerServices();
         initializeUI();
         setupEventHandlers();
         loadConnections();
+        updateNotifier.initialize();
     }
 
     private void registerServices() {
@@ -110,7 +115,9 @@ public class MainView {
         Menu helpMenu = new Menu("帮助");
         MenuItem aboutItem = new MenuItem("关于");
         aboutItem.setOnAction(e -> showAboutDialog());
-        helpMenu.getItems().add(aboutItem);
+        MenuItem checkUpdateItem = new MenuItem("检查更新...");
+        checkUpdateItem.setOnAction(e -> updateNotifier.checkForUpdatesNow());
+        helpMenu.getItems().addAll(checkUpdateItem, new SeparatorMenuItem(), aboutItem);
 
         menuBar.getMenus().addAll(fileMenu, viewMenu, toolsMenu, helpMenu);
         return menuBar;
@@ -255,14 +262,22 @@ public class MainView {
     }
 
     private HBox createStatusBar() {
-        HBox statusBar = new HBox(10);
-        statusBar.setStyle("-fx-padding: 5; -fx-background-color: #e9ecef; -fx-border-color: #dee2e6; -fx-border-width: 1 0 0 0;");
+        HBox statusBar = new HBox(15);
+        statusBar.setStyle("-fx-padding: 5 10 5 10; -fx-background-color: #e9ecef; -fx-border-color: #dee2e6; -fx-border-width: 1 0 0 0;");
+        statusBar.setSpacing(15);
 
         statusLabel = new Label("就绪");
         statusBar.getChildren().add(statusLabel);
 
+        Region spacer = new Region();
+        spacer.setPrefWidth(Double.MAX_VALUE);
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+        statusBar.getChildren().add(spacer);
+
+        statusBar.getChildren().add(updateNotifier.getStatusBarNode());
+
         Label memoryLabel = new Label("内存: 0MB/0MB");
-        memoryLabel.setStyle("-fx-padding-left: 20;");
+        memoryLabel.setStyle("-fx-text-fill: #888888;");
         statusBar.getChildren().add(memoryLabel);
 
         return statusBar;
@@ -493,17 +508,20 @@ public class MainView {
     }
 
     private void showAboutDialog() {
+        VersionManager vm = VersionManager.getInstance();
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("关于 DBStudio");
-        alert.setHeaderText("DBStudio v1.0.0");
+        alert.setHeaderText(vm.getAppName() + " v" + vm.getVersionString());
         alert.setContentText(
                 "轻量级、可扩展的数据库桌面管理工具\n\n" +
+                "版本: " + vm.getVersionString() + "\n" +
+                "构建时间: " + vm.getBuildTimestamp() + "\n\n" +
                 "技术栈:\n" +
                 "  • Java 21 + JavaFX 21\n" +
                 "  • HikariCP 5.1.0 (连接池)\n" +
                 "  • JSqlParser 4.9 (SQL解析)\n" +
                 "  • Apache POI + Parquet (数据导出)\n\n" +
-                "© 2024 Company DBA Team"
+                vm.getCopyright()
         );
         alert.showAndWait();
     }

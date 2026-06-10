@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+
+    <Match>
+        <Class name="~.*\.module-info$"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*\.package-info$"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*Test$"/>
+    </Match>
+
+    <Match>
+        <Class name="~.*\.test\..*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_NULL_ON_SOME_PATH"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_ALWAYS_NULL"/>
+        <Method name="handle"/>
+        <Class name="com.company.dbstudio.core.exception.GlobalExceptionHandler"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Package name="com.company.dbstudio.connection.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Package name="com.company.dbstudio.connection.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Package name="com.company.dbstudio.etl.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Package name="com.company.dbstudio.etl.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Package name="com.company.dbstudio.sql.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Package name="com.company.dbstudio.sql.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Package name="com.company.dbstudio.performance.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Package name="com.company.dbstudio.performance.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Package name="com.company.dbstudio.core.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Package name="com.company.dbstudio.core.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP"/>
+        <Package name="com.company.dbstudio.update.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP2"/>
+        <Package name="com.company.dbstudio.update.model"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="PREDICTABLE_RANDOM"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="SQL_NONCONSTANT_STRING_PASSED_TO_EXECUTE"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="SQL_PREPARED_STATEMENT_GENERATED_FROM_NONCONSTANT_STRING"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="SQL_INJECTION_JDBC"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="DM_DEFAULT_ENCODING"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="DM_CONVERT_CASE"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="UC_USELESS_OBJECT"/>
+        <Package name="com.company.dbstudio.etl.service"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="BC_UNCONFIRMED_CAST"/>
+        <Package name="com.company.dbstudio.sql.ui"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="BC_UNCONFIRMED_CAST_OF_RETURN_VALUE"/>
+        <Package name="com.company.dbstudio.sql.ui"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="MS_CANNOT_BE_FINAL"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="MS_MUTABLE_COLLECTION"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="IS2_INCONSISTENT_SYNC"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="URF_UNREAD_FIELD"/>
+        <Field name="id"/>
+        <Package name="com.company.dbstudio.connection.repository"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="UUF_UNUSED_FIELD"/>
+        <Field name="id"/>
+        <Package name="com.company.dbstudio.connection.repository"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="USBR_UNNECESSARY_STORE_BEFORE_RETURN"/>
+        <Package name="com.company.dbstudio.*"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_LOAD_OF_KNOWN_NULL_VALUE"/>
+        <Package name="com.company.dbstudio.etl.exporter"/>
+    </Match>
+
+    <Match>
+        <Bug pattern="NP_STORE_INTO_NONNULL_FIELD"/>
+        <Package name="com.company.dbstudio.etl.exporter"/>
+    </Match>
+
+</FindBugsFilter>

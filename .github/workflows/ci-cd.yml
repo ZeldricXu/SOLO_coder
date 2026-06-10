@@ -1,0 +1,375 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+env:
+  APP_NAME: DBStudio
+  JAVA_VERSION: '21'
+  JAVA_DISTRIBUTION: 'temurin'
+  MAVEN_OPTS: '-Xmx2048m -Dfile.encoding=UTF-8'
+
+jobs:
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Run Checkstyle
+        run: mvn checkstyle:check -Dcheckstyle.failOnViolation=true
+
+      - name: Run SpotBugs
+        run: mvn spotbugs:spotbugs -Dmaven.test.skip=true
+
+      - name: Upload SpotBugs report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotbugs-report
+          path: target/spotbugs.html
+          retention-days: 7
+
+  test:
+    name: Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: read
+
+    services:
+      docker:
+        image: docker:24.0.5-dind
+        options: --privileged
+        ports:
+          - 2375:2375
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Set up Docker
+        uses: docker/setup-buildx-action@v3
+
+      - name: Cache Testcontainers images
+        uses: actions/cache@v4
+        with:
+          path: /tmp/testcontainers-cache
+          key: testcontainers-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            testcontainers-${{ runner.os }}-
+
+      - name: Run unit tests
+        run: mvn test -DskipITs
+
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: target/surefire-reports
+          retention-days: 7
+
+      - name: Run integration tests
+        env:
+          DOCKER_HOST: tcp://localhost:2375
+          TESTCONTAINERS_RYUK_DISABLED: true
+          TESTCONTAINERS_CHECKS_DISABLE: true
+        run: mvn verify -Pintegration-tests -Dintegration-tests=true -DskipUTs=true
+
+      - name: Upload integration test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: target/failsafe-reports
+          retention-days: 7
+
+      - name: Upload test coverage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-coverage
+          path: target/site/jacoco/
+          retention-days: 7
+
+  test-gui:
+    name: GUI Tests
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Install Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb x11-apps x11-utils x11-xkb-utils
+
+      - name: Start Xvfb
+        run: |
+          Xvfb :99 -screen 0 1024x768x24 > /dev/null 2>&1 &
+          echo "DISPLAY=:99.0" >> $GITHUB_ENV
+
+      - name: Run GUI tests
+        env:
+          DISPLAY: :99.0
+          JAVA_TOOL_OPTIONS: '-Djava.awt.headless=false -Dtestfx.robot=glass -Dtestfx.headless=false -Dprism.order=sw'
+        run: mvn test -Dtest=**/Gui*Test.java
+
+      - name: Upload GUI test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-test-reports
+          path: target/surefire-reports
+          retention-days: 7
+
+  package:
+    name: Package ${{ matrix.os }}
+    needs: [test, test-gui]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            os-name: linux
+            package-ext: '*.deb,*.rpm'
+            profile: 'linux-deb'
+          - os: macos-latest
+            os-name: macos
+            package-ext: '*.dmg'
+            profile: 'macos'
+          - os: windows-latest
+            os-name: windows
+            package-ext: '*.msi'
+            profile: 'windows'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Java (with jpackage)
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+
+      - name: Install Linux dependencies (Debian)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            fakeroot \
+            rpm \
+            binutils \
+            xdg-utils \
+            libx11-dev \
+            libxext-dev \
+            libxrender-dev \
+            libxtst-dev \
+            libxi-dev
+
+      - name: Install macOS dependencies
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install --cask xquartz || true
+
+      - name: Install Windows dependencies
+        if: matrix.os == 'windows-latest'
+        run: |
+          choco install wixtoolset -y
+
+      - name: Get version from pom.xml
+        id: get-version
+        shell: bash
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "build-date=$(date +'%Y-%m-%d')" >> $GITHUB_OUTPUT
+          echo "Build version: $VERSION"
+
+      - name: Build with Maven (skip tests)
+        shell: bash
+        run: |
+          mvn clean package -Pquick-build -P${{ matrix.profile }} \
+            -DskipTests \
+            -Dmaven.test.skip=true \
+            -Dcheckstyle.skip=true \
+            -Dspotbugs.skip=true
+
+      - name: Run jpackage
+        shell: bash
+        run: |
+          mvn jpackage:jpackage -P${{ matrix.profile }} \
+            -DskipTests \
+            -Dmaven.test.skip=true
+
+      - name: Generate checksums
+        shell: bash
+        working-directory: target/dist
+        run: |
+          for file in *; do
+            if [ -f "$file" ]; then
+              sha256sum "$file" > "$file.sha256"
+            fi
+          done
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ matrix.os-name }}-${{ steps.get-version.outputs.version }}
+          path: |
+            target/dist/*.deb
+            target/dist/*.rpm
+            target/dist/*.dmg
+            target/dist/*.msi
+            target/dist/*.sha256
+          retention-days: 30
+
+  release:
+    name: Create Release
+    needs: package
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      discussions: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get version
+        id: get-version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "release-version=$GITHUB_REF" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./artifacts
+
+      - name: Prepare release files
+        run: |
+          mkdir -p release-files
+          find ./artifacts -type f \( -name "*.deb" -o -name "*.rpm" -o -name "*.dmg" -o -name "*.msi" -o -name "*.sha256" \) -exec cp {} release-files/ \;
+          ls -la release-files/
+
+      - name: Generate release notes
+        id: release-notes
+        run: |
+          cat > release-notes.md << 'EOF'
+          ## DBStudio ${{ steps.get-version.outputs.version }}
+
+          ### New Features
+          - ...
+
+          ### Bug Fixes
+          - ...
+
+          ### Improvements
+          - ...
+
+          ### Download
+
+          | Platform | File | Checksum |
+          |----------|------|----------|
+          EOF
+
+          for file in release-files/*.deb release-files/*.rpm release-files/*.dmg release-files/*.msi; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              checksum=""
+              if [ -f "$file.sha256" ]; then
+                checksum=$(cat "$file.sha256" | awk '{print $1}')
+              fi
+              platform=""
+              case "$filename" in
+                *.deb) platform="Linux (Debian/Ubuntu)" ;;
+                *.rpm) platform="Linux (CentOS/Fedora)" ;;
+                *.dmg) platform="macOS" ;;
+                *.msi) platform="Windows" ;;
+              esac
+              echo "| $platform | [$filename](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get-version.outputs.version }}/$filename) | \`$checksum\` |" >> release-notes.md
+            fi
+          done
+
+          echo "release_notes<<EOF" >> $GITHUB_OUTPUT
+          cat release-notes.md >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: DBStudio ${{ steps.get-version.outputs.version }}
+          body: ${{ steps.release-notes.outputs.release_notes }}
+          draft: false
+          prerelease: false
+          files: |
+            release-files/*.deb
+            release-files/*.rpm
+            release-files/*.dmg
+            release-files/*.msi
+            release-files/*.sha256
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+          discussion_category_name: Releases
+
+      - name: Notify teams
+        run: |
+          echo "Release v${{ steps.get-version.outputs.version }} has been published!"

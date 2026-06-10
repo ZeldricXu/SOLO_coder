@@ -16,6 +16,13 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
+        <app.name>DBStudio</app.name>
+        <app.version>1.0.0</app.version>
+        <app.vendor>Company DBA Team</app.vendor>
+        <app.main.class>com.company.dbstudio.DBStudioApplication</app.main.class>
+        <app.description>Lightweight Database Management Desktop Client</app.description>
+        <app.copyright>Copyright © 2024 Company DBA Team</app.copyright>
+        <github.repo>company/dbstudio</github.repo>
         <javafx.version>21</javafx.version>
         <hikaricp.version>5.1.0</hikaricp.version>
         <jsqlparser.version>4.9</jsqlparser.version>
@@ -33,6 +40,7 @@
         <controlsfx.version>11.2.1</controlsfx.version>
         <richtextfx.version>0.11.2</richtextfx.version>
         <fontawesome.version>4.2.0</fontawesome.version>
+        <h2.version>2.2.224</h2.version>
         <!-- Test versions -->
         <junit.version>5.10.2</junit.version>
         <testfx.version>4.0.18</testfx.version>
@@ -40,6 +48,23 @@
         <testcontainers.version>1.19.7</testcontainers.version>
         <mockito.version>5.11.0</mockito.version>
         <awaitility.version>4.2.1</awaitility.version>
+        <!-- Plugin versions -->
+        <maven.shade.version>3.5.3</maven.shade.version>
+        <maven.jar.version>3.4.1</maven.jar.version>
+        <javafx.plugin.version>0.0.8</javafx.plugin.version>
+        <jlink.plugin.version>3.1.0</jlink.plugin.version>
+        <jpackage.plugin.version>1.6.0</jpackage.plugin.version>
+        <checkstyle.version>3.3.1</checkstyle.version>
+        <spotbugs.version>4.8.3.1</spotbugs.version>
+        <checkstyle.rules.version>10.14.2</checkstyle.rules.version>
+        <!-- JLink modules - only include what we use -->
+        <jlink.modules>
+            java.base,java.sql,java.naming,java.net.http,java.xml,java.logging,
+            java.desktop,java.management,java.security.jgss,java.instrument,
+            java.compiler,java.rmi,
+            javafx.controls,javafx.fxml,javafx.swing,javafx.web,
+            javafx.graphics,javafx.base,javafx.media
+        </jlink.modules>
     </properties>
 
     <dependencies>
@@ -275,16 +300,22 @@
             <scope>test</scope>
         </dependency>
 
-        <!-- H2 for lightweight testing -->
+        <!-- H2 embedded database for connection config storage -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
-            <version>2.2.224</version>
-            <scope>test</scope>
+            <version>${h2.version}</version>
         </dependency>
     </dependencies>
 
     <build>
+        <finalName>${app.name}-${app.version}</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -304,18 +335,64 @@
             </plugin>
 
             <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>${maven.jar.version}</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <mainClass>${app.main.class}</mainClass>
+                            <addClasspath>true</addClasspath>
+                        </manifest>
+                        <manifestEntries>
+                            <Implementation-Title>${app.name}</Implementation-Title>
+                            <Implementation-Version>${app.version}</Implementation-Version>
+                            <Implementation-Vendor>${app.vendor}</Implementation-Vendor>
+                            <Specification-Title>${app.name}</Specification-Title>
+                            <Specification-Version>${app.version}</Specification-Version>
+                            <Build-Timestamp>${maven.build.timestamp}</Build-Timestamp>
+                            <GitHub-Repo>${github.repo}</GitHub-Repo>
+                            <Main-Class>${app.main.class}</Main-Class>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
+
+            <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
-                <version>0.0.8</version>
+                <version>${javafx.plugin.version}</version>
                 <configuration>
-                    <mainClass>com.company.dbstudio.DBStudioApplication</mainClass>
+                    <mainClass>${app.main.class}</mainClass>
+                    <compress>2</compress>
+                    <noHeaderFiles>true</noHeaderFiles>
+                    <noManPages>true</noManPages>
+                    <stripDebug>true</stripDebug>
+                    <stripNativeCommands>true</stripNativeCommands>
+                    <includePathExplicit>false</includePathExplicit>
+                    <output>${project.build.directory}/jre</output>
+                    <jlinkImageName>${app.name}-jre</jlinkImageName>
+                    <jlinkZipName>${app.name}-jre-${app.version}</jlinkZipName>
+                    <launcher>
+                        <name>${app.name}</name>
+                        <command>${app.name}</command>
+                    </launcher>
                 </configuration>
+                <executions>
+                    <execution>
+                        <id>jlink-build</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jlink</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
 
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
-                <version>3.5.3</version>
+                <version>${maven.shade.version}</version>
                 <executions>
                     <execution>
                         <phase>package</phase>
@@ -323,9 +400,26 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <createDependencyReducedPom>false</createDependencyReducedPom>
+                            <shadedArtifactAttached>true</shadedArtifactAttached>
+                            <shadedClassifierName>shaded</shadedClassifierName>
                             <transformers>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>com.company.dbstudio.DBStudioApplication</mainClass>
+                                    <mainClass>${app.main.class}</mainClass>
+                                    <manifestEntries>
+                                        <Implementation-Title>${app.name}</Implementation-Title>
+                                        <Implementation-Version>${app.version}</Implementation-Version>
+                                        <Implementation-Vendor>${app.vendor}</Implementation-Vendor>
+                                        <Build-Timestamp>${maven.build.timestamp}</Build-Timestamp>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ModuleInfoTransformer"/>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/spring.handlers</resource>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.AppendingTransformer">
+                                    <resource>META-INF/spring.schemas</resource>
                                 </transformer>
                             </transformers>
                             <filters>
@@ -335,10 +429,55 @@
                                         <exclude>META-INF/*.SF</exclude>
                                         <exclude>META-INF/*.DSA</exclude>
                                         <exclude>META-INF/*.RSA</exclude>
+                                        <exclude>META-INF/maven/**</exclude>
+                                        <exclude>**/module-info.class</exclude>
                                     </excludes>
                                 </filter>
                             </filters>
                         </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <plugin>
+                <groupId>org.panteleyev</groupId>
+                <artifactId>jpackage-maven-plugin</artifactId>
+                <version>${jpackage.plugin.version}</version>
+                <configuration>
+                    <name>${app.name}</name>
+                    <version>${app.version}</version>
+                    <vendor>${app.vendor}</vendor>
+                    <appVersion>${app.version}</appVersion>
+                    <destination>${project.build.directory}/dist</destination>
+                    <mainJar>${project.build.directory}/${project.build.finalName}-shaded.jar</mainJar>
+                    <mainClass>${app.main.class}</mainClass>
+                    <description>${app.description}</description>
+                    <copyright>${app.copyright}</copyright>
+                    <runtimeImage>${project.build.directory}/jre/${app.name}-jre</runtimeImage>
+                    <javaOptions>
+                        <option>-Xms256m</option>
+                        <option>-Xmx1024m</option>
+                        <option>--add-opens=javafx.graphics/javafx.scene=ALL-UNNAMED</option>
+                        <option>--add-opens=javafx.graphics/javafx.stage=ALL-UNNAMED</option>
+                        <option>--add-opens=javafx.controls/javafx.scene.control=ALL-UNNAMED</option>
+                        <option>-Dfile.encoding=UTF-8</option>
+                    </javaOptions>
+                    <fileAssociations>
+                        <fileAssociation>
+                            <extension>sql</extension>
+                            <mimeType>text/plain</mimeType>
+                            <icon>src/main/resources/icons/file-sql.ico</icon>
+                            <description>SQL Query File</description>
+                        </fileAssociation>
+                    </fileAssociations>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>jpackage-all</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>jpackage</goal>
+                        </goals>
                     </execution>
                 </executions>
             </plugin>
@@ -368,11 +507,261 @@
                     </argLine>
                     <forkCount>1</forkCount>
                     <reuseForks>false</reuseForks>
+                    <excludes>
+                        <exclude>**/Gui*.java</exclude>
+                        <exclude>**/Integration*.java</exclude>
+                    </excludes>
                     <systemPropertyVariables>
                         <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <argLine>
+                        --add-opens javafx.graphics/javafx.scene=ALL-UNNAMED
+                        --add-opens javafx.graphics/javafx.stage=ALL-UNNAMED
+                        --add-opens javafx.controls/javafx.scene.control=ALL-UNNAMED
+                        --add-opens javafx.base/com.sun.javafx.runtime=ALL-UNNAMED
+                        --add-opens javafx.graphics/com.sun.javafx.application=ALL-UNNAMED
+                        --add-opens javafx.graphics/com.sun.javafx.stage=ALL-UNNAMED
+                        --add-opens javafx.graphics/com.sun.javafx.scene=ALL-UNNAMED
+                        --add-opens javafx.controls/com.sun.javafx.scene.control=ALL-UNNAMED
+                        --add-exports javafx.graphics/com.sun.javafx.application=ALL-UNNAMED
+                        -Djava.awt.headless=true
+                        -Dtestfx.robot=glass
+                        -Dtestfx.headless=true
+                        -Dprism.order=sw
+                        -Dprism.text=t2k
+                    </argLine>
+                    <forkCount>1</forkCount>
+                    <reuseForks>false</reuseForks>
+                    <includes>
+                        <include>**/*Integration*.java</include>
+                        <include>**/Gui*.java</include>
+                    </includes>
+                    <systemPropertyVariables>
+                        <junit.jupiter.extensions.autodetection.enabled>true</junit.jupiter.extensions.autodetection.enabled>
+                    </systemPropertyVariables>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- Checkstyle for code quality -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-checkstyle-plugin</artifactId>
+                <version>${checkstyle.version}</version>
+                <configuration>
+                    <configLocation>checkstyle.xml</configLocation>
+                    <encoding>UTF-8</encoding>
+                    <consoleOutput>true</consoleOutput>
+                    <failsOnError>true</failsOnError>
+                    <linkXRef>false</linkXRef>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>checkstyle-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.puppycrawl.tools</groupId>
+                        <artifactId>checkstyle</artifactId>
+                        <version>${checkstyle.rules.version}</version>
+                    </dependency>
+                </dependencies>
+            </plugin>
+
+            <!-- SpotBugs for static analysis -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>${spotbugs.version}</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <threshold>Low</threshold>
+                    <failOnError>false</failOnError>
+                    <includeTests>false</includeTests>
+                    <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+                    <xmlOutput>true</xmlOutput>
+                    <htmlOutput>true</htmlOutput>
+                    <plugins>
+                        <plugin>
+                            <groupId>com.h3xstream.findsecbugs</groupId>
+                            <artifactId>findsecbugs-plugin</artifactId>
+                            <version>1.12.0</version>
+                        </plugin>
+                    </plugins>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotbugs-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>spotbugs</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>windows</id>
+            <activation>
+                <os>
+                    <family>windows</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <configuration>
+                            <type>MSI</type>
+                            <icon>src/main/resources/icons/app-icon.ico</icon>
+                            <winDirChooser>true</winDirChooser>
+                            <winShortcut>true</winShortcut>
+                            <winMenu>true</winMenu>
+                            <winMenuGroup>${app.name}</winMenuGroup>
+                            <winPerUserInstall>true</winPerUserInstall>
+                            <winRegistryCompany>${app.vendor}</winRegistryCompany>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>macos</id>
+            <activation>
+                <os>
+                    <family>mac</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <configuration>
+                            <type>DMG</type>
+                            <icon>src/main/resources/icons/app-icon.icns</icon>
+                            <macSign>false</macSign>
+                            <macBundleName>${app.name}</macBundleName>
+                            <macPackageIdentifier>com.company.dbstudio</macPackageIdentifier>
+                            <macPackageName>${app.name}</macPackageName>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>linux-deb</id>
+            <activation>
+                <os>
+                    <family>linux</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <configuration>
+                            <type>DEB</type>
+                            <icon>src/main/resources/icons/app-icon.png</icon>
+                            <linuxPackageName>dbstudio</linuxPackageName>
+                            <linuxShortcut>true</linuxShortcut>
+                            <linuxAppCategory>Development</linuxAppCategory>
+                            <linuxDebMaintainer>${app.vendor}</linuxDebMaintainer>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>linux-rpm</id>
+            <activation>
+                <os>
+                    <family>linux</family>
+                </os>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.panteleyev</groupId>
+                        <artifactId>jpackage-maven-plugin</artifactId>
+                        <configuration>
+                            <type>RPM</type>
+                            <icon>src/main/resources/icons/app-icon.png</icon>
+                            <linuxPackageName>dbstudio</linuxPackageName>
+                            <linuxShortcut>true</linuxShortcut>
+                            <linuxAppCategory>Development</linuxAppCategory>
+                            <linuxRpmLicense>MIT</linuxRpmLicense>
+                            <linuxRpmVendor>${app.vendor}</linuxRpmVendor>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <id>integration-tests</id>
+            <activation>
+                <property>
+                    <name>integration-tests</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <properties>
+                <skipTests>false</skipTests>
+            </properties>
+        </profile>
+
+        <profile>
+            <id>quick-build</id>
+            <properties>
+                <skipTests>true</skipTests>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-checkstyle-plugin</artifactId>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>com.github.spotbugs</groupId>
+                        <artifactId>spotbugs-maven-plugin</artifactId>
+                        <configuration>
+                            <skip>true</skip>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

@@ -9,6 +9,8 @@ import org.slf4j.LoggerFactory;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 
 public class ApplicationContext {
@@ -106,5 +108,14 @@ public class ApplicationContext {
 
     public static boolean isInitialized() {
         return initialized;
+    }
+
+    public static ScheduledExecutorService createVirtualThreadScheduledExecutor(String namePattern, int corePoolSize) {
+        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
+                corePoolSize,
+                Thread.ofVirtual().name(namePattern).factory()
+        );
+        executor.setRemoveOnCancelPolicy(true);
+        return executor;
     }
 }
