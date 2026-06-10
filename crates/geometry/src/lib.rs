@@ -8,6 +8,7 @@ pub mod boolean;
 pub mod transform;
 pub mod snap;
 pub mod style;
+pub mod tools;
 
 pub use types::*;
 pub use bbox::*;
@@ -17,6 +18,7 @@ pub use boolean::*;
 pub use transform::*;
 pub use snap::*;
 pub use style::*;
+pub use tools::*;
 
 #[wasm_bindgen(start)]
 pub fn init() {

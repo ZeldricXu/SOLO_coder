@@ -10,6 +10,9 @@ import type {
   ShapeType,
   ShapeStyle,
   Version,
+  StarConfig,
+  ArrowConfig,
+  RichTextConfig,
 } from '../types';
 
 interface BoardActions {
@@ -21,6 +24,9 @@ interface BoardActions {
   setStrokeStyle: (style: Partial<StrokeStyle>) => void;
   setShapeType: (type: ShapeType) => void;
   setShapeStyle: (style: Partial<ShapeStyle>) => void;
+  setStarConfig: (config: Partial<StarConfig>) => void;
+  setArrowConfig: (config: Partial<ArrowConfig>) => void;
+  setRichTextConfig: (config: Partial<RichTextConfig>) => void;
   addLayer: (layer: Layer) => void;
   updateLayer: (id: string, updates: Partial<Layer>) => void;
   removeLayer: (id: string) => void;
@@ -64,6 +70,30 @@ const defaultShapeStyle: ShapeStyle = {
   opacity: 1,
 };
 
+const defaultStarConfig: StarConfig = {
+  outerRadius: 50,
+  innerRadius: 25,
+  numPoints: 5,
+  rotation: 0,
+};
+
+const defaultArrowConfig: ArrowConfig = {
+  headStyle: 'triangle',
+  tailStyle: 'none',
+  headSize: 12,
+  tailSize: 12,
+};
+
+const defaultRichTextConfig: RichTextConfig = {
+  fontFamily: 'Arial, sans-serif',
+  fontSize: 14,
+  fontColor: '#000000',
+  textAlign: 'left',
+  backgroundColor: 'transparent',
+  padding: 8,
+  contentHtml: '',
+};
+
 const defaultLayer: Layer = {
   id: 'default',
   name: '默认图层',
@@ -88,6 +118,9 @@ export const useBoardStore = create<BoardState & BoardActions>((set, get) => ({
     strokeStyle: defaultStrokeStyle,
     shapeType: 'rectangle',
     shapeStyle: defaultShapeStyle,
+    starConfig: defaultStarConfig,
+    arrowConfig: defaultArrowConfig,
+    richTextConfig: defaultRichTextConfig,
   },
   showGrid: true,
   showExportPanel: false,
@@ -144,6 +177,30 @@ export const useBoardStore = create<BoardState & BoardActions>((set, get) => ({
       tool: {
         ...state.tool,
         shapeStyle: { ...state.tool.shapeStyle, ...style },
+      },
+    })),
+
+  setStarConfig: (config) =>
+    set((state) => ({
+      tool: {
+        ...state.tool,
+        starConfig: { ...state.tool.starConfig, ...config },
+      },
+    })),
+
+  setArrowConfig: (config) =>
+    set((state) => ({
+      tool: {
+        ...state.tool,
+        arrowConfig: { ...state.tool.arrowConfig, ...config },
+      },
+    })),
+
+  setRichTextConfig: (config) =>
+    set((state) => ({
+      tool: {
+        ...state.tool,
+        richTextConfig: { ...state.tool.richTextConfig, ...config },
       },
     })),
 

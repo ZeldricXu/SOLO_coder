@@ -1,5 +1,6 @@
 use wasm_bindgen::prelude::*;
-use crate::types::{Point, Polygon, Rect, Circle, Ellipse, Star, Scalar};
+use crate::types::{Point, Polygon, Rect, Circle, Ellipse, Star, Scalar, ArrowStyle};
+use crate::path::RenderPath;
 
 #[wasm_bindgen]
 pub struct ShapeGenerator;
@@ -172,5 +173,158 @@ impl ShapeGenerator {
             ));
         }
         points
+    }
+
+    pub fn create_star_path(
+        center: Point,
+        outer_r: Scalar,
+        inner_r: Scalar,
+        num_points: u32,
+        rotation: Scalar,
+    ) -> RenderPath {
+        let mut path = RenderPath::empty();
+        let n = num_points.max(3) as usize;
+        for i in 0..n * 2 {
+            let angle = rotation + (i as Scalar) * std::f64::consts::PI / (n as Scalar);
+            let radius = if i % 2 == 0 { outer_r } else { inner_r };
+            let p = Point::new(
+                center.x + radius * angle.cos(),
+                center.y + radius * angle.sin(),
+            );
+            if i == 0 {
+                path.move_to(p);
+            } else {
+                path.line_to(p);
+            }
+        }
+        path.close();
+        path
+    }
+
+    pub fn create_arrow(
+        start: Point,
+        end: Point,
+        head_style: ArrowStyle,
+        tail_style: ArrowStyle,
+        head_size: Scalar,
+        tail_size: Scalar,
+    ) -> RenderPath {
+        let mut path = RenderPath::empty();
+
+        let dx = end.x - start.x;
+        let dy = end.y - start.y;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 1e-6 {
+            return path;
+        }
+
+        let ux = dx / len;
+        let uy = dy / len;
+        let nx = -uy;
+        let ny = ux;
+
+        let head_anchor: Point;
+        match head_style {
+            ArrowStyle::Triangle => {
+                let hs = head_size.max(0.0);
+                let anchor = Point::new(end.x - ux * hs, end.y - uy * hs);
+                let left = Point::new(anchor.x + nx * hs * 0.6, anchor.y + ny * hs * 0.6);
+                let right = Point::new(anchor.x - nx * hs * 0.6, anchor.y - ny * hs * 0.6);
+                path.move_to(anchor);
+                path.line_to(end);
+                path.line_to(left);
+                path.close();
+                path.move_to(anchor);
+                path.line_to(right);
+                path.close();
+                head_anchor = anchor;
+            }
+            ArrowStyle::Diamond => {
+                let hs = head_size.max(0.0);
+                let anchor = Point::new(end.x - ux * hs, end.y - uy * hs);
+                let tip = Point::new(end.x + ux * hs * 0.3, end.y + uy * hs * 0.3);
+                let left = Point::new(anchor.x + nx * hs * 0.5, anchor.y + ny * hs * 0.5);
+                let right = Point::new(anchor.x - nx * hs * 0.5, anchor.y - ny * hs * 0.5);
+                path.move_to(tip);
+                path.line_to(right);
+                path.line_to(anchor);
+                path.line_to(left);
+                path.close();
+                head_anchor = anchor;
+            }
+            ArrowStyle::None => {
+                head_anchor = Point::new(end.x, end.y);
+            }
+        }
+
+        let tail_anchor: Point;
+        match tail_style {
+            ArrowStyle::Triangle => {
+                let ts = tail_size.max(0.0);
+                let anchor = Point::new(start.x + ux * ts, start.y + uy * ts);
+                let left = Point::new(anchor.x + nx * ts * 0.6, anchor.y + ny * ts * 0.6);
+                let right = Point::new(anchor.x - nx * ts * 0.6, anchor.y - ny * ts * 0.6);
+                path.move_to(anchor);
+                path.line_to(start);
+                path.line_to(left);
+                path.close();
+                path.move_to(anchor);
+                path.line_to(right);
+                path.close();
+                tail_anchor = anchor;
+            }
+            ArrowStyle::Diamond => {
+                let ts = tail_size.max(0.0);
+                let anchor = Point::new(start.x + ux * ts, start.y + uy * ts);
+                let tip = Point::new(start.x - ux * ts * 0.3, start.y - uy * ts * 0.3);
+                let left = Point::new(anchor.x + nx * ts * 0.5, anchor.y + ny * ts * 0.5);
+                let right = Point::new(anchor.x - nx * ts * 0.5, anchor.y - ny * ts * 0.5);
+                path.move_to(tip);
+                path.line_to(left);
+                path.line_to(anchor);
+                path.line_to(right);
+                path.close();
+                tail_anchor = anchor;
+            }
+            ArrowStyle::None => {
+                tail_anchor = Point::new(start.x, start.y);
+            }
+        }
+
+        path.move_to(tail_anchor);
+        path.line_to(head_anchor);
+
+        path
+    }
+
+    pub fn create_rounded_textbox_path(rect: &Rect, radius: Scalar) -> RenderPath {
+        let r = radius.min(rect.width / 2.0).min(rect.height / 2.0);
+        let mut path = RenderPath::empty();
+        let segs = 8usize;
+        let step = std::f64::consts::FRAC_PI_2 / (segs as Scalar);
+
+        let corners = [
+            (rect.right() - r, rect.top() + r, std::f64::consts::PI * 1.5),
+            (rect.right() - r, rect.bottom() - r, 0.0),
+            (rect.left() + r, rect.bottom() - r, std::f64::consts::FRAC_PI_2),
+            (rect.left() + r, rect.top() + r, std::f64::consts::PI),
+        ];
+
+        for (ci, (cx, cy, start_angle)) in corners.iter().enumerate() {
+            for i in 0..segs {
+                let angle = start_angle + (i as Scalar) * step;
+                let p = Point::new(
+                    cx + r * angle.cos(),
+                    cy + r * angle.sin(),
+                );
+                if ci == 0 && i == 0 {
+                    path.move_to(p);
+                } else {
+                    path.line_to(p);
+                }
+            }
+        }
+        path.close();
+        path
     }
 }

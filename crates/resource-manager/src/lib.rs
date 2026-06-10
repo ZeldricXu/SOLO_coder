@@ -1628,3 +1628,883 @@ impl ResourceManager {
         }
     }
 }
+
+// ─────────────────────────────────────────────────────────────
+// 10. SVG Export - 图层化 SVG 导出
+// ─────────────────────────────────────────────────────────────
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExportLayerInfo {
+    id: String,
+    name: String,
+    layer_type: String,
+    visible: bool,
+    opacity: f64,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    path_data: String,
+    text_content: String,
+    font_family: String,
+    font_size: f64,
+    fill_color: String,
+    stroke_color: String,
+    stroke_width: f64,
+    transform_matrix: Vec<f64>,
+}
+
+#[wasm_bindgen]
+impl ExportLayerInfo {
+    #[wasm_bindgen(constructor)]
+    pub fn new(id: &str, name: &str, layer_type: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            name: name.to_string(),
+            layer_type: layer_type.to_string(),
+            visible: true,
+            opacity: 1.0,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            path_data: String::new(),
+            text_content: String::new(),
+            font_family: "sans-serif".to_string(),
+            font_size: 14.0,
+            fill_color: "#000000".to_string(),
+            stroke_color: "#333333".to_string(),
+            stroke_width: 1.0,
+            transform_matrix: vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0],
+        }
+    }
+
+    #[wasm_bindgen(getter)] pub fn id(&self) -> String { self.id.clone() }
+    #[wasm_bindgen(setter)] pub fn set_id(&mut self, v: String) { self.id = v; }
+    #[wasm_bindgen(getter)] pub fn name(&self) -> String { self.name.clone() }
+    #[wasm_bindgen(setter)] pub fn set_name(&mut self, v: String) { self.name = v; }
+    #[wasm_bindgen(getter)] pub fn layer_type(&self) -> String { self.layer_type.clone() }
+    #[wasm_bindgen(setter)] pub fn set_layer_type(&mut self, v: String) { self.layer_type = v; }
+    #[wasm_bindgen(getter)] pub fn visible(&self) -> bool { self.visible }
+    #[wasm_bindgen(setter)] pub fn set_visible(&mut self, v: bool) { self.visible = v; }
+    #[wasm_bindgen(getter)] pub fn opacity(&self) -> f64 { self.opacity }
+    #[wasm_bindgen(setter)] pub fn set_opacity(&mut self, v: f64) { self.opacity = v; }
+    #[wasm_bindgen(getter)] pub fn x(&self) -> f64 { self.x }
+    #[wasm_bindgen(setter)] pub fn set_x(&mut self, v: f64) { self.x = v; }
+    #[wasm_bindgen(getter)] pub fn y(&self) -> f64 { self.y }
+    #[wasm_bindgen(setter)] pub fn set_y(&mut self, v: f64) { self.y = v; }
+    #[wasm_bindgen(getter)] pub fn width(&self) -> f64 { self.width }
+    #[wasm_bindgen(setter)] pub fn set_width(&mut self, v: f64) { self.width = v; }
+    #[wasm_bindgen(getter)] pub fn height(&self) -> f64 { self.height }
+    #[wasm_bindgen(setter)] pub fn set_height(&mut self, v: f64) { self.height = v; }
+    #[wasm_bindgen(getter)] pub fn path_data(&self) -> String { self.path_data.clone() }
+    #[wasm_bindgen(setter)] pub fn set_path_data(&mut self, v: String) { self.path_data = v; }
+    #[wasm_bindgen(getter)] pub fn text_content(&self) -> String { self.text_content.clone() }
+    #[wasm_bindgen(setter)] pub fn set_text_content(&mut self, v: String) { self.text_content = v; }
+    #[wasm_bindgen(getter)] pub fn font_family(&self) -> String { self.font_family.clone() }
+    #[wasm_bindgen(setter)] pub fn set_font_family(&mut self, v: String) { self.font_family = v; }
+    #[wasm_bindgen(getter)] pub fn font_size(&self) -> f64 { self.font_size }
+    #[wasm_bindgen(setter)] pub fn set_font_size(&mut self, v: f64) { self.font_size = v; }
+    #[wasm_bindgen(getter)] pub fn fill_color(&self) -> String { self.fill_color.clone() }
+    #[wasm_bindgen(setter)] pub fn set_fill_color(&mut self, v: String) { self.fill_color = v; }
+    #[wasm_bindgen(getter)] pub fn stroke_color(&self) -> String { self.stroke_color.clone() }
+    #[wasm_bindgen(setter)] pub fn set_stroke_color(&mut self, v: String) { self.stroke_color = v; }
+    #[wasm_bindgen(getter)] pub fn stroke_width(&self) -> f64 { self.stroke_width }
+    #[wasm_bindgen(setter)] pub fn set_stroke_width(&mut self, v: f64) { self.stroke_width = v; }
+    #[wasm_bindgen(getter)] pub fn transform_matrix(&self) -> Vec<f64> { self.transform_matrix.clone() }
+    #[wasm_bindgen(setter)] pub fn set_transform_matrix(&mut self, v: Vec<f64>) { self.transform_matrix = v; }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone)]
+pub struct SVGExporter;
+
+#[wasm_bindgen]
+impl SVGExporter {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self { Self }
+
+    pub fn export_layers(&self, layers: Vec<JsValue>, viewbox_x: f64, viewbox_y: f64, viewbox_w: f64, viewbox_h: f64) -> String {
+        let parsed_layers: Vec<ExportLayerInfo> = layers.iter()
+            .filter_map(|v| serde_wasm_bindgen::from_value::<ExportLayerInfo>(v.clone()).ok())
+            .collect();
+        self.render_svg(&parsed_layers, viewbox_x, viewbox_y, viewbox_w, viewbox_h, true)
+    }
+
+    pub fn export_simple(&self, viewbox_x: f64, viewbox_y: f64, viewbox_w: f64, viewbox_h: f64) -> String {
+        self.render_svg(&[], viewbox_x, viewbox_y, viewbox_w, viewbox_h, false)
+    }
+
+    fn render_svg(&self, layers: &[ExportLayerInfo], vb_x: f64, vb_y: f64, vb_w: f64, vb_h: f64, with_layers: bool) -> String {
+        let mut svg = String::new();
+        svg.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+        svg.push_str(&format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" \
+             xmlns:xlink=\"http://www.w3.org/1999/xlink\" \
+             viewBox=\"{} {} {} {}\" \
+             width=\"{}\" height=\"{}\" version=\"1.1\">\n",
+            vb_x, vb_y, vb_w, vb_h, vb_w, vb_h
+        ));
+
+        svg.push_str("  <metadata>\n");
+        svg.push_str("    <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n");
+        svg.push_str("      <cc:Work xmlns:cc=\"http://creativecommons.org/ns#\">\n");
+        svg.push_str(&format!("        <dc:format xmlns:dc=\"http://purl.org/dc/elements/1.1/\">image/svg+xml</dc:format>\n"));
+        svg.push_str("      </cc:Work>\n");
+        svg.push_str("    </rdf:RDF>\n");
+        svg.push_str("  </metadata>\n");
+
+        svg.push_str("  <defs>\n");
+        svg.push_str("    <style type=\"text/css\"><![CDATA[\n");
+        svg.push_str("      .layer-group { display: inline; }\n");
+        svg.push_str("      .shape-path { fill: none; stroke: #333; stroke-width: 2; }\n");
+        svg.push_str("      .stroke-path { fill: none; stroke: #000; stroke-linecap: round; stroke-linejoin: round; }\n");
+        svg.push_str("      .text-element { font-family: sans-serif; }\n");
+        svg.push_str("      .image-placeholder { fill: #e0e0e0; stroke: #999; stroke-width: 1; }\n");
+        svg.push_str("      .arrow-path { fill: none; stroke: #333; stroke-width: 2; }\n");
+        svg.push_str("    ]]></style>\n");
+        svg.push_str("  </defs>\n");
+
+        if with_layers && !layers.is_empty() {
+            svg.push_str(&format!("  <g id=\"canvas-root\" transform=\"translate(0,0)\">\n"));
+
+            let mut current_group_depth: Vec<String> = Vec::new();
+
+            for layer in layers {
+                if !layer.visible {
+                    continue;
+                }
+
+                while current_group_depth.last().map_or(false, |g| g != "root") {
+                    svg.push_str("    </g>\n");
+                    current_group_depth.pop();
+                }
+
+                let indent = "    ";
+                let escaped_name = Self::escape_xml(&layer.name);
+                let transform_str = Self::format_transform(&layer.transform_matrix);
+                let opacity_str = if (layer.opacity - 1.0).abs() > 1e-6 {
+                    format!(" opacity=\"{:.3}\"", layer.opacity)
+                } else {
+                    String::new()
+                };
+
+                match layer.layer_type.as_str() {
+                    "group" => {
+                        svg.push_str(&format!(
+                            "{}<g id=\"layer-{}\" class=\"layer-group\" data-name=\"{}\"{}{}>\n",
+                            indent, layer.id, escaped_name, transform_str, opacity_str
+                        ));
+                        current_group_depth.push(layer.id.clone());
+                    }
+                    "text" => {
+                        svg.push_str(&format!(
+                            "{}<g id=\"layer-{}\" class=\"layer text-layer\" data-name=\"{}\"{}{}>\n",
+                            indent, layer.id, escaped_name, transform_str, opacity_str
+                        ));
+                        let text_content = if layer.text_content.is_empty() { "Text" } else { &layer.text_content };
+                        let escaped_text = Self::escape_xml(text_content);
+                        svg.push_str(&format!(
+                            "{}  <text x=\"{}\" y=\"{}\" font-family=\"{}\" font-size=\"{}\" fill=\"{}\" class=\"text-element\">{}</text>\n",
+                            indent, layer.x, layer.y + layer.font_size,
+                            layer.font_family, layer.font_size, layer.fill_color, escaped_text
+                        ));
+                        svg.push_str(&format!("{}</g>\n", indent));
+                    }
+                    "richtext" => {
+                        svg.push_str(&format!(
+                            "{}<g id=\"layer-{}\" class=\"layer richtext-layer\" data-name=\"{}\"{}{}>\n",
+                            indent, layer.id, escaped_name, transform_str, opacity_str
+                        ));
+                        let text_content = if layer.text_content.is_empty() { "<div>RichText</div>" } else { &layer.text_content };
+                        svg.push_str(&format!(
+                            "{}  <foreignObject x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\">\n",
+                            indent, layer.x, layer.y, layer.width.max(100.0), layer.height.max(50.0)
+                        ));
+                        svg.push_str(&format!(
+                            "{}    <div xmlns=\"http://www.w3.org/1999/xhtml\" style=\"font-family:{};font-size:{}px;color:{};\">\n",
+                            indent, layer.font_family, layer.font_size, layer.fill_color
+                        ));
+                        svg.push_str(&format!("{}      {}\n", indent, text_content));
+                        svg.push_str(&format!("{}    </div>\n", indent));
+                        svg.push_str(&format!("{}  </foreignObject>\n", indent));
+                        svg.push_str(&format!("{}</g>\n", indent));
+                    }
+                    "image" => {
+                        svg.push_str(&format!(
+                            "{}<g id=\"layer-{}\" class=\"layer image-layer\" data-name=\"{}\"{}{}>\n",
+                            indent, layer.id, escaped_name, transform_str, opacity_str
+                        ));
+                        svg.push_str(&format!(
+                            "{}  <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" class=\"image-placeholder\"/>\n",
+                            indent, layer.x, layer.y, layer.width, layer.height
+                        ));
+                        svg.push_str(&format!(
+                            "{}  <text x=\"{}\" y=\"{}\" font-size=\"12\" fill=\"#666\" text-anchor=\"middle\">Image</text>\n",
+                            indent, layer.x + layer.width / 2.0, layer.y + layer.height / 2.0
+                        ));
+                        svg.push_str(&format!("{}</g>\n", indent));
+                    }
+                    _ => {
+                        let class = match layer.layer_type.as_str() {
+                            "shape" => "shape-path",
+                            "stroke" => "stroke-path",
+                            "arrow" => "arrow-path",
+                            _ => "shape-path",
+                        };
+                        let d_attr = if layer.path_data.is_empty() {
+                            format!("M {} {} L {} {} L {} {} L {} {} Z",
+                                layer.x, layer.y,
+                                layer.x + layer.width, layer.y,
+                                layer.x + layer.width, layer.y + layer.height,
+                                layer.x, layer.y + layer.height
+                            )
+                        } else {
+                            layer.path_data.clone()
+                        };
+                        svg.push_str(&format!(
+                            "{}<g id=\"layer-{}\" class=\"layer {}-layer\" data-name=\"{}\"{}{}>\n",
+                            indent, layer.id, layer.layer_type, escaped_name, transform_str, opacity_str
+                        ));
+                        svg.push_str(&format!(
+                            "{}  <path d=\"{}\" fill=\"{}\" stroke=\"{}\" stroke-width=\"{}\" class=\"{}\"/>\n",
+                            indent, d_attr, layer.fill_color, layer.stroke_color, layer.stroke_width, class
+                        ));
+                        svg.push_str(&format!("{}</g>\n", indent));
+                    }
+                }
+            }
+
+            while !current_group_depth.is_empty() {
+                svg.push_str("    </g>\n");
+                current_group_depth.pop();
+            }
+
+            svg.push_str("  </g>\n");
+        }
+
+        svg.push_str("</svg>\n");
+        svg
+    }
+
+    fn format_transform(m: &[f64]) -> String {
+        if m.len() >= 6 {
+            let identity = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+            let is_identity = m.iter().zip(identity.iter()).all(|(a, b)| (a - b).abs() < 1e-6);
+            if !is_identity {
+                return format!(
+                    " transform=\"matrix({:.6} {:.6} {:.6} {:.6} {:.6} {:.6})\"",
+                    m[0], m[1], m[2], m[3], m[4], m[5]
+                );
+            }
+        }
+        String::new()
+    }
+
+    fn escape_xml(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&apos;")
+    }
+}
+
+impl Default for SVGExporter {
+    fn default() -> Self { Self::new() }
+}
+
+// ─────────────────────────────────────────────────────────────
+// 11. PDF Export - printpdf 库多页画板导出
+// ─────────────────────────────────────────────────────────────
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArtboardConfig {
+    name: String,
+    width_mm: f64,
+    height_mm: f64,
+    layer_ids: Vec<String>,
+}
+
+#[wasm_bindgen]
+impl ArtboardConfig {
+    #[wasm_bindgen(constructor)]
+    pub fn new(name: &str, width_mm: f64, height_mm: f64) -> Self {
+        Self {
+            name: name.to_string(),
+            width_mm,
+            height_mm,
+            layer_ids: Vec::new(),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn width_mm(&self) -> f64 {
+        self.width_mm
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_width_mm(&mut self, width_mm: f64) {
+        self.width_mm = width_mm;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn height_mm(&self) -> f64 {
+        self.height_mm
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_height_mm(&mut self, height_mm: f64) {
+        self.height_mm = height_mm;
+    }
+
+    pub fn add_layer(&mut self, layer_id: &str) {
+        self.layer_ids.push(layer_id.to_string());
+    }
+
+    pub fn get_layer_ids(&self) -> Vec<JsValue> {
+        self.layer_ids.iter().map(|id| JsValue::from_str(id)).collect()
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfPathCommand {
+    op: String,
+    x: f64,
+    y: f64,
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+}
+
+#[wasm_bindgen]
+impl PdfPathCommand {
+    #[wasm_bindgen(constructor)]
+    pub fn new(op: &str, x: f64, y: f64) -> Self {
+        Self { op: op.to_string(), x, y, x1: 0.0, y1: 0.0, x2: 0.0, y2: 0.0 }
+    }
+
+    pub fn with_cp(op: &str, x: f64, y: f64, x1: f64, y1: f64, x2: f64, y2: f64) -> Self {
+        Self { op: op.to_string(), x, y, x1, y1, x2, y2 }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn op(&self) -> String {
+        self.op.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn x(&self) -> f64 { self.x }
+
+    #[wasm_bindgen(getter)]
+    pub fn y(&self) -> f64 { self.y }
+
+    #[wasm_bindgen(getter)]
+    pub fn x1(&self) -> f64 { self.x1 }
+
+    #[wasm_bindgen(getter)]
+    pub fn y1(&self) -> f64 { self.y1 }
+
+    #[wasm_bindgen(getter)]
+    pub fn x2(&self) -> f64 { self.x2 }
+
+    #[wasm_bindgen(getter)]
+    pub fn y2(&self) -> f64 { self.y2 }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PdfLayerData {
+    id: String,
+    name: String,
+    layer_type: String,
+    visible: bool,
+    opacity: f64,
+    paths: Vec<PdfPathCommand>,
+    fill_rgba: [u8; 4],
+    stroke_rgba: [u8; 4],
+    stroke_width: f64,
+    text: String,
+    font_size: f64,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+}
+
+#[wasm_bindgen]
+impl PdfLayerData {
+    #[wasm_bindgen(constructor)]
+    pub fn new(id: &str, name: &str, layer_type: &str) -> Self {
+        Self {
+            id: id.to_string(),
+            name: name.to_string(),
+            layer_type: layer_type.to_string(),
+            visible: true,
+            opacity: 1.0,
+            paths: Vec::new(),
+            fill_rgba: [0, 0, 0, 0],
+            stroke_rgba: [0, 0, 0, 255],
+            stroke_width: 1.0,
+            text: String::new(),
+            font_size: 12.0,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String { self.id.clone() }
+
+    #[wasm_bindgen(getter)]
+    pub fn name(&self) -> String { self.name.clone() }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_name(&mut self, name: &str) { self.name = name.to_string(); }
+
+    #[wasm_bindgen(getter)]
+    pub fn layer_type(&self) -> String { self.layer_type.clone() }
+
+    #[wasm_bindgen(getter)]
+    pub fn visible(&self) -> bool { self.visible }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_visible(&mut self, v: bool) { self.visible = v; }
+
+    #[wasm_bindgen(getter)]
+    pub fn opacity(&self) -> f64 { self.opacity }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_opacity(&mut self, v: f64) { self.opacity = v; }
+
+    #[wasm_bindgen(getter)]
+    pub fn fill_rgba(&self) -> Vec<u8> { self.fill_rgba.to_vec() }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_fill_rgba(&mut self, v: Vec<u8>) {
+        if v.len() >= 4 {
+            self.fill_rgba = [v[0], v[1], v[2], v[3]];
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn stroke_rgba(&self) -> Vec<u8> { self.stroke_rgba.to_vec() }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_stroke_rgba(&mut self, v: Vec<u8>) {
+        if v.len() >= 4 {
+            self.stroke_rgba = [v[0], v[1], v[2], v[3]];
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn stroke_width(&self) -> f64 { self.stroke_width }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_stroke_width(&mut self, v: f64) { self.stroke_width = v; }
+
+    #[wasm_bindgen(getter)]
+    pub fn text(&self) -> String { self.text.clone() }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_text(&mut self, t: &str) { self.text = t.to_string(); }
+
+    #[wasm_bindgen(getter)]
+    pub fn font_size(&self) -> f64 { self.font_size }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_font_size(&mut self, v: f64) { self.font_size = v; }
+
+    #[wasm_bindgen(getter)]
+    pub fn x(&self) -> f64 { self.x }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_x(&mut self, v: f64) { self.x = v; }
+
+    #[wasm_bindgen(getter)]
+    pub fn y(&self) -> f64 { self.y }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_y(&mut self, v: f64) { self.y = v; }
+
+    #[wasm_bindgen(getter)]
+    pub fn width(&self) -> f64 { self.width }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_width(&mut self, v: f64) { self.width = v; }
+
+    #[wasm_bindgen(getter)]
+    pub fn height(&self) -> f64 { self.height }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_height(&mut self, v: f64) { self.height = v; }
+
+    pub fn add_move_to(&mut self, x: f64, y: f64) {
+        self.paths.push(PdfPathCommand::new("m", x, y));
+    }
+
+    pub fn add_line_to(&mut self, x: f64, y: f64) {
+        self.paths.push(PdfPathCommand::new("l", x, y));
+    }
+
+    pub fn add_cubic_to(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, x: f64, y: f64) {
+        self.paths.push(PdfPathCommand::with_cp("c", x, y, x1, y1, x2, y2));
+    }
+
+    pub fn add_close(&mut self) {
+        self.paths.push(PdfPathCommand::new("h", 0.0, 0.0));
+    }
+
+    pub fn path_count(&self) -> usize {
+        self.paths.len()
+    }
+
+    pub fn get_path(&self, idx: usize) -> JsValue {
+        self.paths.get(idx)
+            .and_then(|p| serde_wasm_bindgen::to_value(p).ok())
+            .unwrap_or(JsValue::NULL)
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone)]
+pub struct PdfExporter;
+
+#[wasm_bindgen]
+impl PdfExporter {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self { Self }
+
+    pub fn export_pdf_bytes(
+        &self,
+        title: &str,
+        author: &str,
+        subject: &str,
+        artboards: Vec<JsValue>,
+        layers: Vec<JsValue>,
+    ) -> Option<Vec<u8>> {
+        let artboard_configs: Vec<ArtboardConfig> = artboards.iter()
+            .filter_map(|v| serde_wasm_bindgen::from_value::<ArtboardConfig>(v.clone()).ok())
+            .collect();
+        let all_layers: Vec<PdfLayerData> = layers.iter()
+            .filter_map(|v| serde_wasm_bindgen::from_value::<PdfLayerData>(v.clone()).ok())
+            .collect();
+
+        if artboard_configs.is_empty() {
+            return None;
+        }
+
+        let doc_title = if title.is_empty() { "Untitled" } else { title };
+        let (doc, page1, layer1) = printpdf::PdfDocument::new(
+            doc_title,
+            printpdf::Mm(artboard_configs[0].width_mm as f32),
+            printpdf::Mm(artboard_configs[0].height_mm as f32),
+            &artboard_configs[0].name,
+        );
+
+        let pages: Vec<(printpdf::PdfPageIndex, printpdf::PdfLayerIndex)> = if artboard_configs.len() > 1 {
+            let mut additional = Vec::new();
+            for ab in artboard_configs.iter().skip(1) {
+                let (p, l) = doc.add_page(
+                    printpdf::Mm(ab.width_mm as f32),
+                    printpdf::Mm(ab.height_mm as f32),
+                    &ab.name,
+                );
+                additional.push((p, l));
+            }
+            let mut all_pages = vec![(page1, layer1)];
+            all_pages.extend(additional);
+            all_pages
+        } else {
+            vec![(page1, layer1)]
+        };
+
+        if !author.is_empty() {
+            let _ = author;
+        }
+        if !subject.is_empty() {
+            let _ = subject;
+        }
+
+        for (ab_idx, ab) in artboard_configs.iter().enumerate() {
+            if ab_idx >= pages.len() {
+                break;
+            }
+            let (page_idx, layer_idx) = pages[ab_idx];
+            let current_layer = doc.get_page(page_idx).get_layer(layer_idx);
+
+            let artboard_layers: Vec<&PdfLayerData> = if ab.layer_ids.is_empty() {
+                all_layers.iter().collect()
+            } else {
+                all_layers.iter()
+                    .filter(|l| ab.layer_ids.contains(&l.id))
+                    .collect()
+            };
+
+            for layer in artboard_layers {
+                if !layer.visible {
+                    continue;
+                }
+
+                let opacity = (layer.opacity as f32).clamp(0.0, 1.0);
+                let page_h_mm = ab.height_mm;
+
+                match layer.layer_type.as_str() {
+                    "text" | "richtext" => {
+                        let y_mm = page_h_mm - (layer.y + layer.font_size) / 2.834_646;
+                        let x_mm = layer.x / 2.834_646;
+                        let font_size = (layer.font_size as f32).clamp(1.0, 512.0);
+
+                        let sr = layer.stroke_rgba;
+                        current_layer.set_fill_color(printpdf::Color::Rgb(
+                            printpdf::Rgb::new(
+                                sr[0] as f32 / 255.0,
+                                sr[1] as f32 / 255.0,
+                                sr[2] as f32 / 255.0,
+                                None,
+                            )
+                        ));
+                        current_layer.set_outline_thickness(0.0);
+
+                        let text_to_render = if layer.text.is_empty() {
+                            format!("[{}]", layer.name)
+                        } else {
+                            layer.text.clone()
+                        };
+
+                        let basic_font = if layer.layer_type == "richtext" {
+                            printpdf::BuiltinFont::HelveticaBold
+                        } else {
+                            printpdf::BuiltinFont::Helvetica
+                        };
+
+                        let font = doc.add_builtin_font(basic_font).ok();
+
+                        if let Some(font_ref) = font {
+                            current_layer.use_text(
+                                text_to_render.clone(),
+                                font_size,
+                                printpdf::Mm(x_mm as f32),
+                                printpdf::Mm(y_mm as f32),
+                                &font_ref,
+                            );
+                        } else {
+                            current_layer.set_fill_color(printpdf::Color::Rgb(
+                                printpdf::Rgb::new(0.0, 0.0, 0.0, None)
+                            ));
+                            let line_y = y_mm;
+                            let x_end = x_mm + text_to_render.len() as f64 * font_size as f64 * 0.5;
+                            let p1 = printpdf::Point::new(printpdf::Mm(x_mm as f32), printpdf::Mm(line_y as f32));
+                            let p2 = printpdf::Point::new(printpdf::Mm(x_end as f32), printpdf::Mm(line_y as f32));
+                            let ring = vec![(p1, false), (p2, false)];
+                            let polygon = printpdf::Polygon {
+                                rings: vec![ring],
+                                mode: printpdf::path::PaintMode::Stroke,
+                                winding_order: printpdf::path::WindingOrder::EvenOdd,
+                            };
+                            current_layer.add_polygon(polygon);
+                        }
+                    }
+                    _ => {
+                        if !layer.paths.is_empty() {
+                            let has_fill = layer.fill_rgba[3] > 0;
+                            let has_stroke = layer.stroke_rgba[3] > 0 && layer.stroke_width > 0.0;
+
+                            let rings = Self::convert_paths(&layer.paths, page_h_mm);
+
+                            if has_stroke {
+                                current_layer.set_outline_thickness(layer.stroke_width as f32 / 2.834_646);
+                                let sr = layer.stroke_rgba;
+                                current_layer.set_outline_color(printpdf::Color::Rgb(
+                                    printpdf::Rgb::new(
+                                        sr[0] as f32 / 255.0,
+                                        sr[1] as f32 / 255.0,
+                                        sr[2] as f32 / 255.0,
+                                        None,
+                                    )
+                                ));
+                            }
+
+                            if has_fill {
+                                let fr = layer.fill_rgba;
+                                current_layer.set_fill_color(printpdf::Color::Rgb(
+                                    printpdf::Rgb::new(
+                                        fr[0] as f32 / 255.0,
+                                        fr[1] as f32 / 255.0,
+                                        fr[2] as f32 / 255.0,
+                                        None,
+                                    )
+                                ));
+                            }
+
+                            let _ = opacity;
+
+                            match (has_fill, has_stroke) {
+                                (false, false) => {}
+                                _ => {
+                                    let pdf_mode = match (has_fill, has_stroke) {
+                                        (true, true) => printpdf::path::PaintMode::FillStroke,
+                                        (true, false) => printpdf::path::PaintMode::Fill,
+                                        (false, true) => printpdf::path::PaintMode::Stroke,
+                                        (false, false) => unreachable!(),
+                                    };
+
+                                    let polygon = printpdf::Polygon {
+                                        rings,
+                                        mode: pdf_mode,
+                                        winding_order: printpdf::path::WindingOrder::EvenOdd,
+                                    };
+                                    current_layer.add_polygon(polygon);
+                                }
+                            }
+                        } else {
+                            let x1_mm = layer.x / 2.834_646;
+                            let y1_mm = page_h_mm - (layer.y + layer.height) / 2.834_646;
+                            let x2_mm = (layer.x + layer.width) / 2.834_646;
+                            let y2_mm = page_h_mm - layer.y / 2.834_646;
+
+                            current_layer.set_outline_thickness(0.5);
+                            current_layer.set_outline_color(printpdf::Color::Rgb(
+                                printpdf::Rgb::new(0.5, 0.5, 0.5, None)
+                            ));
+
+                            let p1 = printpdf::Point::new(printpdf::Mm(x1_mm as f32), printpdf::Mm(y1_mm as f32));
+                            let p2 = printpdf::Point::new(printpdf::Mm(x2_mm as f32), printpdf::Mm(y1_mm as f32));
+                            let p3 = printpdf::Point::new(printpdf::Mm(x2_mm as f32), printpdf::Mm(y2_mm as f32));
+                            let p4 = printpdf::Point::new(printpdf::Mm(x1_mm as f32), printpdf::Mm(y2_mm as f32));
+                            let ring = vec![(p1, false), (p2, false), (p3, false), (p4, false), (p1, false)];
+
+                            let polygon = printpdf::Polygon {
+                                rings: vec![ring],
+                                mode: printpdf::path::PaintMode::Stroke,
+                                winding_order: printpdf::path::WindingOrder::EvenOdd,
+                            };
+                            current_layer.add_polygon(polygon);
+                        }
+                    }
+                }
+            }
+        }
+
+        doc.save_to_bytes().ok()
+    }
+
+    pub fn create_standard_artboards(&self) -> Vec<JsValue> {
+        let standards = vec![
+            ("A4 Portrait", 210.0, 297.0),
+            ("A4 Landscape", 297.0, 210.0),
+            ("A3 Portrait", 297.0, 420.0),
+            ("A3 Landscape", 420.0, 297.0),
+            ("Letter Portrait", 215.9, 279.4),
+            ("Letter Landscape", 279.4, 215.9),
+            ("Slide 16:9", 338.67, 190.5),
+            ("Slide 4:3", 254.0, 190.5),
+        ];
+
+        standards.into_iter()
+            .map(|(name, w, h)| {
+                let ab = ArtboardConfig::new(name, w, h);
+                serde_wasm_bindgen::to_value(&ab).unwrap_or(JsValue::NULL)
+            })
+            .collect()
+    }
+
+    fn convert_paths(commands: &[PdfPathCommand], page_h_mm: f64) -> Vec<Vec<(printpdf::Point, bool)>> {
+        let mut rings: Vec<Vec<(printpdf::Point, bool)>> = Vec::new();
+        let mut current_ring: Vec<(printpdf::Point, bool)> = Vec::new();
+
+        for cmd in commands {
+            match cmd.op.as_str() {
+                "m" => {
+                    if !current_ring.is_empty() {
+                        rings.push(std::mem::take(&mut current_ring));
+                    }
+                    let (px, py) = Self::to_pdf_point(cmd.x, cmd.y, page_h_mm);
+                    current_ring.push((printpdf::Point::new(printpdf::Mm(px), printpdf::Mm(py)), false));
+                }
+                "l" => {
+                    let (px, py) = Self::to_pdf_point(cmd.x, cmd.y, page_h_mm);
+                    current_ring.push((printpdf::Point::new(printpdf::Mm(px), printpdf::Mm(py)), false));
+                }
+                "c" => {
+                    let (px, py) = Self::to_pdf_point(cmd.x, cmd.y, page_h_mm);
+                    let (cx1, cy1) = Self::to_pdf_point(cmd.x1, cmd.y1, page_h_mm);
+                    let (cx2, cy2) = Self::to_pdf_point(cmd.x2, cmd.y2, page_h_mm);
+                    if let Some(last) = current_ring.last().map(|(p, _)| *p) {
+                        let steps = 8u32;
+                        for i in 1..=steps {
+                            let t = i as f64 / steps as f64;
+                            let (ix, iy) = Self::bezier_cubic(
+                                last.x.0 as f64, last.y.0 as f64,
+                                cx1 as f64, cy1 as f64,
+                                cx2 as f64, cy2 as f64,
+                                px as f64, py as f64, t,
+                            );
+                            current_ring.push((
+                                printpdf::Point::new(printpdf::Mm(ix as f32), printpdf::Mm(iy as f32)),
+                                false,
+                            ));
+                        }
+                    }
+                }
+                "h" => {
+                    if !current_ring.is_empty() {
+                        let first = current_ring[0].0;
+                        current_ring.push((first, true));
+                        rings.push(std::mem::take(&mut current_ring));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if !current_ring.is_empty() {
+            rings.push(current_ring);
+        }
+
+        rings
+    }
+
+    fn to_pdf_point(x: f64, y: f64, page_h_mm: f64) -> (f32, f32) {
+        let px_mm = (x / 2.834_646) as f32;
+        let py_mm = ((page_h_mm * 2.834_646 - y) / 2.834_646) as f32;
+        (px_mm, py_mm)
+    }
+
+    fn bezier_cubic(
+        x0: f64, y0: f64,
+        x1: f64, y1: f64,
+        x2: f64, y2: f64,
+        x3: f64, y3: f64,
+        t: f64,
+    ) -> (f64, f64) {
+        let mt = 1.0 - t;
+        let mt2 = mt * mt;
+        let mt3 = mt2 * mt;
+        let t2 = t * t;
+        let t3 = t2 * t;
+        let x = mt3 * x0 + 3.0 * mt2 * t * x1 + 3.0 * mt * t2 * x2 + t3 * x3;
+        let y = mt3 * y0 + 3.0 * mt2 * t * y1 + 3.0 * mt * t2 * y2 + t3 * y3;
+        (x, y)
+    }
+}
+
+impl Default for PdfExporter {
+    fn default() -> Self { Self::new() }
+}

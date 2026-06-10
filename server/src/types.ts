@@ -8,7 +8,12 @@ export enum MessageType {
   HEARTBEAT = 'heartbeat',
   HEARTBEAT_ACK = 'heartbeat_ack',
   ERROR = 'error',
-  ACK = 'ack'
+  ACK = 'ack',
+  YJS_SYNC = 'yjs_sync',
+  YJS_AWARENESS = 'yjs_awareness',
+  YJS_SYNC_STEP1 = 'yjs_sync_step1',
+  YJS_SYNC_STEP2 = 'yjs_sync_step2',
+  YJS_UPDATE = 'yjs_update'
 }
 
 export interface User {
@@ -124,6 +129,36 @@ export interface AckMessage extends BaseMessage {
   data?: Record<string, unknown>;
 }
 
+export interface YjsSyncMessage extends BaseMessage {
+  type: MessageType.YJS_SYNC;
+  subType: 'step1' | 'step2' | 'update';
+  data: string;
+}
+
+export interface YjsAwarenessMessage extends BaseMessage {
+  type: MessageType.YJS_AWARENESS;
+  clientId: number;
+  awarenessUpdate: string;
+}
+
+export interface YjsSyncStep1Message extends BaseMessage {
+  type: MessageType.YJS_SYNC_STEP1;
+  stateVector: string;
+  senderClientId: string;
+}
+
+export interface YjsSyncStep2Message extends BaseMessage {
+  type: MessageType.YJS_SYNC_STEP2;
+  diff: string;
+  senderClientId: string;
+}
+
+export interface YjsUpdateMessage extends BaseMessage {
+  type: MessageType.YJS_UPDATE;
+  update: string;
+  senderClientId: string;
+}
+
 export type SignalingMessage =
   | JoinRoomMessage
   | LeaveRoomMessage
@@ -134,7 +169,12 @@ export type SignalingMessage =
   | HeartbeatMessage
   | HeartbeatAckMessage
   | ErrorMessage
-  | AckMessage;
+  | AckMessage
+  | YjsSyncMessage
+  | YjsAwarenessMessage
+  | YjsSyncStep1Message
+  | YjsSyncStep2Message
+  | YjsUpdateMessage;
 
 export interface WebSocketClient {
   id: string;

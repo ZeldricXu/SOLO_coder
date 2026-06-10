@@ -244,6 +244,8 @@ enum LayerType {
     Image,
     Group,
     Text,
+    Arrow,
+    RichText,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -302,6 +304,14 @@ impl LayerTree {
 
     pub fn create_text_layer(&mut self, name: &str) -> String {
         self.create_layer_internal_helper(name, LayerType::Text).to_string()
+    }
+
+    pub fn create_arrow_layer(&mut self, name: &str) -> String {
+        self.create_layer_internal_helper(name, LayerType::Arrow).to_string()
+    }
+
+    pub fn create_richtext_layer(&mut self, name: &str) -> String {
+        self.create_layer_internal_helper(name, LayerType::RichText).to_string()
     }
 
     pub fn layer_count(&self) -> usize {
@@ -1087,6 +1097,61 @@ impl PathBuilder {
         self.close();
     }
 
+    pub fn star(&mut self, x: f64, y: f64, outer_r: f64, inner_r: f64, num_points: u32, rotation: f64) {
+        let n = num_points.max(3) as usize;
+        let total_points = n * 2;
+        let angle_step = std::f64::consts::PI / n as f64;
+        let start_angle = rotation - std::f64::consts::FRAC_PI_2;
+
+        for i in 0..total_points {
+            let angle = start_angle + i as f64 * angle_step;
+            let r = if i % 2 == 0 { outer_r } else { inner_r };
+            let px = x + r * angle.cos();
+            let py = y + r * angle.sin();
+            if i == 0 {
+                self.move_to(px, py);
+            } else {
+                self.line_to(px, py);
+            }
+        }
+        self.close();
+    }
+
+    pub fn arrow(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, head_size: f64, double_headed: bool) {
+        let dx = x2 - x1;
+        let dy = y2 - y1;
+        let len = (dx * dx + dy * dy).sqrt();
+        if len < 1e-6 {
+            return;
+        }
+
+        let nx = dx / len;
+        let ny = dy / len;
+        let px = -ny;
+        let py = nx;
+
+        self.move_to(x1, y1);
+        self.line_to(x2, y2);
+
+        let hx = x2 - nx * head_size;
+        let hy = y2 - ny * head_size;
+        let hw = head_size * 0.5;
+        self.move_to(x2, y2);
+        self.line_to(hx + px * hw, hy + py * hw);
+        self.line_to(hx - px * hw, hy - py * hw);
+        self.close();
+
+        if double_headed {
+            let hx1 = x1 + nx * head_size;
+            let hy1 = y1 + ny * head_size;
+            let hw1 = head_size * 0.5;
+            self.move_to(x1, y1);
+            self.line_to(hx1 + px * hw1, hy1 + py * hw1);
+            self.line_to(hx1 - px * hw1, hy1 - py * hw1);
+            self.close();
+        }
+    }
+
     pub fn clear(&mut self) {
         self.commands.clear();
         self.points.clear();
@@ -1365,6 +1430,66 @@ impl Rasterizer {
 
         self.tessellate_stroke(&pb, &stroke.stroke_options(), tolerance)
     }
+
+    pub fn tessellate_star_fill(
+        &mut self,
+        x: f64,
+        y: f64,
+        outer_r: f64,
+        inner_r: f64,
+        num_points: u32,
+        rotation: f64,
+        fill_rule: FillRule,
+    ) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.star(x, y, outer_r, inner_r, num_points, rotation);
+        self.tessellate_fill(&pb, fill_rule, 0.1)
+    }
+
+    pub fn tessellate_star_stroke(
+        &mut self,
+        x: f64,
+        y: f64,
+        outer_r: f64,
+        inner_r: f64,
+        num_points: u32,
+        rotation: f64,
+        stroke_options: &StrokeOptions,
+    ) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.star(x, y, outer_r, inner_r, num_points, rotation);
+        self.tessellate_stroke(&pb, stroke_options, 0.1)
+    }
+
+    pub fn tessellate_arrow_stroke(
+        &mut self,
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        head_size: f64,
+        double_headed: bool,
+        stroke_options: &StrokeOptions,
+    ) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.arrow(x1, y1, x2, y2, head_size, double_headed);
+        self.tessellate_stroke(&pb, stroke_options, 0.1)
+    }
+
+    pub fn tessellate_arrow_fill(
+        &mut self,
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        head_size: f64,
+        double_headed: bool,
+        fill_rule: FillRule,
+    ) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.arrow(x1, y1, x2, y2, head_size, double_headed);
+        self.tessellate_fill(&pb, fill_rule, 0.1)
+    }
 }
 
 // ==========================================
@@ -1537,6 +1662,410 @@ impl RenderContext {
 
     pub fn from_json(json: &str) -> Option<RenderContext> {
         serde_json::from_str(json).ok()
+    }
+}
+
+// ==========================================
+// Artboard 画板（用于多页 PDF 导出）
+// ==========================================
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Artboard {
+    id: String,
+    name: String,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+    layer_ids: Vec<String>,
+}
+
+#[wasm_bindgen]
+impl Artboard {
+    #[wasm_bindgen(constructor)]
+    pub fn new(name: &str, x: f64, y: f64, width: f64, height: f64) -> Self {
+        Self {
+            id: Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            x,
+            y,
+            width,
+            height,
+            layer_ids: Vec::new(),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn id(&self) -> String {
+        self.id.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_name(&mut self, name: &str) {
+        self.name = name.to_string();
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn x(&self) -> f64 {
+        self.x
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_x(&mut self, x: f64) {
+        self.x = x;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn y(&self) -> f64 {
+        self.y
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_y(&mut self, y: f64) {
+        self.y = y;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn width(&self) -> f64 {
+        self.width
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_width(&mut self, width: f64) {
+        self.width = width;
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn height(&self) -> f64 {
+        self.height
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_height(&mut self, height: f64) {
+        self.height = height;
+    }
+
+    pub fn set_position(&mut self, x: f64, y: f64) {
+        self.x = x;
+        self.y = y;
+    }
+
+    pub fn set_size(&mut self, width: f64, height: f64) {
+        self.width = width;
+        self.height = height;
+    }
+
+    pub fn add_layer(&mut self, layer_id: &str) {
+        if !self.layer_ids.iter().any(|id| id == layer_id) {
+            self.layer_ids.push(layer_id.to_string());
+        }
+    }
+
+    pub fn remove_layer(&mut self, layer_id: &str) {
+        self.layer_ids.retain(|id| id != layer_id);
+    }
+
+    pub fn layer_count(&self) -> usize {
+        self.layer_ids.len()
+    }
+
+    pub fn get_layer_ids(&self) -> Vec<JsValue> {
+        self.layer_ids.iter().map(|id| JsValue::from_str(id)).collect()
+    }
+
+    pub fn rect(&self) -> Rect {
+        Rect::new(self.x, self.y, self.width, self.height)
+    }
+}
+
+// ==========================================
+// SVGExport SVG 导出器
+// ==========================================
+
+#[wasm_bindgen]
+#[derive(Debug, Clone)]
+pub struct SVGExport;
+
+#[wasm_bindgen]
+impl SVGExport {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self
+    }
+
+    pub fn to_svg_string(&self, layers: &LayerTree, viewport: &Viewport) -> String {
+        let visible_rect = viewport.visible_world_rect();
+        let vb_x = visible_rect.x;
+        let vb_y = visible_rect.y;
+        let vb_w = visible_rect.width;
+        let vb_h = visible_rect.height;
+
+        let mut svg = String::new();
+        svg.push_str(&format!(
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
+             <svg xmlns=\"http://www.w3.org/2000/svg\" \
+             viewBox=\"{} {} {} {}\" \
+             width=\"{}\" height=\"{}\" version=\"1.1\">\n",
+            vb_x, vb_y, vb_w, vb_h,
+            viewport.view_size.width(), viewport.view_size.height()
+        ));
+        svg.push_str(&format!(
+            "  <defs>\n    <style type=\"text/css\"><![CDATA[\n      .layer {{ opacity: 1; }}\n    ]]></style>\n  </defs>\n"
+        ));
+
+        let sorted_ids = layers.get_all_layers_sorted();
+        let mut group_stack: Vec<(String, usize)> = Vec::new();
+        let mut written_groups: FxHashSet<String> = FxHashSet::default();
+
+        for id_js in &sorted_ids {
+            if let Some(id_str) = id_js.as_string() {
+                if let Some(layer) = layers.layers.get(&hash_uuid(&Uuid::parse_str(&id_str).unwrap())) {
+                    if !layer.visible {
+                        continue;
+                    }
+
+                    while let Some((parent_id, depth)) = group_stack.last() {
+                        if layer.parent_id.map(|p| p.to_string()).as_ref() != Some(parent_id) {
+                            for _ in 0..*depth {
+                                svg.push_str("  </g>\n");
+                            }
+                            group_stack.pop();
+                        } else {
+                            break;
+                        }
+                    }
+
+                    let depth = group_stack.last().map(|(_, d)| *d + 2).unwrap_or(2);
+                    let indent = "  ".repeat(depth);
+
+                    let layer_name_escaped = Self::escape_xml(&layer.name);
+                    let opacity = layer.opacity;
+                    let transform = layer.transform;
+                    let transform_str = if !transform.is_identity(1e-6) {
+                        format!(
+                            " transform=\"matrix({:.6} {:.6} {:.6} {:.6} {:.6} {:.6})\"",
+                            transform.a, transform.b, transform.c,
+                            transform.d, transform.e, transform.f
+                        )
+                    } else {
+                        String::new()
+                    };
+
+                    match layer.layer_type {
+                        LayerType::Group => {
+                            if !written_groups.contains(&id_str) {
+                                svg.push_str(&format!(
+                                    "{}<g id=\"layer-{}\" class=\"layer group\" data-name=\"{}\" opacity=\"{:.3}\"{}>\n",
+                                    indent, id_str, layer_name_escaped, opacity, transform_str
+                                ));
+                                group_stack.push((id_str.clone(), depth));
+                                written_groups.insert(id_str.clone());
+                            }
+                        }
+                        LayerType::Text | LayerType::RichText => {
+                            svg.push_str(&format!(
+                                "{}<g id=\"layer-{}\" class=\"layer text\" data-name=\"{}\" opacity=\"{:.3}\"{}>\n",
+                                indent, id_str, layer_name_escaped, opacity, transform_str
+                            ));
+                            if let Some(bounds) = layer.bounds {
+                                let text_content = if layer.layer_type == LayerType::RichText {
+                                    format!(
+                                        "<foreignObject x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\">\n\
+                                         {}  <div xmlns=\"http://www.w3.org/1999/xhtml\" style=\"font-family:sans-serif;font-size:14px;\">\n\
+                                         {}    RichText Placeholder\n\
+                                         {}  </div>\n\
+                                         {}</foreignObject>",
+                                        bounds.x, bounds.y, bounds.width, bounds.height,
+                                        indent, indent, indent, indent
+                                    )
+                                } else {
+                                    format!(
+                                        "<text x=\"{}\" y=\"{}\" font-family=\"sans-serif\" font-size=\"14\" fill=\"#000000\">Text Placeholder</text>",
+                                        bounds.x, bounds.y + 14.0
+                                    )
+                                };
+                                svg.push_str(&format!("{}{}\n", "  ".repeat(depth + 1), text_content));
+                            }
+                            svg.push_str(&format!("{}</g>\n", indent));
+                        }
+                        _ => {
+                            let class_name = match layer.layer_type {
+                                LayerType::Shape => "shape",
+                                LayerType::Stroke => "stroke",
+                                LayerType::Arrow => "arrow",
+                                LayerType::Image => "image",
+                                _ => "unknown",
+                            };
+                            svg.push_str(&format!(
+                                "{}<g id=\"layer-{}\" class=\"layer {}\" data-name=\"{}\" opacity=\"{:.3}\"{}>\n",
+                                indent, id_str, class_name, layer_name_escaped, opacity, transform_str
+                            ));
+                            if let Some(bounds) = layer.bounds {
+                                if layer.layer_type == LayerType::Image {
+                                    svg.push_str(&format!(
+                                        "{}  <rect x=\"{}\" y=\"{}\" width=\"{}\" height=\"{}\" fill=\"#cccccc\" stroke=\"#999999\" stroke-width=\"1\"/>\n",
+                                        indent, bounds.x, bounds.y, bounds.width, bounds.height
+                                    ));
+                                } else {
+                                    svg.push_str(&format!(
+                                        "{}  <path d=\"M {} {} L {} {} L {} {} L {} {} Z\" fill=\"none\" stroke=\"#333333\" stroke-width=\"2\" data-placeholder=\"path\"/>\n",
+                                        indent,
+                                        bounds.x, bounds.y,
+                                        bounds.x + bounds.width, bounds.y,
+                                        bounds.x + bounds.width, bounds.y + bounds.height,
+                                        bounds.x, bounds.y + bounds.height
+                                    ));
+                                }
+                            }
+                            svg.push_str(&format!("{}</g>\n", indent));
+                        }
+                    }
+                }
+            }
+        }
+
+        while let Some((_, depth)) = group_stack.pop() {
+            for _ in 0..depth {
+                svg.push_str("  </g>\n");
+            }
+        }
+
+        svg.push_str("</svg>\n");
+        svg
+    }
+
+    fn escape_xml(s: &str) -> String {
+        s.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&apos;")
+    }
+}
+
+impl Default for SVGExport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ==========================================
+// PDFExport PDF 导出器（矢量路径导出）
+// ==========================================
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PDFExport {
+    artboards: Vec<Artboard>,
+    title: String,
+    author: String,
+    subject: String,
+}
+
+#[wasm_bindgen]
+impl PDFExport {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            artboards: Vec::new(),
+            title: String::new(),
+            author: String::new(),
+            subject: String::new(),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn title(&self) -> String {
+        self.title.clone()
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_title(&mut self, title: &str) {
+        self.title = title.to_string();
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn author(&self) -> String {
+        self.author.clone()
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_author(&mut self, author: &str) {
+        self.author = author.to_string();
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn subject(&self) -> String {
+        self.subject.clone()
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_subject(&mut self, subject: &str) {
+        self.subject = subject.to_string();
+    }
+
+    pub fn add_artboard(&mut self, artboard: &Artboard) {
+        self.artboards.push(artboard.clone());
+    }
+
+    pub fn remove_artboard(&mut self, id: &str) -> bool {
+        let before = self.artboards.len();
+        self.artboards.retain(|a| a.id != id);
+        self.artboards.len() < before
+    }
+
+    pub fn artboard_count(&self) -> usize {
+        self.artboards.len()
+    }
+
+    pub fn get_artboard(&self, index: usize) -> Option<Artboard> {
+        self.artboards.get(index).cloned()
+    }
+
+    pub fn get_artboard_ids(&self) -> Vec<JsValue> {
+        self.artboards.iter().map(|a| JsValue::from_str(&a.id)).collect()
+    }
+
+    pub fn clear_artboards(&mut self) {
+        self.artboards.clear();
+    }
+
+    pub fn generate_page_descriptions(&self, layers: &LayerTree) -> Vec<JsValue> {
+        let mut pages = Vec::new();
+        for artboard in &self.artboards {
+            let page_desc = serde_json::json!({
+                "id": artboard.id,
+                "name": artboard.name,
+                "width": artboard.width,
+                "height": artboard.height,
+                "x": artboard.x,
+                "y": artboard.y,
+                "layer_ids": artboard.layer_ids,
+            });
+            let json_str = serde_json::to_string(&page_desc).unwrap_or_default();
+            pages.push(js_sys::JSON::parse(&json_str).unwrap_or(JsValue::NULL));
+        }
+        pages
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    pub fn from_json(json: &str) -> Option<PDFExport> {
+        serde_json::from_str(json).ok()
+    }
+}
+
+impl Default for PDFExport {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

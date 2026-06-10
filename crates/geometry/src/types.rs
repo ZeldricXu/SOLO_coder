@@ -577,3 +577,193 @@ impl Star {
         )
     }
 }
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ArrowStyle {
+    None,
+    Triangle,
+    Diamond,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Arrow {
+    pub start: Point,
+    pub end: Point,
+    pub head_style: ArrowStyle,
+    pub tail_style: ArrowStyle,
+    pub head_size: Scalar,
+    pub tail_size: Scalar,
+    #[serde(default)]
+    #[wasm_bindgen(skip)]
+    pub source_anchor: Option<uuid::Uuid>,
+    #[serde(default)]
+    #[wasm_bindgen(skip)]
+    pub target_anchor: Option<uuid::Uuid>,
+}
+
+#[wasm_bindgen]
+impl Arrow {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        start: Point,
+        end: Point,
+        head_style: ArrowStyle,
+        tail_style: ArrowStyle,
+        head_size: Scalar,
+        tail_size: Scalar,
+    ) -> Self {
+        Self {
+            start,
+            end,
+            head_style,
+            tail_style,
+            head_size,
+            tail_size,
+            source_anchor: None,
+            target_anchor: None,
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn source_anchor(&self) -> Option<String> {
+        self.source_anchor.map(|u| u.to_string())
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_source_anchor(&mut self, anchor: Option<String>) {
+        self.source_anchor = anchor.and_then(|s| uuid::Uuid::parse_str(&s).ok());
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn target_anchor(&self) -> Option<String> {
+        self.target_anchor.map(|u| u.to_string())
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_target_anchor(&mut self, anchor: Option<String>) {
+        self.target_anchor = anchor.and_then(|s| uuid::Uuid::parse_str(&s).ok());
+    }
+
+    pub fn direction(&self) -> Vector {
+        Vector::from_points(&self.start, &self.end)
+    }
+
+    pub fn length(&self) -> Scalar {
+        self.start.distance(&self.end)
+    }
+
+    pub fn midpoint(&self) -> Point {
+        Point::new(
+            (self.start.x + self.end.x) / 2.0,
+            (self.start.y + self.end.y) / 2.0,
+        )
+    }
+
+    pub fn bounding_box(&self) -> Rect {
+        let min_x = self.start.x.min(self.end.x) - self.head_size.max(self.tail_size);
+        let min_y = self.start.y.min(self.end.y) - self.head_size.max(self.tail_size);
+        let max_x = self.start.x.max(self.end.x) + self.head_size.max(self.tail_size);
+        let max_y = self.start.y.max(self.end.y) + self.head_size.max(self.tail_size);
+        Rect::new(min_x, min_y, max_x - min_x, max_y - min_y)
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum TextAlign {
+    Left,
+    Center,
+    Right,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RichTextBox {
+    pub bounds: Rect,
+    #[serde(default)]
+    #[wasm_bindgen(skip)]
+    pub content: String,
+    #[serde(default = "default_font_family")]
+    #[wasm_bindgen(skip)]
+    pub font_family: String,
+    pub font_size: Scalar,
+    pub font_color: crate::style::Color,
+    pub text_align: TextAlign,
+    pub background_color: crate::style::Color,
+    pub padding: Scalar,
+    pub rotation: Scalar,
+}
+
+fn default_font_family() -> String {
+    "Arial".to_string()
+}
+
+#[wasm_bindgen]
+impl RichTextBox {
+    #[wasm_bindgen(constructor)]
+    pub fn new(
+        bounds: Rect,
+        content: String,
+        font_family: String,
+        font_size: Scalar,
+        font_color: crate::style::Color,
+        text_align: TextAlign,
+        background_color: crate::style::Color,
+        padding: Scalar,
+        rotation: Scalar,
+    ) -> Self {
+        Self {
+            bounds,
+            content,
+            font_family,
+            font_size,
+            font_color,
+            text_align,
+            background_color,
+            padding,
+            rotation,
+        }
+    }
+
+    pub fn simple(bounds: Rect, content: String) -> Self {
+        Self {
+            bounds,
+            content,
+            font_family: "Arial".to_string(),
+            font_size: 14.0,
+            font_color: crate::style::Color::black(),
+            text_align: TextAlign::Left,
+            background_color: crate::style::Color::transparent(),
+            padding: 4.0,
+            rotation: 0.0,
+        }
+    }
+
+    pub fn content_rect(&self) -> Rect {
+        Rect::new(
+            self.bounds.x + self.padding,
+            self.bounds.y + self.padding,
+            (self.bounds.width - 2.0 * self.padding).max(0.0),
+            (self.bounds.height - 2.0 * self.padding).max(0.0),
+        )
+    }
+
+    pub fn set_content(&mut self, content: String) {
+        self.content = content;
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ShapeType {
+    Rectangle,
+    Circle,
+    Ellipse,
+    Polygon,
+    Line,
+    Star,
+    Arrow,
+    RichText,
+}

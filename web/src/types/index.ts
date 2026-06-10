@@ -35,13 +35,60 @@ export interface Stroke {
   bounds?: BoundingBox;
 }
 
-export type ShapeType = 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'triangle' | 'polygon';
+export type ShapeType = 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'triangle' | 'polygon' | 'star' | 'rich-text';
 
 export interface ShapeStyle {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
   opacity?: number;
+}
+
+export interface StarConfig {
+  outerRadius: number;
+  innerRadius: number;
+  numPoints: number;
+  rotation: number;
+}
+
+export type ArrowHeadStyle = 'triangle' | 'diamond' | 'none';
+
+export interface ArrowConfig {
+  headStyle: ArrowHeadStyle;
+  tailStyle: ArrowHeadStyle;
+  headSize: number;
+  tailSize: number;
+  sourceId?: string;
+  targetId?: string;
+}
+
+export interface RichTextConfig {
+  fontFamily: string;
+  fontSize: number;
+  fontColor: string;
+  textAlign: 'left' | 'center' | 'right' | 'justify';
+  backgroundColor: string;
+  padding: number;
+  contentHtml: string;
+}
+
+export interface ToolRegistryEntry {
+  id: string;
+  name: string;
+  category: 'drawing' | 'shape' | 'text' | 'interaction' | 'utility';
+  icon: string;
+  component?: React.ComponentType;
+}
+
+export interface Artboard {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  background?: string;
+  objectIds: string[];
 }
 
 export interface Shape {
@@ -58,6 +105,9 @@ export interface Shape {
   userId: string;
   createdAt: number;
   updatedAt: number;
+  starConfig?: StarConfig;
+  arrowConfig?: ArrowConfig;
+  richTextConfig?: RichTextConfig;
 }
 
 export type LayerType = 'stroke' | 'shape' | 'text' | 'image';
@@ -149,13 +199,16 @@ export interface Viewport {
   zoom: number;
 }
 
-export type ToolType = 'select' | 'pen' | 'eraser' | 'shape' | 'text' | 'comment' | 'pan';
+export type ToolType = 'select' | 'pen' | 'eraser' | 'shape' | 'text' | 'comment' | 'pan' | 'star' | 'arrow' | 'rich-text';
 
 export interface ToolState {
   activeTool: ToolType;
   strokeStyle: StrokeStyle;
   shapeType: ShapeType;
   shapeStyle: ShapeStyle;
+  starConfig: StarConfig;
+  arrowConfig: ArrowConfig;
+  richTextConfig: RichTextConfig;
 }
 
 export interface BoardState {
@@ -202,4 +255,5 @@ export interface ExportOptions {
   includeBackground?: boolean;
   background?: string;
   onlySelected?: boolean;
+  pages?: Artboard[];
 }

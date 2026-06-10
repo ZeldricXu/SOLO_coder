@@ -17,6 +17,11 @@ import {
   AckMessage,
   WebSocketClient,
   OperationBatch,
+  YjsSyncMessage,
+  YjsAwarenessMessage,
+  YjsSyncStep1Message,
+  YjsSyncStep2Message,
+  YjsUpdateMessage,
   DEFAULT_CONFIG
 } from '../types';
 import { RoomManager } from './RoomManager';
@@ -93,6 +98,21 @@ export class MessageHandler {
         break;
       case MessageType.HEARTBEAT:
         this.handleHeartbeat(client, message as HeartbeatMessage);
+        break;
+      case MessageType.YJS_SYNC:
+        this.handleYjsSync(client, message as YjsSyncMessage);
+        break;
+      case MessageType.YJS_AWARENESS:
+        this.handleYjsAwareness(client, message as YjsAwarenessMessage);
+        break;
+      case MessageType.YJS_SYNC_STEP1:
+        this.handleYjsSyncStep1(client, message as YjsSyncStep1Message);
+        break;
+      case MessageType.YJS_SYNC_STEP2:
+        this.handleYjsSyncStep2(client, message as YjsSyncStep2Message);
+        break;
+      case MessageType.YJS_UPDATE:
+        this.handleYjsUpdate(client, message as YjsUpdateMessage);
         break;
       default:
         logger.warn('Unhandled message type', {
@@ -407,6 +427,112 @@ export class MessageHandler {
 
   flushAllBuffers(): void {
     this.operationBuffer.flushAll();
+  }
+
+  private handleYjsSync(client: WebSocketClient, message: YjsSyncMessage): void {
+    if (!client.roomId) {
+      this.sendError(client, 'NOT_IN_ROOM', 'You must join a room first');
+      return;
+    }
+    this.roomManager.updateUserActivity(client.roomId, client.userId);
+
+    const forwardMessage: YjsSyncMessage = {
+      type: MessageType.YJS_SYNC,
+      roomId: client.roomId,
+      userId: client.userId,
+      timestamp: Date.now(),
+      subType: message.subType,
+      data: message.data
+    };
+    this.sendToRoom(client.roomId, forwardMessage, client.userId);
+    logger.debug('Yjs sync forwarded', {
+      roomId: client.roomId,
+      userId: client.userId,
+      subType: message.subType,
+      dataLen: message.data.length
+    });
+  }
+
+  private handleYjsAwareness(client: WebSocketClient, message: YjsAwarenessMessage): void {
+    if (!client.roomId) {
+      this.sendError(client, 'NOT_IN_ROOM', 'You must join a room first');
+      return;
+    }
+    this.roomManager.updateUserActivity(client.roomId, client.userId);
+
+    const forwardMessage: YjsAwarenessMessage = {
+      type: MessageType.YJS_AWARENESS,
+      roomId: client.roomId,
+      userId: client.userId,
+      timestamp: Date.now(),
+      clientId: message.clientId,
+      awarenessUpdate: message.awarenessUpdate
+    };
+    this.sendToRoom(client.roomId, forwardMessage, client.userId);
+    logger.debug('Yjs awareness forwarded', {
+      roomId: client.roomId,
+      userId: client.userId,
+      clientId: message.clientId
+    });
+  }
+
+  private handleYjsSyncStep1(client: WebSocketClient, message: YjsSyncStep1Message): void {
+    if (!client.roomId) {
+      this.sendError(client, 'NOT_IN_ROOM', 'You must join a room first');
+      return;
+    }
+    this.roomManager.updateUserActivity(client.roomId, client.userId);
+
+    const forward: YjsSyncStep1Message = {
+      type: MessageType.YJS_SYNC_STEP1,
+      roomId: client.roomId,
+      userId: client.userId,
+      timestamp: Date.now(),
+      stateVector: message.stateVector,
+      senderClientId: message.senderClientId
+    };
+    this.sendToRoom(client.roomId, forward, client.userId);
+  }
+
+  private handleYjsSyncStep2(client: WebSocketClient, message: YjsSyncStep2Message): void {
+    if (!client.roomId) {
+      this.sendError(client, 'NOT_IN_ROOM', 'You must join a room first');
+      return;
+    }
+    this.roomManager.updateUserActivity(client.roomId, client.userId);
+
+    const forward: YjsSyncStep2Message = {
+      type: MessageType.YJS_SYNC_STEP2,
+      roomId: client.roomId,
+      userId: client.userId,
+      timestamp: Date.now(),
+      diff: message.diff,
+      senderClientId: message.senderClientId
+    };
+    this.sendToRoom(client.roomId, forward, client.userId);
+  }
+
+  private handleYjsUpdate(client: WebSocketClient, message: YjsUpdateMessage): void {
+    if (!client.roomId) {
+      this.sendError(client, 'NOT_IN_ROOM', 'You must join a room first');
+      return;
+    }
+    this.roomManager.updateUserActivity(client.roomId, client.userId);
+
+    const forward: YjsUpdateMessage = {
+      type: MessageType.YJS_UPDATE,
+      roomId: client.roomId,
+      userId: client.userId,
+      timestamp: Date.now(),
+      update: message.update,
+      senderClientId: message.senderClientId
+    };
+    this.sendToRoom(client.roomId, forward, client.userId);
+    logger.debug('Yjs update broadcast', {
+      roomId: client.roomId,
+      userId: client.userId,
+      updateLen: message.update.length
+    });
   }
 
   destroy(): void {

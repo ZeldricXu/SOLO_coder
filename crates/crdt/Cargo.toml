@@ -16,6 +16,7 @@ log = { workspace = true }
 rustc-hash = { workspace = true }
 ordered-float = { workspace = true }
 js-sys = { workspace = true }
+yrs = { workspace = true }
 
 [features]
 default = []

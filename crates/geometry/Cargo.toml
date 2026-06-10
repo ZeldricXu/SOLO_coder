@@ -19,6 +19,7 @@ lyon = { workspace = true }
 lyon_geom = { workspace = true }
 ordered-float = { workspace = true }
 rustc-hash = { workspace = true }
+js-sys = { workspace = true }
 
 [features]
 default = []

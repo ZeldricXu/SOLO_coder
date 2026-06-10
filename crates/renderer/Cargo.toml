@@ -20,6 +20,7 @@ lyon_geom = { workspace = true }
 image = { workspace = true }
 rustc-hash = { workspace = true }
 ordered-float = { workspace = true }
+js-sys = { workspace = true }
 stroke-engine = { path = "../stroke-engine" }
 geometry = { path = "../geometry" }
 
