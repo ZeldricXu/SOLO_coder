@@ -59,9 +59,6 @@ public class Player extends GameCharacter {
 
     public void drawCards(int count) {
         for (int i = 0; i < count; i++) {
-            if (currentHand.size() >= handLimit) {
-                break;
-            }
             if (drawPile.isEmpty()) {
                 if (discardPile.isEmpty()) {
                     break;
@@ -70,7 +67,11 @@ public class Player extends GameCharacter {
             }
             if (!drawPile.isEmpty()) {
                 Card card = drawPile.remove(drawPile.size() - 1);
-                currentHand.add(card);
+                if (currentHand.size() >= handLimit) {
+                    discardPile.add(card);
+                } else {
+                    currentHand.add(card);
+                }
             }
         }
     }

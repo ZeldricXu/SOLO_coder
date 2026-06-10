@@ -44,6 +44,9 @@ public class BattleEngine {
     @Autowired
     private com.cardgame.ai.EnemyAIService enemyAIService;
 
+    @Autowired(required = false)
+    private com.cardgame.replay.service.BattleLogService battleLogService;
+
     public BattleContext startBattle(String roomId, int floor, List<Player> players, List<Enemy> enemies) {
         String battleId = IdGenerator.generateBattleId();
 
@@ -230,6 +233,13 @@ public class BattleEngine {
             return;
         }
 
+        if (buffSystem.isStunned(player)) {
+            log.debug("Player {} is stunned, skipping turn", player.getPlayerId());
+            timelineEngine.advanceToNextActor(context);
+            processNextActor(context);
+            return;
+        }
+
         log.debug("Started player {}'s turn in battle {}", player.getPlayerId(), context.getBattleId());
     }
 
@@ -243,6 +253,17 @@ public class BattleEngine {
         if (!enemy.isAlive() || checkBattleEnd(context)) {
             timelineEngine.advanceToNextActor(context);
             processNextActor(context);
+            return;
+        }
+
+        if (buffSystem.isStunned(enemy)) {
+            log.debug("Enemy {} is stunned, skipping turn", enemy.getName());
+            buffSystem.processTurnEndBuffs(enemy);
+            enemyAIService.generateIntent(enemy, context);
+            timelineEngine.advanceToNextActor(context);
+            if (!checkBattleEnd(context)) {
+                processNextActor(context);
+            }
             return;
         }
 

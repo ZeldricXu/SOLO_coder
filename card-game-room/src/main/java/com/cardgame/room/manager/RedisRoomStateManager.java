@@ -76,7 +76,7 @@ public class RedisRoomStateManager {
 
     public Room getRoom(String roomId) {
         try (Jedis jedis = jedisPool.getResource()) {
-            String key = ROOM_PREFIX + room.getRoomId();
+            String key = ROOM_PREFIX + roomId;
             String json = jedis.get(key);
             if (json != null) {
                 return JsonUtils.fromJson(json, Room.class);

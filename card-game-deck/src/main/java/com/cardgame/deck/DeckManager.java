@@ -59,9 +59,6 @@ public class DeckManager {
     }
 
     public Card drawCard(Player player) {
-        if (player.getCurrentHand().size() >= player.getHandLimit()) {
-            return null;
-        }
         if (player.getDrawPile().isEmpty()) {
             if (player.getDiscardPile().isEmpty()) {
                 return null;
@@ -70,6 +67,10 @@ public class DeckManager {
         }
         if (!player.getDrawPile().isEmpty()) {
             Card card = player.getDrawPile().remove(player.getDrawPile().size() - 1);
+            if (player.getCurrentHand().size() >= player.getHandLimit()) {
+                player.getDiscardPile().add(card);
+                return null;
+            }
             player.getCurrentHand().add(card);
             return card;
         }
