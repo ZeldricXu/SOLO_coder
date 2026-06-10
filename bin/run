@@ -1,0 +1,20 @@
+#!/usr/bin/env node
+
+const { execute } = require('@oclif/core')
+const path = require('path')
+const projectDir = path.resolve(__dirname, '..')
+
+execute({ dir: projectDir, development: false })
+  .then(() => {
+    // command completed successfully
+  })
+  .catch(async (err) => {
+    const { handle } = require('@oclif/core/lib/errors')
+    try {
+      await handle(err)
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error(e)
+      process.exit(1)
+    }
+  })

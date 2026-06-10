@@ -1,0 +1,61 @@
+{
+  "name": "config-flow",
+  "version": "1.0.0",
+  "description": "Multi-environment configuration management and drift detection CLI",
+  "bin": {
+    "config-flow": "./bin/run"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "lint": "eslint . --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "prepare": "npm run build"
+  },
+  "oclif": {
+    "commands": "./dist/commands",
+    "bin": "config-flow",
+    "plugins": [
+      "@oclif/plugin-help"
+    ]
+  },
+  "dependencies": {
+    "@oclif/core": "^3.26.0",
+    "@oclif/plugin-help": "^6.0.22",
+    "zod": "^3.22.4",
+    "handlebars": "^4.7.8",
+    "better-sqlite3": "^9.4.3",
+    "node-vault": "^0.10.2",
+    "@aws-sdk/client-ssm": "^3.525.0",
+    "@kubernetes/client-node": "^0.20.0",
+    "dotenv": "^16.4.5",
+    "axios": "^1.6.7",
+    "nodemailer": "^6.9.12",
+    "simple-git": "^3.22.0",
+    "crypto-random-string": "^5.0.0",
+    "diff": "^5.2.0",
+    "chalk": "^4.1.2",
+    "cli-table3": "^0.6.4",
+    "dayjs": "^1.11.10",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.25",
+    "@types/better-sqlite3": "^7.6.9",
+    "@types/nodemailer": "^6.4.14",
+    "@types/diff": "^5.2.0",
+    "@types/js-yaml": "^4.0.9",
+    "@typescript-eslint/eslint-plugin": "^7.1.1",
+    "@typescript-eslint/parser": "^7.1.1",
+    "eslint": "^8.57.0",
+    "typescript": "^5.4.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.2",
+    "@types/jest": "^29.5.12"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
