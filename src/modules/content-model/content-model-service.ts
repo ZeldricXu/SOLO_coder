@@ -28,6 +28,7 @@ export interface UpdateContentInput {
   data: Record<string, unknown>;
   updatedBy: string;
   message?: string;
+  expectedUpdatedAt?: Date;
 }
 
 export class ContentModelService {
@@ -314,6 +315,20 @@ export class ContentModelService {
 
     if (!model) throw new Error('Content model not found');
     if (!existing) throw new Error('Content not found');
+
+    if (input.expectedUpdatedAt) {
+      const expectedTime = new Date(input.expectedUpdatedAt).getTime();
+      const actualTime = new Date(existing.updatedAt).getTime();
+      if (Math.abs(expectedTime - actualTime) > 1000) {
+        const error = new Error(
+          `Optimistic lock conflict: Content was modified by another user. ` +
+          `Expected updatedAt: ${input.expectedUpdatedAt.toISOString()}, ` +
+          `Actual updatedAt: ${existing.updatedAt.toISOString()}`
+        );
+        error.name = 'OptimisticLockError';
+        throw error;
+      }
+    }
 
     const schema = model.schemaJson as unknown as ContentSchema;
     const validation = schemaValidator.validateContent(input.data, schema);

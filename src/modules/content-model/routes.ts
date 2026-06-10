@@ -227,14 +227,27 @@ const contentModelRoutes: FastifyPluginAsync = async (fastify) => {
       request: FastifyRequest<{
         Params: { modelId: string; contentId: string };
         Body: UpdateContentInput;
-      }> & { tenant: TenantContext }
+      }> & { tenant: TenantContext },
+      reply: FastifyReply
     ) => {
-      return contentModelService.updateContent(
-        request.tenant,
-        request.params.modelId,
-        request.params.contentId,
-        request.body
-      );
+      try {
+        return await contentModelService.updateContent(
+          request.tenant,
+          request.params.modelId,
+          request.params.contentId,
+          request.body
+        );
+      } catch (error: any) {
+        if (error.name === 'OptimisticLockError') {
+          reply.status(409).send({
+            error: 'Conflict',
+            message: error.message,
+            code: 'OPTIMISTIC_LOCK_CONFLICT',
+          });
+          return;
+        }
+        throw error;
+      }
     }
   );
 
