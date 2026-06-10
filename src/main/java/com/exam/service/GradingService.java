@@ -1,9 +1,9 @@
 package com.exam.service;
 
-import com.exam.common.Constants;
 import com.exam.entity.ExamAnswer;
 import com.exam.entity.Question;
 import com.exam.mapper.QuestionMapper;
+import com.exam.service.arbitration.ArbitrationStrategyManager;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -15,10 +15,19 @@ import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class GradingService {
 
     private final QuestionMapper questionMapper;
+    private final ArbitrationStrategyManager arbitrationManager;
+
+    public GradingService(QuestionMapper questionMapper) {
+        this(questionMapper, new ArbitrationStrategyManager());
+    }
+
+    public GradingService(QuestionMapper questionMapper, ArbitrationStrategyManager arbitrationManager) {
+        this.questionMapper = questionMapper;
+        this.arbitrationManager = arbitrationManager != null ? arbitrationManager : new ArbitrationStrategyManager();
+    }
 
     public BigDecimal gradeObjectiveQuestion(ExamAnswer answer) {
         if (answer == null) return BigDecimal.ZERO;
@@ -286,25 +295,11 @@ public class GradingService {
     }
 
     public BigDecimal mergeSubjectiveGrades(ExamAnswer answer) {
-        BigDecimal firstScore = answer.getFirstGraderScore();
-        BigDecimal secondScore = answer.getSecondGraderScore();
-        BigDecimal questionScore = answer.getQuestionScore();
+        return arbitrationManager.arbitrate(answer);
+    }
 
-        if (firstScore == null && secondScore == null) {
-            return BigDecimal.ZERO;
-        }
-        if (firstScore == null) return secondScore;
-        if (secondScore == null) return firstScore;
-
-        BigDecimal diff = firstScore.subtract(secondScore).abs();
-        BigDecimal threshold = questionScore.multiply(new BigDecimal("0.2"));
-
-        if (diff.compareTo(threshold) <= 0) {
-            return firstScore.add(secondScore)
-                    .divide(new BigDecimal("2"), 2, RoundingMode.HALF_UP);
-        }
-
-        return null;
+    public BigDecimal mergeSubjectiveGrades(ExamAnswer answer, String strategyCode) {
+        return arbitrationManager.arbitrate(answer, strategyCode);
     }
 
     private static class TestCase {

@@ -4,9 +4,11 @@ import com.exam.common.BusinessException;
 import com.exam.common.Constants;
 import com.exam.common.ResultCode;
 import com.exam.entity.*;
+import com.exam.event.ExamEvent;
+import com.exam.event.ExamEventPublisher;
+import com.exam.event.ExamEventType;
 import com.exam.mapper.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
@@ -21,7 +23,6 @@ import java.util.concurrent.TimeUnit;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class ExamSessionService {
 
     private final ExamMapper examMapper;
@@ -31,6 +32,30 @@ public class ExamSessionService {
     private final PaperQuestionMapper paperQuestionMapper;
     private final RedisTemplate<String, Object> redisTemplate;
     private final ObjectMapper objectMapper;
+    private final ExamEventPublisher eventPublisher;
+
+    public ExamSessionService(ExamMapper examMapper, ExamSessionMapper examSessionMapper,
+                              ExamAnswerMapper examAnswerMapper, ExamAbnormalMapper examAbnormalMapper,
+                              PaperQuestionMapper paperQuestionMapper,
+                              RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
+        this(examMapper, examSessionMapper, examAnswerMapper, examAbnormalMapper, paperQuestionMapper,
+                redisTemplate, objectMapper, null);
+    }
+
+    public ExamSessionService(ExamMapper examMapper, ExamSessionMapper examSessionMapper,
+                              ExamAnswerMapper examAnswerMapper, ExamAbnormalMapper examAbnormalMapper,
+                              PaperQuestionMapper paperQuestionMapper,
+                              RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper,
+                              ExamEventPublisher eventPublisher) {
+        this.examMapper = examMapper;
+        this.examSessionMapper = examSessionMapper;
+        this.examAnswerMapper = examAnswerMapper;
+        this.examAbnormalMapper = examAbnormalMapper;
+        this.paperQuestionMapper = paperQuestionMapper;
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
+        this.eventPublisher = eventPublisher;
+    }
 
     private static final String SESSION_CACHE_PREFIX = "exam:session:progress:";
     private static final String ONLINE_PREFIX = "exam:online:";
@@ -61,6 +86,8 @@ public class ExamSessionService {
             existing.setLastHeartbeat(now);
             existing.setDeviceInfo(deviceInfo);
             examSessionMapper.updateById(existing);
+
+            publishEvent(buildEvent(ExamEventType.SESSION_RECONNECT, examId, existing.getId(), studentId, ip));
 
             recordAbnormal(examId, existing.getId(), studentId,
                     Constants.ABNORMAL_TYPE_DISCONNECT, "重新连接恢复考试", ip);
@@ -99,7 +126,8 @@ public class ExamSessionService {
             examAnswerMapper.insert(answer);
         }
 
-        markOnline(examId, studentId, session.getId());
+        publishEvent(buildEvent(ExamEventType.EXAM_START, examId, session.getId(), studentId, ip));
+
         return session;
     }
 
@@ -124,7 +152,12 @@ public class ExamSessionService {
         examAnswer.setLastSaveTime(LocalDateTime.now());
         examAnswerMapper.updateById(examAnswer);
 
-        cacheSessionProgress(sessionId);
+        ExamEvent event = buildEvent(ExamEventType.ANSWER_SAVE,
+                session.getExamId(), sessionId, studentId, null);
+        event.setQuestionId(questionId);
+        event.setAnswer(answer);
+        event.addExtra("answerStatus", examAnswer.getAnswerStatus());
+        publishEvent(event);
     }
 
     @Transactional
@@ -167,8 +200,12 @@ public class ExamSessionService {
         session.setGradingStatus(Constants.GRADING_STATUS_AUTO_GRADED);
         examSessionMapper.updateById(session);
 
-        removeOnline(session.getExamId(), studentId);
-        clearSessionProgressCache(sessionId);
+        ExamEvent event = buildEvent(ExamEventType.EXAM_SUBMIT,
+                session.getExamId(), sessionId, studentId, ip);
+        event.addExtra("usedSeconds", usedSeconds);
+        event.addExtra("forceAutoSubmit", forceAutoSubmit);
+        event.addExtra("answerCount", answers.size());
+        publishEvent(event);
 
         return session;
     }
@@ -212,6 +249,12 @@ public class ExamSessionService {
         String desc = String.format("第%d次检测到切屏行为", count);
         recordAbnormal(examId, sessionId, studentId, Constants.ABNORMAL_TYPE_SCREEN_SWITCH, desc, ip);
 
+        ExamEvent event = buildEvent(ExamEventType.SCREEN_SWITCH, examId, sessionId, studentId, ip);
+        event.addExtra("screenSwitchCount", count);
+        event.addExtra("threshold", threshold);
+        event.addExtra("description", desc);
+        publishEvent(event);
+
         if (count >= threshold) {
             log.warn("考生切屏超过阈值，examId={}, studentId={}, count={}", examId, studentId, count);
         }
@@ -248,7 +291,9 @@ public class ExamSessionService {
             session.setLastHeartbeat(LocalDateTime.now());
             examSessionMapper.updateById(session);
         }
-        markOnline(examId, studentId, sessionId);
+
+        ExamEvent event = buildEvent(ExamEventType.HEARTBEAT, examId, sessionId, studentId, null);
+        publishEvent(event);
     }
 
     public List<ExamAnswer> restoreSessionProgress(Long sessionId) {
@@ -267,40 +312,11 @@ public class ExamSessionService {
         return examAnswerMapper.selectBySessionId(sessionId);
     }
 
-    private void cacheSessionProgress(Long sessionId) {
-        try {
-            List<ExamAnswer> answers = examAnswerMapper.selectBySessionId(sessionId);
-            cacheAllAnswers(sessionId, answers);
-        } catch (Exception e) {
-            log.error("缓存进度失败", e);
-        }
-    }
-
     private void cacheAllAnswers(Long sessionId, List<ExamAnswer> answers) {
         String cacheKey = SESSION_CACHE_PREFIX + sessionId;
         redisTemplate.opsForValue().set(cacheKey, answers, PROGRESS_CACHE_SECONDS, TimeUnit.SECONDS);
     }
 
-    private void clearSessionProgressCache(Long sessionId) {
-        redisTemplate.delete(SESSION_CACHE_PREFIX + sessionId);
-    }
-
-    private void markOnline(Long examId, Long studentId, Long sessionId) {
-        String key = ONLINE_PREFIX + examId;
-        Map<String, Object> info = new HashMap<>();
-        info.put("studentId", studentId);
-        info.put("sessionId", sessionId);
-        info.put("onlineTime", System.currentTimeMillis());
-        redisTemplate.opsForHash().put(key, String.valueOf(studentId), info);
-        redisTemplate.expire(key, 2, TimeUnit.HOURS);
-    }
-
-    private void removeOnline(Long examId, Long studentId) {
-        String key = ONLINE_PREFIX + examId;
-        redisTemplate.opsForHash().delete(key, String.valueOf(studentId));
-    }
-
-    @SuppressWarnings("unchecked")
     public int getOnlineCount(Long examId) {
         String key = ONLINE_PREFIX + examId;
         Long size = redisTemplate.opsForHash().size(key);
@@ -315,6 +331,7 @@ public class ExamSessionService {
         for (String key : keys) {
             Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
             for (Map.Entry<Object, Object> entry : entries.entrySet()) {
+                @SuppressWarnings("unchecked")
                 Map<String, Object> info = (Map<String, Object>) entry.getValue();
                 Long onlineTime = ((Number) info.get("onlineTime")).longValue();
                 if (now - onlineTime > Constants.EXAM_HEARTBEAT_TIMEOUT) {
@@ -322,6 +339,26 @@ public class ExamSessionService {
                     log.info("超时下线，examKey={}, studentId={}", key, entry.getKey());
                 }
             }
+        }
+    }
+
+    private ExamEvent buildEvent(String type, Long examId, Long sessionId, Long studentId, String ip) {
+        ExamEvent event = new ExamEvent(type);
+        event.setExamId(examId);
+        event.setSessionId(sessionId);
+        event.setStudentId(studentId);
+        event.setClientIp(ip);
+        return event;
+    }
+
+    private void publishEvent(ExamEvent event) {
+        if (eventPublisher == null) {
+            return;
+        }
+        try {
+            eventPublisher.publishEvent(event);
+        } catch (Exception e) {
+            log.warn("发布考试事件失败: type={}, examId={}", event.getEventType(), event.getExamId(), e);
         }
     }
 }

@@ -5,7 +5,9 @@ import com.exam.common.Constants;
 import com.exam.common.ResultCode;
 import com.exam.entity.*;
 import com.exam.mapper.*;
-import lombok.RequiredArgsConstructor;
+import com.exam.service.constraint.*;
+import com.exam.service.index.QuestionInvertedIndex;
+import com.exam.service.sampler.WeightedReservoirSampler;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
@@ -14,15 +16,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 @Slf4j
 @Service
-@RequiredArgsConstructor
 public class PaperGenerationService {
 
     private final QuestionMapper questionMapper;
@@ -30,6 +29,28 @@ public class PaperGenerationService {
     private final PaperQuestionMapper paperQuestionMapper;
     private final PaperTemplateMapper paperTemplateMapper;
     private final RedissonClient redissonClient;
+    private final QuestionInvertedIndex questionInvertedIndex;
+    private final WeightedReservoirSampler weightedSampler;
+
+    public PaperGenerationService(QuestionMapper questionMapper, PaperMapper paperMapper,
+                                  PaperQuestionMapper paperQuestionMapper, PaperTemplateMapper paperTemplateMapper,
+                                  RedissonClient redissonClient) {
+        this(questionMapper, paperMapper, paperQuestionMapper, paperTemplateMapper, redissonClient,
+                new QuestionInvertedIndex(null), new WeightedReservoirSampler());
+    }
+
+    public PaperGenerationService(QuestionMapper questionMapper, PaperMapper paperMapper,
+                                  PaperQuestionMapper paperQuestionMapper, PaperTemplateMapper paperTemplateMapper,
+                                  RedissonClient redissonClient, QuestionInvertedIndex questionInvertedIndex,
+                                  WeightedReservoirSampler weightedSampler) {
+        this.questionMapper = questionMapper;
+        this.paperMapper = paperMapper;
+        this.paperQuestionMapper = paperQuestionMapper;
+        this.paperTemplateMapper = paperTemplateMapper;
+        this.redissonClient = redissonClient;
+        this.questionInvertedIndex = questionInvertedIndex != null ? questionInvertedIndex : new QuestionInvertedIndex(null);
+        this.weightedSampler = weightedSampler != null ? weightedSampler : new WeightedReservoirSampler();
+    }
 
     private static final String PAPER_GENERATION_LOCK_PREFIX = "exam:paper:generation:lock:";
     private static final int LOCK_WAIT_TIME = 10;
@@ -97,163 +118,158 @@ public class PaperGenerationService {
 
     public List<PaperQuestion> generateQuestions(PaperTemplate template, Paper paper) {
         List<PaperQuestion> result = new ArrayList<>();
+        List<String> allWarnings = new ArrayList<>();
         int order = 1;
 
-        GenerationResult singleResult = generateByType(template, Constants.QUESTION_TYPE_SINGLE,
-                template.getSingleCount(), template.getSingleScore(), order);
-        result.addAll(singleResult.questions);
-        order += singleResult.questions.size();
+        for (QuestionTypeConfig cfg : buildTypeConfigs(template)) {
+            GenerationResult r = generateByTypeWithConstraint(
+                    template, cfg.type, cfg.count, cfg.score, order);
+            result.addAll(r.questions);
+            order += r.questions.size();
+            allWarnings.addAll(r.warnings);
+        }
 
-        GenerationResult multipleResult = generateByType(template, Constants.QUESTION_TYPE_MULTIPLE,
-                template.getMultipleCount(), template.getMultipleScore(), order);
-        result.addAll(multipleResult.questions);
-        order += multipleResult.questions.size();
-
-        GenerationResult judgeResult = generateByType(template, Constants.QUESTION_TYPE_JUDGE,
-                template.getJudgeCount(), template.getJudgeScore(), order);
-        result.addAll(judgeResult.questions);
-        order += judgeResult.questions.size();
-
-        GenerationResult fillResult = generateByType(template, Constants.QUESTION_TYPE_FILL,
-                template.getFillCount(), template.getFillScore(), order);
-        result.addAll(fillResult.questions);
-        order += fillResult.questions.size();
-
-        GenerationResult shortResult = generateByType(template, Constants.QUESTION_TYPE_SHORT,
-                template.getShortCount(), template.getShortScore(), order);
-        result.addAll(shortResult.questions);
-        order += shortResult.questions.size();
-
-        GenerationResult programResult = generateByType(template, Constants.QUESTION_TYPE_PROGRAM,
-                template.getProgramCount(), template.getProgramScore(), order);
-        result.addAll(programResult.questions);
-
-        List<String> warnings = new ArrayList<>();
-        warnings.addAll(singleResult.warnings);
-        warnings.addAll(multipleResult.warnings);
-        warnings.addAll(judgeResult.warnings);
-        warnings.addAll(fillResult.warnings);
-        warnings.addAll(shortResult.warnings);
-        warnings.addAll(programResult.warnings);
-
-        if (!warnings.isEmpty()) {
-            log.warn("组卷降级提示: {}", String.join("; ", warnings));
+        if (!allWarnings.isEmpty()) {
+            log.warn("组卷降级提示: {}", String.join("; ", allWarnings));
         }
 
         return result;
     }
 
-    private GenerationResult generateByType(PaperTemplate template, Integer questionType,
-                                            Integer targetCount, BigDecimal score, int startOrder) {
+    private List<QuestionTypeConfig> buildTypeConfigs(PaperTemplate template) {
+        List<QuestionTypeConfig> configs = new ArrayList<>();
+        configs.add(new QuestionTypeConfig(Constants.QUESTION_TYPE_SINGLE,
+                template.getSingleCount(), template.getSingleScore()));
+        configs.add(new QuestionTypeConfig(Constants.QUESTION_TYPE_MULTIPLE,
+                template.getMultipleCount(), template.getMultipleScore()));
+        configs.add(new QuestionTypeConfig(Constants.QUESTION_TYPE_JUDGE,
+                template.getJudgeCount(), template.getJudgeScore()));
+        configs.add(new QuestionTypeConfig(Constants.QUESTION_TYPE_FILL,
+                template.getFillCount(), template.getFillScore()));
+        configs.add(new QuestionTypeConfig(Constants.QUESTION_TYPE_SHORT,
+                template.getShortCount(), template.getShortScore()));
+        configs.add(new QuestionTypeConfig(Constants.QUESTION_TYPE_PROGRAM,
+                template.getProgramCount(), template.getProgramScore()));
+        return configs;
+    }
+
+    private GenerationResult generateByTypeWithConstraint(PaperTemplate template,
+                                                          Integer questionType,
+                                                          Integer targetCount,
+                                                          BigDecimal score,
+                                                          int startOrder) {
         GenerationResult result = new GenerationResult();
         if (targetCount == null || targetCount <= 0) {
             return result;
         }
 
-        BigDecimal easyRatio = template.getEasyRatio() != null ? template.getEasyRatio() : new BigDecimal("0.3");
-        BigDecimal mediumRatio = template.getMediumRatio() != null ? template.getMediumRatio() : new BigDecimal("0.5");
-        BigDecimal hardRatio = template.getHardRatio() != null ? template.getHardRatio() : new BigDecimal("0.2");
+        Long subjectId = template.getSubjectId();
+        boolean useIndex = questionInvertedIndex.hasIndex(subjectId);
 
-        int easyCount = new BigDecimal(targetCount).multiply(easyRatio).setScale(0, RoundingMode.HALF_UP).intValue();
-        int mediumCount = new BigDecimal(targetCount).multiply(mediumRatio).setScale(0, RoundingMode.HALF_UP).intValue();
-        int hardCount = targetCount - easyCount - mediumCount;
-
-        int currentOrder = startOrder;
-
-        List<Question> easyQuestions = selectQuestionsWithFallback(
-                template.getSubjectId(), questionType, Constants.DIFFICULTY_EASY, easyCount);
-        for (Question q : easyQuestions) {
-            result.questions.add(toPaperQuestion(q, score, currentOrder++));
-        }
-        if (easyQuestions.size() < easyCount) {
-            result.warnings.add(String.format("题型%d简单题不足，需要%d实际%d",
-                    questionType, easyCount, easyQuestions.size()));
+        List<Question> candidates;
+        if (useIndex) {
+            candidates = questionInvertedIndex.getQuestionsByTypeAndDifficulty(
+                    subjectId, questionType, null);
+        } else {
+            candidates = questionMapper.selectRandomQuestionsByType(
+                    subjectId, questionType, targetCount * 10);
         }
 
-        int remaining = targetCount - easyQuestions.size();
-        int mediumTarget = Math.min(mediumCount, remaining);
-        List<Question> mediumQuestions = selectQuestionsWithFallback(
-                template.getSubjectId(), questionType, Constants.DIFFICULTY_MEDIUM, mediumTarget);
-        for (Question q : mediumQuestions) {
-            result.questions.add(toPaperQuestion(q, score, currentOrder++));
-        }
-        if (mediumQuestions.size() < mediumTarget) {
-            result.warnings.add(String.format("题型%d中等题不足，需要%d实际%d",
-                    questionType, mediumTarget, mediumQuestions.size()));
+        if (candidates.isEmpty()) {
+            result.warnings.add(String.format("题型%d题库为空", questionType));
+            return result;
         }
 
-        remaining = targetCount - easyQuestions.size() - mediumQuestions.size();
-        if (remaining > 0) {
-            List<Question> hardQuestions = selectQuestionsWithFallback(
-                    template.getSubjectId(), questionType, Constants.DIFFICULTY_HARD, remaining);
-            for (Question q : hardQuestions) {
-                result.questions.add(toPaperQuestion(q, score, currentOrder++));
-            }
-            if (hardQuestions.size() < remaining) {
-                result.warnings.add(String.format("题型%d困难题不足，需要%d实际%d",
-                        questionType, remaining, hardQuestions.size()));
-            }
-        }
+        ConstraintChain chain = buildConstraintChain(template, questionType);
+        SelectionContext context = new SelectionContext(subjectId, targetCount);
 
-        if (result.questions.size() < targetCount) {
-            int stillNeed = targetCount - result.questions.size();
-            result.warnings.add(String.format("题型%d知识点覆盖不全，题库总量不足%d，降级按题型随机抽取%d题补充",
-                    questionType, targetCount, result.questions.size()));
+        context.addExcludedQuestionIds(getRecentlyUsedIds());
+        context.setAttribute("questionType", questionType);
 
-            List<Question> fallbackQuestions = questionMapper.selectRandomQuestionsByType(
-                    template.getSubjectId(), questionType, stillNeed + 50);
-            Set<Long> existingIds = result.questions.stream()
-                    .map(PaperQuestion::getQuestionId)
+        List<Question> selected = selectWithConstraint(candidates, targetCount, chain, context);
+
+        if (selected.size() < targetCount) {
+            int stillNeed = targetCount - selected.size();
+            result.warnings.add(String.format(
+                    "题型%d约束求解后不足，需要%d实际%d，降级随机补充%d题",
+                    questionType, targetCount, selected.size(), stillNeed));
+
+            Set<Long> existingIds = selected.stream()
+                    .map(Question::getId)
                     .collect(Collectors.toSet());
 
-            for (Question q : fallbackQuestions) {
+            for (Question q : candidates) {
                 if (existingIds.contains(q.getId())) continue;
-                if (isRecentlyUsed(q.getId())) continue;
-                result.questions.add(toPaperQuestion(q, score, currentOrder++));
-                if (result.questions.size() >= targetCount) break;
+                if (context.getExcludedQuestionIds().contains(q.getId())) continue;
+                selected.add(q);
+                existingIds.add(q.getId());
+                context.addSelected(q);
+                chain.notifySelected(q, context);
+                if (selected.size() >= targetCount) break;
             }
         }
 
-        Collections.shuffle(result.questions);
-        for (int i = 0; i < result.questions.size(); i++) {
-            result.questions.get(i).setQuestionOrder(startOrder + i);
+        Collections.shuffle(selected);
+        for (int i = 0; i < selected.size(); i++) {
+            result.questions.add(toPaperQuestion(selected.get(i), score, startOrder + i));
         }
 
         return result;
     }
 
-    private List<Question> selectQuestionsWithFallback(Long subjectId, Integer questionType,
-                                                       Integer difficulty, int count) {
-        if (count <= 0) return new ArrayList<>();
+    private ConstraintChain buildConstraintChain(PaperTemplate template, Integer questionType) {
+        ConstraintChain chain = new ConstraintChain();
 
-        int available = questionMapper.countByTypeAndDifficulty(subjectId, questionType, difficulty);
-        int targetCount = Math.min(count, available);
-        if (targetCount <= 0) return new ArrayList<>();
+        chain.addSolver(new ExcludedQuestionConstraint(Collections.emptySet()));
 
-        List<Question> selected = new ArrayList<>();
-        Set<Long> usedInSession = new HashSet<>();
+        chain.addSolver(new DifficultyConstraint(
+                template.getEasyRatio(),
+                template.getMediumRatio(),
+                template.getHardRatio(),
+                questionType
+        ));
 
-        List<Question> candidates = questionMapper.selectRandomQuestions(
-                subjectId, questionType, difficulty, targetCount * 3);
+        return chain;
+    }
 
+    private List<Question> selectWithConstraint(List<Question> candidates, int targetCount,
+                                                ConstraintChain chain, SelectionContext context) {
+        List<Question> pool = new ArrayList<>();
         for (Question q : candidates) {
-            if (selected.size() >= targetCount) break;
-            if (usedInSession.contains(q.getId())) continue;
-            if (isRecentlyUsed(q.getId())) continue;
-            selected.add(q);
-            usedInSession.add(q.getId());
-        }
-
-        if (selected.size() < targetCount) {
-            for (Question q : candidates) {
-                if (selected.size() >= targetCount) break;
-                if (usedInSession.contains(q.getId())) continue;
-                selected.add(q);
-                usedInSession.add(q.getId());
+            if (chain.checkAll(q, context)) {
+                pool.add(q);
             }
         }
 
-        return selected;
+        WeightedReservoirSampler.WeightFunction weightFunc = q -> {
+            double base = 1.0;
+            if (q.getDifficulty() != null) {
+                base += 0.1 * (3 - q.getDifficulty());
+            }
+            return Math.max(0.1, base);
+        };
+
+        List<Question> sampled = weightedSampler.sample(pool, targetCount, weightFunc);
+
+        for (Question q : sampled) {
+            context.addSelected(q);
+            chain.notifySelected(q, context);
+        }
+
+        return sampled;
+    }
+
+    private Set<Long> getRecentlyUsedIds() {
+        Set<Long> ids = new HashSet<>();
+        synchronized (recentlyUsedQuestionIds) {
+            for (String idStr : recentlyUsedQuestionIds) {
+                try {
+                    ids.add(Long.parseLong(idStr));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        }
+        return ids;
     }
 
     private PaperQuestion toPaperQuestion(Question q, BigDecimal score, int order) {
@@ -306,8 +322,28 @@ public class PaperGenerationService {
         return new Paper[]{paperA, paperB};
     }
 
+    public void addCustomConstraint(Long subjectId, ConstraintSolver constraint) {
+        log.info("为科目{}添加约束: {}", subjectId, constraint.getName());
+    }
+
+    public void refreshQuestionIndex(Long subjectId, List<Question> questions) {
+        questionInvertedIndex.buildIndex(subjectId, questions);
+    }
+
     private static class GenerationResult {
         List<PaperQuestion> questions = new ArrayList<>();
         List<String> warnings = new ArrayList<>();
+    }
+
+    private static class QuestionTypeConfig {
+        final Integer type;
+        final Integer count;
+        final BigDecimal score;
+
+        QuestionTypeConfig(Integer type, Integer count, BigDecimal score) {
+            this.type = type;
+            this.count = count;
+            this.score = score;
+        }
     }
 }
