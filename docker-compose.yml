@@ -1,0 +1,195 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0.36
+    container_name: cardgame-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: cardgame
+      MYSQL_USER: cardgame
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cardgamepass}
+      TZ: Asia/Shanghai
+    command: 
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --max-connections=500
+      - --innodb-buffer-pool-size=1G
+      - --innodb-log-file-size=256M
+      - --slow-query-log=1
+      - --long-query-time=2
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./sql:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-rootpassword}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - cardgame-network
+
+  flyway-migrate:
+    image: flyway/flyway:10.10.0
+    container_name: cardgame-flyway-migrate
+    depends_on:
+      mysql:
+        condition: service_healthy
+    command: -url=jdbc:mysql://mysql:3306/cardgame?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai -user=root -password=${MYSQL_ROOT_PASSWORD:-rootpassword} -locations=filesystem:/flyway/sql -baselineOnMigrate=true -connectRetries=10 migrate
+    volumes:
+      - ./sql/migration:/flyway/sql
+    networks:
+      - cardgame-network
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: cardgame-redis
+    restart: unless-stopped
+    command: >
+      sh -c '
+        if [ -n "$$REDIS_PASSWORD" ]; then
+          redis-server --requirepass $$REDIS_PASSWORD --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+        else
+          redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+        fi
+      '
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      TZ: Asia/Shanghai
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - cardgame-network
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: cardgame-kafka
+    restart: unless-stopped
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+      KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+      KAFKA_PROCESS_ROLES: 'broker,controller'
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+      KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+      KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+      KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+      KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_NUM_PARTITIONS: 6
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      TZ: Asia/Shanghai
+    ports:
+      - "9092:9092"
+    volumes:
+      - kafka-data:/tmp/kraft-combined-logs
+    healthcheck:
+      test: ["CMD", "kafka-cluster.sh", "cluster-id", "--bootstrap-server", "localhost:9092"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - cardgame-network
+
+  kafka-init-topics:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: cardgame-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: >
+      bash -c '
+        echo "Waiting for Kafka to be ready..."
+        kafka-topics.sh --bootstrap-server kafka:29092 --list
+        
+        echo "Creating battle_log topic..."
+        kafka-topics.sh --create --bootstrap-server kafka:29092 --topic cardgame_battle_log --partitions 6 --replication-factor 1 --if-not-exists
+        
+        echo "Creating game_events topic..."
+        kafka-topics.sh --create --bootstrap-server kafka:29092 --topic cardgame_game_events --partitions 3 --replication-factor 1 --if-not-exists
+        
+        echo "Topics created:"
+        kafka-topics.sh --bootstrap-server kafka:29092 --list
+      '
+    networks:
+      - cardgame-network
+
+  cardgame-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cardgame-app
+    restart: unless-stopped
+    depends_on:
+      flyway-migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      kafka-init-topics:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-dev}
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/cardgame?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+      SPRING_DATASOURCE_USERNAME: cardgame
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD:-cardgamepass}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PORT: 6379
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      JAVA_OPTS: >
+        -XX:+UseG1GC
+        -XX:MaxRAMPercentage=75.0
+        -XX:InitialRAMPercentage=75.0
+        -XX:MaxGCPauseMillis=200
+        -XX:+HeapDumpOnOutOfMemoryError
+        -XX:HeapDumpPath=/var/log/dumps/
+        -Dfile.encoding=UTF-8
+        -Duser.timezone=Asia/Shanghai
+    ports:
+      - "8080:8080"
+      - "9000:9000"
+      - "9010:9010"
+    volumes:
+      - app-logs:/var/log
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    networks:
+      - cardgame-network
+
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  kafka-data:
+    driver: local
+  app-logs:
+    driver: local
+
+networks:
+  cardgame-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

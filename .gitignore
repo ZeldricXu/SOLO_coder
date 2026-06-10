@@ -1,13 +1,107 @@
-__pycache__/
-*.py[cod]
-venv/
-env/
-.env
-*.log
-*.db
-node_modules/
-.next/
-.DS_Store
-target/
-*.jar
+# Compiled class files
 *.class
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Log files
+*.log
+
+# Maven
+target/
+pom.xml.tag
+pom.xml.releaseBackup
+pom.xml.versionsBackup
+pom.xml.next
+release.properties
+dependency-reduced-pom.xml
+buildNumber.properties
+.mvn/timing.properties
+.mvn/wrapper/maven-wrapper.jar
+.mvn/wrapper/maven-wrapper.properties
+
+# Gradle
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+out/
+
+# Test outputs
+**/target/surefire-reports/
+**/target/failsafe-reports/
+**/target/site/
+**/target/jacoco*.exec
+**/target/jacoco-*/
+
+# SpotBugs
+**/target/spotbugsXml.xml
+**/target/findbugsXml.xml
+
+# Checkstyle
+**/target/checkstyle-result.xml
+
+# Application logs
+logs/
+*.log.*
+/var/log/
+gc.log
+heapdump.hprof
+hs_err_pid*
+
+# Docker
+docker-compose.override.yml
+
+# Database
+*.db
+*.sqlite
+
+# Generated files
+*.generated.java
+*.apt_generated/
+
+# Cache
+.cache/
+.cached/
+.recommenders/
+
+# Static analysis
+*.pmd
+*.pmd.xml
+*.findbugs
+
+# Coverage
+coverage/
+cover/
+.nyc_output/
+
+# Secrets and keys
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx

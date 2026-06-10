@@ -1,0 +1,73 @@
+spring:
+  config:
+    activate:
+      on-profile: prod
+  flyway:
+    clean-disabled: true
+    validate-on-migrate: true
+
+logging:
+  level:
+    com.cardgame: INFO
+    org.springframework: WARN
+    io.netty: WARN
+    org.apache.kafka: WARN
+  file:
+    name: /var/log/cardgame/cardgame-prod.log
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: never
+
+mysql:
+  maximum-pool-size: 50
+  minimum-idle: 20
+  connection-timeout: 10000
+  idle-timeout: 300000
+  max-lifetime: 600000
+  leak-detection-threshold: 20000
+
+redis:
+  max-total: 32
+  max-idle: 32
+  min-idle: 16
+  timeout: 2000
+
+kafka:
+  producer:
+    acks: all
+    retries: 5
+    compression-type: snappy
+  consumer:
+    enable-auto-commit: false
+    max-poll-records: 100
+    fetch-min-bytes: 524288
+    fetch-max-wait-ms: 1000
+
+netty:
+  port: 9000
+  boss-threads: 2
+  worker-threads: 32
+  so-backlog: 4096
+  receive-buffer-size: 131072
+  send-buffer-size: 131072
+
+game:
+  reconnect-timeout-seconds: 300
+
+battle:
+  turn-time-limit-seconds: 60
+  auto-save-interval-seconds: 30
+
+room:
+  max-idle-timeout-seconds: 1800
+
+logging:
+  level:
+    root: WARN
+    com.cardgame: INFO

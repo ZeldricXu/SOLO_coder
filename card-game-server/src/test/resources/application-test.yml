@@ -1,0 +1,30 @@
+spring:
+  config:
+    activate:
+      on-profile: test
+  flyway:
+    enabled: false
+
+mysql:
+  url: ${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/cardgame_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true}
+  username: ${SPRING_DATASOURCE_USERNAME:root}
+  password: ${SPRING_DATASOURCE_PASSWORD:root}
+  maximum-pool-size: 5
+  minimum-idle: 1
+
+redis:
+  host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+  port: ${SPRING_DATA_REDIS_PORT:6379}
+  password: ${SPRING_DATA_REDIS_PASSWORD:}
+  database: 1
+
+kafka:
+  bootstrap-servers: ${SPRING_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}
+
+logging:
+  level:
+    com.cardgame: DEBUG
+    org.testcontainers: INFO
+
+battle:
+  turn-time-limit-seconds: 300

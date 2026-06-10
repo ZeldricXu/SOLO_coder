@@ -26,9 +26,13 @@
     </modules>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.source>21</maven.compiler.source>
+        <maven.compiler.target>21</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <spring-boot.version>3.2.5</spring-boot.version>
+        <flyway.version>10.10.0</flyway.version>
+        <checkstyle.version>3.3.1</checkstyle.version>
+        <spotbugs.version>4.8.3.1</spotbugs.version>
         <netty.version>4.1.109.Final</netty.version>
         <spring.version>6.1.5</spring.version>
         <jackson.version>2.16.1</jackson.version>
@@ -51,6 +55,25 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-dependencies</artifactId>
+                <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-core</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.flywaydb</groupId>
+                <artifactId>flyway-mysql</artifactId>
+                <version>${flyway.version}</version>
+            </dependency>
+
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-all</artifactId>
@@ -232,10 +255,10 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.12.1</version>
+                    <version>3.13.0</version>
                     <configuration>
-                        <source>17</source>
-                        <target>17</target>
+                        <source>21</source>
+                        <target>21</target>
                         <annotationProcessorPaths>
                             <path>
                                 <groupId>org.projectlombok</groupId>
@@ -244,6 +267,48 @@
                             </path>
                         </annotationProcessorPaths>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-checkstyle-plugin</artifactId>
+                    <version>${checkstyle.version}</version>
+                    <configuration>
+                        <configLocation>checkstyle.xml</configLocation>
+                        <encoding>UTF-8</encoding>
+                        <consoleOutput>true</consoleOutput>
+                        <failsOnError>true</failsOnError>
+                        <linkXRef>false</linkXRef>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>validate</id>
+                            <phase>validate</phase>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>com.github.spotbugs</groupId>
+                    <artifactId>spotbugs-maven-plugin</artifactId>
+                    <version>${spotbugs.version}</version>
+                    <configuration>
+                        <effort>Max</effort>
+                        <threshold>Medium</threshold>
+                        <failOnError>true</failOnError>
+                        <includeTests>false</includeTests>
+                        <excludeFilterFile>spotbugs-exclude.xml</excludeFilterFile>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>spotbugs-check</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

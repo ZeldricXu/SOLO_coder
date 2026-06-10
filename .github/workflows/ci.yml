@@ -1,0 +1,318 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  JAVA_VERSION: '21'
+  MAVEN_VERSION: '3.9.6'
+
+jobs:
+  lint:
+    name: Lint and Static Analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Run Checkstyle
+        run: mvn checkstyle:check --batch-mode --no-transfer-progress
+
+      - name: Run SpotBugs
+        run: mvn spotbugs:check --batch-mode --no-transfer-progress
+        continue-on-error: false
+
+      - name: Upload SpotBugs report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotbugs-reports
+          path: '**/target/spotbugsXml.xml'
+
+      - name: Upload Checkstyle report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: checkstyle-reports
+          path: '**/target/checkstyle-result.xml'
+
+  test:
+    name: Unit and Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    needs: lint
+    services:
+      mysql:
+        image: mysql:8.0.36
+        env:
+          MYSQL_ROOT_PASSWORD: rootpassword
+          MYSQL_DATABASE: cardgame_test
+          MYSQL_USER: testuser
+          MYSQL_PASSWORD: testpass
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h localhost -u root -prootpassword"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+          --health-start-period 30s
+
+      redis:
+        image: redis:7.2-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      kafka:
+        image: confluentinc/cp-kafka:7.6.1
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: 'CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT'
+          KAFKA_ADVERTISED_LISTENERS: 'PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092'
+          KAFKA_PROCESS_ROLES: 'broker,controller'
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_CONTROLLER_QUORUM_VOTERS: '1@kafka:29093'
+          KAFKA_LISTENERS: 'PLAINTEXT://kafka:29092,CONTROLLER://kafka:29093,PLAINTEXT_HOST://0.0.0.0:9092'
+          KAFKA_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
+          KAFKA_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
+          KAFKA_LOG_DIRS: '/tmp/kraft-combined-logs'
+          KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+        ports:
+          - 9092:9092
+        options: >-
+          --health-cmd "kafka-cluster.sh cluster-id --bootstrap-server localhost:9092"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 5
+          --health-start-period 30s
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Initialize Kafka topics
+        run: |
+          sleep 10
+          docker exec ${{ job.services.kafka.id }} kafka-topics.sh --create --bootstrap-server localhost:9092 --topic cardgame_battle_log --partitions 6 --replication-factor 1 --if-not-exists
+          docker exec ${{ job.services.kafka.id }} kafka-topics.sh --create --bootstrap-server localhost:9092 --topic cardgame_game_events --partitions 3 --replication-factor 1 --if-not-exists
+
+      - name: Run Unit Tests
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/cardgame_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: rootpassword
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+        run: mvn test --batch-mode --no-transfer-progress -DfailIfNoTests=false
+
+      - name: Run Integration Tests
+        env:
+          SPRING_PROFILES_ACTIVE: test
+          SPRING_DATASOURCE_URL: jdbc:mysql://localhost:3306/cardgame_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+          SPRING_DATASOURCE_USERNAME: root
+          SPRING_DATASOURCE_PASSWORD: rootpassword
+          SPRING_DATA_REDIS_HOST: localhost
+          SPRING_DATA_REDIS_PORT: 6379
+          SPRING_KAFKA_BOOTSTRAP_SERVERS: localhost:9092
+        run: mvn verify --batch-mode --no-transfer-progress -DskipUnitTests=true -DfailIfNoTests=false
+
+      - name: Upload Test Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: |
+            **/target/surefire-reports/
+            **/target/failsafe-reports/
+            **/target/jacoco-*
+
+      - name: Publish Test Results
+        if: always()
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        with:
+          files: |
+            **/target/surefire-reports/*.xml
+            **/target/failsafe-reports/*.xml
+
+      - name: Check Test Coverage
+        if: always()
+        run: mvn jacoco:report --batch-mode --no-transfer-progress || true
+
+  build:
+    name: Build Package and Docker Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: test
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true)
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK ${{ env.JAVA_VERSION }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            ${{ runner.os }}-maven-
+
+      - name: Build with Maven
+        run: mvn clean package --batch-mode --no-transfer-progress -DskipTests -pl card-game-server -am
+
+      - name: Copy built artifact
+        run: cp card-game-server/target/card-game-server-1.0.0.jar app.jar
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload Build Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            app.jar
+            **/target/*.jar
+            !**/target/*-sources.jar
+            !**/target/*-javadoc.jar
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    environment:
+      name: staging
+      url: ${{ secrets.STAGING_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add your deployment script here
+          # e.g., kubectl apply, AWS ECS deploy, etc.
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    environment:
+      name: production
+      url: ${{ secrets.PRODUCTION_URL }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Production
+        run: |
+          echo "Deploying to production environment..."
+          # Add your deployment script here
+          # e.g., kubectl apply, AWS ECS deploy, etc.
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            app.jar

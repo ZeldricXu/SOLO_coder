@@ -1,0 +1,51 @@
+spring:
+  config:
+    activate:
+      on-profile: dev
+  devtools:
+    restart:
+      enabled: true
+      additional-paths: src/main/java
+    livereload:
+      enabled: true
+
+logging:
+  level:
+    com.cardgame: DEBUG
+    io.netty: INFO
+  file:
+    name: ./logs/cardgame-dev.log
+
+management:
+  endpoint:
+    health:
+      show-details: always
+
+mysql:
+  url: jdbc:mysql://127.0.0.1:3306/cardgame?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+  username: root
+  password: root
+  maximum-pool-size: 10
+  minimum-idle: 2
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password:
+  database: 0
+
+kafka:
+  bootstrap-servers: 127.0.0.1:9092
+
+netty:
+  port: 9000
+  worker-threads: 4
+
+game:
+  reconnect-timeout-seconds: 600
+
+room:
+  match-timeout-seconds: 60
+
+battle:
+  turn-time-limit-seconds: 120
