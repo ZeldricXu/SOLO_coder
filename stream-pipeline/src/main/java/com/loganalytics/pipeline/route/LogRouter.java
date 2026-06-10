@@ -23,6 +23,26 @@ public class LogRouter {
         DROP
     }
 
+    private final Map<String, String> levelToTopicMap;
+    private final String deadLetterTopic;
+
+    public LogRouter(Map<String, String> levelToTopicMap, String deadLetterTopic) {
+        this.levelToTopicMap = levelToTopicMap;
+        this.deadLetterTopic = deadLetterTopic;
+        this.config = null;
+        this.rules = new ArrayList<>();
+        this.routeCounts = new ConcurrentHashMap<>();
+    }
+
+    public String route(LogEvent event) {
+        if (!event.isParsed() && event.getParseError() != null) {
+            return deadLetterTopic;
+        }
+
+        String level = event.getLevel() != null ? event.getLevel().name() : "INFO";
+        return levelToTopicMap.getOrDefault(level, levelToTopicMap.getOrDefault("*", "parsed-logs"));
+    }
+
     public static class RoutingRule {
         private String name;
         private RouteTarget target;
@@ -88,9 +108,9 @@ public class LogRouter {
         public void setPriority(int priority) { this.priority = priority; }
     }
 
-    private final PipelineConfig config;
-    private final List<RoutingRule> rules;
-    private final Map<RouteTarget, Long> routeCounts;
+    private PipelineConfig config;
+    private List<RoutingRule> rules;
+    private Map<RouteTarget, Long> routeCounts;
 
     public LogRouter(PipelineConfig config) {
         this.config = config;

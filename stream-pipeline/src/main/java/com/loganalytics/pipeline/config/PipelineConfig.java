@@ -145,4 +145,22 @@ public class PipelineConfig {
 
     public String getRoutingRulesConfig() { return routingRulesConfig; }
     public void setRoutingRulesConfig(String routingRulesConfig) { this.routingRulesConfig = routingRulesConfig; }
+
+    public record FilterConfig(
+            java.util.Set<String> excludedLevels,
+            java.util.Set<String> includedServices,
+            java.util.Set<String> noiseKeywords,
+            boolean excludeHealthChecks
+    ) {
+        public String minLevel() {
+            if (excludedLevels == null || excludedLevels.isEmpty()) return null;
+            if (excludedLevels.contains("DEBUG") && excludedLevels.contains("TRACE")) {
+                return "INFO";
+            }
+            if (excludedLevels.contains("DEBUG")) {
+                return "DEBUG";
+            }
+            return null;
+        }
+    }
 }

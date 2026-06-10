@@ -20,6 +20,12 @@ public class DetectorConfig {
     private double sigmaThreshold;
     private int minBaselinePoints;
 
+    private int baselineWindowMinutes;
+    private int baselineWarmupMinutes;
+    private double frequencySigmaThreshold;
+    private int anomalyCooldownSeconds;
+    private int coldStartDefaultThreshold;
+
     private int correlationWindowSeconds;
     private int correlationMaxPatterns;
 
@@ -114,4 +120,19 @@ public class DetectorConfig {
 
     public int getAnomalyCooldownMinutes() { return anomalyCooldownMinutes; }
     public void setAnomalyCooldownMinutes(int anomalyCooldownMinutes) { this.anomalyCooldownMinutes = anomalyCooldownMinutes; }
+
+    public int getBaselineWindowMinutes() { return baselineWindowMinutes; }
+    public void setBaselineWindowMinutes(int baselineWindowMinutes) { this.baselineWindowMinutes = baselineWindowMinutes; }
+
+    public int getBaselineWarmupMinutes() { return baselineWarmupMinutes; }
+    public void setBaselineWarmupMinutes(int baselineWarmupMinutes) { this.baselineWarmupMinutes = baselineWarmupMinutes; }
+
+    public double getFrequencySigmaThreshold() { return frequencySigmaThreshold > 0 ? frequencySigmaThreshold : sigmaThreshold; }
+    public void setFrequencySigmaThreshold(double frequencySigmaThreshold) { this.frequencySigmaThreshold = frequencySigmaThreshold; }
+
+    public int getAnomalyCooldownSeconds() { return anomalyCooldownSeconds > 0 ? anomalyCooldownSeconds : anomalyCooldownMinutes * 60; }
+    public void setAnomalyCooldownSeconds(int anomalyCooldownSeconds) { this.anomalyCooldownSeconds = anomalyCooldownSeconds; }
+
+    public int getColdStartDefaultThreshold() { return coldStartDefaultThreshold; }
+    public void setColdStartDefaultThreshold(int coldStartDefaultThreshold) { this.coldStartDefaultThreshold = coldStartDefaultThreshold; }
 }

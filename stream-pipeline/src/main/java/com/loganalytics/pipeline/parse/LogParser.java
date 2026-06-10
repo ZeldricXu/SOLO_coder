@@ -20,11 +20,30 @@ import java.util.regex.Pattern;
 public class LogParser {
     private static final Logger log = LoggerFactory.getLogger(LogParser.class);
 
-    private final PipelineConfig config;
+    private PipelineConfig config;
     private final List<Grok> grokPatterns;
     private final List<Pattern> regexPatterns;
     private final Pattern traceIdPattern;
     private final Pattern errorCodePattern;
+
+    public LogParser() {
+        this.grokPatterns = new ArrayList<>();
+        this.regexPatterns = new ArrayList<>();
+        this.traceIdPattern = Pattern.compile("[tT]race[Ii]d[=:]?\\s*([a-f0-9-]{16,64})");
+        this.errorCodePattern = Pattern.compile("error[ _-]?code[=:]\\s*(\\w+)", Pattern.CASE_INSENSITIVE);
+
+        regexPatterns.add(Pattern.compile("^(?<timestamp>\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}[.,]?\\d*)\\s+" +
+                "(?<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\s+" +
+                "(?<service>[\\w-]+)\\s+" +
+                "(?<message>.*)$"));
+
+        regexPatterns.add(Pattern.compile("^(?<timestamp>\\d{4}-\\d{2}-\\d{2}[T ]\\d{2}:\\d{2}:\\d{2}[.,]?\\d*)\\s+" +
+                "\\[(?<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\]\\s+" +
+                "(?<message>.*)$"));
+
+        regexPatterns.add(Pattern.compile("^(?<timestamp>\\d{2}/\\d{2}/\\d{4}:\\d{2}:\\d{2}:\\d{2}\\s+[+-]\\d{4})\\s+" +
+                "(?<message>.*)$"));
+    }
 
     public LogParser(PipelineConfig config) {
         this.config = config;
@@ -59,24 +78,66 @@ public class LogParser {
         errorCodePattern = Pattern.compile("error[ _-]?code[=:]\\s*(\\w+)", Pattern.CASE_INSENSITIVE);
     }
 
+    public void initialize(Map<String, String> config) {
+        GrokCompiler grokCompiler = GrokCompiler.newInstance();
+        grokCompiler.registerDefaultPatterns();
+
+        for (Map.Entry<String, String> entry : config.entrySet()) {
+            if (entry.getKey().startsWith("grok.pattern")) {
+                try {
+                    Grok grok = grokCompiler.compile(entry.getValue());
+                    grokPatterns.add(grok);
+                } catch (Exception e) {
+                    log.warn("Failed to compile grok pattern: {}", entry.getValue(), e);
+                }
+            }
+        }
+    }
+
     public LogEvent parse(LogEvent event) {
         String rawMessage = event.getRawMessage();
+        if (rawMessage == null) {
+            rawMessage = event.getMessage();
+        }
         if (rawMessage == null || rawMessage.isBlank()) {
+            event.setParsed(false);
+            event.setParseError("Empty log message");
             return event;
         }
 
-        boolean parsed = tryGrokParse(event, rawMessage);
+        boolean parsed = false;
+        String parseError = null;
 
-        if (!parsed) {
-            parsed = tryRegexParse(event, rawMessage);
+        try {
+            parsed = tryGrokParse(event, rawMessage);
+        } catch (Exception e) {
+            parseError = "Grok parse failed: " + e.getMessage();
         }
 
         if (!parsed) {
-            parseBasicFields(event, rawMessage);
+            try {
+                parsed = tryRegexParse(event, rawMessage);
+            } catch (Exception e) {
+                parseError = "Regex parse failed: " + e.getMessage();
+            }
         }
 
-        extractTraceId(event, rawMessage);
-        extractErrorCode(event, rawMessage);
+        if (!parsed) {
+            try {
+                parseBasicFields(event, rawMessage);
+            } catch (Exception e) {
+                parseError = "Basic parse failed: " + e.getMessage();
+            }
+        }
+
+        try {
+            extractTraceId(event, rawMessage);
+            extractErrorCode(event, rawMessage);
+        } catch (Exception e) {
+            if (parseError == null) {
+                parseError = "Field extraction failed: " + e.getMessage();
+            }
+        }
 
         if (event.getTimestamp() == null) {
             event.setTimestamp(Instant.now());
@@ -86,6 +147,8 @@ public class LogParser {
             event.setLevel(LogLevel.UNKNOWN);
         }
 
+        event.setParsed(parsed);
+        event.setParseError(parseError);
         event.addTag("parsed", String.valueOf(parsed));
         return event;
     }

@@ -183,4 +183,56 @@ public class BaselineManager {
         anomalies.sort((a, b) -> Double.compare(b.getValue(), a.getValue()));
         return anomalies.subList(0, Math.min(limit, anomalies.size()));
     }
+
+    public void recordPattern(String patternId, String service) {
+        PatternBaseline baseline = baselineMap.computeIfAbsent(
+                patternId,
+                id -> new PatternBaseline(
+                        id,
+                        config.getBaselineWindowMinutes() > 0 ? config.getBaselineWindowMinutes() : config.getFrequencyWindowMinutes(),
+                        config.getBaselineHistoryDays()
+                )
+        );
+        baseline.increment();
+    }
+
+    public boolean isColdStart(String patternId, String service) {
+        PatternBaseline baseline = baselineMap.get(patternId);
+        if (baseline == null) {
+            return true;
+        }
+        return !baseline.statsValid;
+    }
+
+    public boolean hasEnoughData(String patternId, String service) {
+        PatternBaseline baseline = baselineMap.get(patternId);
+        if (baseline == null) {
+            return false;
+        }
+        return baseline.statsValid;
+    }
+
+    public long getPatternCount(String patternId, String service, Duration duration) {
+        PatternBaseline baseline = baselineMap.get(patternId);
+        if (baseline == null) {
+            return 0;
+        }
+        return baseline.currentWindowCount.get();
+    }
+
+    public double getMeanFrequency(String patternId, String service) {
+        PatternBaseline baseline = baselineMap.get(patternId);
+        if (baseline == null || !baseline.statsValid) {
+            return 0;
+        }
+        return baseline.mean;
+    }
+
+    public double getStdDevFrequency(String patternId, String service) {
+        PatternBaseline baseline = baselineMap.get(patternId);
+        if (baseline == null || !baseline.statsValid) {
+            return 0;
+        }
+        return baseline.stdDev;
+    }
 }

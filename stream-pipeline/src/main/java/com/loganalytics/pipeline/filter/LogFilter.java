@@ -12,12 +12,26 @@ import java.util.concurrent.atomic.AtomicLong;
 public class LogFilter {
     private static final Logger log = LoggerFactory.getLogger(LogFilter.class);
 
-    private final PipelineConfig config;
-    private final List<String> noiseKeywords;
-    private final LogLevel minLevel;
-    private final boolean excludeHealthChecks;
+    private PipelineConfig config;
+    private List<String> noiseKeywords;
+    private LogLevel minLevel;
+    private boolean excludeHealthChecks;
     private final AtomicLong totalFiltered;
     private final AtomicLong totalProcessed;
+
+    public LogFilter() {
+        this.noiseKeywords = java.util.Collections.emptyList();
+        this.minLevel = null;
+        this.excludeHealthChecks = false;
+        this.totalFiltered = new AtomicLong(0);
+        this.totalProcessed = new AtomicLong(0);
+    }
+
+    public void configure(PipelineConfig.FilterConfig filterConfig) {
+        this.noiseKeywords = filterConfig.noiseKeywords() != null ? filterConfig.noiseKeywords() : java.util.Collections.emptyList();
+        this.minLevel = filterConfig.minLevel() != null ? LogLevel.valueOf(filterConfig.minLevel()) : null;
+        this.excludeHealthChecks = filterConfig.excludeHealthChecks();
+    }
 
     public LogFilter(PipelineConfig config) {
         this.config = config;

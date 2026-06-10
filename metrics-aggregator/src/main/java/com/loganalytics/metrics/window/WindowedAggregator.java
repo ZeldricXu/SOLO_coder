@@ -372,9 +372,9 @@ public class WindowedAggregator {
     }
 
     public void recordMetric(MetricPoint metric) {
-        String service = metric.getTags().get("service");
+        String service = metric.getTag("service");
         if (service == null) service = "unknown";
-        String key = service + "|" + metric.getName();
+        String key = service + "|" + metric.getMetricName();
         recentMetrics.compute(key, (k, list) -> {
             if (list == null) list = new ArrayList<>();
             list.add(metric);
@@ -383,5 +383,86 @@ public class WindowedAggregator {
             }
             return list;
         });
+    }
+
+    public List<MetricPoint> processLogEvent(LogEvent event) {
+        AggregationKey aggKey = new AggregationKey(
+                event.getServiceName(),
+                event.getLevel(),
+                event.getField("errorCode"),
+                event.getPatternId()
+        );
+
+        AggregateValue aggregate = new AggregateValue();
+        aggregate.add(event);
+
+        Instant now = Instant.now();
+        MetricsConfig.WindowConfig defaultWindow = config.getWindows().get(0);
+        Instant windowStart = now.minus(defaultWindow.getSize());
+        Instant windowEnd = now;
+
+        List<MetricPoint> points = new ArrayList<>();
+
+        MetricPoint countMetric = new MetricPoint(
+                IdUtils.newMetricId(),
+                "log_count",
+                windowStart,
+                windowEnd,
+                (double) aggregate.count,
+                MetricPoint.MetricType.COUNTER
+        );
+        countMetric.addTag("service", aggKey.getServiceName());
+        countMetric.addTag("level", aggKey.getLevel() != null ? aggKey.getLevel().name() : "UNKNOWN");
+        countMetric.addTag("window", defaultWindow.getName());
+        countMetric.addTag("error_code", aggKey.getErrorCode());
+        points.add(countMetric);
+        recordMetric(countMetric);
+
+        if (aggregate.errorCount > 0 || aggregate.warnCount > 0) {
+            MetricPoint errorRateMetric = new MetricPoint(
+                    IdUtils.newMetricId(),
+                    "error_rate",
+                    windowStart,
+                    windowEnd,
+                    aggregate.getErrorRate(),
+                    MetricPoint.MetricType.GAUGE
+            );
+            errorRateMetric.addTag("service", aggKey.getServiceName());
+            errorRateMetric.addTag("window", defaultWindow.getName());
+            points.add(errorRateMetric);
+            recordMetric(errorRateMetric);
+        }
+
+        if (aggregate.errorCount > 0) {
+            MetricPoint errorCountMetric = new MetricPoint(
+                    IdUtils.newMetricId(),
+                    "error_count",
+                    windowStart,
+                    windowEnd,
+                    (double) aggregate.errorCount,
+                    MetricPoint.MetricType.COUNTER
+            );
+            errorCountMetric.addTag("service", aggKey.getServiceName());
+            errorCountMetric.addTag("window", defaultWindow.getName());
+            points.add(errorCountMetric);
+            recordMetric(errorCountMetric);
+        }
+
+        if (aggregate.warnCount > 0) {
+            MetricPoint warnCountMetric = new MetricPoint(
+                    IdUtils.newMetricId(),
+                    "warn_count",
+                    windowStart,
+                    windowEnd,
+                    (double) aggregate.warnCount,
+                    MetricPoint.MetricType.COUNTER
+            );
+            warnCountMetric.addTag("service", aggKey.getServiceName());
+            warnCountMetric.addTag("window", defaultWindow.getName());
+            points.add(warnCountMetric);
+            recordMetric(warnCountMetric);
+        }
+
+        return points;
     }
 }

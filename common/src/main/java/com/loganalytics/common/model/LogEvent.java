@@ -26,6 +26,8 @@ public class LogEvent {
     private long fileOffset;
     private int multiLineCount;
     private Map<String, Object> enrichedData;
+    private boolean parsed;
+    private String parseError;
 
     public LogEvent() {
         this.id = UUID.randomUUID().toString();
@@ -56,6 +58,8 @@ public class LogEvent {
         this.fileOffset = other.fileOffset;
         this.multiLineCount = other.multiLineCount;
         this.enrichedData = other.enrichedData != null ? new HashMap<>(other.enrichedData) : new HashMap<>();
+        this.parsed = other.parsed;
+        this.parseError = other.parseError;
     }
 
     public String getId() { return id; }
@@ -100,6 +104,7 @@ public class LogEvent {
     public Map<String, String> getFields() { return fields; }
     public void setFields(Map<String, String> fields) { this.fields = fields; }
     public void addField(String key, String value) { this.fields.put(key, value); }
+    public String getField(String key) { return fields != null ? fields.get(key) : null; }
 
     public Map<String, String> getTags() { return tags; }
     public void setTags(Map<String, String> tags) { this.tags = tags; }
@@ -124,4 +129,10 @@ public class LogEvent {
     public String getPartitionKey() {
         return serviceName != null ? serviceName : (hostname != null ? hostname : "default");
     }
+
+    public boolean isParsed() { return parsed; }
+    public void setParsed(boolean parsed) { this.parsed = parsed; }
+
+    public String getParseError() { return parseError; }
+    public void setParseError(String parseError) { this.parseError = parseError; }
 }

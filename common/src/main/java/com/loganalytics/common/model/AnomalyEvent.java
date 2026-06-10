@@ -5,6 +5,10 @@ import java.util.Map;
 
 public class AnomalyEvent {
     public enum AnomalyType {
+        FREQUENCY,
+        CONTENT,
+        CORRELATION,
+        THRESHOLD,
         FREQUENCY_ANOMALY,
         CONTENT_ANOMALY,
         CORRELATION_ANOMALY,
@@ -33,8 +37,17 @@ public class AnomalyEvent {
     private boolean acknowledged;
     private Instant acknowledgedAt;
     private String acknowledgedBy;
+    private String level;
+    private String traceId;
 
     public AnomalyEvent() {}
+
+    public AnomalyEvent(String id, AnomalyType type, Instant detectedAt) {
+        this.id = id;
+        this.type = type;
+        this.detectedAt = detectedAt;
+        this.details = new java.util.HashMap<>();
+    }
 
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
@@ -89,4 +102,20 @@ public class AnomalyEvent {
 
     public String getAcknowledgedBy() { return acknowledgedBy; }
     public void setAcknowledgedBy(String acknowledgedBy) { this.acknowledgedBy = acknowledgedBy; }
+
+    public String getLevel() { return level; }
+    public void setLevel(String level) { this.level = level; }
+    public void setLevel(LogLevel level) { this.level = level != null ? level.name() : null; }
+
+    public String getTraceId() { return traceId; }
+    public void setTraceId(String traceId) { this.traceId = traceId; }
+
+    public Instant getTimestamp() { return detectedAt; }
+
+    public void addDetail(String key, Object value) {
+        if (this.details == null) {
+            this.details = new java.util.HashMap<>();
+        }
+        this.details.put(key, value);
+    }
 }

@@ -16,10 +16,22 @@ import java.util.Map;
 public class LogEnricher {
     private static final Logger log = LoggerFactory.getLogger(LogEnricher.class);
 
-    private final PipelineConfig config;
-    private final CmdbService cmdbService;
-    private final GeoIpService geoIpService;
+    private PipelineConfig config;
+    private CmdbService cmdbService;
+    private GeoIpService geoIpService;
     private final Map<String, TraceContext> traceCache;
+
+    public LogEnricher() {
+        this.traceCache = new HashMap<>();
+    }
+
+    public LogEnricher(CmdbService cmdbService) {
+        this.cmdbService = cmdbService;
+        this.traceCache = new HashMap<>();
+    }
+
+    public void initialize(Map<String, String> config) {
+    }
 
     public LogEnricher(PipelineConfig config, CmdbService cmdbService, GeoIpService geoIpService) {
         this.config = config;
@@ -40,19 +52,39 @@ public class LogEnricher {
         String serviceName = event.getServiceName();
         if (serviceName == null) return;
 
-        ServiceMetadata metadata = cmdbService.getServiceMetadata(serviceName);
-        if (metadata != null) {
-            event.addEnrichedData("team", metadata.getTeamName());
-            event.addEnrichedData("tech_lead", metadata.getTechLead());
-            event.addEnrichedData("on_call_email", metadata.getOnCallEmail());
-            event.addEnrichedData("slack_channel", metadata.getSlackChannel());
-            event.addEnrichedData("environment", metadata.getEnvironment());
+        boolean enriched = false;
+        if (cmdbService != null) {
+            try {
+                ServiceMetadata metadata = cmdbService.getServiceMetadata(serviceName);
+                if (metadata != null) {
+                    event.addEnrichedData("team", metadata.getTeamName());
+                    event.addEnrichedData("tech_lead", metadata.getTechLead());
+                    event.addEnrichedData("on_call_email", metadata.getOnCallEmail());
+                    event.addEnrichedData("slack_channel", metadata.getSlackChannel());
+                    event.addEnrichedData("environment", metadata.getEnvironment());
 
-            if (metadata.getLabels() != null) {
-                for (Map.Entry<String, String> entry : metadata.getLabels().entrySet()) {
-                    event.addTag("cmdb_" + entry.getKey(), entry.getValue());
+                    if (metadata.getEnvironment() != null) {
+                        event.addTag("env", metadata.getEnvironment());
+                    }
+
+                    if (metadata.getLabels() != null) {
+                        for (Map.Entry<String, String> entry : metadata.getLabels().entrySet()) {
+                            event.addTag("cmdb_" + entry.getKey(), entry.getValue());
+                            if ("region".equals(entry.getKey())) {
+                                event.addTag("region", entry.getValue());
+                            }
+                        }
+                    }
+                    enriched = true;
                 }
+            } catch (Exception e) {
+                log.debug("CMDB enrichment failed for service {}: {}", serviceName, e.getMessage());
             }
+        }
+
+        if (!enriched) {
+            event.addTag("env", "production");
+            event.addTag("region", "us-east-1");
         }
     }
 

@@ -39,6 +39,10 @@ public final class IdUtils {
         return "ALT-" + newShortId();
     }
 
+    public static String newMetricId() {
+        return "M-" + newShortId();
+    }
+
     public static String generateHash(String... inputs) {
         StringBuilder sb = new StringBuilder();
         for (String input : inputs) {

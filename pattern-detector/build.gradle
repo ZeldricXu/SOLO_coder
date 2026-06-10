@@ -13,6 +13,7 @@ dependencies {
     testImplementation 'org.assertj:assertj-core'
     testImplementation 'org.testcontainers:kafka'
     testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.awaitility:awaitility:4.2.0'
 }
 
 application {
