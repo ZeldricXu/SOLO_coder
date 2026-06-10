@@ -2,8 +2,32 @@
 name = "gitflow-cli"
 version = "0.1.0"
 edition = "2021"
-description = "Git工作流自动化CLI工具"
+description = "Git工作流自动化CLI工具 - 让团队开发更高效"
 license = "MIT"
+repository = "https://github.com/your-org/gitflow-cli"
+homepage = "https://github.com/your-org/gitflow-cli"
+documentation = "https://github.com/your-org/gitflow-cli#readme"
+readme = "README.md"
+keywords = ["git", "workflow", "cli", "productivity", "jira"]
+categories = ["command-line-utilities", "development-tools"]
+authors = ["Your Team <team@example.com>"]
+
+[package.metadata.deb]
+maintainer = "Your Team <team@example.com>"
+copyright = "2024, Your Team"
+license-file = ["LICENSE", "0"]
+depends = "$auto"
+section = "development"
+priority = "optional"
+extended-description = """
+Git工作流自动化CLI工具，提供分支管理、提交规范检查、PR工作流、变更日志生成、仓库健康扫描等功能。
+支持与JIRA、GitHub、GitLab、Bitbucket集成，让团队开发更高效。
+"""
+
+[package.metadata.generate-rpm]
+inherit = "cargo-deb"
+release = "1"
+
 
 [[bin]]
 name = "gitflow"

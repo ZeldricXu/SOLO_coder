@@ -1,0 +1,331 @@
+name: CI/CD
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: gitflow
+  CRATE_NAME: gitflow-cli
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install git (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git
+
+      - name: Install git (macOS)
+        if: matrix.os == 'macos-latest'
+        run: brew install git
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --all-features -- --nocapture
+        env:
+          GITFLOW_DEBUG: 1
+
+  build:
+    name: Build ${{ matrix.platform.os }} ${{ matrix.platform.arch }}
+    runs-on: ${{ matrix.platform.runner }}
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v')
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { os: linux, arch: x86_64, runner: ubuntu-latest, target: x86_64-unknown-linux-gnu, extension: tar.gz }
+          - { os: linux, arch: aarch64, runner: ubuntu-latest, target: aarch64-unknown-linux-gnu, extension: tar.gz }
+          - { os: macos, arch: x86_64, runner: macos-13, target: x86_64-apple-darwin, extension: tar.gz }
+          - { os: macos, arch: aarch64, runner: macos-latest, target: aarch64-apple-darwin, extension: tar.gz }
+          - { os: windows, arch: x86_64, runner: windows-latest, target: x86_64-pc-windows-msvc, extension: zip }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.target }}
+
+      - name: Install cross-compilation dependencies (Linux)
+        if: matrix.platform.os == 'linux'
+        run: |
+          sudo apt-get update
+          if [ "${{ matrix.platform.arch }}" = "aarch64" ]; then
+            sudo apt-get install -y gcc-aarch64-linux-gnu
+          fi
+
+      - name: Install cross-compilation dependencies (Windows)
+        if: matrix.platform.os == 'windows'
+        run: |
+          choco install mingw -y
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build - Linux x86_64
+        if: matrix.platform.target == 'x86_64-unknown-linux-gnu'
+        run: cargo build --release --target ${{ matrix.platform.target }}
+        env:
+          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER: x86_64-linux-gnu-gcc
+
+      - name: Build - Linux ARM64
+        if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
+        run: cargo build --release --target ${{ matrix.platform.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      - name: Build - macOS
+        if: matrix.platform.os == 'macos'
+        run: |
+          export SDKROOT=$(xcrun --sdk macosx --show-sdk-path)
+          if [ "${{ matrix.platform.arch }}" = "x86_64" ]; then
+            export MACOSX_DEPLOYMENT_TARGET=10.15
+          else
+            export MACOSX_DEPLOYMENT_TARGET=11.0
+          fi
+          cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Build - Windows
+        if: matrix.platform.os == 'windows'
+        run: cargo build --release --target ${{ matrix.platform.target }}
+
+      - name: Generate .deb package (Linux x86_64)
+        if: matrix.platform.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-build --target ${{ matrix.platform.target }}
+
+      - name: Generate .deb package (Linux ARM64)
+        if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          cargo install cargo-deb
+          cargo deb --no-build --target ${{ matrix.platform.target }}
+
+      - name: Generate .rpm package (Linux x86_64)
+        if: matrix.platform.target == 'x86_64-unknown-linux-gnu'
+        run: |
+          cargo install cargo-generate-rpm
+          cargo generate-rpm --target ${{ matrix.platform.target }}
+
+      - name: Generate .rpm package (Linux ARM64)
+        if: matrix.platform.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          cargo install cargo-generate-rpm
+          cargo generate-rpm --target ${{ matrix.platform.target }}
+
+      - name: Package binary (Unix)
+        if: matrix.platform.os != 'windows'
+        run: |
+          mkdir -p dist
+          tar -czf dist/${{ env.BIN_NAME }}-${{ steps.get_version.outputs.version }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.tar.gz \
+            -C target/${{ matrix.platform.target }}/release ${{ env.BIN_NAME }}
+
+          if [ -f target/${{ matrix.platform.target }}/debian/*.deb ]; then
+            cp target/${{ matrix.platform.target }}/debian/*.deb dist/
+          fi
+          if [ -f target/${{ matrix.platform.target }}/generate-rpm/*.rpm ]; then
+            cp target/${{ matrix.platform.target }}/generate-rpm/*.rpm dist/
+          fi
+        shell: bash
+
+      - name: Package binary (Windows)
+        if: matrix.platform.os == 'windows'
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Compress-Archive -Path target/${{ matrix.platform.target }}/release/${{ env.BIN_NAME }}.exe -DestinationPath dist/${{ env.BIN_NAME }}-${{ steps.get_version.outputs.version }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.zip
+        shell: pwsh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BIN_NAME }}-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+          path: dist/*
+          retention-days: 30
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version
+        id: get_version
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Collect and checksum all assets
+        run: |
+          mkdir -p dist
+
+          # Copy all artifacts to dist
+          find artifacts -type f -exec cp {} dist/ \;
+
+          # Generate SHA256 checksums
+          cd dist && sha256sum * > SHA256SUMS
+
+      - name: Generate Homebrew formula
+        env:
+          HOMEBREW_TAP_REPO: ${{ secrets.HOMEBREW_TAP_REPO }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          VERSION=${{ steps.get_version.outputs.version }}
+          mkdir -p homebrew
+
+          # Calculate SHA256 for each platform
+          SHA256_LINUX_X86_64=$(sha256sum dist/${{ env.BIN_NAME }}-${VERSION}-linux-x86_64.tar.gz | awk '{print $1}')
+          SHA256_LINUX_ARM64=$(sha256sum dist/${{ env.BIN_NAME }}-${VERSION}-linux-aarch64.tar.gz | awk '{print $1}')
+          SHA256_MACOS_X86_64=$(sha256sum dist/${{ env.BIN_NAME }}-${VERSION}-macos-x86_64.tar.gz | awk '{print $1}')
+          SHA256_MACOS_ARM64=$(sha256sum dist/${{ env.BIN_NAME }}-${VERSION}-macos-aarch64.tar.gz | awk '{print $1}')
+          SHA256_WINDOWS=$(sha256sum dist/${{ env.BIN_NAME }}-${VERSION}-windows-x86_64.zip | awk '{print $1}')
+
+          # Copy template and replace placeholders
+          cp homebrew/gitflow.rb.template homebrew/gitflow.rb
+
+          # Replace placeholders in the formula
+          sed -i "s|{{GITHUB_REPOSITORY}}|${{ github.repository }}|g" homebrew/gitflow.rb
+          sed -i "s|{{VERSION}}|${VERSION}|g" homebrew/gitflow.rb
+          sed -i "s|{{BIN_NAME}}|${{ env.BIN_NAME }}|g" homebrew/gitflow.rb
+          sed -i "s|{{SHA256_MACOS_X86_64}}|${SHA256_MACOS_X86_64}|g" homebrew/gitflow.rb
+          sed -i "s|{{SHA256_MACOS_ARM64}}|${SHA256_MACOS_ARM64}|g" homebrew/gitflow.rb
+          sed -i "s|{{SHA256_LINUX_X86_64}}|${SHA256_LINUX_X86_64}|g" homebrew/gitflow.rb
+          sed -i "s|{{SHA256_LINUX_ARM64}}|${SHA256_LINUX_ARM64}|g" homebrew/gitflow.rb
+
+          # Push to Homebrew tap repository if configured
+          if [ -n "$HOMEBREW_TAP_REPO" ] && [ -n "$HOMEBREW_TAP_TOKEN" ]; then
+            git config --global user.email "github-actions[bot]@users.noreply.github.com"
+            git config --global user.name "github-actions[bot]"
+
+            git clone --depth 1 "https://x-access-token:${HOMEBREW_TAP_TOKEN}@github.com/${HOMEBREW_TAP_REPO}.git" homebrew-tap
+            mkdir -p homebrew-tap/Formula
+            cp homebrew/gitflow.rb homebrew-tap/Formula/gitflow.rb
+
+            cd homebrew-tap
+            git add Formula/gitflow.rb
+            git commit -m "Update gitflow to v${VERSION}"
+            git push
+          fi
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*
+            homebrew/gitflow.rb
+          body: |
+            # Release v${{ steps.get_version.outputs.version }}
+
+            ## Installation
+
+            ### Homebrew
+            ```bash
+            brew tap your-org/homebrew-tap
+            brew install gitflow
+            ```
+
+            ### Install Script
+            ```bash
+            curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+            ```
+
+            ### crates.io
+            ```bash
+            cargo install gitflow-cli
+            ```
+
+            ### Manual Download
+            - **Linux x86_64**: [gitflow-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-${{ steps.get_version.outputs.version }}-linux-x86_64.tar.gz)
+            - **Linux ARM64**: [gitflow-${{ steps.get_version.outputs.version }}-linux-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-${{ steps.get_version.outputs.version }}-linux-aarch64.tar.gz)
+            - **macOS x86_64**: [gitflow-${{ steps.get_version.outputs.version }}-macos-x86_64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-${{ steps.get_version.outputs.version }}-macos-x86_64.tar.gz)
+            - **macOS ARM64**: [gitflow-${{ steps.get_version.outputs.version }}-macos-aarch64.tar.gz](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-${{ steps.get_version.outputs.version }}-macos-aarch64.tar.gz)
+            - **Windows x86_64**: [gitflow-${{ steps.get_version.outputs.version }}-windows-x86_64.zip](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-${{ steps.get_version.outputs.version }}-windows-x86_64.zip)
+
+            ## Packages
+            - [.deb (x86_64)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-cli_${{ steps.get_version.outputs.version }}_amd64.deb)
+            - [.deb (ARM64)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-cli_${{ steps.get_version.outputs.version }}_arm64.deb)
+            - [.rpm (x86_64)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-cli-${{ steps.get_version.outputs.version }}-1.x86_64.rpm)
+            - [.rpm (ARM64)](https://github.com/${{ github.repository }}/releases/download/v${{ steps.get_version.outputs.version }}/gitflow-cli-${{ steps.get_version.outputs.version }}-1.aarch64.rpm)
+
+            ## Checksums
+            ```
+            ${{ hashFiles('dist/SHA256SUMS') }}
+            ```
+
+            ## What's Changed
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.
+          draft: false
+          prerelease: false
+
+  publish-crates-io:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    needs: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish to crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish --all-features
