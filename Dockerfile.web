@@ -1,0 +1,86 @@
+# =============================================================================
+# Dockerfile.web - 前端 Web 服务 Docker 镜像
+# 多阶段构建：构建阶段 + 运行阶段 (Nginx)
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 构建阶段：构建 WebAssembly 模块和前端应用
+# -----------------------------------------------------------------------------
+FROM node:20-alpine AS builder
+
+# 安装 Rust 工具链
+RUN apk add --no-cache \
+    curl \
+    build-base \
+    openssl-dev \
+    pkgconfig
+
+# 安装 Rust
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# 添加 WebAssembly 目标
+RUN rustup target add wasm32-unknown-unknown
+
+# 安装 wasm-pack
+RUN curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制 Cargo 配置文件 (利用 Docker 缓存)
+COPY Cargo.toml Cargo.lock* ./
+COPY crates ./crates
+
+# 复制构建脚本
+COPY scripts ./scripts
+
+# 构建 WebAssembly 模块
+RUN chmod +x scripts/*.sh && \
+    ./scripts/build-wasm.sh --release
+
+# 复制前端项目文件
+COPY web ./web
+
+# 构建前端应用
+WORKDIR /app/web
+RUN if [ -f "package.json" ]; then \
+        npm ci && \
+        npm run build; \
+    fi
+
+# -----------------------------------------------------------------------------
+# 运行阶段：使用 Nginx 提供静态文件
+# -----------------------------------------------------------------------------
+FROM nginx:1.27-alpine AS runner
+
+# 安装必要工具
+RUN apk add --no-cache \
+    curl \
+    tzdata
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+
+# 删除默认的 Nginx 配置
+RUN rm /etc/nginx/conf.d/default.conf
+
+# 复制自定义 Nginx 配置
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf
+
+# 复制构建产物
+COPY --from=builder /app/web/dist /usr/share/nginx/html
+COPY --from=builder /app/pkg /usr/share/nginx/html/pkg
+
+# 设置正确的 MIME 类型 for WASM
+RUN echo 'application/wasm wasm;' >> /etc/nginx/mime.types
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl --fail http://localhost:80/ || exit 1
+
+# 暴露端口
+EXPOSE 80
+
+# 启动 Nginx
+CMD ["nginx", "-g", "daemon off;"]

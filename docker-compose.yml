@@ -1,0 +1,157 @@
+# =============================================================================
+# DF1-79 协作绘图引擎 - Docker Compose 配置
+# =============================================================================
+
+version: '3.8'
+
+# -----------------------------------------------------------------------------
+# 服务定义
+# -----------------------------------------------------------------------------
+services:
+
+  # ---------------------------------------------------------------------------
+  # 前端 Web 服务
+  # ---------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+      args:
+        - NODE_VERSION=20-alpine
+    container_name: df179-web
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    environment:
+      - NODE_ENV=production
+      - API_BASE_URL=http://server:3000
+    depends_on:
+      - server
+    networks:
+      - df179-network
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:80/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # 后端 API 服务
+  # ---------------------------------------------------------------------------
+  server:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+      args:
+        - RUST_VERSION=1.75-alpine
+        - NODE_VERSION=20-alpine
+    container_name: df179-server
+    restart: unless-stopped
+    ports:
+      - "${SERVER_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - RUST_ENV=production
+      - HOST=0.0.0.0
+      - PORT=3000
+      - DATABASE_URL=${DATABASE_URL:-postgres://df179:df179_password@postgres:5432/df179}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
+      - JWT_SECRET=${JWT_SECRET:-change-me-to-a-long-random-string-please}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - df179-network
+    volumes:
+      - server-data:/app/data
+      - server-logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL 数据库
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: df179-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${DB_USER:-df179}
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-df179_password}
+      - POSTGRES_DB=${DB_NAME:-df179}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/db/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - df179-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-df179} -d ${DB_NAME:-df179}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ---------------------------------------------------------------------------
+  # Redis 缓存
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: df179-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - df179-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+# -----------------------------------------------------------------------------
+# 网络配置
+# -----------------------------------------------------------------------------
+networks:
+  df179-network:
+    driver: bridge
+    name: df179-network
+
+# -----------------------------------------------------------------------------
+# 数据卷
+# -----------------------------------------------------------------------------
+volumes:
+  postgres-data:
+    name: df179-postgres-data
+    driver: local
+
+  redis-data:
+    name: df179-redis-data
+    driver: local
+
+  server-data:
+    name: df179-server-data
+    driver: local
+
+  server-logs:
+    name: df179-server-logs
+    driver: local

@@ -1,0 +1,1566 @@
+use wasm_bindgen::prelude::*;
+use serde::{Serialize, Deserialize};
+use uuid::Uuid;
+use rustc_hash::{FxHashMap, FxHashSet, FxHasher};
+use std::hash::{Hash, Hasher};
+
+use geometry::{
+    Point, Rect, Size, Transform2D, Color, FillRule, LineCap, LineJoin, StrokeOptions,
+    BlendMode,
+};
+use stroke_engine::Stroke;
+
+use lyon::math::{Point as LyonPoint};
+use lyon::path::Path;
+use lyon::tessellation::{
+    StrokeTessellator, FillTessellator,
+    StrokeOptions as LyonStrokeOptions, FillOptions as LyonFillOptions,
+    BuffersBuilder, VertexBuffers, FillVertex, StrokeVertex,
+    FillRule as LyonFillRule, LineCap as LyonLineCap, LineJoin as LyonLineJoin,
+};
+
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+
+fn hash_uuid(u: &Uuid) -> u64 {
+    let mut hasher = FxHasher::default();
+    u.as_bytes().hash(&mut hasher);
+    hasher.finish()
+}
+
+fn to_lyon_point(p: &Point) -> LyonPoint {
+    LyonPoint::new(p.x as f32, p.y as f32)
+}
+
+fn to_lyon_fill_rule(rule: FillRule) -> LyonFillRule {
+    match rule {
+        FillRule::NonZero => LyonFillRule::NonZero,
+        FillRule::EvenOdd => LyonFillRule::EvenOdd,
+    }
+}
+
+fn to_lyon_line_cap(cap: LineCap) -> LyonLineCap {
+    match cap {
+        LineCap::Butt => LyonLineCap::Butt,
+        LineCap::Round => LyonLineCap::Round,
+        LineCap::Square => LyonLineCap::Square,
+    }
+}
+
+fn to_lyon_line_join(join: LineJoin) -> LyonLineJoin {
+    match join {
+        LineJoin::Miter => LyonLineJoin::Miter,
+        LineJoin::Round => LyonLineJoin::Round,
+        LineJoin::Bevel => LyonLineJoin::Bevel,
+    }
+}
+
+// ==========================================
+// Viewport 视口管理
+// ==========================================
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Viewport {
+    offset: Point,
+    scale: f64,
+    dpr: f64,
+    min_scale: f64,
+    max_scale: f64,
+    view_size: Size,
+}
+
+#[wasm_bindgen]
+impl Viewport {
+    #[wasm_bindgen(constructor)]
+    pub fn new(view_width: f64, view_height: f64) -> Self {
+        Self {
+            offset: Point::new(0.0, 0.0),
+            scale: 1.0,
+            dpr: 1.0,
+            min_scale: 0.01,
+            max_scale: 100.0,
+            view_size: Size::new(view_width, view_height),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn offset(&self) -> Point {
+        self.offset
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn scale(&self) -> f64 {
+        self.scale
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn dpr(&self) -> f64 {
+        self.dpr
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_dpr(&mut self, dpr: f64) {
+        self.dpr = dpr.max(0.1);
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn view_size(&self) -> Size {
+        self.view_size
+    }
+
+    pub fn set_view_size(&mut self, width: f64, height: f64) {
+        self.view_size = Size::new(width, height);
+    }
+
+    pub fn set_scale_range(&mut self, min: f64, max: f64) {
+        self.min_scale = min.max(0.001);
+        self.max_scale = max.max(self.min_scale);
+        self.scale = self.scale.clamp(self.min_scale, self.max_scale);
+    }
+
+    pub fn pan(&mut self, dx: f64, dy: f64) {
+        self.offset = Point::new(
+            self.offset.x + dx,
+            self.offset.y + dy,
+        );
+    }
+
+    pub fn zoom(&mut self, factor: f64, center: Option<Point>) {
+        let new_scale = (self.scale * factor).clamp(self.min_scale, self.max_scale);
+        let actual_factor = new_scale / self.scale;
+
+        if let Some(center) = center {
+            let screen_center = self.world_to_screen(&center);
+            self.offset = Point::new(
+                screen_center.x - (screen_center.x - self.offset.x) * actual_factor,
+                screen_center.y - (screen_center.y - self.offset.y) * actual_factor,
+            );
+        }
+
+        self.scale = new_scale;
+    }
+
+    pub fn zoom_at(&mut self, screen_x: f64, screen_y: f64, factor: f64) {
+        let new_scale = (self.scale * factor).clamp(self.min_scale, self.max_scale);
+        let actual_factor = new_scale / self.scale;
+
+        self.offset = Point::new(
+            screen_x - (screen_x - self.offset.x) * actual_factor,
+            screen_y - (screen_y - self.offset.y) * actual_factor,
+        );
+        self.scale = new_scale;
+    }
+
+    pub fn set_scale(&mut self, scale: f64, center: Option<Point>) {
+        let factor = scale.clamp(self.min_scale, self.max_scale) / self.scale;
+        self.zoom(factor, center);
+    }
+
+    pub fn reset(&mut self) {
+        self.offset = Point::new(0.0, 0.0);
+        self.scale = 1.0;
+    }
+
+    pub fn world_to_screen(&self, p: &Point) -> Point {
+        Point::new(
+            (p.x * self.scale + self.offset.x) * self.dpr,
+            (p.y * self.scale + self.offset.y) * self.dpr,
+        )
+    }
+
+    pub fn screen_to_world(&self, p: &Point) -> Point {
+        Point::new(
+            (p.x / self.dpr - self.offset.x) / self.scale,
+            (p.y / self.dpr - self.offset.y) / self.scale,
+        )
+    }
+
+    pub fn world_rect_to_screen(&self, r: &Rect) -> Rect {
+        let origin = self.world_to_screen(&r.min());
+        let far = self.world_to_screen(&r.max());
+        Rect::new(origin.x, origin.y, far.x - origin.x, far.y - origin.y)
+    }
+
+    pub fn screen_rect_to_world(&self, r: &Rect) -> Rect {
+        let origin = self.screen_to_world(&r.min());
+        let far = self.screen_to_world(&r.max());
+        Rect::new(origin.x, origin.y, far.x - origin.x, far.y - origin.y)
+    }
+
+    pub fn visible_world_rect(&self) -> Rect {
+        let top_left = self.screen_to_world(&Point::new(0.0, 0.0));
+        let bottom_right = self.screen_to_world(&Point::new(
+            self.view_size.width() * self.dpr,
+            self.view_size.height() * self.dpr,
+        ));
+        Rect::new(
+            top_left.x,
+            top_left.y,
+            bottom_right.x - top_left.x,
+            bottom_right.y - top_left.y,
+        )
+    }
+
+    pub fn to_transform(&self) -> Transform2D {
+        Transform2D::new(
+            self.scale * self.dpr,
+            0.0,
+            0.0,
+            self.scale * self.dpr,
+            self.offset.x * self.dpr,
+            self.offset.y * self.dpr,
+        )
+    }
+
+    pub fn fit_to_rect(&mut self, target: &Rect, padding: f64) {
+        let view_width = self.view_size.width() * self.dpr;
+        let view_height = self.view_size.height() * self.dpr;
+        let padded_view_w = view_width - 2.0 * padding;
+        let padded_view_h = view_height - 2.0 * padding;
+
+        let scale_x = padded_view_w / target.width;
+        let scale_y = padded_view_h / target.height;
+        let new_scale = scale_x.min(scale_y).clamp(self.min_scale, self.max_scale);
+
+        let scaled_target_w = target.width * new_scale;
+        let scaled_target_h = target.height * new_scale;
+        let offset_x = (view_width - scaled_target_w) / 2.0 - target.x * new_scale;
+        let offset_y = (view_height - scaled_target_h) / 2.0 - target.y * new_scale;
+
+        self.scale = new_scale;
+        self.offset = Point::new(offset_x / self.dpr, offset_y / self.dpr);
+    }
+}
+
+// ==========================================
+// LayerTree 图层树
+// ==========================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Copy)]
+enum LayerType {
+    Shape,
+    Stroke,
+    Image,
+    Group,
+    Text,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct LayerData {
+    id: Uuid,
+    name: String,
+    layer_type: LayerType,
+    z_index: i32,
+    visible: bool,
+    locked: bool,
+    opacity: f64,
+    blend_mode: BlendMode,
+    transform: Transform2D,
+    bounds: Option<Rect>,
+    parent_id: Option<Uuid>,
+    children: Vec<Uuid>,
+    dirty: bool,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayerTree {
+    layers: FxHashMap<u64, LayerData>,
+    root_children: Vec<Uuid>,
+    z_order_sorted: Vec<Uuid>,
+    dirty_layers: FxHashSet<u64>,
+}
+
+#[wasm_bindgen]
+impl LayerTree {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            layers: FxHashMap::default(),
+            root_children: Vec::new(),
+            z_order_sorted: Vec::new(),
+            dirty_layers: FxHashSet::default(),
+        }
+    }
+
+    pub fn create_shape_layer(&mut self, name: &str) -> String {
+        self.create_layer_internal_helper(name, LayerType::Shape).to_string()
+    }
+
+    pub fn create_stroke_layer(&mut self, name: &str) -> String {
+        self.create_layer_internal_helper(name, LayerType::Stroke).to_string()
+    }
+
+    pub fn create_image_layer(&mut self, name: &str) -> String {
+        self.create_layer_internal_helper(name, LayerType::Image).to_string()
+    }
+
+    pub fn create_group_layer(&mut self, name: &str) -> String {
+        self.create_layer_internal_helper(name, LayerType::Group).to_string()
+    }
+
+    pub fn create_text_layer(&mut self, name: &str) -> String {
+        self.create_layer_internal_helper(name, LayerType::Text).to_string()
+    }
+
+    pub fn layer_count(&self) -> usize {
+        self.layers.len()
+    }
+
+    pub fn has_layer(&self, id: &str) -> bool {
+        Uuid::parse_str(id).ok().map(|u| self.layers.contains_key(&hash_uuid(&u))).unwrap_or(false)
+    }
+
+    pub fn remove_layer(&mut self, id: &str) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.remove(&key) {
+                self.dirty_layers.remove(&key);
+                if let Some(parent_id) = layer.parent_id {
+                    if let Some(parent) = self.layers.get_mut(&hash_uuid(&parent_id)) {
+                        parent.children.retain(|c| c != &uuid);
+                    }
+                } else {
+                    self.root_children.retain(|c| c != &uuid);
+                }
+                let children = layer.children.clone();
+                for child_id in &children {
+                    self.remove_layer(&child_id.to_string());
+                }
+                self.resort_z_order_helper();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_layer_name(&self, id: &str) -> Option<String> {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.name.clone())
+    }
+
+    pub fn set_layer_name(&mut self, id: &str, name: &str) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            if let Some(layer) = self.layers.get_mut(&hash_uuid(&uuid)) {
+                layer.name = name.to_string();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn is_layer_visible(&self, id: &str) -> bool {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.visible)
+            .unwrap_or(false)
+    }
+
+    pub fn set_layer_visible(&mut self, id: &str, visible: bool) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.visible = visible;
+                layer.dirty = true;
+                self.dirty_layers.insert(key);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn is_layer_locked(&self, id: &str) -> bool {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.locked)
+            .unwrap_or(false)
+    }
+
+    pub fn set_layer_locked(&mut self, id: &str, locked: bool) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            if let Some(layer) = self.layers.get_mut(&hash_uuid(&uuid)) {
+                layer.locked = locked;
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_layer_opacity(&self, id: &str) -> f64 {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.opacity)
+            .unwrap_or(1.0)
+    }
+
+    pub fn set_layer_opacity(&mut self, id: &str, opacity: f64) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.opacity = opacity.clamp(0.0, 1.0);
+                layer.dirty = true;
+                self.dirty_layers.insert(key);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_layer_blend_mode(&self, id: &str) -> BlendMode {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.blend_mode)
+            .unwrap_or(BlendMode::Normal)
+    }
+
+    pub fn set_layer_blend_mode(&mut self, id: &str, mode: BlendMode) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.blend_mode = mode;
+                layer.dirty = true;
+                self.dirty_layers.insert(key);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_layer_z_index(&self, id: &str) -> i32 {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.z_index)
+            .unwrap_or(0)
+    }
+
+    pub fn set_layer_z_index(&mut self, id: &str, z_index: i32) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.z_index = z_index;
+                layer.dirty = true;
+                self.dirty_layers.insert(key);
+                self.resort_z_order_helper();
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn move_layer_up(&mut self, id: &str) -> bool {
+        self.adjust_layer_z(id, 1)
+    }
+
+    pub fn move_layer_down(&mut self, id: &str) -> bool {
+        self.adjust_layer_z(id, -1)
+    }
+
+    pub fn move_layer_to_front(&mut self, id: &str) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if self.layers.contains_key(&key) {
+                let max_z = self.root_children.iter()
+                    .filter_map(|cid| self.layers.get(&hash_uuid(cid)))
+                    .map(|l| l.z_index)
+                    .max()
+                    .unwrap_or(0);
+                return self.set_layer_z_index(id, max_z + 1);
+            }
+        }
+        false
+    }
+
+    pub fn move_layer_to_back(&mut self, id: &str) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if self.layers.contains_key(&key) {
+                let min_z = self.root_children.iter()
+                    .filter_map(|cid| self.layers.get(&hash_uuid(cid)))
+                    .map(|l| l.z_index)
+                    .min()
+                    .unwrap_or(0);
+                return self.set_layer_z_index(id, min_z - 1);
+            }
+        }
+        false
+    }
+
+    fn adjust_layer_z(&mut self, id: &str, delta: i32) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(current_z) = self.layers.get(&key).map(|l| l.z_index) {
+                return self.set_layer_z_index(id, current_z + delta);
+            }
+        }
+        false
+    }
+
+    pub fn get_layer_transform(&self, id: &str) -> Option<Transform2D> {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.transform)
+    }
+
+    pub fn set_layer_transform(&mut self, id: &str, transform: &Transform2D) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.transform = *transform;
+                layer.dirty = true;
+                self.dirty_layers.insert(key);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn get_layer_bounds(&self, id: &str) -> Option<Rect> {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .and_then(|l| l.bounds)
+    }
+
+    pub fn set_layer_bounds(&mut self, id: &str, bounds: &Rect) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.bounds = Some(*bounds);
+                layer.dirty = true;
+                self.dirty_layers.insert(key);
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn reparent_layer(&mut self, id: &str, new_parent_id: Option<String>) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if !self.layers.contains_key(&key) {
+                return false;
+            }
+
+            let new_parent = new_parent_id.and_then(|s| Uuid::parse_str(&s).ok());
+            if let Some(np) = new_parent {
+                if !self.layers.contains_key(&hash_uuid(&np)) {
+                    return false;
+                }
+            }
+
+            let old_parent = self.layers.get(&key).and_then(|l| l.parent_id);
+            if let Some(op) = old_parent {
+                if let Some(parent) = self.layers.get_mut(&hash_uuid(&op)) {
+                    parent.children.retain(|c| c != &uuid);
+                }
+            } else {
+                self.root_children.retain(|c| c != &uuid);
+            }
+
+            if let Some(np) = new_parent {
+                if let Some(parent) = self.layers.get_mut(&hash_uuid(&np)) {
+                    parent.children.push(uuid);
+                }
+            } else {
+                self.root_children.push(uuid);
+            }
+
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.parent_id = new_parent;
+                layer.dirty = true;
+                self.dirty_layers.insert(key);
+            }
+
+            self.resort_z_order_helper();
+            return true;
+        }
+        false
+    }
+
+    pub fn get_visible_layers_sorted(&self) -> Vec<JsValue> {
+        self.z_order_sorted.iter()
+            .filter(|id| {
+                self.layers.get(&hash_uuid(id))
+                    .map(|l| l.visible)
+                    .unwrap_or(false)
+            })
+            .map(|id| JsValue::from_str(&id.to_string()))
+            .collect()
+    }
+
+    pub fn get_all_layers_sorted(&self) -> Vec<JsValue> {
+        self.z_order_sorted.iter()
+            .map(|id| JsValue::from_str(&id.to_string()))
+            .collect()
+    }
+
+    pub fn is_layer_dirty(&self, id: &str) -> bool {
+        Uuid::parse_str(id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.dirty)
+            .unwrap_or(false)
+    }
+
+    pub fn mark_layer_dirty(&mut self, id: &str) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.dirty = true;
+            }
+            self.dirty_layers.insert(key);
+            return true;
+        }
+        false
+    }
+
+    pub fn has_dirty_layers(&self) -> bool {
+        !self.dirty_layers.is_empty()
+    }
+
+    pub fn dirty_layer_count(&self) -> usize {
+        self.dirty_layers.len()
+    }
+
+    pub fn clear_dirty(&mut self) {
+        for key in &self.dirty_layers {
+            if let Some(layer) = self.layers.get_mut(key) {
+                layer.dirty = false;
+            }
+        }
+        self.dirty_layers.clear();
+    }
+
+    pub fn hit_test(&self, world_point: &Point) -> Option<String> {
+        for id in self.z_order_sorted.iter().rev() {
+            if let Some(layer) = self.layers.get(&hash_uuid(id)) {
+                if !layer.visible || layer.locked {
+                    continue;
+                }
+                if let Some(bounds) = layer.bounds {
+                    let local_point = if let Some(inv) = layer.transform.inverse() {
+                        inv.transform_point(world_point)
+                    } else {
+                        *world_point
+                    };
+                    if bounds.contains_point(&local_point) {
+                        return Some(id.to_string());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn layers_in_rect(&self, rect: &Rect) -> Vec<JsValue> {
+        let mut result = Vec::new();
+        for id in &self.z_order_sorted {
+            if let Some(layer) = self.layers.get(&hash_uuid(id)) {
+                if !layer.visible {
+                    continue;
+                }
+                if let Some(bounds) = layer.bounds {
+                    let world_bounds_poly = layer.transform.transform_rect(&bounds);
+                    let world_bounds = world_bounds_poly.bounding_box();
+                    if world_bounds.intersects(rect) {
+                        result.push(JsValue::from_str(&id.to_string()));
+                    }
+                }
+            }
+        }
+        result
+    }
+}
+
+impl LayerTree {
+    fn create_layer_internal_helper(&mut self, name: &str, layer_type: LayerType) -> Uuid {
+        let id = Uuid::new_v4();
+        let max_z = self.root_children.iter()
+            .filter_map(|cid| self.layers.get(&hash_uuid(cid)))
+            .map(|l| l.z_index)
+            .max()
+            .unwrap_or(0);
+
+        let layer = LayerData {
+            id,
+            name: name.to_string(),
+            layer_type,
+            z_index: max_z + 1,
+            visible: true,
+            locked: false,
+            opacity: 1.0,
+            blend_mode: BlendMode::Normal,
+            transform: Transform2D::identity(),
+            bounds: None,
+            parent_id: None,
+            children: Vec::new(),
+            dirty: true,
+        };
+
+        let key = hash_uuid(&id);
+        self.layers.insert(key, layer);
+        self.root_children.push(id);
+        self.dirty_layers.insert(key);
+        self.resort_z_order_helper();
+        id
+    }
+
+    fn resort_z_order_helper(&mut self) {
+        let mut all_ids: Vec<Uuid> = self.layers.values().map(|l| l.id).collect();
+        all_ids.sort_by(|a, b| {
+            let la = self.layers.get(&hash_uuid(a)).unwrap();
+            let lb = self.layers.get(&hash_uuid(b)).unwrap();
+            la.z_index.cmp(&lb.z_index)
+        });
+        self.z_order_sorted = all_ids;
+    }
+}
+
+// ==========================================
+// DirtyRect 增量脏区重绘系统
+// ==========================================
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DirtyRectManager {
+    dirty_regions: Vec<Rect>,
+    max_regions: usize,
+    merge_threshold: f64,
+}
+
+#[wasm_bindgen]
+impl DirtyRectManager {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            dirty_regions: Vec::new(),
+            max_regions: 64,
+            merge_threshold: 0.3,
+        }
+    }
+
+    pub fn with_capacity(capacity: usize) -> Self {
+        Self {
+            dirty_regions: Vec::with_capacity(capacity),
+            max_regions: 64,
+            merge_threshold: 0.3,
+        }
+    }
+
+    pub fn set_max_regions(&mut self, max: usize) {
+        self.max_regions = max.max(1);
+    }
+
+    pub fn set_merge_threshold(&mut self, threshold: f64) {
+        self.merge_threshold = threshold.clamp(0.0, 1.0);
+    }
+
+    pub fn add_rect(&mut self, rect: &Rect) {
+        if rect.width <= 0.0 || rect.height <= 0.0 {
+            return;
+        }
+
+        if self.dirty_regions.len() >= self.max_regions {
+            if !self.dirty_regions.is_empty() {
+                let mut merged = self.dirty_regions[0];
+                for r in &self.dirty_regions[1..] {
+                    merged = merged.union(r);
+                }
+                let combined = merged.union(rect);
+                self.dirty_regions.clear();
+                self.dirty_regions.push(combined);
+                return;
+            }
+        }
+
+        let mut merged = false;
+        let mut i = 0;
+        while i < self.dirty_regions.len() {
+            let existing = self.dirty_regions[i];
+            if existing.intersects(rect) {
+                let union_rect = existing.union(rect);
+                self.dirty_regions[i] = union_rect;
+                merged = true;
+                self.merge_adjacent(i);
+                break;
+            }
+
+            let union_rect = existing.union(rect);
+            let union_area = union_rect.area();
+            let separate_area = existing.area() + rect.area();
+            if separate_area > 0.0 && (separate_area - union_area) / separate_area < self.merge_threshold {
+                self.dirty_regions[i] = union_rect;
+                merged = true;
+                self.merge_adjacent(i);
+                break;
+            }
+            i += 1;
+        }
+
+        if !merged {
+            self.dirty_regions.push(*rect);
+        }
+    }
+
+    fn merge_adjacent(&mut self, index: usize) {
+        if index >= self.dirty_regions.len() {
+            return;
+        }
+
+        let mut changed = true;
+        while changed {
+            changed = false;
+            if index >= self.dirty_regions.len() {
+                break;
+            }
+            let current = self.dirty_regions[index];
+            let mut i = 0;
+            while i < self.dirty_regions.len() {
+                if i == index {
+                    i += 1;
+                    continue;
+                }
+                let other = self.dirty_regions[i];
+                if current.intersects(&other) {
+                    self.dirty_regions[index] = current.union(&other);
+                    self.dirty_regions.remove(i);
+                    changed = true;
+                    break;
+                }
+
+                let union_rect = current.union(&other);
+                let union_area = union_rect.area();
+                let separate_area = current.area() + other.area();
+                if separate_area > 0.0 && (separate_area - union_area) / separate_area < self.merge_threshold {
+                    self.dirty_regions[index] = union_rect;
+                    self.dirty_regions.remove(i);
+                    changed = true;
+                    break;
+                }
+                i += 1;
+            }
+        }
+    }
+
+    pub fn add_rects(&mut self, rects: Vec<Rect>) {
+        for r in &rects {
+            self.add_rect(r);
+        }
+    }
+
+    pub fn intersect_with_clip(&mut self, clip_rect: &Rect) {
+        let mut new_regions = Vec::new();
+        for r in &self.dirty_regions {
+            if let Some(intersection) = r.intersection(clip_rect) {
+                if intersection.width > 0.0 && intersection.height > 0.0 {
+                    new_regions.push(intersection);
+                }
+            }
+        }
+        self.dirty_regions = new_regions;
+    }
+
+    pub fn clip_to_viewport(&mut self, viewport: &Viewport) {
+        let visible = viewport.visible_world_rect();
+        let screen_visible = viewport.world_rect_to_screen(&visible);
+        self.intersect_with_clip(&screen_visible);
+    }
+
+    pub fn clear(&mut self) {
+        self.dirty_regions.clear();
+    }
+
+    pub fn is_dirty(&self) -> bool {
+        !self.dirty_regions.is_empty()
+    }
+
+    pub fn region_count(&self) -> usize {
+        self.dirty_regions.len()
+    }
+
+    pub fn get_regions(&self) -> Vec<Rect> {
+        self.dirty_regions.clone()
+    }
+
+    pub fn get_region(&self, index: usize) -> Option<Rect> {
+        self.dirty_regions.get(index).copied()
+    }
+
+    pub fn total_bounds(&self) -> Option<Rect> {
+        if self.dirty_regions.is_empty() {
+            return None;
+        }
+        let mut result = self.dirty_regions[0];
+        for r in &self.dirty_regions[1..] {
+            result = result.union(r);
+        }
+        Some(result)
+    }
+
+    pub fn total_area(&self) -> f64 {
+        self.dirty_regions.iter().map(|r| r.area()).sum()
+    }
+
+    pub fn expand_all(&mut self, padding: f64) {
+        for r in &mut self.dirty_regions {
+            *r = r.inflate(padding);
+        }
+    }
+
+    pub fn needs_redraw(&self, rect: &Rect) -> bool {
+        if !self.is_dirty() {
+            return false;
+        }
+        for dirty in &self.dirty_regions {
+            if dirty.intersects(rect) {
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn optimize(&mut self) {
+        if self.dirty_regions.len() <= 1 {
+            return;
+        }
+        let optimized = geometry::optimize_rects(&self.dirty_regions, self.merge_threshold);
+        self.dirty_regions = optimized;
+    }
+}
+
+// ==========================================
+// 矢量图形光栅化 (Lyon)
+// ==========================================
+
+#[derive(Copy, Clone)]
+struct LyonVertex {
+    pos: LyonPoint,
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Vertex {
+    pub x: f32,
+    pub y: f32,
+    pub u: f32,
+    pub v: f32,
+}
+
+#[wasm_bindgen]
+impl Vertex {
+    #[wasm_bindgen(constructor)]
+    pub fn new(x: f32, y: f32, u: f32, v: f32) -> Self {
+        Self { x, y, u, v }
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeshData {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+}
+
+#[wasm_bindgen]
+impl MeshData {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            vertices: Vec::new(),
+            indices: Vec::new(),
+        }
+    }
+
+    pub fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    pub fn index_count(&self) -> usize {
+        self.indices.len()
+    }
+
+    pub fn vertices_ptr(&self) -> *const Vertex {
+        self.vertices.as_ptr()
+    }
+
+    pub fn indices_ptr(&self) -> *const u32 {
+        self.indices.as_ptr()
+    }
+
+    pub fn get_vertex(&self, index: usize) -> Option<Vertex> {
+        self.vertices.get(index).cloned()
+    }
+
+    pub fn get_index(&self, index: usize) -> Option<u32> {
+        self.indices.get(index).copied()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.vertices.is_empty()
+    }
+}
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PathBuilder {
+    commands: Vec<u8>,
+    points: Vec<Point>,
+}
+
+#[wasm_bindgen]
+impl PathBuilder {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            commands: Vec::new(),
+            points: Vec::new(),
+        }
+    }
+
+    pub fn move_to(&mut self, x: f64, y: f64) {
+        self.commands.push(0);
+        self.points.push(Point::new(x, y));
+    }
+
+    pub fn line_to(&mut self, x: f64, y: f64) {
+        self.commands.push(1);
+        self.points.push(Point::new(x, y));
+    }
+
+    pub fn quadratic_to(&mut self, cpx: f64, cpy: f64, x: f64, y: f64) {
+        self.commands.push(2);
+        self.points.push(Point::new(cpx, cpy));
+        self.points.push(Point::new(x, y));
+    }
+
+    pub fn cubic_to(&mut self, cp1x: f64, cp1y: f64, cp2x: f64, cp2y: f64, x: f64, y: f64) {
+        self.commands.push(3);
+        self.points.push(Point::new(cp1x, cp1y));
+        self.points.push(Point::new(cp2x, cp2y));
+        self.points.push(Point::new(x, y));
+    }
+
+    pub fn close(&mut self) {
+        self.commands.push(4);
+    }
+
+    pub fn rect(&mut self, x: f64, y: f64, w: f64, h: f64) {
+        self.move_to(x, y);
+        self.line_to(x + w, y);
+        self.line_to(x + w, y + h);
+        self.line_to(x, y + h);
+        self.close();
+    }
+
+    pub fn rounded_rect(&mut self, x: f64, y: f64, w: f64, h: f64, radius: f64) {
+        let r = radius.min(w / 2.0).min(h / 2.0);
+        self.move_to(x + r, y);
+        self.line_to(x + w - r, y);
+        self.quadratic_to(x + w, y, x + w, y + r);
+        self.line_to(x + w, y + h - r);
+        self.quadratic_to(x + w, y + h, x + w - r, y + h);
+        self.line_to(x + r, y + h);
+        self.quadratic_to(x, y + h, x, y + h - r);
+        self.line_to(x, y + r);
+        self.quadratic_to(x, y, x + r, y);
+        self.close();
+    }
+
+    pub fn circle(&mut self, cx: f64, cy: f64, r: f64) {
+        let k = 0.5522847498;
+        self.move_to(cx, cy - r);
+        self.cubic_to(cx + r * k, cy - r, cx + r, cy - r * k, cx + r, cy);
+        self.cubic_to(cx + r, cy + r * k, cx + r * k, cy + r, cx, cy + r);
+        self.cubic_to(cx - r * k, cy + r, cx - r, cy + r * k, cx - r, cy);
+        self.cubic_to(cx - r, cy - r * k, cx - r * k, cy - r, cx, cy - r);
+        self.close();
+    }
+
+    pub fn ellipse(&mut self, cx: f64, cy: f64, rx: f64, ry: f64) {
+        let kx = 0.5522847498 * rx;
+        let ky = 0.5522847498 * ry;
+        self.move_to(cx, cy - ry);
+        self.cubic_to(cx + kx, cy - ry, cx + rx, cy - ky, cx + rx, cy);
+        self.cubic_to(cx + rx, cy + ky, cx + kx, cy + ry, cx, cy + ry);
+        self.cubic_to(cx - kx, cy + ry, cx - rx, cy + ky, cx - rx, cy);
+        self.cubic_to(cx - rx, cy - ky, cx - kx, cy - ry, cx, cy - ry);
+        self.close();
+    }
+
+    pub fn clear(&mut self) {
+        self.commands.clear();
+        self.points.clear();
+    }
+
+    pub fn command_count(&self) -> usize {
+        self.commands.len()
+    }
+
+    fn build_lyon_path(&self) -> Path {
+        let mut builder = Path::builder();
+        let mut pi = 0;
+        for cmd in &self.commands {
+            match cmd {
+                0 => {
+                    let p = self.points[pi];
+                    pi += 1;
+                    builder.begin(to_lyon_point(&p));
+                }
+                1 => {
+                    let p = self.points[pi];
+                    pi += 1;
+                    builder.line_to(to_lyon_point(&p));
+                }
+                2 => {
+                    let cp = self.points[pi];
+                    let to = self.points[pi + 1];
+                    pi += 2;
+                    builder.quadratic_bezier_to(to_lyon_point(&cp), to_lyon_point(&to));
+                }
+                3 => {
+                    let cp1 = self.points[pi];
+                    let cp2 = self.points[pi + 1];
+                    let to = self.points[pi + 2];
+                    pi += 3;
+                    builder.cubic_bezier_to(to_lyon_point(&cp1), to_lyon_point(&cp2), to_lyon_point(&to));
+                }
+                4 => {
+                    builder.close();
+                }
+                _ => {}
+            }
+        }
+        builder.build()
+    }
+
+    pub fn bounds(&self) -> Option<Rect> {
+        if self.points.is_empty() {
+            return None;
+        }
+        let mut min_x = f64::INFINITY;
+        let mut min_y = f64::INFINITY;
+        let mut max_x = f64::NEG_INFINITY;
+        let mut max_y = f64::NEG_INFINITY;
+        for p in &self.points {
+            min_x = min_x.min(p.x);
+            min_y = min_y.min(p.y);
+            max_x = max_x.max(p.x);
+            max_y = max_y.max(p.y);
+        }
+        if min_x.is_finite() && min_y.is_finite() {
+            Some(Rect::new(min_x, min_y, max_x - min_x, max_y - min_y))
+        } else {
+            None
+        }
+    }
+}
+
+#[wasm_bindgen]
+pub struct Rasterizer {
+    fill_tessellator: Option<FillTessellator>,
+    stroke_tessellator: Option<StrokeTessellator>,
+}
+
+#[wasm_bindgen]
+impl Rasterizer {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            fill_tessellator: Some(FillTessellator::new()),
+            stroke_tessellator: Some(StrokeTessellator::new()),
+        }
+    }
+
+    pub fn tessellate_fill(
+        &mut self,
+        path: &PathBuilder,
+        fill_rule: FillRule,
+        tolerance: f64,
+    ) -> MeshData {
+        let lyon_path = path.build_lyon_path();
+        let options = LyonFillOptions::default()
+            .with_fill_rule(to_lyon_fill_rule(fill_rule))
+            .with_tolerance(tolerance.max(0.0001) as f32);
+
+        let mut buffers: VertexBuffers<LyonVertex, u32> = VertexBuffers::new();
+        let mut tess = self.fill_tessellator.take().unwrap_or_else(FillTessellator::new);
+
+        let result = tess.tessellate_path(
+            &lyon_path,
+            &options,
+            &mut BuffersBuilder::new(&mut buffers, |vertex: FillVertex| LyonVertex {
+                pos: vertex.position(),
+            }),
+        );
+
+        self.fill_tessellator = Some(tess);
+
+        if result.is_err() {
+            return MeshData::new();
+        }
+
+        let mut mesh = MeshData::new();
+        for v in &buffers.vertices {
+            mesh.vertices.push(Vertex::new(v.pos.x, v.pos.y, 0.0, 0.0));
+        }
+        mesh.indices = buffers.indices.clone();
+        mesh
+    }
+
+    pub fn tessellate_stroke(
+        &mut self,
+        path: &PathBuilder,
+        stroke_options: &StrokeOptions,
+        tolerance: f64,
+    ) -> MeshData {
+        let lyon_path = path.build_lyon_path();
+        let options = LyonStrokeOptions::default()
+            .with_line_width(stroke_options.internal_width().max(0.0) as f32)
+            .with_line_cap(to_lyon_line_cap(stroke_options.internal_line_cap()))
+            .with_line_join(to_lyon_line_join(stroke_options.internal_line_join()))
+            .with_miter_limit(stroke_options.internal_miter_limit().max(0.0) as f32)
+            .with_tolerance(tolerance.max(0.0001) as f32);
+
+        let mut buffers: VertexBuffers<LyonVertex, u32> = VertexBuffers::new();
+        let mut tess = self.stroke_tessellator.take().unwrap_or_else(StrokeTessellator::new);
+
+        let result = tess.tessellate_path(
+            &lyon_path,
+            &options,
+            &mut BuffersBuilder::new(&mut buffers, |vertex: StrokeVertex| LyonVertex {
+                pos: vertex.position(),
+            }),
+        );
+
+        self.stroke_tessellator = Some(tess);
+
+        if result.is_err() {
+            return MeshData::new();
+        }
+
+        let mut mesh = MeshData::new();
+        for v in &buffers.vertices {
+            mesh.vertices.push(Vertex::new(v.pos.x, v.pos.y, 0.0, 0.0));
+        }
+        mesh.indices = buffers.indices.clone();
+        mesh
+    }
+
+    pub fn tessellate_stroke_fill(
+        &mut self,
+        path: &PathBuilder,
+        stroke_options: &StrokeOptions,
+        fill_rule: FillRule,
+        tolerance: f64,
+    ) -> MeshData {
+        let stroke_mesh = self.tessellate_stroke(path, stroke_options, tolerance);
+        let fill_mesh = self.tessellate_fill(path, fill_rule, tolerance);
+
+        let mut combined = MeshData::new();
+        let index_offset = stroke_mesh.vertices.len() as u32;
+
+        for v in &stroke_mesh.vertices {
+            combined.vertices.push(v.clone());
+        }
+        for idx in &stroke_mesh.indices {
+            combined.indices.push(*idx);
+        }
+
+        for v in &fill_mesh.vertices {
+            combined.vertices.push(v.clone());
+        }
+        for idx in &fill_mesh.indices {
+            combined.indices.push(*idx + index_offset);
+        }
+
+        combined
+    }
+
+    pub fn tessellate_rect_fill(&mut self, rect: &Rect, fill_rule: FillRule) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.rect(rect.x, rect.y, rect.width, rect.height);
+        self.tessellate_fill(&pb, fill_rule, 0.1)
+    }
+
+    pub fn tessellate_rect_stroke(&mut self, rect: &Rect, stroke_options: &StrokeOptions) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.rect(rect.x, rect.y, rect.width, rect.height);
+        self.tessellate_stroke(&pb, stroke_options, 0.1)
+    }
+
+    pub fn tessellate_circle_fill(&mut self, cx: f64, cy: f64, r: f64, fill_rule: FillRule) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.circle(cx, cy, r);
+        self.tessellate_fill(&pb, fill_rule, 0.1)
+    }
+
+    pub fn tessellate_circle_stroke(&mut self, cx: f64, cy: f64, r: f64, stroke_options: &StrokeOptions) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.circle(cx, cy, r);
+        self.tessellate_stroke(&pb, stroke_options, 0.1)
+    }
+
+    pub fn tessellate_rounded_rect_fill(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        r: f64,
+        fill_rule: FillRule,
+    ) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.rounded_rect(x, y, w, h, r);
+        self.tessellate_fill(&pb, fill_rule, 0.1)
+    }
+
+    pub fn tessellate_rounded_rect_stroke(
+        &mut self,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        r: f64,
+        stroke_options: &StrokeOptions,
+    ) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.rounded_rect(x, y, w, h, r);
+        self.tessellate_stroke(&pb, stroke_options, 0.1)
+    }
+
+    pub fn tessellate_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, stroke_options: &StrokeOptions) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.move_to(x1, y1);
+        pb.line_to(x2, y2);
+        self.tessellate_stroke(&pb, stroke_options, 0.1)
+    }
+
+    pub fn tessellate_stroke_points(&mut self, stroke: &Stroke, tolerance: f64) -> MeshData {
+        if stroke.point_count() < 2 {
+            return MeshData::new();
+        }
+
+        let mut pb = PathBuilder::new();
+        if let Some(first) = stroke.get_point(0) {
+            pb.move_to(first.position.x, first.position.y);
+        }
+
+        for i in 1..stroke.point_count() {
+            if let Some(p) = stroke.get_point(i) {
+                if i == 1 {
+                    pb.line_to(p.position.x, p.position.y);
+                } else {
+                    if let (Some(prev), Some(_prev_prev)) = (stroke.get_point(i - 1), stroke.get_point(i - 2)) {
+                        let cp_x = prev.position.x;
+                        let cp_y = prev.position.y;
+                        let to_x = (prev.position.x + p.position.x) / 2.0;
+                        let to_y = (prev.position.y + p.position.y) / 2.0;
+                        pb.quadratic_to(cp_x, cp_y, to_x, to_y);
+                    } else {
+                        pb.line_to(p.position.x, p.position.y);
+                    }
+                }
+            }
+        }
+
+        self.tessellate_stroke(&pb, &stroke.stroke_options(), tolerance)
+    }
+}
+
+// ==========================================
+// 渲染上下文 / Renderer 主入口
+// ==========================================
+
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RenderContext {
+    viewport: Viewport,
+    layer_tree: LayerTree,
+    dirty_manager: DirtyRectManager,
+    background_color: Color,
+    clear_color: Color,
+}
+
+#[wasm_bindgen]
+impl RenderContext {
+    #[wasm_bindgen(constructor)]
+    pub fn new(view_width: f64, view_height: f64) -> Self {
+        Self {
+            viewport: Viewport::new(view_width, view_height),
+            layer_tree: LayerTree::new(),
+            dirty_manager: DirtyRectManager::new(),
+            background_color: Color::white(),
+            clear_color: Color::white(),
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn viewport(&self) -> Viewport {
+        self.viewport.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn layer_tree(&self) -> LayerTree {
+        self.layer_tree.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn dirty_manager(&self) -> DirtyRectManager {
+        self.dirty_manager.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn background_color(&self) -> Color {
+        self.background_color
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_background_color(&mut self, color: Color) {
+        self.background_color = color;
+        self.mark_all_dirty();
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn clear_color(&self) -> Color {
+        self.clear_color
+    }
+
+    #[wasm_bindgen(setter)]
+    pub fn set_clear_color(&mut self, color: Color) {
+        self.clear_color = color;
+    }
+
+    pub fn resize(&mut self, width: f64, height: f64) {
+        self.viewport.set_view_size(width, height);
+        self.mark_all_dirty();
+    }
+
+    pub fn mark_all_dirty(&mut self) {
+        let view_rect = Rect::new(0.0, 0.0, self.viewport.view_size.width(), self.viewport.view_size.height());
+        self.dirty_manager.add_rect(&view_rect);
+    }
+
+    pub fn mark_layer_region_dirty(&mut self, layer_id: &str) -> bool {
+        if let Some(bounds) = self.layer_tree.get_layer_bounds(layer_id) {
+            if let Some(transform) = self.layer_tree.get_layer_transform(layer_id) {
+                let world_bounds_poly = transform.transform_rect(&bounds);
+                let world_bounds = world_bounds_poly.bounding_box();
+                let screen_bounds = self.viewport.world_rect_to_screen(&world_bounds);
+                self.dirty_manager.add_rect(&screen_bounds.inflate(2.0));
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn needs_redraw(&self) -> bool {
+        self.dirty_manager.is_dirty() || self.layer_tree.has_dirty_layers()
+    }
+
+    pub fn begin_frame(&mut self) {
+        self.dirty_manager.clip_to_viewport(&self.viewport);
+        self.dirty_manager.optimize();
+    }
+
+    pub fn end_frame(&mut self) {
+        self.dirty_manager.clear();
+        self.layer_tree.clear_dirty();
+    }
+
+    pub fn get_draw_regions(&self) -> Vec<Rect> {
+        self.dirty_manager.get_regions()
+    }
+
+    pub fn pan(&mut self, dx: f64, dy: f64) {
+        self.viewport.pan(dx, dy);
+        self.mark_all_dirty();
+    }
+
+    pub fn zoom(&mut self, factor: f64, center: Option<Point>) {
+        self.viewport.zoom(factor, center);
+        self.mark_all_dirty();
+    }
+
+    pub fn zoom_at(&mut self, screen_x: f64, screen_y: f64, factor: f64) {
+        self.viewport.zoom_at(screen_x, screen_y, factor);
+        self.mark_all_dirty();
+    }
+
+    pub fn reset_view(&mut self) {
+        self.viewport.reset();
+        self.mark_all_dirty();
+    }
+
+    pub fn fit_to_content(&mut self, padding: f64) {
+        let layer_ids = self.layer_tree.get_all_layers_sorted();
+        let mut all_bounds: Vec<Rect> = Vec::new();
+
+        for id_js in &layer_ids {
+            if let Some(id_str) = id_js.as_string() {
+                if let (Some(bounds), Some(transform)) = (
+                    self.layer_tree.get_layer_bounds(&id_str),
+                    self.layer_tree.get_layer_transform(&id_str),
+                ) {
+                    let world_bounds_poly = transform.transform_rect(&bounds);
+                    all_bounds.push(world_bounds_poly.bounding_box());
+                }
+            }
+        }
+
+        if let Some(combined) = geometry::merge_rects(&all_bounds) {
+            self.viewport.fit_to_rect(&combined, padding);
+            self.mark_all_dirty();
+        }
+    }
+
+    pub fn screen_to_world(&self, x: f64, y: f64) -> Point {
+        self.viewport.screen_to_world(&Point::new(x, y))
+    }
+
+    pub fn world_to_screen(&self, x: f64, y: f64) -> Point {
+        self.viewport.world_to_screen(&Point::new(x, y))
+    }
+
+    pub fn hit_test(&self, screen_x: f64, screen_y: f64) -> Option<String> {
+        let world_p = self.screen_to_world(screen_x, screen_y);
+        self.layer_tree.hit_test(&world_p)
+    }
+
+    pub fn set_dpr(&mut self, dpr: f64) {
+        self.viewport.set_dpr(dpr);
+        self.mark_all_dirty();
+    }
+
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+
+    pub fn from_json(json: &str) -> Option<RenderContext> {
+        serde_json::from_str(json).ok()
+    }
+}
+
+// ==========================================
+// 工具函数
+// ==========================================
+
+#[wasm_bindgen]
+pub fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * t.clamp(0.0, 1.0)
+}
+
+#[wasm_bindgen]
+pub fn clamp(value: f64, min: f64, max: f64) -> f64 {
+    value.clamp(min, max)
+}
+
+#[wasm_bindgen]
+pub fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+#[wasm_bindgen(start)]
+pub fn init() {
+    console_error_panic_hook::set_once();
+}

@@ -1,0 +1,30 @@
+[workspace]
+members = [
+    "crates/renderer",
+    "crates/stroke-engine",
+    "crates/geometry",
+    "crates/crdt",
+    "crates/resource-manager",
+    "crates/permission-history",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+wasm-bindgen = "0.2.92"
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = "1.0.115"
+uuid = { version = "1.7.0", features = ["v4", "serde"] }
+log = "0.4.21"
+console_error_panic_hook = "0.1.7"
+wee_alloc = "0.4.5"
+lyon = "1.0.2"
+lyon_geom = "1.0.2"
+image = { version = "0.24.9", features = ["png", "jpeg"] }
+rustc-hash = "1.1.0"
+ordered-float = "4.2.0"
+js-sys = "0.3.69"

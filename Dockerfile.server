@@ -1,0 +1,154 @@
+# =============================================================================
+# Dockerfile.server - 后端服务 Docker 镜像
+# 多阶段构建：构建阶段 + 运行阶段
+# 支持 Rust / Go / Node.js 后端项目
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# 构建阶段参数
+# -----------------------------------------------------------------------------
+ARG RUST_VERSION=1.75-alpine
+ARG NODE_VERSION=20-alpine
+ARG GO_VERSION=1.22-alpine
+
+# -----------------------------------------------------------------------------
+# Rust 构建阶段 (可选)
+# -----------------------------------------------------------------------------
+FROM rust:${RUST_VERSION} AS rust-builder
+
+# 安装系统依赖
+RUN apk add --no-cache \
+    build-base \
+    openssl-dev \
+    pkgconfig \
+    curl \
+    musl-dev
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制 Cargo 配置
+COPY server/Cargo.toml server/Cargo.lock* ./
+COPY server/src ./src
+
+# 构建 Release 版本
+RUN if [ -f "Cargo.toml" ]; then \
+        cargo build --release; \
+    fi
+
+# -----------------------------------------------------------------------------
+# Go 构建阶段 (可选)
+# -----------------------------------------------------------------------------
+FROM golang:${GO_VERSION} AS go-builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制 Go 模块文件
+COPY server/go.mod server/go.sum* ./
+COPY server .
+
+# 构建二进制
+RUN if [ -f "go.mod" ]; then \
+        CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /usr/local/bin/server .; \
+    fi
+
+# -----------------------------------------------------------------------------
+# Node.js 构建阶段 (可选)
+# -----------------------------------------------------------------------------
+FROM node:${NODE_VERSION} AS node-builder
+
+# 设置工作目录
+WORKDIR /app
+
+# 复制 package.json
+COPY server/package.json server/package-lock.json* server/pnpm-lock.yaml* ./
+
+# 安装依赖
+RUN if [ -f "package.json" ]; then \
+        if [ -f "pnpm-lock.yaml" ]; then \
+            npm install -g pnpm && pnpm install --frozen-lockfile; \
+        elif [ -f "package-lock.json" ]; then \
+            npm ci; \
+        else \
+            npm install; \
+        fi; \
+    fi
+
+# 复制源码
+COPY server .
+
+# 构建 TypeScript (如果需要)
+RUN if [ -f "package.json" ] && grep -q '"build"' package.json; then \
+        npm run build; \
+    fi
+
+# -----------------------------------------------------------------------------
+# 最终运行阶段
+# -----------------------------------------------------------------------------
+FROM alpine:3.20 AS runner
+
+# 安装必要的运行时依赖
+RUN apk add --no-cache \
+    ca-certificates \
+    curl \
+    tzdata \
+    dumb-init
+
+# 设置时区
+ENV TZ=Asia/Shanghai
+RUN cp /usr/share/zoneinfo/${TZ} /etc/localtime && \
+    echo "${TZ}" > /etc/timezone
+
+# 创建非 root 用户
+RUN addgroup -S appgroup && \
+    adduser -S appuser -G appgroup
+
+# 创建工作目录
+RUN mkdir -p /app/data /app/logs && \
+    chown -R appuser:appgroup /app
+
+WORKDIR /app
+
+# -----------------------------------------------------------------------------
+# 复制 Rust 构建产物 (如果存在)
+# -----------------------------------------------------------------------------
+COPY --from=rust-builder --chown=appuser:appgroup /app/target/release/server /usr/local/bin/server 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# 复制 Go 构建产物 (如果存在)
+# -----------------------------------------------------------------------------
+COPY --from=go-builder --chown=appuser:appgroup /usr/local/bin/server /usr/local/bin/server 2>/dev/null || true
+
+# -----------------------------------------------------------------------------
+# 复制 Node.js 项目 (如果存在)
+# -----------------------------------------------------------------------------
+COPY --from=node-builder --chown=appuser:appgroup /app /app 2>/dev/null || true
+
+# 切换到非 root 用户
+USER appuser
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl --fail http://localhost:${PORT:-3000}/health || exit 1
+
+# 暴露端口
+EXPOSE 3000
+
+# 使用 dumb-init 作为 PID 1 进程
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+
+# 启动命令 (根据项目类型自动检测)
+CMD ["sh", "-c", "\
+    if [ -f \"/usr/local/bin/server\" ]; then \
+        exec /usr/local/bin/server; \
+    elif [ -f \"/app/package.json\" ]; then \
+        if grep -q '\"start\"' /app/package.json; then \
+            exec npm start; \
+        else \
+            exec node index.js; \
+        fi; \
+    else \
+        echo 'No server executable found'; \
+        exit 1; \
+    fi"]

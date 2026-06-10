@@ -1,0 +1,24 @@
+[package]
+name = "geometry"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wasm-bindgen = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+log = { workspace = true }
+console_error_panic_hook = { workspace = true }
+wee_alloc = { workspace = true }
+lyon = { workspace = true }
+lyon_geom = { workspace = true }
+ordered-float = { workspace = true }
+rustc-hash = { workspace = true }
+
+[features]
+default = []
