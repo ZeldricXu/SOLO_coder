@@ -57,6 +57,7 @@ type PlayerStats struct {
 	MaxWinStreak int       `json:"max_win_streak" bson:"max_win_streak"`
 	CurrentStreak  int        `json:"current_streak" bson:"current_streak"`
 	AvgScore     float64    `json:"avg_score" bson:"avg_score"`
+	WinRate      float64    `json:"win_rate" bson:"-"`
 	LastPlayedAt time.Time   `json:"last_played_at" bson:"last_played_at"`
 }
 
@@ -79,7 +80,7 @@ type MongoStore struct {
 	dailyStats *mongo.Collection
 }
 
-func NewMongoStore(uri, dbName string) (*MongoStore, error {
+func NewMongoStore(uri, dbName string) (*MongoStore, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 

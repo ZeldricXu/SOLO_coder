@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -20,6 +21,7 @@ type Matcher struct {
 	config      *MatcherConfig
 	pools       map[common.GameType][]*common.MatchRequest
 	notifyCh    chan MatchResult
+	mu          sync.RWMutex
 }
 
 type MatcherConfig struct {
@@ -70,7 +72,9 @@ func (m *Matcher) poolKey(gameType common.GameType) string {
 }
 
 func (m *Matcher) AddRequest(req *common.MatchRequest) error {
-	req.RequestedAt = time.Now()
+	if req.RequestedAt.IsZero() {
+		req.RequestedAt = time.Now()
+	}
 	data, err := json.Marshal(req)
 	if err != nil {
 		return err
@@ -88,13 +92,17 @@ func (m *Matcher) AddRequest(req *common.MatchRequest) error {
 		}
 	}
 
+	m.mu.Lock()
 	m.pools[req.GameType] = append(m.pools[req.GameType], req)
+	m.mu.Unlock()
 	common.LogInfo("player %s joined match pool for %s, elo=%.2f", req.UserID, req.GameType, req.Elo)
 	return nil
 }
 
 func (m *Matcher) RemoveRequest(userID common.UserID, gameType common.GameType) {
+	m.mu.Lock()
 	m.removeFromMemory(userID, gameType)
+	m.mu.Unlock()
 	if m.redisClient != nil {
 		ctx := context.Background()
 		members, err := m.redisClient.ZRange(ctx, m.poolKey(gameType), 0, -1).Result()
@@ -122,9 +130,12 @@ func (m *Matcher) removeFromMemory(userID common.UserID, gameType common.GameTyp
 }
 
 func (m *Matcher) TryMatch(gameType common.GameType) []MatchResult {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	results := make([]MatchResult, 0)
 	pool := m.pools[gameType]
-	if len(pool) < m.config.MinPlayers {
+	if len(pool) == 0 {
 		return results
 	}
 
@@ -155,24 +166,28 @@ func (m *Matcher) TryMatch(gameType common.GameType) []MatchResult {
 	}
 
 	for _, group := range matchedGroups {
-		if len(group) >= m.config.MinPlayers {
-			needRobots := m.config.MaxPlayers - len(group)
-			result := MatchResult{
-				GameType: gameType,
-				Players:  group,
-				IsRobot:  needRobots > 0,
-				Reason:   "matched",
-			}
+		groupSize := len(group)
+		needRobots := m.config.MaxPlayers - groupSize
 
-			maxWait := int64(0)
-			for _, req := range group {
-				w := time.Since(req.RequestedAt).Milliseconds()
-				if w > maxWait {
-					maxWait = w
-				}
-				m.removeFromMemory(req.UserID, gameType)
+		maxWait := int64(0)
+		for _, req := range group {
+			w := time.Since(req.RequestedAt).Milliseconds()
+			if w > maxWait {
+				maxWait = w
 			}
+		}
 
+		canMatch := false
+		result := MatchResult{
+			GameType: gameType,
+			Players:  make([]*common.MatchRequest, groupSize),
+			IsRobot:  false,
+			Reason:   "matched",
+		}
+		copy(result.Players, group)
+
+		if groupSize >= m.config.MinPlayers {
+			canMatch = true
 			if needRobots > 0 && maxWait >= int64(m.config.RobotThresholdMs) {
 				for i := 0; i < needRobots; i++ {
 					robot := &common.MatchRequest{
@@ -185,14 +200,32 @@ func (m *Matcher) TryMatch(gameType common.GameType) []MatchResult {
 					}
 					result.Players = append(result.Players, robot)
 				}
+				result.IsRobot = true
 				result.Reason = "matched_with_robots"
 			}
-
-			if len(result.Players) >= m.config.MinPlayers {
-				results = append(results, result)
-			} else {
-				remaining = append(remaining, group...)
+		} else if groupSize > 0 && maxWait >= int64(m.config.RobotThresholdMs) && needRobots > 0 {
+			canMatch = true
+			robotCount := m.config.MaxPlayers - groupSize
+			for i := 0; i < robotCount; i++ {
+				robot := &common.MatchRequest{
+					UserID:      common.UserID(fmt.Sprintf("robot_%s_%d", gameType, time.Now().UnixNano()+int64(i))),
+					GameType:    gameType,
+					Elo:         m.averageElo(group),
+					Level:       1,
+					RequestedAt: time.Now(),
+					Priority:    0,
+				}
+				result.Players = append(result.Players, robot)
 			}
+			result.IsRobot = true
+			result.Reason = "robot_fill_timeout"
+		}
+
+		if canMatch && len(result.Players) >= m.config.MinPlayers {
+			for _, req := range group {
+				m.removeFromMemory(req.UserID, gameType)
+			}
+			results = append(results, result)
 		} else {
 			remaining = append(remaining, group...)
 		}
@@ -259,6 +292,8 @@ func (m *Matcher) NotifyChannel() <-chan MatchResult {
 }
 
 func (m *Matcher) PoolSize(gameType common.GameType) int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return len(m.pools[gameType])
 }
 

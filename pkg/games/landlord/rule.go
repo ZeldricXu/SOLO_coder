@@ -1,7 +1,6 @@
 package landlord
 
 import (
-	"sort"
 	"time"
 
 	"github.com/studio/gameroom/pkg/common"
@@ -43,115 +42,17 @@ func (r *LandlordRule) GetShuffleStrategy() game.ShuffleStrategy {
 	return game.GetShuffleStrategy("random")
 }
 
-type LandlordPatternValidator struct{}
-
-func (v *LandlordPatternValidator) Validate(cards []common.Card) game.PatternResult {
-	if len(cards) == 0 {
-		return game.PatternResult{Valid: false}
-	}
-	if len(cards) == 1 {
-		return game.PatternResult{
-			Pattern: game.PatternSingle,
-			Weight:  cards[0].Rank,
-			Cards:   cards,
-			Valid:   true,
-		}
-	}
-	if len(cards) == 2 {
-		if cards[0].Rank == cards[1].Rank {
-			return game.PatternResult{
-				Pattern: game.PatternPair,
-				Weight:  cards[0].Rank,
-				Cards:   cards,
-				Valid:   true,
-			}
-		}
-		if (cards[0].Rank == 14 && cards[1].Rank == 15) ||
-			(cards[0].Rank == 15 && cards[1].Rank == 14) {
-			return game.PatternResult{
-				Pattern: game.PatternBomb,
-				Weight:  100,
-				Cards:   cards,
-				Valid:   true,
-			}
-		}
-	}
-	if len(cards) == 3 {
-		if cards[0].Rank == cards[1].Rank && cards[1].Rank == cards[2].Rank {
-			return game.PatternResult{
-				Pattern: game.PatternTriplet,
-				Weight:  cards[0].Rank,
-				Cards:   cards,
-				Valid:   true,
-			}
-		}
-	}
-	if len(cards) == 4 {
-		if cards[0].Rank == cards[1].Rank && cards[1].Rank == cards[2].Rank &&
-			cards[2].Rank == cards[3].Rank {
-			return game.PatternResult{
-				Pattern: game.PatternBomb,
-				Weight:  50 + cards[0].Rank,
-				Cards:   cards,
-				Valid:   true,
-			}
-		}
-	}
-
-	sorted := make([]common.Card, len(cards))
-	copy(sorted, cards)
-	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].Rank < sorted[j].Rank
-	})
-	isStraight := true
-	for i := 1; i < len(sorted); i++ {
-		if sorted[i].Rank != sorted[i-1].Rank+1 || sorted[i].Rank >= 15 {
-			isStraight = false
-			break
-		}
-	}
-	if isStraight && len(sorted) >= 5 {
-		return game.PatternResult{
-			Pattern: game.PatternStraight,
-			Weight:  sorted[len(sorted)-1].Rank,
-			Cards:   sorted,
-			Valid:   true,
-		}
-	}
-
-	return game.PatternResult{
-		Pattern: game.PatternUnknown,
-		Cards:   cards,
-		Valid:   false,
-	}
-}
-
-func (v *LandlordPatternValidator) Compare(a, b game.PatternResult) int {
-	if a.Pattern != b.Pattern {
-		if a.Pattern == game.PatternBomb {
-			return 1
-		}
-		if b.Pattern == game.PatternBomb {
-			return -1
-		}
-		return 0
-	}
-	if len(a.Cards) != len(b.Cards) && a.Pattern != game.PatternBomb {
-		return 0
-	}
-	if a.Weight > b.Weight {
-		return 1
-	} else if a.Weight < b.Weight {
-		return -1
-	}
-	return 0
-}
-
 func (r *LandlordRule) GetPatternValidator() game.CardPatternValidator {
 	return &LandlordPatternValidator{}
 }
 
 type LandlordSettlement struct{}
+
+type LandlordSettleConfig struct {
+	BaseScore int64
+	Spring    bool
+	AntiSpring bool
+}
 
 func (s *LandlordSettlement) Name() string {
 	return "landlord_settlement"
@@ -159,30 +60,66 @@ func (s *LandlordSettlement) Name() string {
 
 func (s *LandlordSettlement) Calculate(ctx *game.GameContext, config *common.RoomConfig) (*game.Settlement, error) {
 	results := make([]game.SettleResult, 0, len(ctx.Players))
+
 	landlordWin := false
 	for i, p := range ctx.Players {
-		score := config.BaseScore
+		hand := ctx.PlayerHands[p.UserID]
+		if i == 0 && len(hand) == 0 {
+			landlordWin = true
+			break
+		}
+		if i != 0 && len(hand) == 0 {
+			landlordWin = false
+			break
+		}
+	}
+
+	multiplier := int64(1)
+	if ctx.ExtraData["spring"] == true {
+		multiplier *= 2
+	}
+	if ctx.ExtraData["anti_spring"] == true {
+		multiplier *= 2
+	}
+
+	for i, p := range ctx.Players {
+		var score int64
 		isWinner := (i == 0 && landlordWin) || (i != 0 && !landlordWin)
+
 		if i == 0 {
 			if landlordWin {
-				score = config.BaseScore * 2
+				score = config.BaseScore * 2 * multiplier
 			} else {
-				score = -config.BaseScore * 2
+				score = -config.BaseScore * 2 * multiplier
 			}
 		} else {
 			if landlordWin {
-				score = -config.BaseScore
+				score = -config.BaseScore * multiplier
 			} else {
-				score = config.BaseScore
+				score = config.BaseScore * multiplier
 			}
 		}
+
+		rank := 1
+		if !isWinner {
+			rank = i + 1
+		}
+
 		results = append(results, game.SettleResult{
 			UserID:   p.UserID,
 			Score:    score,
-			Rank:     i + 1,
+			Rank:     rank,
 			IsWinner: isWinner,
+			Detail: map[string]interface{}{
+				"base_score":   config.BaseScore,
+				"multiplier":   multiplier,
+				"landlord_win": landlordWin,
+				"spring":       ctx.ExtraData["spring"],
+				"anti_spring":  ctx.ExtraData["anti_spring"],
+			},
 		})
 	}
+
 	return &game.Settlement{
 		Results:   results,
 		Timestamp: common.NowMs(),

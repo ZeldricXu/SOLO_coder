@@ -60,26 +60,6 @@ func (r *MahjongRule) GetShuffleStrategy() game.ShuffleStrategy {
 	return game.GetShuffleStrategy("fisher_yates")
 }
 
-type MahjongPatternValidator struct{}
-
-func (v *MahjongPatternValidator) Validate(cards []common.Card) game.PatternResult {
-	return game.PatternResult{
-		Pattern: game.PatternSingle,
-		Weight:  0,
-		Cards:   cards,
-		Valid:   len(cards) > 0,
-	}
-}
-
-func (v *MahjongPatternValidator) Compare(a, b game.PatternResult) int {
-	if a.Weight > b.Weight {
-		return 1
-	} else if a.Weight < b.Weight {
-		return -1
-	}
-	return 0
-}
-
 func (r *MahjongRule) GetPatternValidator() game.CardPatternValidator {
 	return &MahjongPatternValidator{}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/studio/gameroom/pkg/match"
 	"github.com/studio/gameroom/pkg/network"
 	"github.com/studio/gameroom/pkg/observer"
+	"github.com/studio/gameroom/pkg/protocol"
 	"github.com/studio/gameroom/pkg/room"
 	"github.com/studio/gameroom/pkg/storage"
 
