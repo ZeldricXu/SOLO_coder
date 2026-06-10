@@ -6,12 +6,10 @@ import lombok.EqualsAndHashCode;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("exam_knowledge_point")
-public class KnowledgePoint extends BaseEntity {
-    private String pointName;
-    private String pointCode;
+@TableName("exam_tag")
+public class Tag extends BaseEntity {
+    private String tagName;
+    private String tagType;
     private Long subjectId;
-    private Long parentId;
     private Integer sortOrder;
-    private String description;
 }

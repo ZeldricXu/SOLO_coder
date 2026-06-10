@@ -2,17 +2,16 @@ package com.exam.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.exam.entity.ExamAnswer;
-import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
-@Mapper
 public interface ExamAnswerMapper extends BaseMapper<ExamAnswer> {
 
-    @Select("SELECT ea.* FROM exam_answer ea " +
-            "WHERE ea.exam_record_id = #{examRecordId} AND ea.deleted = 0 " +
-            "ORDER BY ea.sort_order ASC")
-    List<ExamAnswer> selectByExamRecordId(@Param("examRecordId") Long examRecordId);
+    @Select("SELECT * FROM exam_exam_answer WHERE session_id = #{sessionId} AND deleted = 0 ORDER BY question_order")
+    List<ExamAnswer> selectBySessionId(@Param("sessionId") Long sessionId);
+
+    @Select("SELECT * FROM exam_exam_answer WHERE session_id = #{sessionId} AND question_id = #{questionId} AND deleted = 0 LIMIT 1")
+    ExamAnswer selectBySessionAndQuestion(@Param("sessionId") Long sessionId, @Param("questionId") Long questionId);
 }

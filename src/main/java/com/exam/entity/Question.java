@@ -6,36 +6,34 @@ import lombok.Data;
 import lombok.EqualsAndHashCode;
 
 import java.math.BigDecimal;
-import java.util.List;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
 @TableName("exam_question")
 public class Question extends BaseEntity {
-    private String questionTitle;
-    private String questionContent;
+    private Long subjectId;
     private Integer questionType;
     private Integer difficulty;
-    private Long subjectId;
-    private BigDecimal defaultScore;
-    private String answer;
+    private String questionContent;
+    private String questionImage;
+    private String optionA;
+    private String optionB;
+    private String optionC;
+    private String optionD;
+    private String optionE;
+    private String optionF;
+    private String correctAnswer;
     private String analysis;
+    private BigDecimal score;
+    private String knowledgePoints;
     private Integer version;
-    private String versionRemark;
-    private Integer status;
-    private String tagIds;
-    private String knowledgePointIds;
+    private String referenceAnswer;
     private String programmingLanguage;
     private String testCases;
+    private String codeTemplate;
     private Integer timeLimit;
     private Integer memoryLimit;
 
     @TableField(exist = false)
-    private List<QuestionOption> options;
-
-    @TableField(exist = false)
-    private List<Long> knowledgePointIdList;
-
-    @TableField(exist = false)
-    private List<Long> tagIdList;
+    private String[] knowledgePointList;
 }

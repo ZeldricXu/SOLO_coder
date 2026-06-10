@@ -1,39 +1,44 @@
 package com.exam.mapper;
 
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.exam.entity.Question;
-import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
 
 import java.util.List;
 
-@Mapper
 public interface QuestionMapper extends BaseMapper<Question> {
 
-    @Select("SELECT q.* FROM exam_question q " +
-            "WHERE q.subject_id = #{subjectId} " +
-            "AND q.question_type = #{questionType} " +
-            "AND q.difficulty = #{difficulty} " +
-            "AND q.deleted = 0 " +
-            "ORDER BY RANDOM() " +
-            "LIMIT #{count}")
+    @Select("SELECT * FROM exam_question WHERE subject_id = #{subjectId} " +
+            "AND question_type = #{questionType} AND difficulty = #{difficulty} " +
+            "AND deleted = 0 ORDER BY RANDOM() LIMIT #{limit}")
     List<Question> selectRandomQuestions(@Param("subjectId") Long subjectId,
                                          @Param("questionType") Integer questionType,
                                          @Param("difficulty") Integer difficulty,
-                                         @Param("count") Integer count);
+                                         @Param("limit") Integer limit);
 
-    @Select("SELECT q.* FROM exam_question q " +
-            "INNER JOIN exam_question_knowledge kq ON q.id = kq.question_id " +
-            "WHERE kq.knowledge_point_id = #{knowledgePointId} " +
-            "AND q.question_type = #{questionType} " +
-            "AND q.difficulty = #{difficulty} " +
-            "AND q.deleted = 0 " +
-            "ORDER BY RANDOM() " +
-            "LIMIT #{count}")
-    List<Question> selectRandomQuestionsByKnowledgePoint(
-            @Param("knowledgePointId") Long knowledgePointId,
-            @Param("questionType") Integer questionType,
-            @Param("difficulty") Integer difficulty,
-            @Param("count") Integer count);
+    @Select("SELECT * FROM exam_question WHERE subject_id = #{subjectId} " +
+            "AND question_type = #{questionType} AND deleted = 0 ORDER BY RANDOM() LIMIT #{limit}")
+    List<Question> selectRandomQuestionsByType(@Param("subjectId") Long subjectId,
+                                               @Param("questionType") Integer questionType,
+                                               @Param("limit") Integer limit);
+
+    @Select("SELECT COUNT(*) FROM exam_question WHERE subject_id = #{subjectId} " +
+            "AND question_type = #{questionType} AND difficulty = #{difficulty} AND deleted = 0")
+    Integer countByTypeAndDifficulty(@Param("subjectId") Long subjectId,
+                                     @Param("questionType") Integer questionType,
+                                     @Param("difficulty") Integer difficulty);
+
+    @Select("SELECT COUNT(*) FROM exam_question WHERE subject_id = #{subjectId} " +
+            "AND question_type = #{questionType} AND deleted = 0")
+    Integer countByType(@Param("subjectId") Long subjectId,
+                        @Param("questionType") Integer questionType);
+
+    IPage<Question> selectPageWithConditions(Page<Question> page,
+                                             @Param("subjectId") Long subjectId,
+                                             @Param("questionType") Integer questionType,
+                                             @Param("difficulty") Integer difficulty,
+                                             @Param("keyword") String keyword);
 }

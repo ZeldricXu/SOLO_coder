@@ -12,9 +12,9 @@ import java.math.BigDecimal;
 public class PaperQuestion extends BaseEntity {
     private Long paperId;
     private Long questionId;
-    private Integer questionType;
     private Integer questionOrder;
-    private BigDecimal score;
-    private String sectionName;
-    private Integer sortOrder;
+    private Integer questionType;
+    private BigDecimal questionScore;
+    private Integer difficulty;
+    private String knowledgePoints;
 }

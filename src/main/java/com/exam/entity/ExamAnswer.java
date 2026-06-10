@@ -9,23 +9,34 @@ import java.time.LocalDateTime;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("exam_answer")
+@TableName("exam_exam_answer")
 public class ExamAnswer extends BaseEntity {
+    private Long sessionId;
     private Long examId;
-    private Long examRecordId;
-    private Long userId;
     private Long paperId;
     private Long questionId;
-    private Integer questionType;
+    private Long studentId;
     private Integer questionOrder;
-    private BigDecimal questionScore;
-    private String userAnswer;
+    private Integer questionType;
+    private String studentAnswer;
     private String correctAnswer;
-    private BigDecimal score;
+    private BigDecimal questionScore;
+    private BigDecimal studentScore;
     private Integer answerStatus;
-    private Integer isCorrect;
     private Integer gradingStatus;
-    private String gradingRemark;
-    private LocalDateTime answerTime;
-    private Integer sortOrder;
+    private Long firstGraderId;
+    private BigDecimal firstGraderScore;
+    private String firstGraderRemark;
+    private LocalDateTime firstGradeTime;
+    private Long secondGraderId;
+    private BigDecimal secondGraderScore;
+    private String secondGraderRemark;
+    private LocalDateTime secondGradeTime;
+    private Long arbitratorId;
+    private BigDecimal finalScore;
+    private String arbitrationRemark;
+    private LocalDateTime arbitrationTime;
+    private String judgeLog;
+    private String codeOutput;
+    private LocalDateTime lastSaveTime;
 }

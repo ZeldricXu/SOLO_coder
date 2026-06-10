@@ -8,7 +8,6 @@ import lombok.EqualsAndHashCode;
 @EqualsAndHashCode(callSuper = true)
 @TableName("exam_question_tag")
 public class QuestionTag extends BaseEntity {
-    private String tagName;
-    private String tagColor;
-    private Long subjectId;
+    private Long questionId;
+    private Long tagId;
 }

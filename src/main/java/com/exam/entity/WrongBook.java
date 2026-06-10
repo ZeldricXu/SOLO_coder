@@ -10,15 +10,13 @@ import java.time.LocalDateTime;
 @EqualsAndHashCode(callSuper = true)
 @TableName("exam_wrong_book")
 public class WrongBook extends BaseEntity {
-    private Long userId;
-    private Long questionId;
-    private Integer questionType;
+    private Long studentId;
     private Long subjectId;
     private Long examId;
-    private String userAnswer;
+    private Long questionId;
+    private String studentAnswer;
     private String correctAnswer;
     private Integer wrongCount;
-    private Integer masteryLevel;
     private LocalDateTime lastWrongTime;
-    private String knowledgePointIds;
+    private Integer mastered;
 }

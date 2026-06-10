@@ -8,32 +8,25 @@ import java.time.LocalDateTime;
 
 @Data
 @EqualsAndHashCode(callSuper = true)
-@TableName("exam_info")
+@TableName("exam_exam")
 public class Exam extends BaseEntity {
     private String examName;
-    private String examCode;
     private Long subjectId;
     private Long paperId;
-    private Integer paperMode;
-    private Integer totalScore;
-    private Integer passScore;
-    private Integer duration;
+    private String examCode;
+    private Integer examStatus;
     private LocalDateTime startTime;
     private LocalDateTime endTime;
-    private LocalDateTime enterStartTime;
-    private LocalDateTime enterEndTime;
-    private Integer examStatus;
-    private Integer allowSwitchScreen;
-    private Integer maxSwitchScreenCount;
-    private Integer allowBack;
-    private Integer randomOrder;
-    private Integer abPaper;
+    private Integer durationMinutes;
+    private Integer allowLateEntry;
+    private Integer lateEntryMinutes;
+    private Integer allowLateSubmit;
+    private Integer lateSubmitMinutes;
+    private Integer antiCheatingLevel;
+    private Integer maxScreenSwitch;
+    private Integer autoSubmitOnTimeOut;
+    private String classIds;
+    private String studentIds;
     private String description;
-    private Long classId;
-    private String candidateIds;
-    private Integer totalCandidates;
-    private Integer submittedCount;
-    private Integer gradingStatus;
-    private String rules;
-    private String notice;
+    private Long createBy;
 }
