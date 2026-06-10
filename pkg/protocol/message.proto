@@ -1,0 +1,138 @@
+syntax = "proto3";
+
+package protocol;
+
+option go_package = "github.com/studio/gameroom/pkg/protocol";
+
+enum MessageType {
+  MSG_UNKNOWN = 0;
+  MSG_ACK = 1;
+  MSG_HEARTBEAT = 2;
+  MSG_JOIN_ROOM = 10;
+  MSG_LEAVE_ROOM = 11;
+  MSG_ROOM_STATE = 12;
+  MSG_PLAYER_JOINED = 13;
+  MSG_PLAYER_LEFT = 14;
+  MSG_PLAYER_READY = 15;
+  MSG_GAME_START = 20;
+  MSG_ACTION = 21;
+  MSG_ACTION_RESULT = 22;
+  MSG_BROADCAST = 23;
+  MSG_DEAL_CARDS = 24;
+  MSG_SETTLEMENT = 25;
+  MSG_GAME_OVER = 26;
+  MSG_CHAT = 30;
+  MSG_OBSERVER_JOIN = 40;
+  MSG_OBSERVER_LEAVE = 41;
+  MSG_DANMAKU = 42;
+  MSG_GIFT = 43;
+  MSG_ERROR = 99;
+}
+
+message Message {
+  MessageType type = 1;
+  string msg_id = 2;
+  string room_id = 3;
+  string user_id = 4;
+  int64 seq = 5;
+  int64 timestamp = 6;
+  bytes payload = 7;
+  bool need_ack = 8;
+  string ack_msg_id = 9;
+}
+
+message JoinRoomReq {
+  string room_id = 1;
+  string invite_code = 2;
+  string nickname = 3;
+  string avatar = 4;
+}
+
+message JoinRoomResp {
+  bool success = 1;
+  string room_id = 2;
+  repeated PlayerInfo players = 3;
+  string game_state = 4;
+  string error = 5;
+}
+
+message PlayerInfo {
+  string user_id = 1;
+  string nickname = 2;
+  string avatar = 3;
+  int32 seat_id = 4;
+  bool is_ready = 5;
+  bool is_host = 6;
+  bool is_online = 7;
+  bool is_robot = 8;
+  int32 level = 9;
+  double elo = 10;
+  int64 score = 11;
+}
+
+message ActionReq {
+  string action_type = 1;
+  map<string, string> data = 2;
+}
+
+message ActionResp {
+  bool success = 1;
+  string action_id = 2;
+  string action_type = 3;
+  int64 seq = 4;
+  string error = 5;
+  map<string, string> extra = 6;
+}
+
+message DealCards {
+  repeated Card cards = 1;
+  int32 player_count = 2;
+}
+
+message Card {
+  int32 suit = 1;
+  int32 rank = 2;
+  int32 index = 3;
+}
+
+message Settlement {
+  repeated PlayerSettlement results = 1;
+  int32 round = 2;
+  int64 timestamp = 3;
+}
+
+message PlayerSettlement {
+  string user_id = 1;
+  int64 score = 2;
+  int32 rank = 3;
+  bool is_winner = 4;
+}
+
+message ChatMessage {
+  string user_id = 1;
+  string nickname = 2;
+  string content = 3;
+  int64 timestamp = 4;
+}
+
+message Danmaku {
+  string user_id = 1;
+  string nickname = 2;
+  string content = 3;
+  string color = 4;
+  int64 timestamp = 5;
+}
+
+message Gift {
+  string user_id = 1;
+  string nickname = 2;
+  string gift_id = 3;
+  string gift_name = 4;
+  int32 count = 5;
+  int64 timestamp = 6;
+}
+
+message ErrorResp {
+  int32 code = 1;
+  string message = 2;
+}
