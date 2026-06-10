@@ -14,10 +14,14 @@ class CheckpointManager:
         self.checkpoint_dir = checkpoint_dir
         self.max_checkpoints = max_checkpoints
         self.interval = interval
-        self.last_saved_step = -1
+        self.last_saved_step = 0
         os.makedirs(checkpoint_dir, exist_ok=True)
         self.checkpoint_files: List[str] = []
         self._load_existing_checkpoints()
+
+    def __repr__(self):
+        return (f"CheckpointManager(checkpoint_dir='{self.checkpoint_dir}', "
+                f"max_checkpoints={self.max_checkpoints}, interval={self.interval})")
 
     def _load_existing_checkpoints(self):
         if os.path.exists(self.checkpoint_dir):
@@ -34,11 +38,11 @@ class CheckpointManager:
         if time is not None:
             return os.path.join(
                 self.checkpoint_dir, 
-                f'checkpoint_step{step:06d}_t{time:.4f}_{timestamp}.h5'
+                f'checkpoint_step_{step:05d}_t{time:.4f}_{timestamp}.h5'
             )
         return os.path.join(
             self.checkpoint_dir, 
-            f'checkpoint_step{step:06d}_{timestamp}.h5'
+            f'checkpoint_step_{step:05d}_{timestamp}.h5'
         )
 
     def save(self, data: Dict[str, Any], step: int, time: float = None,
@@ -163,18 +167,26 @@ class CheckpointManager:
             Path to the saved checkpoint file
         """
         data = {
-            'flow_u': solver.flow.u.copy(),
-            'flow_v': solver.flow.v.copy(),
-            'flow_p': solver.flow.p.copy(),
-            'flow_u_prev': solver.flow.u_prev.copy(),
-            'flow_p_prev': solver.flow.p_prev.copy(),
-            'flow_ap': solver.flow.ap.copy(),
-            'underrelaxation': solver.underrelaxation,
+            'flow': {
+                'u': solver.flow.u.copy(),
+                'v': solver.flow.v.copy(),
+                'p': solver.flow.p.copy(),
+                'u_prev': solver.flow.u_prev.copy(),
+                'p_prev': solver.flow.p_prev.copy(),
+                'ap': solver.flow.ap.copy(),
+            },
+            'solver': {
+                'underrelaxation': solver.underrelaxation,
+                'timestep': solver.timestep,
+                'time': solver.time if hasattr(solver, 'time') else 0.0
+            },
             'step': step,
             'time': time if time is not None else 0.0
         }
+        if hasattr(solver, 'residuals') and solver.residuals:
+            data['residuals'] = {k: np.array(v) for k, v in solver.residuals.items()}
         if hasattr(solver, 'residual_history') and solver.residual_history:
-            data['residual_history'] = np.array(solver.residual_history)
+            data['residual_history_json'] = json.dumps(solver.residual_history)
         self.last_saved_step = step
         return self.save(data, step, time, metadata)
 
@@ -190,26 +202,59 @@ class CheckpointManager:
             True if checkpoint was loaded successfully, False otherwise
         """
         if step is None and time is None:
-            data = self.load_latest()
+            loaded = self.load_latest()
+            if loaded is None:
+                return False
+            data = loaded.get('data', loaded)
         else:
             filename = self.get_checkpoint_at(step=step, time=time)
             if filename is None:
                 raise FileNotFoundError(f"No checkpoint found for step={step}, time={time}")
-            data = self.load(filename)
+            loaded = self.load(filename)
+            if loaded is None:
+                return False
+            data = loaded.get('data', loaded)
         
-        if data is None:
-            return False
+        if 'flow' in data:
+            solver.flow.u[:] = data['flow']['u']
+            solver.flow.v[:] = data['flow']['v']
+            solver.flow.p[:] = data['flow']['p']
+            solver.flow.u_prev[:] = data['flow']['u_prev']
+            solver.flow.p_prev[:] = data['flow']['p_prev']
+            solver.flow.ap[:] = data['flow']['ap']
+        else:
+            # Backward compatibility with flat structure
+            solver.flow.u[:] = data.get('flow_u', solver.flow.u)
+            solver.flow.v[:] = data.get('flow_v', solver.flow.v)
+            solver.flow.p[:] = data.get('flow_p', solver.flow.p)
+            solver.flow.u_prev[:] = data.get('flow_u_prev', solver.flow.u_prev)
+            solver.flow.p_prev[:] = data.get('flow_p_prev', solver.flow.p_prev)
+            solver.flow.ap[:] = data.get('flow_ap', solver.flow.ap)
         
-        solver.flow.u[:] = data['flow_u']
-        solver.flow.v[:] = data['flow_v']
-        solver.flow.p[:] = data['flow_p']
-        solver.flow.u_prev[:] = data['flow_u_prev']
-        solver.flow.p_prev[:] = data['flow_p_prev']
-        solver.flow.ap[:] = data['flow_ap']
-        if 'underrelaxation' in data:
-            solver.underrelaxation = data['underrelaxation']
-        if 'residual_history' in data and hasattr(solver, 'residual_history'):
-            solver.residual_history = data['residual_history'].tolist()
+        if 'solver' in data:
+            solver.underrelaxation = data['solver'].get('underrelaxation', solver.underrelaxation)
+            solver.timestep = data['solver'].get('timestep', solver.timestep)
+            if 'time' in data['solver']:
+                solver.time = data['solver']['time']
+        else:
+            # Backward compatibility
+            if 'underrelaxation' in data:
+                solver.underrelaxation = data['underrelaxation']
+        
+        if 'residuals' in data and hasattr(solver, 'residuals'):
+            solver.residuals = {}
+            for k, v in data['residuals'].items():
+                solver.residuals[k] = v.tolist() if isinstance(v, np.ndarray) else v
+        if 'residual_history_json' in data and hasattr(solver, 'residual_history'):
+            try:
+                solver.residual_history = json.loads(data['residual_history_json'])
+            except:
+                solver.residual_history = []
+        elif 'residual_history' in data and hasattr(solver, 'residual_history'):
+            try:
+                solver.residual_history = json.loads(data['residual_history'])
+            except:
+                solver.residual_history = data['residual_history'].tolist() if isinstance(data['residual_history'], np.ndarray) else []
         return True
 
     def save_if_needed(self, solver) -> Optional[str]:
@@ -228,7 +273,24 @@ class CheckpointManager:
             return self.save_checkpoint(solver, step)
         return None
 
-    def list_checkpoints(self) -> List[Dict[str, Any]]:
+    def list_checkpoints(self) -> List[int]:
+        """List all available checkpoint step numbers.
+        
+        Returns:
+            List of step numbers for available checkpoints
+        """
+        steps = []
+        for fname in self.checkpoint_files:
+            try:
+                with h5py.File(fname, 'r') as f:
+                    step = f.attrs.get('step')
+                    if step is not None:
+                        steps.append(step)
+            except:
+                pass
+        return sorted(steps)
+
+    def list_checkpoints_with_metadata(self) -> List[Dict[str, Any]]:
         """List all available checkpoints with metadata.
         
         Returns:

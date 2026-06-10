@@ -109,9 +109,14 @@ class BoundaryManager:
     def add_bc(self, name_or_bc, bc=None):
         if bc is None:
             bc = name_or_bc
-            self.boundary_conditions[bc.boundary_name] = bc
+            if isinstance(bc.boundary_name, str):
+                name = bc.boundary_name
+            else:
+                name = f"bc_{len(self.boundary_conditions)}"
+            self.boundary_conditions[name] = bc
         else:
-            bc.boundary_name = name_or_bc
+            if not isinstance(bc.boundary_name, np.ndarray):
+                bc.boundary_name = name_or_bc
             self.boundary_conditions[name_or_bc] = bc
 
     def initialize(self, mesh):
@@ -233,7 +238,7 @@ class PressureOutletBC(BoundaryCondition):
         cells = self.get_boundary_cells(mesh)
         for cid in cells:
             A = _set_matrix_value(A, cid, cid, 1e15)
-            b[cid] = 1e15 * self.static_pressure
+            b[cid] = 0.0
         return A, b
 
     def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
@@ -357,17 +362,30 @@ class SymmetryBC(BoundaryCondition):
         for fid in self.faces:
             cid = mesh.owner[fid]
             normal = mesh.face_normals[fid]
-            tangent = np.array([-normal[1], normal[0]]) if mesh.ndim == 2 else np.cross(normal, [1, 0, 0])
             if np.abs(normal[direction]) > 0.5:
                 A = _set_matrix_value(A, cid, cid, 1e15)
                 b[cid] = 0.0
             else:
                 neighbor_cells = mesh.get_neighbors(cid)
                 if len(neighbor_cells) > 0:
+                    best_nb = None
+                    best_dot = 0.0
                     for nb in neighbor_cells:
-                        A = _add_matrix_value(A, cid, nb, -1.0)
-                    A = _set_matrix_value(A, cid, cid, len(neighbor_cells))
-                    b[cid] = 0.0
+                        d = mesh.cell_centers[nb] - mesh.cell_centers[cid]
+                        d_norm = np.linalg.norm(d)
+                        if d_norm > 0:
+                            d = d / d_norm
+                            dot = np.abs(np.dot(d, normal))
+                            if dot > best_dot:
+                                best_dot = dot
+                                best_nb = nb
+                    if best_nb is not None and best_dot > 0.5:
+                        A = _set_matrix_value(A, cid, cid, 1.0)
+                        A = _add_matrix_value(A, cid, best_nb, -1.0)
+                        b[cid] = 0.0
+                    else:
+                        A = _set_matrix_value(A, cid, cid, 1e15)
+                        b[cid] = 1e15 * flow.u[cid, direction]
         return A, b
 
     def apply_pressure(self, A, b, flow, mesh):
@@ -375,10 +393,25 @@ class SymmetryBC(BoundaryCondition):
         for cid in cells:
             neighbor_cells = mesh.get_neighbors(cid)
             if len(neighbor_cells) > 0:
-                for nb in neighbor_cells:
-                    A = _add_matrix_value(A, cid, nb, -1.0)
-                A = _set_matrix_value(A, cid, cid, len(neighbor_cells))
-                b[cid] = 0.0
+                best_nb = None
+                best_dot = 0.0
+                for fid in self.faces:
+                    if mesh.owner[fid] == cid:
+                        normal = mesh.face_normals[fid]
+                        for nb in neighbor_cells:
+                            d = mesh.cell_centers[nb] - mesh.cell_centers[cid]
+                            d_norm = np.linalg.norm(d)
+                            if d_norm > 0:
+                                d = d / d_norm
+                                dot = np.abs(np.dot(d, normal))
+                                if dot > best_dot:
+                                    best_dot = dot
+                                    best_nb = nb
+                        break
+                if best_nb is not None and best_dot > 0.5:
+                    A = _set_matrix_value(A, cid, cid, 1.0)
+                    A = _add_matrix_value(A, cid, best_nb, -1.0)
+                    b[cid] = 0.0
         return A, b
 
     def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):
@@ -471,13 +504,14 @@ class UDFBoundaryCondition(BoundaryCondition):
         return A, b
 
     def apply_pressure(self, A, b, flow, mesh):
-        cells = self.get_boundary_cells(mesh)
-        centers = mesh.cell_centers[cells]
-        values = self.udf.evaluate(centers, mesh.solver.time if hasattr(mesh, 'solver') else 0.0)
-        for i, cid in enumerate(cells):
-            val = values[i] if values.ndim > 0 else values
-            A = _set_matrix_value(A, cid, cid, 1e15)
-            b[cid] = 1e15 * val
+        if self.bc_type == 'pressure' or self.bc_type == 'generic':
+            cells = self.get_boundary_cells(mesh)
+            centers = mesh.cell_centers[cells]
+            values = self.udf.evaluate(centers, mesh.solver.time if hasattr(mesh, 'solver') else 0.0)
+            for i, cid in enumerate(cells):
+                val = values[i, 0] if values.ndim > 1 else (values[i] if values.ndim > 0 else values)
+                A = _set_matrix_value(A, cid, cid, 1e15)
+                b[cid] = 1e15 * val
         return A, b
 
     def apply_scalar(self, A, b, phi, scalar_name, flow, mesh):

@@ -59,6 +59,10 @@ class FlowSolver:
         self.convection_scheme = convection_scheme
         self.tvd_limiter = 'minmod'
         self.underrelaxation = {'u': 0.7, 'p': 0.3, 'k': 0.8, 'epsilon': 0.8, 'omega': 0.8}
+        self.ur_min = {'u': 0.1, 'p': 0.05, 'k': 0.3, 'epsilon': 0.3, 'omega': 0.3}
+        self.ur_max = {'u': 0.9, 'p': 0.5, 'k': 0.9, 'epsilon': 0.9, 'omega': 0.9}
+        self.adjustment_history = []
+        self.divergence_count = 0
         self.alpha_p = self.underrelaxation['p']
         self.alpha_u = self.underrelaxation['u']
         self.residuals = {}
@@ -219,12 +223,69 @@ class FlowSolver:
         self.timestep += 1
         self.time += self.dt
         res = self._solve_inner_iteration()
+        diverged, msg = self._check_divergence(res)
+        if diverged:
+            self._adjust_underrelaxation(True, msg)
+            self._handle_nan_values()
         for k, v in res.items():
             if k not in self.residuals:
                 self.residuals[k] = []
             self.residuals[k].append(v)
         self.residual_history.append(res)
         return res
+
+    def _check_divergence(self, residuals):
+        """Check if the solution has diverged."""
+        for name, res in residuals.items():
+            if np.isnan(res) or np.isinf(res):
+                return True, f"{name} residual is NaN/Inf"
+            if res > 1e10:
+                return True, f"{name} residual {res} exceeds threshold"
+        if np.any(np.isnan(self.flow.u)) or np.any(np.isinf(self.flow.u)):
+            return True, "Velocity field contains NaN/Inf"
+        if np.any(np.isnan(self.flow.p)) or np.any(np.isinf(self.flow.p)):
+            return True, "Pressure field contains NaN/Inf"
+        return False, "No divergence detected"
+
+    def _adjust_underrelaxation(self, diverged, reason=""):
+        """Adjust under-relaxation factors to improve stability."""
+        if diverged:
+            self.divergence_count += 1
+            factor = 0.7
+            for key in self.underrelaxation:
+                new_val = self.underrelaxation[key] * factor
+                min_val = self.ur_min.get(key, 0.1)
+                if new_val >= min_val:
+                    self.underrelaxation[key] = new_val
+            self.alpha_p = self.underrelaxation['p']
+            self.alpha_u = self.underrelaxation['u']
+            self.adjustment_history.append({
+                'step': self.timestep,
+                'diverged': diverged,
+                'reason': reason,
+                'underrelaxation': self.underrelaxation.copy()
+            })
+
+    def _handle_nan_values(self):
+        """Replace NaN/Inf values with previous or initial values."""
+        if np.any(np.isnan(self.flow.u)) or np.any(np.isinf(self.flow.u)):
+            prev_u = self.flow.u_prev.copy()
+            nan_mask = np.isnan(self.flow.u) | np.isinf(self.flow.u)
+            self.flow.u[nan_mask] = prev_u[nan_mask]
+            self.flow.u[~nan_mask] = np.where(
+                np.abs(self.flow.u[~nan_mask]) > 1e6,
+                prev_u[~nan_mask],
+                self.flow.u[~nan_mask]
+            )
+        if np.any(np.isnan(self.flow.p)) or np.any(np.isinf(self.flow.p)):
+            prev_p = self.flow.p_prev.copy()
+            nan_mask = np.isnan(self.flow.p) | np.isinf(self.flow.p)
+            self.flow.p[nan_mask] = prev_p[nan_mask]
+            self.flow.p[~nan_mask] = np.where(
+                np.abs(self.flow.p[~nan_mask]) > 1e6,
+                prev_p[~nan_mask],
+                self.flow.p[~nan_mask]
+            )
 
     def solve(self, n_steps=100, transient=False):
         for _ in range(n_steps):

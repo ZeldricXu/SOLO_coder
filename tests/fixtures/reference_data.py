@@ -171,6 +171,38 @@ def mms_pressure(x, y, t=0.0):
     return 0.25 * (np.cos(4 * np.pi * x) + np.cos(4 * np.pi * y))
 
 
+def mms_source_term(x, y, nu=0.1, t=0.0):
+    """
+    Manufactured source terms for Navier-Stokes equations, derived analytically
+    by substituting mms_velocity and mms_pressure into the N-S equations.
+    
+    Returns:
+        tuple: (source_u, source_v) - source terms for u and v momentum equations
+    """
+    pi = np.pi
+    
+    u = -np.sin(2 * pi * x) * np.cos(2 * pi * y)
+    v =  np.cos(2 * pi * x) * np.sin(2 * pi * y)
+    
+    du_dx = -2 * pi * np.cos(2 * pi * x) * np.cos(2 * pi * y)
+    du_dy =  2 * pi * np.sin(2 * pi * x) * np.sin(2 * pi * y)
+    dv_dx = -2 * pi * np.sin(2 * pi * x) * np.sin(2 * pi * y)
+    dv_dy =  2 * pi * np.cos(2 * pi * x) * np.cos(2 * pi * y)
+    
+    d2u_dx2 =  4 * pi**2 * np.sin(2 * pi * x) * np.cos(2 * pi * y)
+    d2u_dy2 = -4 * pi**2 * np.sin(2 * pi * x) * np.cos(2 * pi * y)
+    d2v_dx2 = -4 * pi**2 * np.cos(2 * pi * x) * np.sin(2 * pi * y)
+    d2v_dy2 =  4 * pi**2 * np.cos(2 * pi * x) * np.sin(2 * pi * y)
+    
+    dp_dx = -pi * np.sin(4 * pi * x)
+    dp_dy = -pi * np.sin(4 * pi * y)
+    
+    source_u = - (u * du_dx + v * du_dy) - dp_dx + nu * (d2u_dx2 + d2u_dy2)
+    source_v = - (u * dv_dx + v * dv_dy) - dp_dy + nu * (d2v_dx2 + d2v_dy2)
+    
+    return source_u, source_v
+
+
 # =============================================================================
 # Optimization test functions
 # =============================================================================

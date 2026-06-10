@@ -276,11 +276,26 @@ class NSGAIISolver:
             if callback is not None:
                 callback(gen, self.population, self.pareto_front)
             print(f"Generation {gen+1}/{n_generations}: Pareto front size = {pareto_size}")
+        pareto_set = self.pareto_front.get_pareto_set()
+        pareto_front = self.pareto_front.get_pareto_front()
+        
+        pareto_solutions = []
+        for i in range(len(pareto_set)):
+            x_array = pareto_set[i].reshape(1, -1)
+            x_dict = self.param_space.from_array(x_array)
+            solution = {}
+            for k, v in x_dict.items():
+                solution[k] = v[0] if hasattr(v, '__len__') and not isinstance(v, str) else v
+            pareto_solutions.append(solution)
+        
         return {
-            'pareto_set': self.pareto_front.get_pareto_set(),
-            'pareto_front': self.pareto_front.get_pareto_front(),
+            'pareto_set': pareto_set,
+            'pareto_front': pareto_front,
+            'pareto_solutions': pareto_solutions,
             'population': self.population,
-            'history': self.history
+            'history': self.history,
+            'generations': self.history,
+            'n_generations': n_generations
         }
 
     def get_optimization_history(self) -> List[Dict]:

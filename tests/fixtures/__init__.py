@@ -28,7 +28,7 @@ from .reference_data import (
     NATURAL_CONVECTION_RA5_NU_MIN, NATURAL_CONVECTION_RA5_NU_MAX,
     
     # MMS
-    mms_velocity, mms_pressure,
+    mms_velocity, mms_pressure, mms_source_term,
     
     # Optimization test functions
     rosenbrock, ackley,
@@ -51,7 +51,7 @@ __all__ = [
     'NATURAL_CONVECTION_RA1E3_NU_MIN', 'NATURAL_CONVECTION_RA1E3_NU_MAX',
     'NATURAL_CONVECTION_RA5_NU',
     'NATURAL_CONVECTION_RA5_NU_MIN', 'NATURAL_CONVECTION_RA5_NU_MAX',
-    'mms_velocity', 'mms_pressure',
+    'mms_velocity', 'mms_pressure', 'mms_source_term',
     'rosenbrock', 'ackley',
     'REF_GRID_SIZES', 'REF_DOMAIN',
 ]
