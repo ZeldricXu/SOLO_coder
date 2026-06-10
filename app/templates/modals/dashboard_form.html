@@ -1,0 +1,43 @@
+<div class="modal fade" id="dashboardModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title">{{ form_title or '新建看板' }}</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form method="POST" action="{{ form_action or url_for('dashboard_bp.create_dashboard') }}"
+              hx-post="{{ form_action or url_for('dashboard_bp.create_dashboard') }}"
+              hx-target="#modal-container">
+            <div class="modal-body">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label class="form-label">看板名称</label>
+                    <input type="text" class="form-control" name="name" required 
+                           placeholder="请输入看板名称" value="{{ dashboard.name if dashboard else '' }}">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">看板描述</label>
+                    <textarea class="form-control" name="description" rows="3" 
+                              placeholder="描述看板的用途和内容">{{ dashboard.description if dashboard else '' }}</textarea>
+                </div>
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" name="is_public" id="isPublic"
+                               {% if dashboard and dashboard.is_public %}checked{% endif %}>
+                        <label class="form-check-label" for="isPublic">公开看板</label>
+                    </div>
+                    <div class="form-text">公开后所有用户可见</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="submit" class="btn btn-primary">{{ '保存' if dashboard else '创建' }}</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+const modal = new bootstrap.Modal(document.getElementById('dashboardModal'));
+modal.show();
+</script>

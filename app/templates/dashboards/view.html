@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+
+{% block title %}{{ dashboard.name }} - DataFlow{% endblock %}
+
+{% block head %}
+<style>
+.dashboard-grid {
+    min-height: calc(100vh - 200px);
+}
+.grid-stack-item-content {
+    background: var(--bs-card-bg);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+.chart-container {
+    width: 100%;
+    height: 100%;
+    padding: 12px;
+}
+.chart-header {
+    display: flex;
+    justify-content: between;
+    align-items: center;
+    margin-bottom: 8px;
+    padding: 0 4px;
+}
+.chart-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin: 0;
+}
+.chart-body {
+    height: calc(100% - 40px);
+}
+.realtime-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: #198754;
+}
+.realtime-indicator .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #198754;
+    animation: pulse 2s infinite;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-toolbar mb-3">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2 class="mb-1">{{ dashboard.name }}</h2>
+            {% if dashboard.description %}
+            <p class="text-muted mb-0">{{ dashboard.description }}</p>
+            {% endif %}
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <span class="realtime-indicator" id="connection-status">
+                <span class="dot"></span>
+                <span>实时连接中</span>
+            </span>
+            <div class="btn-group">
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshAllCharts()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+                {% if can_edit %}
+                <a href="{{ url_for('edit_dashboard', dashboard_id=dashboard.id) }}" class="btn btn-primary btn-sm">
+                    <i class="bi bi-pencil"></i> 编辑布局
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="grid-stack dashboard-grid" id="dashboardGrid">
+    {% for chart in charts %}
+    <div class="grid-stack-item" 
+         gs-id="{{ chart.id }}"
+         gs-x="{{ chart.position.x }}"
+         gs-y="{{ chart.position.y }}"
+         gs-w="{{ chart.position.w }}"
+         gs-h="{{ chart.position.h }}"
+         gs-no-resize="true"
+         gs-no-move="true">
+        <div class="grid-stack-item-content">
+            <div class="chart-container">
+                <div class="chart-header">
+                    <h6 class="chart-title">{{ chart.name }}</h6>
+                    <button class="btn btn-sm btn-link" onclick="refreshChart('{{ chart.id }}')">
+                        <i class="bi bi-arrow-clockwise"></i>
+                    </button>
+                </div>
+                <div class="chart-body" id="chart-{{ chart.id }}"></div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+let grid = null;
+let chartInstances = {};
+let eventSource = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    grid = GridStack.init({
+        float: true,
+        disableOneColumnMode: true,
+        animate: true
+    });
+
+    renderAllCharts();
+    initSSE();
+
+    window.addEventListener('resize', function() {
+        Object.values(chartInstances).forEach(chart => chart.resize());
+    });
+});
+
+function renderAllCharts() {
+    {% for chart in charts %}
+    renderChart('{{ chart.id }}', {{ chart|to_json }});
+    {% endfor %}
+}
+
+function renderChart(chartId, chartData) {
+    const container = document.getElementById('chart-' + chartId);
+    if (!container) return;
+
+    fetch(`/api/charts/${chartId}/data`)
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                const chart = echarts.init(container);
+                chart.setOption(result.data);
+                chartInstances[chartId] = chart;
+            }
+        })
+        .catch(error => {
+            container.innerHTML = '<div class="text-center text-danger py-4"><i class="bi bi-exclamation-triangle"></i> 数据加载失败</div>';
+        });
+}
+
+function refreshChart(chartId) {
+    fetch(`/api/charts/${chartId}/data?refresh=true`)
+        .then(response => response.json())
+        .then(result => {
+            if (result.success && chartInstances[chartId]) {
+                chartInstances[chartId].setOption(result.data);
+            }
+        });
+}
+
+function refreshAllCharts() {
+    Object.keys(chartInstances).forEach(chartId => refreshChart(chartId));
+}
+
+function initSSE() {
+    const dashboardId = {{ dashboard.id }};
+    eventSource = new EventSource(`/api/sse/dashboard/${dashboardId}`);
+
+    eventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'chart_update' && chartInstances[data.chart_id]) {
+                chartInstances[data.chart_id].setOption(data.option);
+                showToast('图表已更新', 'success');
+            } else if (data.type === 'pong') {
+                updateConnectionStatus(true);
+            }
+        } catch (e) {
+            console.error('SSE message parse error:', e);
+        }
+    };
+
+    eventSource.onerror = function() {
+        updateConnectionStatus(false);
+    };
+
+    eventSource.onopen = function() {
+        updateConnectionStatus(true);
+    };
+}
+
+function updateConnectionStatus(connected) {
+    const statusEl = document.getElementById('connection-status');
+    if (connected) {
+        statusEl.innerHTML = '<span class="dot"></span><span>实时连接中</span>';
+        statusEl.style.color = '#198754';
+    } else {
+        statusEl.innerHTML = '<span class="dot" style="background:#dc3545"></span><span>连接已断开</span>';
+        statusEl.style.color = '#dc3545';
+    }
+}
+
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-bg-${type} border-0 position-fixed bottom-0 end-0 m-3`;
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+    document.body.appendChild(toast);
+    bootstrap.Toast.getOrCreateInstance(toast).show();
+    setTimeout(() => toast.remove(), 3000);
+}
+</script>
+{% endblock %}

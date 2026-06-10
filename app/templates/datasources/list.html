@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+
+{% block title %}数据源管理 - DataFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="page-title">数据源管理</h1>
+            <p class="text-muted">管理看板使用的各种数据源连接</p>
+        </div>
+        <div class="dropdown">
+            <button class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-plus-lg"></i> 新建数据源
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    <a class="dropdown-item" hx-get="{{ url_for('datasource_bp.create_datasource', type='mysql') }}" hx-target="#modal-container">
+                        <i class="bi bi-database"></i> MySQL
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item" hx-get="{{ url_for('datasource_bp.create_datasource', type='clickhouse') }}" hx-target="#modal-container">
+                        <i class="bi bi-server"></i> ClickHouse
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item" hx-get="{{ url_for('datasource_bp.create_datasource', type='prometheus') }}" hx-target="#modal-container">
+                        <i class="bi bi-activity"></i> Prometheus
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item" hx-get="{{ url_for('datasource_bp.create_datasource', type='http') }}" hx-target="#modal-container">
+                        <i class="bi bi-globe"></i> HTTP API
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+</div>
+
+<div class="datasource-filters mb-4">
+    <div class="btn-group" role="group">
+        <input type="radio" class="btn-check" name="type-filter" id="type-all" checked
+               hx-get="{{ url_for('datasource_bp.list_datasources') }}" hx-target="#datasources-list">
+        <label class="btn btn-outline-secondary" for="type-all">全部</label>
+        
+        <input type="radio" class="btn-check" name="type-filter" id="type-mysql"
+               hx-get="{{ url_for('datasource_bp.list_datasources', type='mysql') }}" hx-target="#datasources-list">
+        <label class="btn btn-outline-secondary" for="type-mysql">MySQL</label>
+        
+        <input type="radio" class="btn-check" name="type-filter" id="type-clickhouse"
+               hx-get="{{ url_for('datasource_bp.list_datasources', type='clickhouse') }}" hx-target="#datasources-list">
+        <label class="btn btn-outline-secondary" for="type-clickhouse">ClickHouse</label>
+        
+        <input type="radio" class="btn-check" name="type-filter" id="type-prometheus"
+               hx-get="{{ url_for('datasource_bp.list_datasources', type='prometheus') }}" hx-target="#datasources-list">
+        <label class="btn btn-outline-secondary" for="type-prometheus">Prometheus</label>
+        
+        <input type="radio" class="btn-check" name="type-filter" id="type-http"
+               hx-get="{{ url_for('datasource_bp.list_datasources', type='http') }}" hx-target="#datasources-list">
+        <label class="btn btn-outline-secondary" for="type-http">HTTP API</label>
+    </div>
+</div>
+
+<div id="datasources-list" hx-get="{{ url_for('datasource_bp.list_datasources') }}" hx-trigger="load">
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">加载中...</span>
+        </div>
+    </div>
+</div>
+
+<div id="modal-container"></div>
+{% endblock %}

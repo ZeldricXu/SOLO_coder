@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}访问被拒绝 - DataFlow{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container text-center py-5">
+        <div class="error-code">403</div>
+        <h1 class="error-title">访问被拒绝</h1>
+        <p class="error-message">抱歉，您没有权限访问此页面。</p>
+        <div class="error-actions">
+            <a href="{{ url_for('index') }}" class="btn btn-primary">
+                <i class="bi bi-house"></i> 返回首页
+            </a>
+            <a href="{{ url_for('dashboard_list') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-speedometer2"></i> 我的看板
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

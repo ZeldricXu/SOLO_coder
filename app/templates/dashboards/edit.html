@@ -1,0 +1,557 @@
+{% extends "base.html" %}
+
+{% block title %}编辑看板 - {{ dashboard.name }}{% endblock %}
+
+{% block head %}
+<style>
+.editor-container {
+    display: flex;
+    height: calc(100vh - 140px);
+}
+.editor-sidebar {
+    width: 320px;
+    border-right: 1px solid var(--bs-border-color);
+    display: flex;
+    flex-direction: column;
+    background: var(--bs-body-bg);
+}
+.editor-main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+.component-palette {
+    padding: 16px;
+    border-bottom: 1px solid var(--bs-border-color);
+}
+.chart-type-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+}
+.chart-type-item {
+    border: 2px solid var(--bs-border-color);
+    border-radius: 8px;
+    padding: 12px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--bs-card-bg);
+}
+.chart-type-item:hover {
+    border-color: var(--bs-primary);
+    background: rgba(13, 110, 253, 0.05);
+}
+.chart-type-item.active {
+    border-color: var(--bs-primary);
+    background: rgba(13, 110, 253, 0.1);
+}
+.chart-type-icon {
+    font-size: 24px;
+    margin-bottom: 4px;
+}
+.property-panel {
+    flex: 1;
+    padding: 16px;
+    overflow-y: auto;
+}
+.grid-stack-item-content {
+    background: var(--bs-card-bg);
+    border: 2px dashed var(--bs-border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: move;
+    transition: all 0.2s;
+}
+.grid-stack-item-content:hover {
+    border-color: var(--bs-primary);
+}
+.grid-stack-item.ui-selected .grid-stack-item-content {
+    border-color: var(--bs-primary);
+    background: rgba(13, 110, 253, 0.05);
+}
+.chart-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: var(--bs-secondary);
+    padding: 16px;
+    text-align: center;
+}
+.empty-chart {
+    border: 2px dashed var(--bs-border-color);
+    border-radius: 8px;
+    min-height: 100px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: var(--bs-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+.empty-chart:hover {
+    border-color: var(--bs-primary);
+    background: rgba(13, 110, 253, 0.05);
+}
+.grid-stack {
+    min-height: 100%;
+    background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 49px,
+        rgba(0,0,0,0.05) 49px,
+        rgba(0,0,0,0.05) 50px
+    ),
+    repeating-linear-gradient(
+        90deg,
+        transparent,
+        transparent 49px,
+        rgba(0,0,0,0.05) 49px,
+        rgba(0,0,0,0.05) 50px
+    );
+}
+.save-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+}
+.save-status.saving { color: var(--bs-warning); }
+.save-status.saved { color: var(--bs-success); }
+.save-status.error { color: var(--bs-danger); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="editor-header bg-white border-bottom p-3">
+    <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-3">
+            <a href="{{ url_for('dashboard_list') }}" class="btn btn-link text-decoration-none">
+                <i class="bi bi-arrow-left"></i> 返回
+            </a>
+            <div>
+                <input type="text" class="form-control form-control-lg border-0 shadow-none px-0" 
+                       value="{{ dashboard.name }}" 
+                       style="width: 400px; font-size: 20px; font-weight: 600;"
+                       hx-post="{{ url_for('dashboard_bp.update_dashboard', dashboard_id=dashboard.id) }}"
+                       hx-trigger="change"
+                       hx-vals='{"name": this.value}'
+                       hx-swap="none">
+                <input type="text" class="form-control form-control-sm border-0 shadow-none px-0 text-muted"
+                       value="{{ dashboard.description or '' }}"
+                       placeholder="添加看板描述..."
+                       style="width: 400px;"
+                       hx-post="{{ url_for('dashboard_bp.update_dashboard', dashboard_id=dashboard.id) }}"
+                       hx-trigger="change"
+                       hx-vals='{"description": this.value}'
+                       hx-swap="none">
+            </div>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <span class="save-status saved" id="saveStatus">
+                <i class="bi bi-check-circle"></i>
+                <span>已保存</span>
+            </span>
+            <a href="{{ url_for('view_dashboard', dashboard_id=dashboard.id) }}" class="btn btn-outline-secondary">
+                <i class="bi bi-eye"></i> 预览
+            </a>
+            <button class="btn btn-primary" onclick="saveLayout()">
+                <i class="bi bi-save"></i> 保存布局
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="editor-container">
+    <aside class="editor-sidebar">
+        <div class="component-palette">
+            <h6 class="mb-3">图表组件</h6>
+            <div class="chart-type-grid">
+                <div class="chart-type-item" data-type="line" onclick="selectChartType('line')">
+                    <div class="chart-type-icon"><i class="bi bi-graph-up"></i></div>
+                    <div class="small">折线图</div>
+                </div>
+                <div class="chart-type-item" data-type="bar" onclick="selectChartType('bar')">
+                    <div class="chart-type-icon"><i class="bi bi-bar-chart"></i></div>
+                    <div class="small">柱状图</div>
+                </div>
+                <div class="chart-type-item" data-type="pie" onclick="selectChartType('pie')">
+                    <div class="chart-type-icon"><i class="bi bi-pie-chart"></i></div>
+                    <div class="small">饼图</div>
+                </div>
+                <div class="chart-type-item" data-type="heatmap" onclick="selectChartType('heatmap')">
+                    <div class="chart-type-icon"><i class="bi bi-grid-3x3"></i></div>
+                    <div class="small">热力图</div>
+                </div>
+                <div class="chart-type-item" data-type="funnel" onclick="selectChartType('funnel')">
+                    <div class="chart-type-icon"><i class="bi bi-filter"></i></div>
+                    <div class="small">漏斗图</div>
+                </div>
+                <div class="chart-type-item" data-type="scatter" onclick="selectChartType('scatter')">
+                    <div class="chart-type-icon"><i class="bi bi-diamond"></i></div>
+                    <div class="small">散点图</div>
+                </div>
+                <div class="chart-type-item" data-type="gauge" onclick="selectChartType('gauge')">
+                    <div class="chart-type-icon"><i class="bi bi-speedometer"></i></div>
+                    <div class="small">仪表盘</div>
+                </div>
+                <div class="chart-type-item" data-type="table" onclick="selectChartType('table')">
+                    <div class="chart-type-icon"><i class="bi bi-table"></i></div>
+                    <div class="small">数据表格</div>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary w-100" onclick="addChart()">
+                    <i class="bi bi-plus-lg"></i> 添加到看板
+                </button>
+            </div>
+        </div>
+
+        <div class="property-panel" id="propertyPanel">
+            <h6 class="mb-3">属性配置</h6>
+            <div class="text-center text-muted py-4">
+                <i class="bi bi-arrows-move display-4 mb-2"></i>
+                <p>选择一个图表组件<br>来编辑其属性</p>
+            </div>
+        </div>
+    </aside>
+
+    <main class="editor-main">
+        <div class="p-3 flex-grow-1 overflow-auto">
+            <div class="grid-stack" id="dashboardGrid"></div>
+        </div>
+    </main>
+</div>
+
+<div id="modal-container"></div>
+
+<script>
+let grid = null;
+let selectedChartType = null;
+let selectedChartId = null;
+let chartsData = {{ charts|to_json }};
+let saveTimeout = null;
+
+document.addEventListener('DOMContentLoaded', function() {
+    grid = GridStack.init({
+        float: true,
+        cellHeight: 50,
+        margin: 10,
+        animate: true,
+        minRow: 8,
+        column: 12,
+        resizable: {
+            handles: 'se, sw, ne, nw, n, s, e, w'
+        }
+    });
+
+    loadCharts();
+
+    grid.on('change', function(event, items) {
+        updateSaveStatus('saving');
+        debouncedSave();
+    });
+
+    grid.on('added', function(event, items) {
+        items.forEach(item => {
+            if (item.content) {
+                bindChartEvents(item.id);
+            }
+        });
+    });
+
+    grid.on('removed', function(event, items) {
+        updateSaveStatus('saving');
+        debouncedSave();
+    });
+
+    document.addEventListener('click', function(e) {
+        if (e.target.closest('.grid-stack-item')) {
+            const item = e.target.closest('.grid-stack-item');
+            selectChart(item.getAttribute('gs-id'));
+        } else if (!e.target.closest('.editor-sidebar')) {
+            deselectAll();
+        }
+    });
+});
+
+function selectChartType(type) {
+    selectedChartType = type;
+    document.querySelectorAll('.chart-type-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.type === type);
+    });
+}
+
+function addChart() {
+    if (!selectedChartType) {
+        alert('请先选择图表类型');
+        return;
+    }
+
+    const chartTypes = {
+        line: '折线图', bar: '柱状图', pie: '饼图', heatmap: '热力图',
+        funnel: '漏斗图', scatter: '散点图', gauge: '仪表盘', table: '数据表格'
+    };
+
+    const chartData = {
+        name: '新' + chartTypes[selectedChartType],
+        type: selectedChartType,
+        position: { x: 0, y: 0, w: 4, h: 3 }
+    };
+
+    fetch(`/api/dashboards/{{ dashboard.id }}/charts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(chartData)
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            addChartToGrid(result.data);
+            updateSaveStatus('saved');
+        }
+    });
+}
+
+function loadCharts() {
+    chartsData.forEach(chart => addChartToGrid(chart));
+}
+
+function addChartToGrid(chart) {
+    const widget = `
+        <div>
+            <div class="h-100 p-3">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <input type="text" class="form-control form-control-sm border-0 shadow-none px-0 fw-semibold" 
+                           value="${chart.name}" 
+                           onchange="updateChartName('${chart.id}', this.value)"
+                           style="background: transparent;">
+                    <div class="d-flex gap-1">
+                        <button class="btn btn-sm btn-link" onclick="configureChart('${chart.id}')" title="配置">
+                            <i class="bi bi-gear"></i>
+                        </button>
+                        <button class="btn btn-sm btn-link text-danger" onclick="removeChart('${chart.id}')" title="删除">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="chart-preview" id="preview-${chart.id}" style="height: calc(100% - 40px);">
+                    ${chart.datasource_id ? `<div class="text-center text-success"><i class="bi bi-check-circle"></i> 已配置数据源</div>` : 
+                    `<div class="empty-chart h-100" onclick="configureChart('${chart.id}')">
+                        <i class="bi bi-database-gear display-4 mb-2"></i>
+                        <small>点击配置数据源</small>
+                    </div>`}
+                </div>
+            </div>
+        </div>
+    `;
+
+    grid.addWidget(widget, {
+        id: chart.id,
+        x: chart.position.x,
+        y: chart.position.y,
+        w: chart.position.w,
+        h: chart.position.h,
+        autoPosition: !chart.position
+    });
+}
+
+function bindChartEvents(chartId) {
+    const item = document.querySelector(`[gs-id="${chartId}"]`);
+    if (item) {
+        item.addEventListener('dblclick', () => configureChart(chartId));
+    }
+}
+
+function selectChart(chartId) {
+    deselectAll();
+    selectedChartId = chartId;
+    const item = document.querySelector(`[gs-id="${chartId}"]`);
+    if (item) item.classList.add('ui-selected');
+    loadChartProperties(chartId);
+}
+
+function deselectAll() {
+    selectedChartId = null;
+    document.querySelectorAll('.grid-stack-item').forEach(el => el.classList.remove('ui-selected'));
+    document.getElementById('propertyPanel').innerHTML = `
+        <h6 class="mb-3">属性配置</h6>
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-arrows-move display-4 mb-2"></i>
+            <p>选择一个图表组件<br>来编辑其属性</p>
+        </div>
+    `;
+}
+
+function loadChartProperties(chartId) {
+    fetch(`/api/charts/${chartId}`)
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                renderPropertyPanel(result.data);
+            }
+        });
+}
+
+function renderPropertyPanel(chart) {
+    const panel = document.getElementById('propertyPanel');
+    panel.innerHTML = `
+        <h6 class="mb-3">图表属性</h6>
+        <div class="mb-3">
+            <label class="form-label">图表名称</label>
+            <input type="text" class="form-control" value="${chart.name}" 
+                   onchange="updateChartProperty('${chart.id}', 'name', this.value)">
+        </div>
+        <div class="mb-3">
+            <label class="form-label">图表类型</label>
+            <select class="form-select" onchange="updateChartProperty('${chart.id}', 'type', this.value)">
+                <option value="line" ${chart.type === 'line' ? 'selected' : ''}>折线图</option>
+                <option value="bar" ${chart.type === 'bar' ? 'selected' : ''}>柱状图</option>
+                <option value="pie" ${chart.type === 'pie' ? 'selected' : ''}>饼图</option>
+                <option value="heatmap" ${chart.type === 'heatmap' ? 'selected' : ''}>热力图</option>
+                <option value="funnel" ${chart.type === 'funnel' ? 'selected' : ''}>漏斗图</option>
+                <option value="scatter" ${chart.type === 'scatter' ? 'selected' : ''}>散点图</option>
+                <option value="gauge" ${chart.type === 'gauge' ? 'selected' : ''}>仪表盘</option>
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">数据源</label>
+            <select class="form-select" onchange="updateChartProperty('${chart.id}', 'datasource_id', this.value)">
+                <option value="">请选择数据源</option>
+                {% for ds in datasources %}
+                <option value="{{ ds.id }}" ${chart.datasource_id === '{{ ds.id }}' ? 'selected' : ''}>{{ ds.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">查询语句</label>
+            <textarea class="form-control font-monospace" rows="4" 
+                      placeholder="SELECT * FROM table WHERE date = {{ date }}"
+                      onchange="updateChartProperty('${chart.id}', 'query_template', this.value)">${chart.query_template || ''}</textarea>
+        </div>
+        <div class="d-grid gap-2">
+            <button class="btn btn-outline-primary" onclick="testChartQuery('${chart.id}')">
+                <i class="bi bi-play-circle"></i> 测试查询
+            </button>
+            <button class="btn btn-outline-secondary" onclick="configureChart('${chart.id}')">
+                <i class="bi bi-sliders"></i> 高级配置
+            </button>
+        </div>
+    `;
+}
+
+function updateChartProperty(chartId, field, value) {
+    updateSaveStatus('saving');
+    fetch(`/api/charts/${chartId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [field]: value })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            updateSaveStatus('saved');
+        } else {
+            updateSaveStatus('error');
+        }
+    });
+}
+
+function updateChartName(chartId, name) {
+    updateChartProperty(chartId, 'name', name);
+}
+
+function configureChart(chartId) {
+    fetch(`/api/charts/${chartId}/config`, {
+        method: 'GET'
+    })
+    .then(response => response.text())
+    .then(html => {
+        document.getElementById('modal-container').innerHTML = html;
+        const modal = new bootstrap.Modal(document.getElementById('chartConfigModal'));
+        modal.show();
+    });
+}
+
+function testChartQuery(chartId) {
+    updateSaveStatus('saving', '正在测试查询...');
+    fetch(`/api/charts/${chartId}/test`)
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                updateSaveStatus('saved', '查询成功，返回 ' + result.data.rows + ' 行数据');
+            } else {
+                updateSaveStatus('error', result.message || '查询失败');
+            }
+        });
+}
+
+function removeChart(chartId) {
+    if (!confirm('确定要删除这个图表吗？')) return;
+    
+    const item = document.querySelector(`[gs-id="${chartId}"]`);
+    if (item) grid.removeWidget(item, true);
+    
+    fetch(`/api/charts/${chartId}`, { method: 'DELETE' });
+}
+
+function getLayoutConfig() {
+    const items = grid.getGridItems();
+    return items.map(item => {
+        const el = item.el;
+        return {
+            chart_id: el.getAttribute('gs-id'),
+            x: parseInt(el.getAttribute('gs-x')),
+            y: parseInt(el.getAttribute('gs-y')),
+            w: parseInt(el.getAttribute('gs-w')),
+            h: parseInt(el.getAttribute('gs-h'))
+        };
+    });
+}
+
+function saveLayout() {
+    updateSaveStatus('saving', '正在保存...');
+    const layout = getLayoutConfig();
+    
+    fetch(`/api/dashboards/{{ dashboard.id }}/layout`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout: layout })
+    })
+    .then(response => response.json())
+    .then(result => {
+        if (result.success) {
+            updateSaveStatus('saved', '布局已保存');
+        } else {
+            updateSaveStatus('error', result.message || '保存失败');
+        }
+    });
+}
+
+function debouncedSave() {
+    clearTimeout(saveTimeout);
+    saveTimeout = setTimeout(saveLayout, 1500);
+}
+
+function updateSaveStatus(status, message) {
+    const statusEl = document.getElementById('saveStatus');
+    statusEl.className = 'save-status ' + status;
+    
+    const messages = {
+        saving: message || '正在保存...',
+        saved: message || '已保存',
+        error: message || '保存失败'
+    };
+    
+    statusEl.innerHTML = `
+        <i class="bi bi-${status === 'saving' ? 'arrow-repeat' : status === 'saved' ? 'check-circle' : 'exclamation-circle'}"></i>
+        <span>${messages[status]}</span>
+    `;
+}
+</script>
+{% endblock %}

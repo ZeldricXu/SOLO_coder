@@ -1,0 +1,75 @@
+{% if templates %}
+<div class="row g-4">
+    {% for template in templates %}
+    <div class="col-md-6 col-lg-4">
+        <div class="template-card h-100">
+            <div class="template-badge">
+                {% if template.is_system %}
+                <span class="badge bg-primary">官方</span>
+                {% endif %}
+                {% if template.category %}
+                <span class="badge bg-secondary">{{ template.category }}</span>
+                {% endif %}
+            </div>
+            <div class="template-thumbnail">
+                {% if template.preview_image %}
+                <img src="{{ template.preview_image }}" alt="{{ template.name }}">
+                {% else %}
+                <div class="thumbnail-preview">
+                    <div class="preview-grid">
+                        <div class="preview-item large"></div>
+                        <div class="preview-item"></div>
+                        <div class="preview-item"></div>
+                        <div class="preview-item wide"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="template-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="template-title mb-0">{{ template.name }}</h5>
+                    <div class="template-rating">
+                        <i class="bi bi-star-fill text-warning"></i>
+                        <span>{{ template.rating or '4.8' }}</span>
+                    </div>
+                </div>
+                {% if template.description %}
+                <p class="template-desc text-muted small mb-3">{{ template.description }}</p>
+                {% endif %}
+                <div class="template-meta mb-3">
+                    <span class="meta-item"><i class="bi bi-graph-up"></i> {{ template.chart_count or 4 }} 图表</span>
+                    <span class="meta-item"><i class="bi bi-download"></i> {{ template.use_count or 0 }} 使用</span>
+                </div>
+                {% if template.tags %}
+                <div class="template-tags mb-3">
+                    {% for tag in template.tags %}
+                    <span class="tag">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" 
+                            hx-post="{{ url_for('template_bp.apply_template', template_id=template.id) }}"
+                            hx-target="#modal-container">
+                        <i class="bi bi-plus-circle"></i> 使用模板
+                    </button>
+                    <button class="btn btn-outline-secondary" 
+                            hx-get="{{ url_for('template_bp.preview_template', template_id=template.id) }}"
+                            hx-target="#modal-container">
+                        <i class="bi bi-eye"></i> 预览详情
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state text-center py-5">
+    <div class="empty-icon mb-3">
+        <i class="bi bi-collection display-1 text-muted"></i>
+    </div>
+    <h4>暂无模板</h4>
+    <p class="text-muted mb-4">没有找到符合条件的模板</p>
+</div>
+{% endif %}

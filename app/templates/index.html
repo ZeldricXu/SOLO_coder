@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}DataFlow - 欢迎{% endblock %}
+
+{% block content %}
+<div class="landing-page">
+    <div class="hero-section">
+        <div class="container">
+            <div class="row align-items-center min-vh-100">
+                <div class="col-lg-6">
+                    <h1 class="hero-title">
+                        <span class="gradient-text">实时协作</span><br>
+                        运营数据看板搭建器
+                    </h1>
+                    <p class="hero-subtitle">
+                        拖拽式布局 · 多数据源接入 · 实时数据推送<br>
+                        让运营团队快速搭建专业级数据看板
+                    </p>
+                    <div class="hero-buttons">
+                        <a href="{{ url_for('auth.login_page') }}" class="btn btn-primary btn-lg">
+                            <i class="bi bi-box-arrow-in-right"></i> 立即登录
+                        </a>
+                        <a href="{{ url_for('auth.register_page') }}" class="btn btn-outline-primary btn-lg">
+                            <i class="bi bi-person-plus"></i> 免费注册
+                        </a>
+                    </div>
+                    <div class="feature-tags">
+                        <span class="feature-tag"><i class="bi bi-check-circle"></i> 7种图表类型</span>
+                        <span class="feature-tag"><i class="bi bi-check-circle"></i> 4种数据源</span>
+                        <span class="feature-tag"><i class="bi bi-check-circle"></i> SSE实时推送</span>
+                        <span class="feature-tag"><i class="bi bi-check-circle"></i> 定时报表</span>
+                    </div>
+                </div>
+                <div class="col-lg-6">
+                    <div class="demo-dashboard">
+                        <div class="demo-chart" style="height: 200px;" id="demoChart1"></div>
+                        <div class="demo-chart-row">
+                            <div class="demo-chart" style="height: 150px;" id="demoChart2"></div>
+                            <div class="demo-chart" style="height: 150px;" id="demoChart3"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="features-section py-5">
+        <div class="container">
+            <h2 class="section-title text-center mb-5">核心功能</h2>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="bi bi-grid-3x3-gap"></i></div>
+                        <h4>拖拽式布局编辑器</h4>
+                        <p>自由拖拽、缩放图表组件，所见即所得的网格布局，配置自动保存</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="bi bi-database-gear"></i></div>
+                        <h4>多数据源连接器</h4>
+                        <p>支持MySQL、ClickHouse、Prometheus、自定义HTTP API四种数据源</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="bi bi-graph-up-arrow"></i></div>
+                        <h4>7种图表类型</h4>
+                        <p>折线图、柱状图、饼图、热力图、漏斗图、散点图、仪表盘</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="bi bi-lightning-charge"></i></div>
+                        <h4>实时数据推送</h4>
+                        <p>SSE通道增量推送，前端无刷新更新，支持按看板订阅</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="bi bi-collection-play"></i></div>
+                        <h4>模板市场</h4>
+                        <p>预置常用看板模板，一键复制替换数据源快速上线</p>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="feature-card">
+                        <div class="feature-icon"><i class="bi bi-file-earmark-pdf"></i></div>
+                        <h4>定时快照报表</h4>
+                        <p>Cron规则定时截图，生成PDF报表，邮件自动分发</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    var chart1 = echarts.init(document.getElementById('demoChart1'));
+    chart1.setOption({
+        title: { text: '实时销售额趋势', left: 'center', textStyle: { fontSize: 14 } },
+        tooltip: { trigger: 'axis' },
+        xAxis: { type: 'category', data: ['00:00', '04:00', '08:00', '12:00', '16:00', '20:00', '24:00'] },
+        yAxis: { type: 'value' },
+        series: [{
+            type: 'line',
+            smooth: true,
+            data: [120, 132, 101, 134, 90, 230, 210],
+            areaStyle: { opacity: 0.3 },
+            lineStyle: { width: 3, color: '#667eea' },
+            itemStyle: { color: '#667eea' }
+        }]
+    });
+
+    var chart2 = echarts.init(document.getElementById('demoChart2'));
+    chart2.setOption({
+        title: { text: '销售占比', left: 'center', textStyle: { fontSize: 12 } },
+        tooltip: { trigger: 'item' },
+        series: [{
+            type: 'pie',
+            radius: ['40%', '70%'],
+            data: [
+                { value: 1048, name: '数码' },
+                { value: 735, name: '服装' },
+                { value: 580, name: '食品' },
+                { value: 484, name: '家居' },
+            ],
+            label: { show: false }
+        }]
+    });
+
+    var chart3 = echarts.init(document.getElementById('demoChart3'));
+    chart3.setOption({
+        title: { text: '转化率', left: 'center', textStyle: { fontSize: 12 } },
+        series: [{
+            type: 'gauge',
+            progress: { show: true, width: 18 },
+            axisLine: { lineStyle: { width: 18 } },
+            detail: { valueAnimation: true, formatter: '{value}%', fontSize: 20 },
+            data: [{ value: 78, name: '转化率' }]
+        }]
+    });
+
+    window.addEventListener('resize', function() {
+        chart1.resize();
+        chart2.resize();
+        chart3.resize();
+    });
+});
+</script>
+{% endblock %}

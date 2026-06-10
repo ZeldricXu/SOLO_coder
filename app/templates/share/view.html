@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ dashboard.name }} - DataFlow 分享</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/htmx.org@1.9.9/dist/htmx.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack-all.min.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/gridstack@10.1.2/dist/gridstack.min.css" rel="stylesheet">
+    <style>
+    body { background: #f8f9fa; }
+    .share-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 16px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .share-brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+    }
+    .share-info {
+        text-align: right;
+        font-size: 12px;
+        opacity: 0.9;
+    }
+    .dashboard-container {
+        padding: 20px;
+    }
+    .realtime-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        color: #198754;
+    }
+    .realtime-indicator .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #198754;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+    .grid-stack-item-content {
+        background: white;
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .chart-container {
+        width: 100%;
+        height: 100%;
+        padding: 12px;
+    }
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+    }
+    .password-modal {
+        background: rgba(0,0,0,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        z-index: 9999;
+    }
+    .password-card {
+        background: white;
+        padding: 32px;
+        border-radius: 12px;
+        max-width: 400px;
+        width: 90%;
+    }
+    </style>
+</head>
+<body>
+    {% if share.requires_password and not authenticated %}
+    <div class="password-modal">
+        <div class="password-card">
+            <div class="text-center mb-4">
+                <i class="bi bi-lock display-4 text-primary mb-3"></i>
+                <h4>此看板受密码保护</h4>
+                <p class="text-muted">请输入访问密码以查看此看板</p>
+            </div>
+            <form method="POST" action="{{ url_for('share_bp.view_shared', token=token) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <input type="password" name="password" class="form-control" placeholder="请输入访问密码" required>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-unlock"></i> 解锁看板
+                </button>
+            </form>
+        </div>
+    </div>
+    {% else %}
+    <div class="share-header">
+        <div class="share-brand">
+            <i class="bi bi-bar-chart-line-fill"></i>
+            <span>DataFlow 看板分享</span>
+        </div>
+        <div class="share-info">
+            <div class="realtime-indicator" id="connection-status">
+                <span class="dot"></span>
+                <span>实时更新</span>
+            </div>
+            {% if share.expires_at %}
+            <div>有效期至: {{ share.expires_at|format_date }}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="dashboard-toolbar bg-white border-bottom p-3">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h2 class="h4 mb-1">{{ dashboard.name }}</h2>
+                {% if dashboard.description %}
+                <p class="text-muted mb-0">{{ dashboard.description }}</p>
+                {% endif %}
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary btn-sm" onclick="refreshAllCharts()">
+                    <i class="bi bi-arrow-clockwise"></i> 刷新
+                </button>
+                <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+                    <i class="bi bi-printer"></i> 打印
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="dashboard-container">
+        <div class="grid-stack" id="dashboardGrid" style="min-height: calc(100vh - 200px);">
+            {% for chart in charts %}
+            <div class="grid-stack-item" 
+                 gs-id="{{ chart.id }}"
+                 gs-x="{{ chart.position.x }}"
+                 gs-y="{{ chart.position.y }}"
+                 gs-w="{{ chart.position.w }}"
+                 gs-h="{{ chart.position.h }}"
+                 gs-no-resize="true"
+                 gs-no-move="true">
+                <div class="grid-stack-item-content">
+                    <div class="chart-container">
+                        <div class="chart-header">
+                            <h6 class="mb-0">{{ chart.name }}</h6>
+                            <button class="btn btn-sm btn-link" onclick="refreshChart('{{ chart.id }}')">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                        <div class="chart-body" id="chart-{{ chart.id }}" style="height: calc(100% - 40px);"></div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    <script>
+    let chartInstances = {};
+    let eventSource = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        GridStack.init({
+            float: true,
+            disableOneColumnMode: true,
+            animate: true
+        });
+
+        renderAllCharts();
+        initSSE();
+
+        window.addEventListener('resize', function() {
+            Object.values(chartInstances).forEach(chart => chart.resize());
+        });
+    });
+
+    function renderAllCharts() {
+        {% for chart in charts %}
+        renderChart('{{ chart.id }}');
+        {% endfor %}
+    }
+
+    function renderChart(chartId) {
+        const container = document.getElementById('chart-' + chartId);
+        if (!container) return;
+
+        fetch("{{ url_for('share_bp.shared_chart_data', token=token, chart_id=chart.id) }}")
+            .then(response => response.json())
+            .then(result => {
+                if (result.success) {
+                    const chart = echarts.init(container);
+                    chart.setOption(result.data);
+                    chartInstances[chartId] = chart;
+                }
+            })
+            .catch(error => {
+                container.innerHTML = '<div class="text-center text-danger py-4"><i class="bi bi-exclamation-triangle"></i> 数据加载失败</div>';
+            });
+    }
+
+    function refreshChart(chartId) {
+        fetch("{{ url_for('share_bp.shared_chart_data', token=token) }}?chart_id=" + chartId + "&refresh=true")
+            .then(response => response.json())
+            .then(result => {
+                if (result.success && chartInstances[chartId]) {
+                    chartInstances[chartId].setOption(result.data);
+                }
+            });
+    }
+
+    function refreshAllCharts() {
+        Object.keys(chartInstances).forEach(chartId => refreshChart(chartId));
+    }
+
+    function initSSE() {
+        eventSource = new EventSource("{{ url_for('share_bp.shared_sse', token=token) }}");
+
+        eventSource.onmessage = function(event) {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'chart_update' && chartInstances[data.chart_id]) {
+                    chartInstances[data.chart_id].setOption(data.option);
+                }
+            } catch (e) {
+                console.error('SSE message parse error:', e);
+            }
+        };
+
+        eventSource.onerror = function() {
+            updateConnectionStatus(false);
+        };
+
+        eventSource.onopen = function() {
+            updateConnectionStatus(true);
+        };
+    }
+
+    function updateConnectionStatus(connected) {
+        const statusEl = document.getElementById('connection-status');
+        if (connected) {
+            statusEl.innerHTML = '<span class="dot"></span><span>实时更新</span>';
+            statusEl.style.color = '#198754';
+        } else {
+            statusEl.innerHTML = '<span class="dot" style="background:#dc3545"></span><span>连接断开</span>';
+            statusEl.style.color = '#dc3545';
+        }
+    }
+    </script>
+    {% endif %}
+</body>
+</html>

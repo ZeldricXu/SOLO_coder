@@ -1,0 +1,120 @@
+{% if dashboards %}
+<div class="row g-4">
+    {% for dashboard in dashboards %}
+    <div class="col-md-6 col-lg-4">
+        <div class="dashboard-card h-100" data-dashboard-id="{{ dashboard.id }}">
+            <div class="dashboard-thumbnail">
+                {% if dashboard.thumbnail %}
+                <img src="{{ dashboard.thumbnail }}" alt="{{ dashboard.name }}">
+                {% else %}
+                <div class="thumbnail-placeholder">
+                    <i class="bi bi-bar-chart-line"></i>
+                </div>
+                {% endif %}
+                <div class="dashboard-overlay">
+                    <a href="{{ url_for('view_dashboard', dashboard_id=dashboard.id) }}" class="btn btn-light btn-sm">
+                        <i class="bi bi-eye"></i> 查看
+                    </a>
+                    {% if dashboard.can_edit %}
+                    <a href="{{ url_for('edit_dashboard', dashboard_id=dashboard.id) }}" class="btn btn-primary btn-sm">
+                        <i class="bi bi-pencil"></i> 编辑
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="dashboard-info">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="dashboard-title mb-0">{{ dashboard.name }}</h5>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-link" data-bs-toggle="dropdown">
+                            <i class="bi bi-three-dots-vertical"></i>
+                        </button>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li><a class="dropdown-item" href="{{ url_for('view_dashboard', dashboard_id=dashboard.id) }}">
+                                <i class="bi bi-eye"></i> 查看看板
+                            </a></li>
+                            {% if dashboard.can_edit %}
+                            <li><a class="dropdown-item" href="{{ url_for('edit_dashboard', dashboard_id=dashboard.id) }}">
+                                <i class="bi bi-pencil"></i> 编辑看板
+                            </a></li>
+                            <li><a class="dropdown-item" hx-get="{{ url_for('dashboard_bp.share_dashboard', dashboard_id=dashboard.id) }}" hx-target="#modal-container">
+                                <i class="bi bi-share"></i> 分享设置
+                            </a></li>
+                            <li><a class="dropdown-item" hx-get="{{ url_for('template_bp.create_from_dashboard', dashboard_id=dashboard.id) }}" hx-target="#modal-container">
+                                <i class="bi bi-collection-plus"></i> 存为模板
+                            </a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item text-danger" hx-delete="{{ url_for('dashboard_bp.delete_dashboard', dashboard_id=dashboard.id) }}" hx-confirm="确定要删除这个看板吗？">
+                                <i class="bi bi-trash"></i> 删除
+                            </a></li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                </div>
+                {% if dashboard.description %}
+                <p class="dashboard-desc text-muted small">{{ dashboard.description }}</p>
+                {% endif %}
+                <div class="dashboard-meta">
+                    <span class="meta-item"><i class="bi bi-graph-up"></i> {{ dashboard.chart_count or 0 }} 图表</span>
+                    <span class="meta-item"><i class="bi bi-people"></i> 
+                        {% if dashboard.is_public %}公开{% else %}{{ dashboard.share_count or 0 }} 共享{% endif %}
+                    </span>
+                    <span class="meta-item"><i class="bi bi-clock"></i> {{ dashboard.updated_at|relative_time }}</span>
+                </div>
+                {% if not dashboard.can_edit %}
+                <div class="mt-2">
+                    <span class="badge bg-secondary"><i class="bi bi-eye"></i> 只读权限</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if pagination and pagination.pages > 1 %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if pagination.has_prev %}
+        <li class="page-item">
+            <a class="page-link" hx-get="{{ url_for('dashboard_bp.list_dashboards', page=pagination.prev_num) }}" hx-target="#dashboards-list" hx-include="[name='search'], [name='filter'], [name='sort']">
+                <i class="bi bi-chevron-left"></i>
+            </a>
+        </li>
+        {% endif %}
+        {% for page in pagination.iter_pages() %}
+        {% if page %}
+        <li class="page-item {% if page == pagination.page %}active{% endif %}">
+            <a class="page-link" hx-get="{{ url_for('dashboard_bp.list_dashboards', page=page) }}" hx-target="#dashboards-list" hx-include="[name='search'], [name='filter'], [name='sort']">{{ page }}</a>
+        </li>
+        {% else %}
+        <li class="page-item disabled"><span class="page-link">...</span></li>
+        {% endif %}
+        {% endfor %}
+        {% if pagination.has_next %}
+        <li class="page-item">
+            <a class="page-link" hx-get="{{ url_for('dashboard_bp.list_dashboards', page=pagination.next_num) }}" hx-target="#dashboards-list" hx-include="[name='search'], [name='filter'], [name='sort']">
+                <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% else %}
+<div class="empty-state text-center py-5">
+    <div class="empty-icon mb-3">
+        <i class="bi bi-speedometer2 display-1 text-muted"></i>
+    </div>
+    <h4>还没有看板</h4>
+    <p class="text-muted mb-4">创建您的第一个数据看板，或从模板快速开始</p>
+    <div class="d-flex gap-2 justify-content-center">
+        <button class="btn btn-primary" hx-get="{{ url_for('dashboard_bp.create_dashboard') }}" hx-target="#modal-container">
+            <i class="bi bi-plus-lg"></i> 新建看板
+        </button>
+        <button class="btn btn-outline-primary" hx-get="{{ url_for('template_bp.list_templates') }}" hx-target="#main-content">
+            <i class="bi bi-collection"></i> 浏览模板
+        </button>
+    </div>
+</div>
+{% endif %}

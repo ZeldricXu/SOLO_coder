@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block title %}服务器错误 - DataFlow{% endblock %}
+
+{% block content %}
+<div class="error-page">
+    <div class="container text-center py-5">
+        <div class="error-code">500</div>
+        <h1 class="error-title">服务器出错了</h1>
+        <p class="error-message">抱歉，服务器遇到了一些问题，请稍后再试。</p>
+        <div class="error-actions">
+            <button class="btn btn-primary" onclick="window.location.reload()">
+                <i class="bi bi-arrow-clockwise"></i> 刷新页面
+            </button>
+            <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">
+                <i class="bi bi-house"></i> 返回首页
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}登录 - DataFlow{% endblock %}
+
+{% block content %}
+<div class="auth-page">
+    <div class="auth-container">
+        <div class="auth-card">
+            <div class="auth-header">
+                <div class="auth-logo">
+                    <i class="bi bi-bar-chart-line-fill"></i>
+                </div>
+                <h2>欢迎回来</h2>
+                <p class="text-muted">登录您的DataFlow账户</p>
+            </div>
+            <form method="POST" action="{{ url_for('auth.login') }}" class="auth-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <div class="mb-3">
+                    <label class="form-label">邮箱地址</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
+                        <input type="email" name="email" class="form-control" required placeholder="your@email.com">
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">密码</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                        <input type="password" name="password" class="form-control" required placeholder="••••••••">
+                    </div>
+                </div>
+                <div class="mb-3 d-flex justify-content-between align-items-center">
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="remember">
+                        <label class="form-check-label" for="remember">记住我</label>
+                    </div>
+                    <a href="#" class="text-primary text-decoration-none">忘记密码？</a>
+                </div>
+                <button type="submit" class="btn btn-primary w-100 mb-3">
+                    登录
+                </button>
+            </form>
+            <div class="auth-divider">
+                <span>或</span>
+            </div>
+            <p class="text-center mb-0">
+                还没有账户？
+                <a href="{{ url_for('auth.register_page') }}" class="text-primary text-decoration-none">立即注册</a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endblock %}

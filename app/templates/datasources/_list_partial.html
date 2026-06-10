@@ -1,0 +1,97 @@
+{% if datasources %}
+<div class="row g-4">
+    {% for ds in datasources %}
+    <div class="col-md-6 col-lg-4">
+        <div class="datasource-card h-100">
+            <div class="datasource-header">
+                <div class="datasource-icon {{ ds.type }}">
+                    {% if ds.type == 'mysql' %}
+                    <i class="bi bi-database"></i>
+                    {% elif ds.type == 'clickhouse' %}
+                    <i class="bi bi-server"></i>
+                    {% elif ds.type == 'prometheus' %}
+                    <i class="bi bi-activity"></i>
+                    {% else %}
+                    <i class="bi bi-globe"></i>
+                    {% endif %}
+                </div>
+                <div class="datasource-status" data-status="{{ ds.status or 'online' }}">
+                    <span class="status-dot"></span>
+                    <span class="status-text">{{ '在线' if ds.status != 'offline' else '离线' }}</span>
+                </div>
+            </div>
+            <div class="datasource-body">
+                <h5 class="datasource-name">{{ ds.name }}</h5>
+                <p class="datasource-type text-muted small">
+                    {{ ds.TYPES.get(ds.type, ds.type) }}
+                    {% if ds.connection_config %}
+                    {% if ds.type == 'mysql' or ds.type == 'clickhouse' %}
+                    · {{ ds.connection_config.host or 'localhost' }}:{{ ds.connection_config.port or '3306' }}
+                    {% elif ds.type == 'http' %}
+                    · {{ ds.connection_config.base_url or '' }}
+                    {% endif %}
+                    {% endif %}
+                </p>
+                {% if ds.description %}
+                <p class="datasource-desc text-muted small">{{ ds.description }}</p>
+                {% endif %}
+                <div class="datasource-meta">
+                    <span class="meta-item"><i class="bi bi-bar-chart"></i> {{ ds.chart_count or 0 }} 图表使用</span>
+                    <span class="meta-item"><i class="bi bi-clock"></i> {{ ds.updated_at|relative_time }}</span>
+                </div>
+            </div>
+            <div class="datasource-actions">
+                <button class="btn btn-sm btn-outline-secondary" 
+                        hx-post="{{ url_for('datasource_bp.test_connection', datasource_id=ds.id) }}"
+                        hx-target="closest .datasource-card .datasource-status">
+                    <i class="bi bi-patch-check"></i> 测试连接
+                </button>
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                        更多操作
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end">
+                        <li>
+                            <a class="dropdown-item" hx-get="{{ url_for('datasource_bp.edit_datasource', datasource_id=ds.id) }}" hx-target="#modal-container">
+                                <i class="bi bi-pencil"></i> 编辑
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item" hx-get="{{ url_for('datasource_bp.query_editor', datasource_id=ds.id) }}" hx-target="#modal-container">
+                                <i class="bi bi-code-slash"></i> 查询编辑器
+                            </a>
+                        </li>
+                        <li>
+                            <hr class="dropdown-divider">
+                        </li>
+                        <li>
+                            <a class="dropdown-item text-danger" 
+                               hx-delete="{{ url_for('datasource_bp.delete_datasource', datasource_id=ds.id) }}"
+                               hx-confirm="确定要删除这个数据源吗？关联的图表可能会无法正常显示。">
+                                <i class="bi bi-trash"></i> 删除
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="empty-state text-center py-5">
+    <div class="empty-icon mb-3">
+        <i class="bi bi-database-gear display-1 text-muted"></i>
+    </div>
+    <h4>暂无数据源</h4>
+    <p class="text-muted mb-4">添加您的第一个数据源开始创建看板</p>
+    <div class="d-flex gap-2 justify-content-center">
+        <button class="btn btn-primary" hx-get="{{ url_for('datasource_bp.create_datasource', type='mysql') }}" hx-target="#modal-container">
+            <i class="bi bi-plus-lg"></i> 连接 MySQL
+        </button>
+        <button class="btn btn-outline-primary" hx-get="{{ url_for('datasource_bp.create_datasource', type='clickhouse') }}" hx-target="#modal-container">
+            <i class="bi bi-plus-lg"></i> 连接 ClickHouse
+        </button>
+    </div>
+</div>
+{% endif %}

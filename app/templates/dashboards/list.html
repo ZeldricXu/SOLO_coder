@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}我的看板 - DataFlow{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h1 class="page-title">我的看板</h1>
+            <p class="text-muted">管理您创建和共享的所有数据看板</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary" hx-get="{{ url_for('template_bp.list_templates') }}" hx-target="#main-content">
+                <i class="bi bi-collection"></i> 从模板创建
+            </button>
+            <button class="btn btn-primary" hx-get="{{ url_for('dashboard_bp.create_dashboard') }}" hx-target="#modal-container">
+                <i class="bi bi-plus-lg"></i> 新建看板
+            </button>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-filters mb-4">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <input type="text" class="form-control" placeholder="搜索看板..." 
+                   hx-get="{{ url_for('dashboard_bp.list_dashboards') }}" 
+                   hx-trigger="keyup changed delay:300ms"
+                   hx-target="#dashboards-list"
+                   hx-include="[name='filter'], [name='sort']"
+                   name="search">
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" name="filter" 
+                    hx-get="{{ url_for('dashboard_bp.list_dashboards') }}" 
+                    hx-target="#dashboards-list"
+                    hx-include="[name='search'], [name='sort']">
+                <option value="all">全部看板</option>
+                <option value="mine">我创建的</option>
+                <option value="shared">共享给我的</option>
+                <option value="recent">最近查看</option>
+            </select>
+        </div>
+        <div class="col-md-3">
+            <select class="form-select" name="sort"
+                    hx-get="{{ url_for('dashboard_bp.list_dashboards') }}" 
+                    hx-target="#dashboards-list"
+                    hx-include="[name='search'], [name='filter']">
+                <option value="updated">最近更新</option>
+                <option value="created">创建时间</option>
+                <option value="name">名称排序</option>
+            </select>
+        </div>
+    </div>
+</div>
+
+<div id="dashboards-list" hx-get="{{ url_for('dashboard_bp.list_dashboards') }}" hx-trigger="load">
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">加载中...</span>
+        </div>
+    </div>
+</div>
+
+<div id="modal-container"></div>
+{% endblock %}

@@ -1,0 +1,156 @@
+<div class="modal fade" id="datasourceModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{{ form_title or '新建数据源' }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" 
+                  hx-post="{{ form_action }}"
+                  hx-target="#modal-container">
+                <div class="modal-body">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="type" value="{{ datasource_type }}">
+                    
+                    <ul class="nav nav-pills mb-3">
+                        <li class="nav-item">
+                            <a class="nav-link active" data-bs-toggle="tab" href="#basic">基本信息</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" data-bs-toggle="tab" href="#connection">连接配置</a>
+                        </li>
+                    </ul>
+                    
+                    <div class="tab-content">
+                        <div class="tab-pane fade show active" id="basic">
+                            <div class="mb-3">
+                                <label class="form-label">数据源名称</label>
+                                <input type="text" class="form-control" name="name" required
+                                       placeholder="给这个数据源起个名字" 
+                                       value="{{ datasource.name if datasource else '' }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">数据源类型</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        {% if datasource_type == 'mysql' %}<i class="bi bi-database"></i>{% endif %}
+                                        {% if datasource_type == 'clickhouse' %}<i class="bi bi-server"></i>{% endif %}
+                                        {% if datasource_type == 'prometheus' %}<i class="bi bi-activity"></i>{% endif %}
+                                        {% if datasource_type == 'http' %}<i class="bi bi-globe"></i>{% endif %}
+                                    </span>
+                                    <select class="form-select" name="type" disabled>
+                                        <option value="mysql" {{ 'selected' if datasource_type == 'mysql' }}>MySQL</option>
+                                        <option value="clickhouse" {{ 'selected' if datasource_type == 'clickhouse' }}>ClickHouse</option>
+                                        <option value="prometheus" {{ 'selected' if datasource_type == 'prometheus' }}>Prometheus</option>
+                                        <option value="http" {{ 'selected' if datasource_type == 'http' }}>HTTP API</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">描述</label>
+                                <textarea class="form-control" name="description" rows="2"
+                                          placeholder="可选，描述这个数据源的用途">{{ datasource.description if datasource else '' }}</textarea>
+                            </div>
+                        </div>
+                        
+                        <div class="tab-pane fade" id="connection">
+                            {% if datasource_type in ['mysql', 'clickhouse'] %}
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">主机地址</label>
+                                    <input type="text" class="form-control" name="host" 
+                                           placeholder="localhost" 
+                                           value="{{ config.host if config else '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">端口</label>
+                                    <input type="number" class="form-control" name="port" 
+                                           placeholder="{{ '3306' if datasource_type == 'mysql' else '9000' }}"
+                                           value="{{ config.port if config else '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">用户名</label>
+                                    <input type="text" class="form-control" name="username"
+                                           value="{{ config.username if config else '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">密码</label>
+                                    <input type="password" class="form-control" name="password"
+                                           value="{{ config.password if config else '' }}">
+                                </div>
+                                <div class="col-md-12">
+                                    <label class="form-label">数据库名</label>
+                                    <input type="text" class="form-control" name="database"
+                                           value="{{ config.database if config else '' }}">
+                                </div>
+                                <div class="col-12">
+                                    <div class="form-check form-switch">
+                                        <input class="form-check-input" type="checkbox" name="use_ssl" id="useSSL">
+                                        <label class="form-check-label" for="useSSL">使用 SSL 连接</label>
+                                    </div>
+                                </div>
+                            </div>
+                            {% elif datasource_type == 'prometheus' %}
+                            <div class="mb-3">
+                                <label class="form-label">Prometheus URL</label>
+                                <input type="url" class="form-control" name="url" 
+                                       placeholder="http://localhost:9090"
+                                       value="{{ config.url if config else '' }}">
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label">用户名 (可选)</label>
+                                    <input type="text" class="form-control" name="username"
+                                           value="{{ config.username if config else '' }}">
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label">密码 (可选)</label>
+                                    <input type="password" class="form-control" name="password"
+                                           value="{{ config.password if config else '' }}">
+                                </div>
+                            </div>
+                            {% elif datasource_type == 'http' %}
+                            <div class="mb-3">
+                                <label class="form-label">API 基础 URL</label>
+                                <input type="url" class="form-control" name="base_url"
+                                       placeholder="https://api.example.com"
+                                       value="{{ config.base_url if config else '' }}">
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">请求方法</label>
+                                <select class="form-select" name="method">
+                                    <option value="GET" {{ 'selected' if config.method == 'GET' else 'selected' }}>GET</option>
+                                    <option value="POST" {{ 'selected' if config.method == 'POST' }}>POST</option>
+                                </select>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Headers (JSON格式)</label>
+                                <textarea class="form-control font-monospace" name="headers" rows="3"
+                                          placeholder='{"Authorization": "Bearer xxx"}'>{{ config.headers|to_json if config.headers else '' }}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">默认请求参数 (JSON格式)</label>
+                                <textarea class="form-control font-monospace" name="default_params" rows="2"
+                                          placeholder='{"timeout": 30}'>{{ config.default_params|to_json if config.default_params else '' }}</textarea>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary"
+                            hx-post="{{ url_for('datasource_bp.test_connection_form', type=datasource_type) }}">
+                        <i class="bi bi-patch-check"></i> 测试连接
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                    <button type="submit" class="btn btn-primary">{{ '保存' if datasource else '创建' }}</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+const modal = new bootstrap.Modal(document.getElementById('datasourceModal'));
+modal.show();
+</script>
