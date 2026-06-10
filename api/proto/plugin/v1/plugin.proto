@@ -23,6 +23,12 @@ enum StageStatus {
   STAGE_STATUS_TIMEOUT = 6;
 }
 
+enum ExecutionMode {
+  EXECUTION_MODE_UNSPECIFIED = 0;
+  EXECUTION_MODE_SYNC = 1;
+  EXECUTION_MODE_ASYNC = 2;
+}
+
 message PluginInfo {
   string name = 1;
   string version = 2;
@@ -31,6 +37,8 @@ message PluginInfo {
   string author = 5;
   repeated string tags = 6;
   map<string, string> config_schema = 7;
+  ExecutionMode execution_mode = 8;
+  int32 poll_interval_seconds = 9;
 }
 
 message StageContext {
@@ -95,9 +103,41 @@ message PluginMetadata {
   string grpc_address = 4;
 }
 
+message StartExecutionRequest {
+  StageContext context = 1;
+}
+
+message StartExecutionResponse {
+  string execution_id = 1;
+  StageStatus status = 2;
+  string message = 3;
+  int32 poll_interval_seconds = 4;
+}
+
+message PollStatusRequest {
+  string plugin_name = 1;
+  string execution_id = 2;
+  StageContext context = 3;
+}
+
+message PollStatusResponse {
+  string execution_id = 1;
+  StageStatus status = 2;
+  string error = 3;
+  repeated LogEntry logs = 4;
+  repeated Artifact artifacts = 5;
+  map<string, string> output = 6;
+  int64 duration_ms = 7;
+  bool completed = 8;
+  int32 progress_percent = 9;
+}
+
 service StagePlugin {
   rpc GetPluginInfo(HealthCheckRequest) returns (PluginInfo);
   rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
   rpc Execute(ExecuteRequest) returns (stream ExecuteResponse);
   rpc Cancel(ExecuteRequest) returns (ExecuteResponse);
+  rpc StartExecution(StartExecutionRequest) returns (StartExecutionResponse);
+  rpc PollStatus(PollStatusRequest) returns (PollStatusResponse);
+  rpc CancelExecution(PollStatusRequest) returns (PollStatusResponse);
 }

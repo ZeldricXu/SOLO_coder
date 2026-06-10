@@ -37,14 +37,24 @@ const (
 	StageStatusTimeout     StageStatus = 6
 )
 
+type ExecutionMode int32
+
+const (
+	ExecutionModeUnspecified ExecutionMode = 0
+	ExecutionModeSync        ExecutionMode = 1
+	ExecutionModeAsync       ExecutionMode = 2
+)
+
 type PluginInfo struct {
-	Name         string            `json:"name"`
-	Version      string            `json:"version"`
-	Description  string            `json:"description"`
-	Type         StageType         `json:"type"`
-	Author       string            `json:"author"`
-	Tags         []string          `json:"tags"`
-	ConfigSchema map[string]string `json:"config_schema"`
+	Name               string            `json:"name"`
+	Version            string            `json:"version"`
+	Description        string            `json:"description"`
+	Type               StageType         `json:"type"`
+	Author             string            `json:"author"`
+	Tags               []string          `json:"tags"`
+	ConfigSchema       map[string]string `json:"config_schema"`
+	ExecutionMode      ExecutionMode     `json:"execution_mode"`
+	PollIntervalSeconds int32             `json:"poll_interval_seconds"`
 }
 
 type StageContext struct {
@@ -99,6 +109,10 @@ type StagePluginClient interface {
 	HealthCheck(ctx context.Context, name string) (*HealthCheckResponse, error)
 	Execute(ctx context.Context, req *StageContext, logCallback func(*LogEntry)) (*ExecuteResponse, error)
 	Cancel(ctx context.Context, req *StageContext) (*ExecuteResponse, error)
+	StartExecution(ctx context.Context, req *StageContext) (*StartExecutionResponse, error)
+	PollStatus(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error)
+	CancelExecution(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error)
+	GetExecutionMode(ctx context.Context, name string) (ExecutionMode, error)
 	Close() error
 }
 
@@ -113,6 +127,9 @@ type StagePluginServiceClient interface {
 	HealthCheck(ctx context.Context, in *HealthCheckRequest, opts ...grpc.CallOption) (*HealthCheckResponse, error)
 	Execute(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (StagePlugin_ExecuteClient, error)
 	Cancel(ctx context.Context, in *ExecuteRequest, opts ...grpc.CallOption) (*ExecuteResponse, error)
+	StartExecution(ctx context.Context, in *StartExecutionRequest, opts ...grpc.CallOption) (*StartExecutionResponse, error)
+	PollStatus(ctx context.Context, in *PollStatusRequest, opts ...grpc.CallOption) (*PollStatusResponse, error)
+	CancelExecution(ctx context.Context, in *PollStatusRequest, opts ...grpc.CallOption) (*PollStatusResponse, error)
 }
 
 type StagePlugin_ExecuteClient interface {
@@ -126,6 +143,35 @@ type HealthCheckRequest struct {
 
 type ExecuteRequest struct {
 	Context *StageContext `json:"context"`
+}
+
+type StartExecutionRequest struct {
+	Context *StageContext `json:"context"`
+}
+
+type StartExecutionResponse struct {
+	ExecutionID       string      `json:"execution_id"`
+	Status            StageStatus `json:"status"`
+	Message           string      `json:"message"`
+	PollIntervalSeconds int32     `json:"poll_interval_seconds"`
+}
+
+type PollStatusRequest struct {
+	PluginName  string        `json:"plugin_name"`
+	ExecutionID string        `json:"execution_id"`
+	Context     *StageContext `json:"context,omitempty"`
+}
+
+type PollStatusResponse struct {
+	ExecutionID    string            `json:"execution_id"`
+	Status         StageStatus       `json:"status"`
+	Error          string            `json:"error,omitempty"`
+	Logs           []*LogEntry       `json:"logs,omitempty"`
+	Artifacts      []*Artifact       `json:"artifacts,omitempty"`
+	Output         map[string]string `json:"output,omitempty"`
+	DurationMs     int64             `json:"duration_ms"`
+	Completed      bool              `json:"completed"`
+	ProgressPercent int32            `json:"progress_percent"`
 }
 
 func NewStagePluginClient(address string) (StagePluginClient, error) {
@@ -210,6 +256,46 @@ func (c *stagePluginClient) Cancel(ctx context.Context, req *StageContext) (*Exe
 	return c.client.Cancel(ctx, &ExecuteRequest{Context: req})
 }
 
+func (c *stagePluginClient) StartExecution(ctx context.Context, req *StageContext) (*StartExecutionResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.client.StartExecution(ctx, &StartExecutionRequest{Context: req})
+}
+
+func (c *stagePluginClient) PollStatus(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.client.PollStatus(ctx, &PollStatusRequest{
+		PluginName:  pluginName,
+		ExecutionID: executionID,
+		Context:     context,
+	})
+}
+
+func (c *stagePluginClient) CancelExecution(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.client.CancelExecution(ctx, &PollStatusRequest{
+		PluginName:  pluginName,
+		ExecutionID: executionID,
+		Context:     context,
+	})
+}
+
+func (c *stagePluginClient) GetExecutionMode(ctx context.Context, name string) (ExecutionMode, error) {
+	info, err := c.GetPluginInfo(ctx, name)
+	if err != nil {
+		return ExecutionModeSync, err
+	}
+	if info.ExecutionMode == ExecutionModeUnspecified {
+		return ExecutionModeSync, nil
+	}
+	return info.ExecutionMode, nil
+}
+
 func (c *stagePluginClient) Close() error {
 	if c.conn != nil {
 		return c.conn.Close()
@@ -222,16 +308,22 @@ type StagePluginServer interface {
 	OnHealthCheck(func(ctx context.Context, name string) (*HealthCheckResponse, error))
 	OnExecute(func(ctx context.Context, req *StageContext, sendLog func(*LogEntry)) (*ExecuteResponse, error))
 	OnCancel(func(ctx context.Context, req *StageContext) (*ExecuteResponse, error))
+	OnStartExecution(func(ctx context.Context, req *StageContext) (*StartExecutionResponse, error))
+	OnPollStatus(func(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error))
+	OnCancelExecution(func(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error))
 	Serve(lis net.Listener) error
 	Stop()
 }
 
 type stagePluginServer struct {
-	server      *grpc.Server
-	getPluginInfo func(context.Context, string) (*PluginInfo, error)
-	healthCheck   func(context.Context, string) (*HealthCheckResponse, error)
-	execute       func(context.Context, *StageContext, func(*LogEntry)) (*ExecuteResponse, error)
-	cancel        func(context.Context, *StageContext) (*ExecuteResponse, error)
+	server          *grpc.Server
+	getPluginInfo   func(context.Context, string) (*PluginInfo, error)
+	healthCheck     func(context.Context, string) (*HealthCheckResponse, error)
+	execute         func(context.Context, *StageContext, func(*LogEntry)) (*ExecuteResponse, error)
+	cancel          func(context.Context, *StageContext) (*ExecuteResponse, error)
+	startExecution  func(context.Context, *StageContext) (*StartExecutionResponse, error)
+	pollStatus      func(context.Context, string, string, *StageContext) (*PollStatusResponse, error)
+	cancelExecution func(context.Context, string, string, *StageContext) (*PollStatusResponse, error)
 }
 
 func NewStagePluginServer() StagePluginServer {
@@ -257,6 +349,18 @@ func (s *stagePluginServer) OnExecute(fn func(ctx context.Context, req *StageCon
 
 func (s *stagePluginServer) OnCancel(fn func(ctx context.Context, req *StageContext) (*ExecuteResponse, error)) {
 	s.cancel = fn
+}
+
+func (s *stagePluginServer) OnStartExecution(fn func(ctx context.Context, req *StageContext) (*StartExecutionResponse, error)) {
+	s.startExecution = fn
+}
+
+func (s *stagePluginServer) OnPollStatus(fn func(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error)) {
+	s.pollStatus = fn
+}
+
+func (s *stagePluginServer) OnCancelExecution(fn func(ctx context.Context, pluginName, executionID string, context *StageContext) (*PollStatusResponse, error)) {
+	s.cancelExecution = fn
 }
 
 func (s *stagePluginServer) Serve(lis net.Listener) error {
@@ -371,6 +475,35 @@ func (g *grpcServerImpl) Cancel(ctx context.Context, req *ExecuteRequest) (*Exec
 	return g.s.cancel(ctx, req.Context)
 }
 
+func (g *grpcServerImpl) StartExecution(ctx context.Context, req *StartExecutionRequest) (*StartExecutionResponse, error) {
+	if g.s.startExecution == nil {
+		return nil, status.Error(codes.Unimplemented, "StartExecution not implemented")
+	}
+	return g.s.startExecution(ctx, req.Context)
+}
+
+func (g *grpcServerImpl) PollStatus(ctx context.Context, req *PollStatusRequest) (*PollStatusResponse, error) {
+	if g.s.pollStatus == nil {
+		return &PollStatusResponse{
+			ExecutionID: req.ExecutionID,
+			Status:      StageStatusSuccess,
+			Completed:   true,
+		}, nil
+	}
+	return g.s.pollStatus(ctx, req.PluginName, req.ExecutionID, req.Context)
+}
+
+func (g *grpcServerImpl) CancelExecution(ctx context.Context, req *PollStatusRequest) (*PollStatusResponse, error) {
+	if g.s.cancelExecution == nil {
+		return &PollStatusResponse{
+			ExecutionID: req.ExecutionID,
+			Status:      StageStatusCancelled,
+			Completed:   true,
+		}, nil
+	}
+	return g.s.cancelExecution(ctx, req.PluginName, req.ExecutionID, req.Context)
+}
+
 func RegisterStagePluginServiceServer(s *grpc.Server, srv StagePluginServiceServer) {
 	s.RegisterService(&StagePluginService_ServiceDesc, srv)
 }
@@ -437,6 +570,33 @@ func (c *stagePluginServiceClient) Cancel(ctx context.Context, in *ExecuteReques
 	return out, nil
 }
 
+func (c *stagePluginServiceClient) StartExecution(ctx context.Context, in *StartExecutionRequest, opts ...grpc.CallOption) (*StartExecutionResponse, error) {
+	out := new(StartExecutionResponse)
+	err := c.cc.Invoke(ctx, "/cloudci.plugin.v1.StagePlugin/StartExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stagePluginServiceClient) PollStatus(ctx context.Context, in *PollStatusRequest, opts ...grpc.CallOption) (*PollStatusResponse, error) {
+	out := new(PollStatusResponse)
+	err := c.cc.Invoke(ctx, "/cloudci.plugin.v1.StagePlugin/PollStatus", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *stagePluginServiceClient) CancelExecution(ctx context.Context, in *PollStatusRequest, opts ...grpc.CallOption) (*PollStatusResponse, error) {
+	out := new(PollStatusResponse)
+	err := c.cc.Invoke(ctx, "/cloudci.plugin.v1.StagePlugin/CancelExecution", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 var StagePluginService_ServiceDesc = grpc.ServiceDesc{
 	ServiceName: "cloudci.plugin.v1.StagePlugin",
 	HandlerType: (*StagePluginServiceServer)(nil),
@@ -452,6 +612,18 @@ var StagePluginService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Cancel",
 			Handler:    _StagePlugin_Cancel_Handler,
+		},
+		{
+			MethodName: "StartExecution",
+			Handler:    _StagePlugin_StartExecution_Handler,
+		},
+		{
+			MethodName: "PollStatus",
+			Handler:    _StagePlugin_PollStatus_Handler,
+		},
+		{
+			MethodName: "CancelExecution",
+			Handler:    _StagePlugin_CancelExecution_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
@@ -518,6 +690,60 @@ func _StagePlugin_Cancel_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _StagePlugin_StartExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartExecutionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StagePluginServiceServer).StartExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cloudci.plugin.v1.StagePlugin/StartExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StagePluginServiceServer).StartExecution(ctx, req.(*StartExecutionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StagePlugin_PollStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PollStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StagePluginServiceServer).PollStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cloudci.plugin.v1.StagePlugin/PollStatus",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StagePluginServiceServer).PollStatus(ctx, req.(*PollStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _StagePlugin_CancelExecution_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PollStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(StagePluginServiceServer).CancelExecution(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/cloudci.plugin.v1.StagePlugin/CancelExecution",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(StagePluginServiceServer).CancelExecution(ctx, req.(*PollStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _StagePlugin_Execute_Handler(srv interface{}, stream grpc.ServerStream) error {
 	m := new(ExecuteRequest)
 	if err := stream.RecvMsg(m); err != nil {
@@ -539,6 +765,9 @@ type StagePluginServiceServer interface {
 	HealthCheck(context.Context, *HealthCheckRequest) (*HealthCheckResponse, error)
 	Execute(*ExecuteRequest, StagePlugin_ExecuteServer) error
 	Cancel(context.Context, *ExecuteRequest) (*ExecuteResponse, error)
+	StartExecution(context.Context, *StartExecutionRequest) (*StartExecutionResponse, error)
+	PollStatus(context.Context, *PollStatusRequest) (*PollStatusResponse, error)
+	CancelExecution(context.Context, *PollStatusRequest) (*PollStatusResponse, error)
 }
 
 type StagePlugin_ExecuteServer interface {
@@ -559,6 +788,15 @@ func (UnimplementedStagePluginServiceServer) Execute(*ExecuteRequest, StagePlugi
 }
 func (UnimplementedStagePluginServiceServer) Cancel(context.Context, *ExecuteRequest) (*ExecuteResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method Cancel not implemented")
+}
+func (UnimplementedStagePluginServiceServer) StartExecution(context.Context, *StartExecutionRequest) (*StartExecutionResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method StartExecution not implemented")
+}
+func (UnimplementedStagePluginServiceServer) PollStatus(context.Context, *PollStatusRequest) (*PollStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PollStatus not implemented")
+}
+func (UnimplementedStagePluginServiceServer) CancelExecution(context.Context, *PollStatusRequest) (*PollStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CancelExecution not implemented")
 }
 
 var StagePluginService_Streams = []grpc.StreamDesc{

@@ -27,19 +27,21 @@ import (
 )
 
 type Scheduler struct {
-	cfg          *config.SchedulerConfig
-	db           *gorm.DB
-	redisClient  *storage.RedisClient
-	minioClient  *storage.MinIOClient
-	pluginMgr    *plugin.PluginManager
-	secretMgr    *secret.SecretManager
-	notifier     *notify.Notifier
-	logStore     *logstore.LogStore
-	artifactMgr  *artifact.ArtifactManager
-	execPool     *pool.Pool
-	stagePool    *pool.Pool
-	runningExecs map[types.ID]context.CancelFunc
-	mu           sync.RWMutex
+	cfg                *config.SchedulerConfig
+	db                 *gorm.DB
+	redisClient        *storage.RedisClient
+	minioClient        *storage.MinIOClient
+	pluginMgr          *plugin.PluginManager
+	secretMgr          *secret.SecretManager
+	notifier           *notify.Notifier
+	logStore           *logstore.LogStore
+	artifactMgr        *artifact.ArtifactManager
+	execPool           *pool.Pool
+	stagePool          *pool.Pool
+	runningExecs       map[types.ID]context.CancelFunc
+	asyncExecutor      *AsyncPluginExecutor
+	conditionEvaluator *ConditionEvaluator
+	mu                 sync.RWMutex
 }
 
 type StageResult struct {
@@ -52,15 +54,18 @@ type StageResult struct {
 }
 
 func NewScheduler(cfg *config.SchedulerConfig, pluginMgr *plugin.PluginManager) *Scheduler {
-	return &Scheduler{
-		cfg:          cfg,
-		db:           storage.GetDB(),
-		redisClient:  &storage.RedisClient{},
-		execPool:     pool.New().WithMaxGoroutines(cfg.MaxConcurrent),
-		stagePool:    pool.New().WithMaxGoroutines(cfg.MaxConcurrent * 5),
-		runningExecs: make(map[types.ID]context.CancelFunc),
-		pluginMgr:    pluginMgr,
+	s := &Scheduler{
+		cfg:                cfg,
+		db:                 storage.GetDB(),
+		redisClient:        &storage.RedisClient{},
+		execPool:           pool.New().WithMaxGoroutines(cfg.MaxConcurrent),
+		stagePool:          pool.New().WithMaxGoroutines(cfg.MaxConcurrent * 5),
+		runningExecs:       make(map[types.ID]context.CancelFunc),
+		pluginMgr:          pluginMgr,
+		conditionEvaluator: NewConditionEvaluator(),
 	}
+	s.asyncExecutor = NewAsyncPluginExecutor(pluginMgr, nil)
+	return s
 }
 
 func (s *Scheduler) SetSecretManager(mgr *secret.SecretManager) {
@@ -73,6 +78,9 @@ func (s *Scheduler) SetNotifier(n *notify.Notifier) {
 
 func (s *Scheduler) SetLogStore(ls *logstore.LogStore) {
 	s.logStore = ls
+	if s.asyncExecutor != nil {
+		s.asyncExecutor.logStore = ls
+	}
 }
 
 func (s *Scheduler) SetArtifactManager(am *artifact.ArtifactManager) {
@@ -250,19 +258,49 @@ func (s *Scheduler) executeStages(ctx context.Context, exec *models.PipelineExec
 	results := make(map[string]StageResult)
 	completed := make(map[string]bool)
 	failed := make(map[string]bool)
+	skipped := make(map[string]bool)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
 	stageResults := make(chan StageResult, len(def.Stages))
 
 	for {
-		readyStages := s.findReadyStages(def.Stages, completed, failed)
+		readyStages := s.findReadyStages(def.Stages, completed, failed, skipped)
 
 		if len(readyStages) == 0 {
 			break
 		}
 
 		for _, stageDef := range readyStages {
+			shouldRun, skipReason, err := s.checkStageCondition(stageDef, results, exec)
+			if err != nil {
+				logger.Warn("condition evaluation failed",
+					zap.String("stage", stageDef.Name),
+					zap.String("execution_id", string(exec.ID)),
+					zap.Error(err))
+				s.logStore.AppendLog(exec.ID, stageExecs[stageDef.Name].ID, "WARN",
+					fmt.Sprintf("Condition evaluation failed: %v, running stage anyway", err), "")
+				shouldRun = true
+			}
+
+			if !shouldRun {
+				mu.Lock()
+				skipped[stageDef.Name] = true
+				completed[stageDef.Name] = true
+				se := stageExecs[stageDef.Name]
+				se.Status = types.StageStatusSkipped
+				se.CompletedAt = timePtr(time.Now())
+				s.db.Save(se)
+				results[stageDef.Name] = StageResult{
+					StageID: se.ID,
+					Status:  types.StageStatusSkipped,
+				}
+				s.logStore.AppendLog(exec.ID, se.ID, "INFO",
+					fmt.Sprintf("Stage skipped: %s", skipReason), "")
+				mu.Unlock()
+				continue
+			}
+
 			wg.Add(1)
 			go func(sd types.StageDefinition) {
 				defer wg.Done()
@@ -298,11 +336,11 @@ func (s *Scheduler) executeStages(ctx context.Context, exec *models.PipelineExec
 	return results
 }
 
-func (s *Scheduler) findReadyStages(stages []types.StageDefinition, completed, failed map[string]bool) []types.StageDefinition {
+func (s *Scheduler) findReadyStages(stages []types.StageDefinition, completed, failed, skipped map[string]bool) []types.StageDefinition {
 	var ready []types.StageDefinition
 
 	for _, stage := range stages {
-		if completed[stage.Name] || failed[stage.Name] {
+		if completed[stage.Name] || failed[stage.Name] || skipped[stage.Name] {
 			continue
 		}
 
@@ -314,7 +352,7 @@ func (s *Scheduler) findReadyStages(stages []types.StageDefinition, completed, f
 				anyDepFailed = true
 				break
 			}
-			if !completed[dep] {
+			if !completed[dep] && !skipped[dep] {
 				allDepsCompleted = false
 				break
 			}
@@ -331,6 +369,33 @@ func (s *Scheduler) findReadyStages(stages []types.StageDefinition, completed, f
 	}
 
 	return ready
+}
+
+func (s *Scheduler) checkStageCondition(
+	stageDef types.StageDefinition,
+	results map[string]StageResult,
+	exec *models.PipelineExecution,
+) (bool, string, error) {
+	if s.conditionEvaluator == nil {
+		return true, "", nil
+	}
+
+	variables := s.buildVariables(exec, stageDef, results)
+
+	event := &types.InternalEvent{
+		ProjectID:   exec.ProjectID,
+		Commit:      exec.Commit,
+		Branch:      exec.Branch,
+		Tag:         exec.Tag,
+		Ref:         exec.Ref,
+		Message:     exec.Message,
+		Author:      exec.Author,
+		AuthorEmail: exec.AuthorEmail,
+		EventSource: exec.TriggerSource,
+		EventType:   exec.TriggerType,
+	}
+
+	return s.conditionEvaluator.EvaluateStageCondition(stageDef, results, variables, event)
 }
 
 func (s *Scheduler) executeStage(ctx context.Context, exec *models.PipelineExecution, def *types.PipelineDefinition, stageDef types.StageDefinition, se *models.StageExecution, results map[string]StageResult) StageResult {
@@ -377,11 +442,6 @@ func (s *Scheduler) executeStage(ctx context.Context, exec *models.PipelineExecu
 }
 
 func (s *Scheduler) executePluginStage(ctx context.Context, exec *models.PipelineExecution, stageDef types.StageDefinition, se *models.StageExecution, workingDir string, variables map[string]string, secrets map[string]string, env map[string]string) StageResult {
-	client, err := s.pluginMgr.GetClient(ctx, stageDef.Plugin.Name, stageDef.Plugin.Version)
-	if err != nil {
-		return s.failStage(se, fmt.Sprintf("plugin not available: %v", err))
-	}
-
 	pluginConfig := make(map[string]string)
 	for k, v := range stageDef.Plugin.Config {
 		pluginConfig[k] = fmt.Sprintf("%v", v)
@@ -412,7 +472,19 @@ func (s *Scheduler) executePluginStage(ctx context.Context, exec *models.Pipelin
 		s.logStore.AppendLog(exec.ID, se.ID, log.Level, log.Message, log.Stream)
 	}
 
-	resp, err := client.Execute(ctx, req, logCallback)
+	var resp *plugin.ExecuteResponse
+	var err error
+
+	if s.asyncExecutor != nil {
+		resp, err = s.asyncExecutor.Execute(ctx, exec, stageDef, se, req, logCallback)
+	} else {
+		client, clientErr := s.pluginMgr.GetClient(ctx, stageDef.Plugin.Name, stageDef.Plugin.Version)
+		if clientErr != nil {
+			return s.failStage(se, fmt.Sprintf("plugin not available: %v", clientErr))
+		}
+		resp, err = client.Execute(ctx, req, logCallback)
+	}
+
 	if err != nil {
 		return s.failStage(se, fmt.Sprintf("plugin execution failed: %v", err))
 	}

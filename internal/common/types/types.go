@@ -152,11 +152,31 @@ type EnvVar struct {
 	From  string `json:"from,omitempty" yaml:"from,omitempty"`
 }
 
+type FieldMapping struct {
+	Source      string `json:"source" yaml:"source"`
+	Target      string `json:"target" yaml:"target"`
+	Default     string `json:"default,omitempty" yaml:"default,omitempty"`
+	Required    bool   `json:"required,omitempty" yaml:"required,omitempty"`
+	Transform   string `json:"transform,omitempty" yaml:"transform,omitempty"`
+}
+
+type PayloadMapping struct {
+	EventSource   EventSource       `json:"event_source" yaml:"event_source"`
+	EventType     EventType         `json:"event_type" yaml:"event_type"`
+	EventHeader   string            `json:"event_header,omitempty" yaml:"event_header,omitempty"`
+	Deduplication string            `json:"deduplication,omitempty" yaml:"deduplication"`
+	Fields        []FieldMapping    `json:"fields" yaml:"fields"`
+	Condition     string            `json:"condition,omitempty" yaml:"condition,omitempty"`
+	SecretHeader  string            `json:"secret_header,omitempty" yaml:"secret_header,omitempty"`
+	SecretPrefix  string            `json:"secret_prefix,omitempty" yaml:"secret_prefix,omitempty"`
+}
+
 type WebhookConfig struct {
-	URL    string            `json:"url" yaml:"url"`
-	Secret string            `json:"secret,omitempty" yaml:"secret,omitempty"`
-	Events []string          `json:"events,omitempty" yaml:"events,omitempty"`
-	Headers map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	URL          string            `json:"url" yaml:"url"`
+	Secret       string            `json:"secret,omitempty" yaml:"secret,omitempty"`
+	Events       []string          `json:"events,omitempty" yaml:"events,omitempty"`
+	Headers      map[string]string `json:"headers,omitempty" yaml:"headers,omitempty"`
+	CustomMapping *PayloadMapping   `json:"custom_mapping,omitempty" yaml:"custom_mapping,omitempty"`
 }
 
 type TriggerCondition struct {

@@ -26,12 +26,14 @@ type EventAdapter interface {
 }
 
 type TriggerAdapter struct {
-	db          *gorm.DB
-	redisClient *storage.RedisClient
-	cfg         *config.WebhookConfig
-	cron        *cron.Cron
-	eventChan   chan *types.InternalEvent
-	handlers    map[types.EventSource]EventHandler
+	db              *gorm.DB
+	redisClient     *storage.RedisClient
+	cfg             *config.WebhookConfig
+	cron            *cron.Cron
+	eventChan       chan *types.InternalEvent
+	handlers        map[types.EventSource]EventHandler
+	customHandlers  map[string]EventHandler
+	mapper          *PayloadMapper
 }
 
 type EventHandler interface {
@@ -41,12 +43,14 @@ type EventHandler interface {
 
 func NewTriggerAdapter(cfg *config.WebhookConfig) *TriggerAdapter {
 	ta := &TriggerAdapter{
-		db:          storage.GetDB(),
-		redisClient: &storage.RedisClient{},
-		cfg:         cfg,
-		cron:        cron.New(cron.WithSeconds()),
-		eventChan:   make(chan *types.InternalEvent, 1000),
-		handlers:    make(map[types.EventSource]EventHandler),
+		db:             storage.GetDB(),
+		redisClient:    &storage.RedisClient{},
+		cfg:            cfg,
+		cron:           cron.New(cron.WithSeconds()),
+		eventChan:      make(chan *types.InternalEvent, 1000),
+		handlers:       make(map[types.EventSource]EventHandler),
+		customHandlers: make(map[string]EventHandler),
+		mapper:         NewPayloadMapper(),
 	}
 
 	ta.handlers[types.EventSourceGitHub] = &GitHubHandler{secret: cfg.Secret}
@@ -69,6 +73,23 @@ func (ta *TriggerAdapter) Stop() {
 
 func (ta *TriggerAdapter) Events() <-chan *types.InternalEvent {
 	return ta.eventChan
+}
+
+func (ta *TriggerAdapter) RegisterCustomHandler(name string, handler EventHandler) {
+	ta.customHandlers[name] = handler
+}
+
+func (ta *TriggerAdapter) RegisterCustomMapping(name string, mapping *types.PayloadMapping) error {
+	if err := ta.mapper.ValidateMapping(mapping); err != nil {
+		return fmt.Errorf("invalid mapping: %w", err)
+	}
+	ta.customHandlers[name] = NewCustomWebhookHandler(mapping, ta.cfg.Secret)
+	return nil
+}
+
+func (ta *TriggerAdapter) GetCustomHandler(name string) (EventHandler, bool) {
+	handler, ok := ta.customHandlers[name]
+	return handler, ok
 }
 
 func (ta *TriggerAdapter) HandleWebhook(ctx context.Context, source types.EventSource, payload []byte, headers map[string]string) (*types.InternalEvent, error) {
@@ -159,6 +180,79 @@ func (ta *TriggerAdapter) TriggerAPI(ctx context.Context, projectID string, para
 		Payload:     params,
 		ReceivedAt:  time.Now(),
 	}
+
+	ta.eventChan <- event
+	return event, nil
+}
+
+func (ta *TriggerAdapter) HandleCustomWebhook(ctx context.Context, handlerName string, payload []byte, headers map[string]string) (*types.InternalEvent, error) {
+	handler, ok := ta.customHandlers[handlerName]
+	if !ok {
+		return nil, fmt.Errorf("custom handler not found: %s", handlerName)
+	}
+
+	signature := headers["X-Hub-Signature-256"]
+	if signature == "" {
+		signature = headers["X-Gitlab-Token"]
+	}
+	if signature == "" {
+		for k, v := range headers {
+			if strings.EqualFold(k, "X-Signature") {
+				signature = v
+				break
+			}
+		}
+	}
+
+	if !handler.ValidateSignature(payload, signature, ta.cfg.Secret) {
+		return nil, fmt.Errorf("invalid webhook signature")
+	}
+
+	event, err := handler.Handle(ctx, payload, headers)
+	if err != nil {
+		return nil, fmt.Errorf("failed to handle custom webhook: %w", err)
+	}
+
+	dedupKey := event.DeduplicationKey
+	if dedupKey == "" {
+		dedupKey = fmt.Sprintf("custom-%s-%d", handlerName, time.Now().UnixNano())
+	}
+
+	isNew, err := ta.redisClient.Deduplicate(ctx, dedupKey, 24*time.Hour)
+	if err != nil {
+		logger.Warn("deduplication check failed", zap.Error(err))
+	}
+	if !isNew {
+		logger.Info("duplicate custom event skipped",
+			zap.String("handler", handlerName),
+			zap.String("dedup_key", dedupKey))
+		return event, nil
+	}
+
+	webhookEvent := &models.WebhookEvent{
+		ID:               types.ID(types.NewID()),
+		Source:           event.EventSource,
+		EventType:        event.EventType,
+		DeduplicationKey: dedupKey,
+		ProjectID:        event.ProjectID,
+		Commit:           event.Commit,
+		Branch:           event.Branch,
+		Tag:              event.Tag,
+		Ref:              event.Ref,
+		Message:          event.Message,
+		Author:           event.Author,
+		AuthorEmail:      event.AuthorEmail,
+		Payload:          mustJSON(event.Payload),
+		Headers:          mustJSON(headers),
+		Signature:        signature,
+		SignatureValid:   boolPtr(true),
+	}
+
+	if err := ta.db.Create(webhookEvent).Error; err != nil {
+		logger.Error("failed to save webhook event", zap.Error(err))
+	}
+
+	event.ID = webhookEvent.ID
 
 	ta.eventChan <- event
 	return event, nil
