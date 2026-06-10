@@ -1,0 +1,9 @@
+[package]
+name = "physics-math"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nalgebra = { workspace = true }
+serde = { workspace = true }
+approx = { workspace = true }

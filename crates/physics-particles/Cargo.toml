@@ -1,0 +1,14 @@
+[package]
+name = "physics-particles"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+physics-spatial = { path = "../physics-spatial" }
+nalgebra = { workspace = true }
+serde = { workspace = true }
+rand = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }

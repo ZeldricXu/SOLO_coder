@@ -1,0 +1,11 @@
+[package]
+name = "physics-spatial"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+physics-core = { path = "../physics-core" }
+nalgebra = { workspace = true }
+serde = { workspace = true }
+slotmap = { workspace = true }

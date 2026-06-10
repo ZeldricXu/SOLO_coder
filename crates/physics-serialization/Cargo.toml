@@ -1,0 +1,16 @@
+[package]
+name = "physics-serialization"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+physics-core = { path = "../physics-core" }
+physics-constraints = { path = "../physics-constraints" }
+nalgebra = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+
+[dev-dependencies]
+approx = { workspace = true }

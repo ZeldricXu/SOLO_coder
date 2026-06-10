@@ -1,0 +1,13 @@
+[package]
+name = "physics-dynamics"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+physics-core = { path = "../physics-core" }
+physics-collision = { path = "../physics-collision" }
+nalgebra = { workspace = true }
+serde = { workspace = true }
+approx = { workspace = true }
+slotmap = { workspace = true }

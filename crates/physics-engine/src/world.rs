@@ -1,0 +1,652 @@
+use std::collections::HashMap;
+
+use slotmap::SlotMap;
+
+use physics_collision::{BroadPhase, ContactManifold, NarrowPhase};
+use physics_constraints::{Constraint, ConstraintSolverData, ContactConstraint, DistanceJoint, RevoluteJoint};
+use physics_core::{Body, BodyHandle, BodyType, Material, Shape};
+use physics_events::{CollisionEvent, EventDispatcher, TriggerEvent};
+use physics_math::{AABB, Vec2};
+use physics_particles::{FluidParams, FluidSystem, Particle, ParticleSolver};
+
+
+#[derive(Clone, Debug)]
+pub struct SolverConfig {
+    pub velocity_iterations: usize,
+    pub position_iterations: usize,
+    pub time_step: f32,
+}
+
+impl Default for SolverConfig {
+    fn default() -> Self {
+        SolverConfig {
+            velocity_iterations: 8,
+            position_iterations: 3,
+            time_step: 1.0 / 60.0,
+        }
+    }
+}
+
+pub struct PhysicsWorld {
+    pub gravity: Vec2,
+    pub bodies: SlotMap<BodyHandle, Body>,
+    pub body_shapes: HashMap<BodyHandle, Vec<Shape>>,
+    pub aabb_margin: f32,
+    pub min_body_size: f32,
+    pub max_body_size: f32,
+
+    pub broad_phase: BroadPhase,
+    pub narrow_phase: NarrowPhase,
+
+    pub contact_manifolds: Vec<ContactManifold>,
+    pub contact_constraints: Vec<ContactConstraint>,
+
+    pub revolute_joints: Vec<RevoluteJoint>,
+    pub distance_joints: Vec<DistanceJoint>,
+
+    pub event_dispatcher: EventDispatcher,
+
+    pub particles: Vec<Particle>,
+    pub particle_solver: ParticleSolver,
+    pub fluid_system: Option<FluidSystem>,
+
+    pub solver_config: SolverConfig,
+
+    previous_contacts: HashMap<(BodyHandle, BodyHandle), ContactManifold>,
+}
+
+impl PhysicsWorld {
+    pub fn new() -> Self {
+        PhysicsWorld {
+            gravity: Vec2::new(0.0, -9.81),
+            bodies: SlotMap::with_key(),
+            body_shapes: HashMap::new(),
+            aabb_margin: 0.1,
+            min_body_size: 0.01,
+            max_body_size: 100.0,
+
+            broad_phase: BroadPhase::new(),
+            narrow_phase: NarrowPhase::new(),
+
+            contact_manifolds: Vec::new(),
+            contact_constraints: Vec::new(),
+
+            revolute_joints: Vec::new(),
+            distance_joints: Vec::new(),
+
+            event_dispatcher: EventDispatcher::new(),
+
+            particles: Vec::new(),
+            particle_solver: ParticleSolver::new(Vec2::new(0.0, -9.81)),
+            fluid_system: None,
+
+            solver_config: SolverConfig::default(),
+
+            previous_contacts: HashMap::new(),
+        }
+    }
+
+    #[inline]
+    pub fn with_gravity(mut self, gravity: Vec2) -> Self {
+        self.gravity = gravity;
+        self
+    }
+
+    #[inline]
+    pub fn with_solver_config(mut self, config: SolverConfig) -> Self {
+        self.solver_config = config;
+        self
+    }
+
+    #[inline]
+    pub fn add_body(
+        &mut self,
+        shape: Shape,
+        position: Vec2,
+        angle: f32,
+        body_type: BodyType,
+        material: Material,
+    ) -> BodyHandle {
+        let shapes = vec![shape];
+        self.add_body_with_shapes(shapes, position, angle, body_type, material)
+    }
+
+    #[inline]
+    pub fn add_body_with_shapes(
+        &mut self,
+        shapes: Vec<Shape>,
+        position: Vec2,
+        angle: f32,
+        body_type: BodyType,
+        material: Material,
+    ) -> BodyHandle {
+        let first_shape = shapes
+            .first()
+            .cloned()
+            .unwrap_or(Shape::Circle(physics_core::shape::Circle::new(1.0)));
+
+        let handle = self.bodies.insert_with_key(|handle| {
+            Body::new(handle, first_shape, position, angle, body_type, material)
+        });
+
+        self.body_shapes.insert(handle, shapes.clone());
+
+        if body_type != BodyType::Static {
+            if let Some(body) = self.bodies.get(handle) {
+                self.broad_phase.add_body(handle, body);
+            }
+        }
+
+        handle
+    }
+
+    fn compute_combined_aabb(&self, body: &Body, shapes: &[Shape]) -> Option<AABB> {
+        let mut combined_aabb: Option<AABB> = None;
+        for shape in shapes {
+            let aabb = shape.compute_aabb(&body.transform).expand(self.aabb_margin);
+            combined_aabb = match combined_aabb {
+                Some(existing) => Some(existing.merged(&aabb)),
+                None => Some(aabb),
+            };
+        }
+        combined_aabb
+    }
+
+    fn update_broad_phase(&mut self, handle: BodyHandle) {
+        let body = match self.bodies.get(handle) {
+            Some(b) => b,
+            None => return,
+        };
+
+        self.broad_phase.update_body(handle, body);
+    }
+
+    #[inline]
+    pub fn remove_body(&mut self, handle: BodyHandle) -> Option<Body> {
+        self.body_shapes.remove(&handle);
+        self.broad_phase.remove_body(handle);
+        self.bodies.remove(handle)
+    }
+
+    #[inline]
+    pub fn get_body(&self, handle: BodyHandle) -> Option<&Body> {
+        self.bodies.get(handle)
+    }
+
+    #[inline]
+    pub fn get_body_mut(&mut self, handle: BodyHandle) -> Option<&mut Body> {
+        self.bodies.get_mut(handle)
+    }
+
+    #[inline]
+    pub fn get_body_shapes(&self, handle: BodyHandle) -> Option<&[Shape]> {
+        self.body_shapes.get(&handle).map(|v| v.as_slice())
+    }
+
+    #[inline]
+    pub fn bodies(&self) -> impl Iterator<Item = &Body> {
+        self.bodies.values()
+    }
+
+    #[inline]
+    pub fn bodies_mut(&mut self) -> impl Iterator<Item = &mut Body> {
+        self.bodies.values_mut()
+    }
+
+    #[inline]
+    pub fn dynamic_bodies(&self) -> impl Iterator<Item = &Body> {
+        self.bodies.values().filter(|b| b.is_dynamic())
+    }
+
+    #[inline]
+    pub fn body_count(&self) -> usize {
+        self.bodies.len()
+    }
+
+    #[inline]
+    pub fn dynamic_body_count(&self) -> usize {
+        self.bodies.values().filter(|b| b.is_dynamic()).count()
+    }
+
+    #[inline]
+    pub fn add_revolute_joint(&mut self, joint: RevoluteJoint) {
+        self.revolute_joints.push(joint);
+    }
+
+    #[inline]
+    pub fn add_distance_joint(&mut self, joint: DistanceJoint) {
+        self.distance_joints.push(joint);
+    }
+
+    #[inline]
+    pub fn add_particle(&mut self, particle: Particle) {
+        if let Some(fluid) = &mut self.fluid_system {
+            fluid.add_particle(particle);
+        } else {
+            self.particles.push(particle);
+        }
+    }
+
+    #[inline]
+    pub fn enable_fluid(&mut self, smoothing_radius: f32, rest_density: f32) {
+        let params = FluidParams {
+            smoothing_radius,
+            rest_density,
+            pressure_stiffness: 200.0,
+            viscosity: 0.1,
+            gravity: self.gravity,
+        };
+        self.fluid_system = Some(FluidSystem::new(params));
+    }
+
+    #[inline]
+    pub fn clear(&mut self) {
+        self.bodies.clear();
+        self.body_shapes.clear();
+        self.broad_phase = BroadPhase::new();
+        self.contact_manifolds.clear();
+        self.contact_constraints.clear();
+        self.revolute_joints.clear();
+        self.distance_joints.clear();
+        self.particles.clear();
+        self.fluid_system = None;
+        self.previous_contacts.clear();
+        self.event_dispatcher.clear();
+    }
+
+    #[inline]
+    pub fn apply_gravity(&mut self) {
+        for body in self.bodies.values_mut() {
+            if body.is_dynamic() && body.is_active {
+                let gravity_force = self.gravity * body.mass * body.gravity_scale;
+                body.apply_force(gravity_force);
+            }
+        }
+    }
+
+    #[inline]
+    pub fn save_transforms(&mut self) {
+        for body in self.bodies.values_mut() {
+            body.prev_transform = body.transform;
+        }
+    }
+
+    fn integrate_velocities(&mut self, dt: f32) {
+        for (_, body) in self.bodies.iter_mut() {
+            if !body.is_dynamic() {
+                continue;
+            }
+
+            body.linear_velocity += body.force * body.inv_mass * dt;
+            body.angular_velocity += body.torque * body.inv_inertia * dt;
+
+            body.force = Vec2::ZERO;
+            body.torque = 0.0;
+
+            let linear_damping = body.linear_damping;
+            let angular_damping = body.angular_damping;
+
+            body.linear_velocity *= 1.0 - linear_damping * dt;
+            body.angular_velocity *= 1.0 - angular_damping * dt;
+        }
+    }
+
+    fn integrate_positions(&mut self, dt: f32) {
+        for (_, body) in self.bodies.iter_mut() {
+            if body.body_type == BodyType::Static {
+                continue;
+            }
+
+            body.transform.position += body.linear_velocity * dt;
+            let new_angle = body.transform.rotation.angle() + body.angular_velocity * dt;
+            body.transform.rotation.set_angle(new_angle);
+        }
+    }
+
+    pub fn step(&mut self) {
+        self.step_with_dt(self.solver_config.time_step);
+    }
+
+    pub fn step_with_dt(&mut self, dt: f32) {
+        if dt <= 0.0 {
+            return;
+        }
+
+        self.save_transforms();
+        self.apply_gravity();
+
+        self.integrate_velocities(dt);
+
+        let handles: Vec<BodyHandle> = self.bodies.keys().collect();
+        for handle in handles {
+            if let Some(body) = self.bodies.get(handle) {
+                if body.is_dynamic() {
+                    self.update_broad_phase(handle);
+                }
+            }
+        }
+
+        self.contact_manifolds.clear();
+        self.contact_constraints.clear();
+
+        let broad_pairs = self.broad_phase.get_potential_pairs();
+
+        for (handle_a, handle_b) in &broad_pairs {
+            let body_a = match self.bodies.get(*handle_a) {
+                Some(b) => b,
+                None => continue,
+            };
+            let body_b = match self.bodies.get(*handle_b) {
+                Some(b) => b,
+                None => continue,
+            };
+
+            if body_a.is_static() && body_b.is_static() {
+                continue;
+            }
+
+            let shapes_a = match self.body_shapes.get(handle_a) {
+                Some(s) => s,
+                None => continue,
+            };
+            let shapes_b = match self.body_shapes.get(handle_b) {
+                Some(s) => s,
+                None => continue,
+            };
+
+            for shape_a in shapes_a {
+                for shape_b in shapes_b {
+                    let temp_body_a = Body::new_temp(shape_a.clone(), body_a.transform);
+                    let temp_body_b = Body::new_temp(shape_b.clone(), body_b.transform);
+
+                    if let Some(mut manifold) =
+                        self.narrow_phase
+                            .collide(&temp_body_a, *handle_a, &temp_body_b, *handle_b)
+                    {
+                        manifold.body_a = *handle_a;
+                        manifold.body_b = *handle_b;
+                        self.contact_manifolds.push(manifold);
+                    }
+                }
+            }
+        }
+
+        {
+            let mut solver_data = ConstraintSolverData {
+                bodies: &mut self.bodies,
+                dt,
+                inv_dt: 1.0 / dt,
+            };
+
+            for manifold in &self.contact_manifolds {
+                if manifold.point_count == 0 {
+                    continue;
+                }
+
+                let body_a = solver_data.bodies.get(manifold.body_a).unwrap();
+                let body_b = solver_data.bodies.get(manifold.body_b).unwrap();
+
+                let mut constraint = ContactConstraint::new(manifold, body_a, body_b);
+                constraint.prepare(&solver_data);
+                self.contact_constraints.push(constraint);
+            }
+
+            for j in &mut self.revolute_joints {
+                j.prepare(&solver_data);
+            }
+            for j in &mut self.distance_joints {
+                j.prepare(&solver_data);
+            }
+
+            let vel_iters = self.solver_config.velocity_iterations;
+
+            for _ in 0..vel_iters {
+                for c in &mut self.contact_constraints {
+                    c.solve_velocity(&mut solver_data);
+                }
+                for j in &mut self.revolute_joints {
+                    j.solve_velocity(&mut solver_data);
+                }
+                for j in &mut self.distance_joints {
+                    j.solve_velocity(&mut solver_data);
+                }
+            }
+        }
+
+        self.integrate_positions(dt);
+
+        {
+            let mut solver_data = ConstraintSolverData {
+                bodies: &mut self.bodies,
+                dt,
+                inv_dt: 1.0 / dt,
+            };
+
+            let pos_iters = self.solver_config.position_iterations;
+
+            for _ in 0..pos_iters {
+                let mut done = true;
+                for c in &mut self.contact_constraints {
+                    if !c.solve_position(&mut solver_data) {
+                        done = false;
+                    }
+                }
+                for j in &mut self.revolute_joints {
+                    if !j.solve_position(&mut solver_data) {
+                        done = false;
+                    }
+                }
+                for j in &mut self.distance_joints {
+                    if !j.solve_position(&mut solver_data) {
+                        done = false;
+                    }
+                }
+                if done {
+                    break;
+                }
+            }
+        }
+
+        for body in self.bodies.values_mut() {
+            body.clear_forces();
+        }
+
+        self.detect_collision_events();
+
+        if !self.particles.is_empty() {
+            self.step_particles(dt);
+        }
+    }
+
+    fn detect_collision_events(&mut self) {
+        let mut current_contacts: HashMap<(BodyHandle, BodyHandle), ContactManifold> = HashMap::new();
+
+        for manifold in &self.contact_manifolds {
+            if manifold.point_count == 0 {
+                continue;
+            }
+
+            let key = (manifold.body_a, manifold.body_b);
+            let ordered_key = if key.0 < key.1 { key } else { (key.1, key.0) };
+            current_contacts.insert(ordered_key, manifold.clone());
+        }
+
+        self.event_dispatcher.begin_frame();
+        self.event_dispatcher.dispatch_collisions(&self.contact_manifolds);
+
+        self.previous_contacts = current_contacts;
+    }
+
+    fn step_particles(&mut self, dt: f32) {
+        if let Some(fluid) = &mut self.fluid_system {
+            fluid.step(dt);
+            self.particle_solver.step_fluid(fluid, dt);
+        } else if !self.particles.is_empty() {
+            self.particle_solver.step_simple(&mut self.particles, dt);
+        }
+    }
+
+    #[inline]
+    pub fn register_collision_callback<F>(&mut self, callback: F)
+    where
+        F: FnMut(&CollisionEvent) + Send + Sync + 'static,
+    {
+        self.event_dispatcher.register_collision_callback(callback);
+    }
+
+    #[inline]
+    pub fn register_trigger_callback<F>(&mut self, callback: F)
+    where
+        F: FnMut(&TriggerEvent) + Send + Sync + 'static,
+    {
+        self.event_dispatcher.register_trigger_callback(callback);
+    }
+
+    #[inline]
+    pub fn contact_manifolds(&self) -> &[ContactManifold] {
+        &self.contact_manifolds
+    }
+
+    #[inline]
+    pub fn contact_constraints(&self) -> &[ContactConstraint] {
+        &self.contact_constraints
+    }
+
+    #[inline]
+    pub fn revolute_joints(&self) -> &[RevoluteJoint] {
+        &self.revolute_joints
+    }
+
+    #[inline]
+    pub fn distance_joints(&self) -> &[DistanceJoint] {
+        &self.distance_joints
+    }
+
+    #[inline]
+    pub fn particles(&self) -> &[Particle] {
+        &self.particles
+    }
+
+    #[inline]
+    pub fn fluid_particles(&self) -> Option<&[Particle]> {
+        self.fluid_system.as_ref().map(|_| &self.particles[..])
+    }
+}
+
+impl Default for PhysicsWorld {
+    fn default() -> Self {
+        PhysicsWorld::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use physics_core::shape::{Circle, Rectangle};
+    use approx::assert_abs_diff_eq;
+
+    #[test]
+    fn test_world_creation() {
+        let world = PhysicsWorld::new();
+        assert_eq!(world.body_count(), 0);
+        assert_abs_diff_eq!(world.gravity.y, -9.81);
+    }
+
+    #[test]
+    fn test_add_body() {
+        let mut world = PhysicsWorld::new();
+        let shape = Shape::Circle(Circle::new(1.0));
+        let material = Material::DEFAULT;
+        let handle = world.add_body(
+            shape,
+            Vec2::new(0.0, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        assert_eq!(world.body_count(), 1);
+        let body = world.get_body(handle).unwrap();
+        assert_abs_diff_eq!(body.position().y, 5.0);
+    }
+
+    #[test]
+    fn test_remove_body() {
+        let mut world = PhysicsWorld::new();
+        let shape = Shape::Circle(Circle::new(1.0));
+        let material = Material::DEFAULT;
+        let handle = world.add_body(shape, Vec2::ZERO, 0.0, BodyType::Dynamic, material);
+
+        assert_eq!(world.body_count(), 1);
+        let removed = world.remove_body(handle);
+        assert!(removed.is_some());
+        assert_eq!(world.body_count(), 0);
+    }
+
+    #[test]
+    fn test_apply_gravity() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::new(0.0, -10.0));
+        let shape = Shape::Circle(Circle::new(1.0));
+        let material = Material::DEFAULT.with_density(1.0);
+        world.add_body(shape, Vec2::ZERO, 0.0, BodyType::Dynamic, material);
+
+        world.apply_gravity();
+
+        let body = world.bodies().next().unwrap();
+        let expected_force = body.mass * -10.0;
+        assert_abs_diff_eq!(body.force.y, expected_force);
+    }
+
+    #[test]
+    fn test_simple_fall() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::new(0.0, -10.0));
+        let shape = Shape::Circle(Circle::new(1.0));
+        let material = Material::DEFAULT.with_density(1.0).with_restitution(0.0);
+        world.add_body(
+            shape,
+            Vec2::new(0.0, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        for _ in 0..30 {
+            world.step_with_dt(1.0 / 60.0);
+        }
+
+        let body = world.bodies().next().unwrap();
+        assert!(body.position().y < 5.0);
+    }
+
+    #[test]
+    fn test_collision_detection() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::new(0.0, -10.0));
+
+        let ground_shape = Shape::Rectangle(Rectangle::new(10.0, 1.0));
+        let ground_material = Material::DEFAULT.with_restitution(0.5);
+        world.add_body(
+            ground_shape,
+            Vec2::new(0.0, -5.0),
+            0.0,
+            BodyType::Static,
+            ground_material,
+        );
+
+        let ball_shape = Shape::Circle(Circle::new(1.0));
+        let ball_material = Material::DEFAULT.with_restitution(0.5);
+        world.add_body(
+            ball_shape,
+            Vec2::new(0.0, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            ball_material,
+        );
+
+        for _ in 0..60 {
+            world.step_with_dt(1.0 / 60.0);
+        }
+
+        let ball = world.bodies().nth(1).unwrap();
+        assert!(ball.position().y > -4.5);
+    }
+}

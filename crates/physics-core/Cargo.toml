@@ -1,0 +1,11 @@
+[package]
+name = "physics-core"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+nalgebra = { workspace = true }
+serde = { workspace = true }
+slotmap = { workspace = true, features = ["serde"] }
+approx = { workspace = true }

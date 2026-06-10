@@ -1,0 +1,28 @@
+[package]
+name = "sandbox"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "sandbox"
+path = "src/main.rs"
+
+[dependencies]
+physics-math = { path = "../../crates/physics-math" }
+physics-core = { path = "../../crates/physics-core" }
+physics-collision = { path = "../../crates/physics-collision" }
+physics-dynamics = { path = "../../crates/physics-dynamics" }
+physics-constraints = { path = "../../crates/physics-constraints" }
+physics-particles = { path = "../../crates/physics-particles" }
+physics-events = { path = "../../crates/physics-events" }
+physics-serialization = { path = "../../crates/physics-serialization" }
+physics-debug-render = { path = "../../crates/physics-debug-render" }
+eframe = { workspace = true }
+egui = { workspace = true }
+epaint = { workspace = true }
+emath = { workspace = true }
+ecolor = { workspace = true }
+nalgebra = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rand = { workspace = true }

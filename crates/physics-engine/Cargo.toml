@@ -1,0 +1,19 @@
+[package]
+name = "physics-engine"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+physics-core = { path = "../physics-core" }
+physics-spatial = { path = "../physics-spatial" }
+physics-collision = { path = "../physics-collision" }
+physics-dynamics = { path = "../physics-dynamics" }
+physics-constraints = { path = "../physics-constraints" }
+physics-particles = { path = "../physics-particles" }
+physics-events = { path = "../physics-events" }
+physics-serialization = { path = "../physics-serialization" }
+nalgebra = { workspace = true }
+slotmap = { workspace = true }
+serde = { workspace = true }
+approx = { workspace = true }

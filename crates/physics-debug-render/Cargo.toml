@@ -1,0 +1,17 @@
+[package]
+name = "physics-debug-render"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+physics-core = { path = "../physics-core" }
+physics-collision = { path = "../physics-collision" }
+physics-constraints = { path = "../physics-constraints" }
+physics-particles = { path = "../physics-particles" }
+egui = { workspace = true }
+epaint = { workspace = true }
+emath = { workspace = true }
+ecolor = { workspace = true }
+nalgebra = { workspace = true }
+slotmap = { workspace = true }
