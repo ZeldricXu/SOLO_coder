@@ -92,6 +92,29 @@ func IncrementTileHit(datasetID string, lod int, x, y, z int64) error {
 	return Client.ZIncrBy(ctx, key, 1, field).Err()
 }
 
+func DeleteByPrefix(prefix string) error {
+	if Client == nil {
+		return fmt.Errorf("redis client not initialized")
+	}
+	var cursor uint64
+	for {
+		keys, nextCursor, err := Client.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return fmt.Errorf("failed to scan keys with prefix %s: %w", prefix, err)
+		}
+		if len(keys) > 0 {
+			if err := Client.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("failed to delete keys with prefix %s: %w", prefix, err)
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
+}
+
 func GetHotTiles(datasetID string, count int) ([]string, error) {
 	if Client == nil {
 		return nil, fmt.Errorf("redis client not initialized")

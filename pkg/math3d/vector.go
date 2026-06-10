@@ -71,6 +71,26 @@ func (v Vec3) Angle(o Vec3) float64 {
 	return math.Acos(cos)
 }
 
+func (v Vec3) IsZero() bool {
+	return v.X == 0 && v.Y == 0 && v.Z == 0
+}
+
+func (v Vec3) Min(o Vec3) Vec3 {
+	return Vec3{
+		X: math.Min(v.X, o.X),
+		Y: math.Min(v.Y, o.Y),
+		Z: math.Min(v.Z, o.Z),
+	}
+}
+
+func (v Vec3) Max(o Vec3) Vec3 {
+	return Vec3{
+		X: math.Max(v.X, o.X),
+		Y: math.Max(v.Y, o.Y),
+		Z: math.Max(v.Z, o.Z),
+	}
+}
+
 type AABB struct {
 	Min, Max Vec3
 }

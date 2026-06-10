@@ -178,3 +178,168 @@ func (s *OctreeService) GetOctree(datasetID string) (*Octree, bool) {
 	octree, exists := s.octrees[datasetID]
 	return octree, exists
 }
+
+type IncrementalUpdateRequest struct {
+	DatasetID   string
+	Points      []parser.Point
+	SourceFile  string
+	SourceFormat string
+}
+
+type IncrementalUpdateResponse struct {
+	DatasetID       string
+	InsertedPoints  int
+	UpdatedNodes    int
+	UpdatedTiles    int
+	UpdatedLODs     []int
+	AffectedTiles   []TileMetadata
+	NewBounds       *math3d.AABB
+	NewTotalPoints  uint64
+	RebuildRequired bool
+	Error           error
+}
+
+func (s *OctreeService) IncrementalUpdateFromPointCloud(req *IncrementalUpdateRequest) (*IncrementalUpdateResponse, error) {
+	resp := &IncrementalUpdateResponse{
+		DatasetID: req.DatasetID,
+	}
+
+	s.mu.RLock()
+	octree, octreeExists := s.octrees[req.DatasetID]
+	builder, builderExists := s.builders[req.DatasetID]
+	s.mu.RUnlock()
+
+	if !octreeExists || !builderExists {
+		resp.Error = fmt.Errorf("dataset %s not found or not built", req.DatasetID)
+		return resp, resp.Error
+	}
+
+	oldBounds := octree.GlobalBounds
+
+	result := octree.InsertPoints(req.Points)
+	resp.InsertedPoints = result.InsertedPoints
+	resp.UpdatedNodes = result.UpdatedNodes
+	resp.NewBounds = result.NewBounds
+	resp.NewTotalPoints = octree.TotalPoints
+
+	if result.NewBounds != nil {
+		newOctree := NewOctree(s.cfg, *result.NewBounds)
+		var allPoints []parser.Point
+		collectAllPoints(octree.Root, &allPoints)
+		allPoints = append(allPoints, req.Points...)
+		newOctree.BuildFromPoints(allPoints)
+
+		s.mu.Lock()
+		s.octrees[req.DatasetID] = newOctree
+		s.mu.Unlock()
+
+		newBuilder := NewLODBuilder(newOctree, req.DatasetID, s.cfg, s.storageCfg)
+		s.mu.Lock()
+		s.builders[req.DatasetID] = newBuilder
+		s.mu.Unlock()
+
+		octree = newOctree
+		builder = newBuilder
+	}
+
+	affectedTiles, affectedLODs := octree.GetAffectedTiles(builder.LODLevels - 1)
+	resp.UpdatedLODs = affectedLODs
+
+	lodResult, err := builder.UpdateAffectedTiles(affectedTiles, octree.TotalPoints)
+	if err != nil {
+		resp.Error = fmt.Errorf("failed to update LOD tiles: %w", err)
+		return resp, resp.Error
+	}
+
+	resp.UpdatedTiles = len(lodResult.UpdatedTiles)
+	resp.AffectedTiles = lodResult.UpdatedTiles
+	resp.RebuildRequired = lodResult.RebuildRequired
+
+	if resp.RebuildRequired {
+		newOctree := NewOctree(s.cfg, octree.GlobalBounds)
+		var allPoints []parser.Point
+		collectAllPoints(octree.Root, &allPoints)
+		newOctree.BuildFromPoints(allPoints)
+
+		s.mu.Lock()
+		s.octrees[req.DatasetID] = newOctree
+		s.mu.Unlock()
+
+		newBuilder := NewLODBuilder(newOctree, req.DatasetID, s.cfg, s.storageCfg)
+		s.mu.Lock()
+		s.builders[req.DatasetID] = newBuilder
+		s.mu.Unlock()
+	}
+
+	octree.ClearDirty()
+
+	_ = oldBounds
+	return resp, nil
+}
+
+func collectAllPoints(node *OctreeNode, points *[]parser.Point) {
+	if node == nil {
+		return
+	}
+	if len(node.Points) > 0 {
+		*points = append(*points, node.Points...)
+	}
+	if !node.IsLeaf {
+		for _, child := range node.Children {
+			collectAllPoints(child, points)
+		}
+	}
+}
+
+func (s *OctreeService) IncrementalUpdateFromFile(req *IncrementalUpdateRequest) (*IncrementalUpdateResponse, error) {
+	if req.SourceFile == "" {
+		return nil, fmt.Errorf("source file path is required")
+	}
+
+	parseService := parser.NewParseService(4)
+	pc, err := parseService.ParseFile(req.SourceFile)
+	if err != nil {
+		return &IncrementalUpdateResponse{
+			DatasetID: req.DatasetID,
+			Error:     fmt.Errorf("failed to parse incremental file: %w", err),
+		}, err
+	}
+
+	req.Points = pc.Points
+	return s.IncrementalUpdateFromPointCloud(req)
+}
+
+func (s *OctreeService) IncrementalUpdateAsync(req *IncrementalUpdateRequest) <-chan *IncrementalUpdateResponse {
+	resultChan := make(chan *IncrementalUpdateResponse, 1)
+
+	go func() {
+		defer close(resultChan)
+		var resp *IncrementalUpdateResponse
+		var err error
+
+		if req.SourceFile != "" {
+			resp, err = s.IncrementalUpdateFromFile(req)
+		} else {
+			resp, err = s.IncrementalUpdateFromPointCloud(req)
+		}
+
+		if err != nil {
+			resultChan <- &IncrementalUpdateResponse{
+				DatasetID: req.DatasetID,
+				Error:     err,
+			}
+			return
+		}
+		resultChan <- resp
+	}()
+
+	return resultChan
+}
+
+func (s *OctreeService) IncrementalUpdateFromPoints(datasetID string, points []parser.Point) (*IncrementalUpdateResponse, error) {
+	req := &IncrementalUpdateRequest{
+		DatasetID: datasetID,
+		Points:    points,
+	}
+	return s.IncrementalUpdateFromPointCloud(req)
+}

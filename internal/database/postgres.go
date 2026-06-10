@@ -129,6 +129,19 @@ func createTables() error {
 		}
 	}
 
+	alterStatements := []string{
+		`ALTER TABLE annotations ADD COLUMN IF NOT EXISTS tags JSONB`,
+		`ALTER TABLE annotations ADD COLUMN IF NOT EXISTS label_groups JSONB`,
+		`CREATE INDEX IF NOT EXISTS idx_annotations_tags ON annotations USING GIN (tags)`,
+		`CREATE INDEX IF NOT EXISTS idx_annotations_label_groups ON annotations USING GIN (label_groups)`,
+	}
+
+	for _, stmt := range alterStatements {
+		if _, err := DB.Exec(stmt); err != nil {
+			return fmt.Errorf("failed to execute alter: %w, sql: %s", err, stmt)
+		}
+	}
+
 	return nil
 }
 

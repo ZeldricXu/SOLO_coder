@@ -458,3 +458,56 @@ func (s *TileService) StreamTile(w io.Writer, datasetID string, lod int, x, y, z
 	_, err = w.Write(data)
 	return err
 }
+
+type IncrementalUpdateResponse struct {
+	DatasetID       string `json:"dataset_id"`
+	InsertedPoints  int    `json:"inserted_points"`
+	UpdatedNodes    int    `json:"updated_nodes"`
+	UpdatedTiles    int    `json:"updated_tiles"`
+	NewTotalPoints  uint64 `json:"new_total_points"`
+	RebuildRequired bool   `json:"rebuild_required"`
+}
+
+func (s *TileService) IncrementalUpdate(datasetID string, points []parser.Point, filePath string) (*IncrementalUpdateResponse, error) {
+	req := &octree.IncrementalUpdateRequest{
+		DatasetID:   datasetID,
+		Points:      points,
+		SourceFile:  filePath,
+	}
+
+	var resp *octree.IncrementalUpdateResponse
+	var err error
+
+	if filePath != "" {
+		resp, err = s.octreeSvc.IncrementalUpdateFromFile(req)
+	} else if len(points) > 0 {
+		resp, err = s.octreeSvc.IncrementalUpdateFromPoints(datasetID, points)
+	} else {
+		return nil, fmt.Errorf("either points or source_file must be provided")
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.RebuildRequired {
+		_ = cache.DeleteByPrefix(fmt.Sprintf("tile:%s:", datasetID))
+		_ = cache.DeleteByPrefix(fmt.Sprintf("hot_tiles:%s", datasetID))
+	} else {
+		for _, tile := range resp.AffectedTiles {
+			tileKey := cache.TileKey(datasetID, tile.LOD, tile.X, tile.Y, tile.Z)
+			_ = cache.Delete(tileKey)
+		}
+	}
+
+	result := &IncrementalUpdateResponse{
+		DatasetID:       resp.DatasetID,
+		InsertedPoints:  resp.InsertedPoints,
+		UpdatedNodes:    resp.UpdatedNodes,
+		UpdatedTiles:    resp.UpdatedTiles,
+		NewTotalPoints:  resp.NewTotalPoints,
+		RebuildRequired: resp.RebuildRequired,
+	}
+
+	return result, nil
+}

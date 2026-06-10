@@ -368,3 +368,160 @@ func (b *LODBuilder) GetTilesForView(frustum *math3d.Frustum, lodBias float64, m
 
 	return visibleTiles
 }
+
+type IncrementalLODResult struct {
+	UpdatedTiles    []TileMetadata
+	UpdatedLevels   []int
+	Reindexed       bool
+	RebuildRequired bool
+	NewTotalPoints  uint64
+}
+
+func (b *LODBuilder) UpdateAffectedTiles(affectedKeys []TileKey, newTotalPoints uint64) (*IncrementalLODResult, error) {
+	result := &IncrementalLODResult{
+		UpdatedTiles:   make([]TileMetadata, 0, len(affectedKeys)),
+		UpdatedLevels:  make([]int, 0),
+		NewTotalPoints: newTotalPoints,
+	}
+
+	levelMap := make(map[int]bool)
+
+	bounds := b.Octree.GlobalBounds
+	size := bounds.Size()
+
+	for _, key := range affectedKeys {
+		gridSize := int64(1 << uint(key.LOD))
+		nodeSize := size.Div(float64(gridSize))
+
+		maxCoord := gridSize
+		if key.X < 0 || key.Y < 0 || key.Z < 0 || key.X >= maxCoord || key.Y >= maxCoord || key.Z >= maxCoord {
+			result.RebuildRequired = true
+			continue
+		}
+
+		samplingRate := 1
+		if key.LOD > 0 {
+			samplingRate = int(math.Pow(8, float64(key.LOD)))
+		}
+
+		tile := b.buildTile(key.LOD, key.X, key.Y, key.Z, nodeSize, bounds, samplingRate)
+
+		if tile == nil {
+			tile = &Tile{
+				LOD:        key.LOD,
+				X:          key.X,
+				Y:          key.Y,
+				Z:          key.Z,
+				Bounds: math3d.NewAABB(
+					math3d.Vec3{
+						X: bounds.Min.X + float64(key.X)*nodeSize.X,
+						Y: bounds.Min.Y + float64(key.Y)*nodeSize.Y,
+						Z: bounds.Min.Z + float64(key.Z)*nodeSize.Z,
+					},
+					math3d.Vec3{
+						X: bounds.Min.X + float64(key.X+1)*nodeSize.X,
+						Y: bounds.Min.Y + float64(key.Y+1)*nodeSize.Y,
+						Z: bounds.Min.Z + float64(key.Z+1)*nodeSize.Z,
+					},
+				),
+				PointCount: 0,
+				Center: math3d.Vec3{
+					X: bounds.Min.X + float64(key.X)*nodeSize.X + nodeSize.X*0.5,
+					Y: bounds.Min.Y + float64(key.Y)*nodeSize.Y + nodeSize.Y*0.5,
+					Z: bounds.Min.Z + float64(key.Z)*nodeSize.Z + nodeSize.Z*0.5,
+				},
+			}
+		}
+
+		tileKey := b.tileKey(key.LOD, key.X, key.Y, key.Z)
+
+		b.tilesMutex.Lock()
+		b.tiles[tileKey] = tile
+		b.tilesMutex.Unlock()
+
+		if err := b.saveTile(tile); err != nil {
+			return nil, fmt.Errorf("failed to save updated tile %s: %w", tileKey, err)
+		}
+
+		meta := TileMetadata{
+			Key:        tileKey,
+			LOD:        tile.LOD,
+			X:          tile.X,
+			Y:          tile.Y,
+			Z:          tile.Z,
+			Bounds:     tile.Bounds,
+			PointCount: tile.PointCount,
+			Center:     tile.Center,
+		}
+
+		result.UpdatedTiles = append(result.UpdatedTiles, meta)
+		levelMap[key.LOD] = true
+	}
+
+	for level := range levelMap {
+		result.UpdatedLevels = append(result.UpdatedLevels, level)
+	}
+
+	if !result.RebuildRequired {
+		if err := b.updateIndex(result.UpdatedTiles, newTotalPoints); err != nil {
+			return nil, fmt.Errorf("failed to update tile index: %w", err)
+		}
+		result.Reindexed = true
+	}
+
+	return result, nil
+}
+
+func (b *LODBuilder) updateIndex(updatedTiles []TileMetadata, newTotalPoints uint64) error {
+	index, err := b.LoadIndex()
+	if err != nil {
+		return fmt.Errorf("failed to load existing index: %w", err)
+	}
+
+	index.TotalPoints = newTotalPoints
+
+	updatedMap := make(map[string]TileMetadata)
+	for _, t := range updatedTiles {
+		updatedMap[t.Key] = t
+	}
+
+	newTiles := make([]TileMetadata, 0, len(index.Tiles))
+	seenKeys := make(map[string]bool)
+
+	for _, existing := range index.Tiles {
+		if updated, ok := updatedMap[existing.Key]; ok {
+			if updated.PointCount > 0 {
+				newTiles = append(newTiles, updated)
+			}
+			seenKeys[existing.Key] = true
+		} else {
+			newTiles = append(newTiles, existing)
+		}
+	}
+
+	for _, updated := range updatedTiles {
+		if !seenKeys[updated.Key] && updated.PointCount > 0 {
+			newTiles = append(newTiles, updated)
+		}
+	}
+
+	index.Tiles = newTiles
+
+	levelPointCounts := make(map[int]uint64)
+	levelTileCounts := make(map[int]int)
+	for _, t := range index.Tiles {
+		levelPointCounts[t.LOD] += uint64(t.PointCount)
+		levelTileCounts[t.LOD]++
+	}
+
+	for i, level := range index.Levels {
+		if points, ok := levelPointCounts[level.Level]; ok {
+			index.Levels[i].TotalPoints = points
+		}
+		if count, ok := levelTileCounts[level.Level]; ok {
+			index.Levels[i].TileCount = count
+		}
+	}
+
+	return b.saveIndex(index)
+}

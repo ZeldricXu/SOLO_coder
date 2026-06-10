@@ -1,7 +1,9 @@
 package collaboration
 
 import (
+	"encoding/json"
 	"net/http"
+	"pointcloud-platform/pkg/math3d"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -32,6 +34,9 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 		collab.GET("/rooms/:id", h.GetRoom)
 		collab.GET("/rooms/:id/users", h.GetRoomUsers)
 		collab.GET("/rooms/:id/state", h.GetRoomState)
+		collab.PUT("/rooms/:id/users/:userId/frustum", h.UpdateUserFrustum)
+		collab.POST("/rooms/:id/annotations/fetch", h.FetchAnnotationsInRegion)
+		collab.GET("/rooms/:id/users/:userId/visible-annotations", h.GetVisibleAnnotations)
 		collab.GET("/ws/:roomId/:userId/:username", h.WebSocketHandler)
 	}
 
@@ -254,4 +259,80 @@ func (h *Handler) writePump(conn *websocket.Conn, user *User, room *Room) {
 			return
 		}
 	}
+}
+
+func (h *Handler) UpdateUserFrustum(c *gin.Context) {
+	roomID := c.Param("id")
+	userID := c.Param("userId")
+
+	var frustumState FrustumState
+	if err := c.ShouldBindJSON(&frustumState); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	annotations, err := h.service.UpdateUserFrustum(roomID, userID, frustumState)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	if annotations == nil {
+		annotations = []json.RawMessage{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"newly_visible": annotations,
+		"count":         len(annotations),
+	})
+}
+
+func (h *Handler) FetchAnnotationsInRegion(c *gin.Context) {
+	roomID := c.Param("id")
+
+	var req struct {
+		Min math3d.Vec3 `json:"min"`
+		Max math3d.Vec3 `json:"max"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	region := math3d.AABB{Min: req.Min, Max: req.Max}
+
+	annotations, err := h.service.FetchAnnotationsInRegion(roomID, region)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	if annotations == nil {
+		annotations = []json.RawMessage{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"annotations": annotations,
+		"count":       len(annotations),
+	})
+}
+
+func (h *Handler) GetVisibleAnnotations(c *gin.Context) {
+	roomID := c.Param("id")
+	userID := c.Param("userId")
+
+	visibleIDs, err := h.service.GetVisibleAnnotationsForUser(roomID, userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+
+	if visibleIDs == nil {
+		visibleIDs = []string{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"annotation_ids": visibleIDs,
+		"count":          len(visibleIDs),
+	})
 }

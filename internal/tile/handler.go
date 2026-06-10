@@ -2,6 +2,7 @@ package tile
 
 import (
 	"net/http"
+	"pointcloud-platform/internal/parser"
 	"pointcloud-platform/pkg/math3d"
 	"strconv"
 	"strings"
@@ -27,6 +28,7 @@ func (h *Handler) RegisterRoutes(r *gin.RouterGroup) {
 		tile.GET("/:datasetId/hot", h.GetHotTiles)
 		tile.POST("/:datasetId/preload", h.PreloadHotTiles)
 		tile.POST("/:datasetId/query", h.QueryTiles)
+		tile.POST("/:datasetId/incremental", h.IncrementalUpdate)
 	}
 }
 
@@ -273,4 +275,45 @@ func ParseRangeHeader(header string, fileSize int64) (start, end int64, err erro
 	}
 
 	return start, end, nil
+}
+
+func (h *Handler) IncrementalUpdate(c *gin.Context) {
+	datasetID := c.Param("datasetId")
+
+	var req struct {
+		SourceFile string `json:"source_file"`
+		Points     []struct {
+			X float64 `json:"x"`
+			Y float64 `json:"y"`
+			Z float64 `json:"z"`
+			R uint8   `json:"r"`
+			G uint8   `json:"g"`
+			B uint8   `json:"b"`
+		} `json:"points"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var points []parser.Point
+	for _, p := range req.Points {
+		points = append(points, parser.Point{
+			X: p.X,
+			Y: p.Y,
+			Z: p.Z,
+			R: p.R,
+			G: p.G,
+			B: p.B,
+		})
+	}
+
+	result, err := h.service.IncrementalUpdate(datasetID, points, req.SourceFile)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, result)
 }

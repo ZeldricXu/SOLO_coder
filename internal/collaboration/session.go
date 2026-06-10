@@ -16,19 +16,49 @@ type MessageType string
 type ConflictResolution string
 
 const (
-	MessageTypeViewSync    MessageType = "view_sync"
-	MessageTypeAnnotation  MessageType = "annotation"
-	MessageTypeCursor      MessageType = "cursor"
-	MessageTypeChat        MessageType = "chat"
-	MessageTypeSelection   MessageType = "selection"
-	MessageTypeJoin        MessageType = "join"
-	MessageTypeLeave       MessageType = "leave"
-	MessageTypeHeartbeat   MessageType = "heartbeat"
+	MessageTypeViewSync         MessageType = "view_sync"
+	MessageTypeAnnotation       MessageType = "annotation"
+	MessageTypeCursor           MessageType = "cursor"
+	MessageTypeChat             MessageType = "chat"
+	MessageTypeSelection        MessageType = "selection"
+	MessageTypeJoin             MessageType = "join"
+	MessageTypeLeave            MessageType = "leave"
+	MessageTypeHeartbeat        MessageType = "heartbeat"
+	MessageTypeFrustumUpdate    MessageType = "frustum_update"
+	MessageTypeAnnotationFetch  MessageType = "annotation_fetch"
+	MessageTypeAnnotationVisible MessageType = "annotation_visible"
+	MessageTypeAnnotationGone   MessageType = "annotation_gone"
+	MessageTypeAnnotationBatch  MessageType = "annotation_batch"
 
 	ConflictLastWriteWins ConflictResolution = "last-write-wins"
 	ConflictMerge         ConflictResolution = "merge"
 	ConflictReject        ConflictResolution = "reject"
 )
+
+type FrustumState struct {
+	Position math3d.Vec3    `json:"position"`
+	Target   math3d.Vec3    `json:"target"`
+	Up       math3d.Vec3    `json:"up"`
+	Fov      float64        `json:"fov"`
+	Near     float64        `json:"near"`
+	Far      float64        `json:"far"`
+	Aspect   float64        `json:"aspect"`
+	Frustum  *math3d.Frustum `json:"-"`
+	UpdatedAt int64         `json:"updated_at"`
+}
+
+type VisibleAnnotation struct {
+	ID         string
+	FirstSeen  int64
+	LastSeen   int64
+	IsVisible  bool
+}
+
+type CachedAnnotation struct {
+	ID        string
+	Data      json.RawMessage
+	ExpiresAt int64
+}
 
 type ViewState struct {
 	Position math3d.Vec3 `json:"position"`
@@ -55,14 +85,20 @@ type Message struct {
 }
 
 type User struct {
-	ID       string          `json:"id"`
-	Username string          `json:"username"`
-	Color    string          `json:"color"`
-	Conn     *websocket.Conn `json:"-"`
-	connMu   sync.Mutex      `json:"-"`
-	JoinedAt int64           `json:"joined_at"`
-	LastSeen int64           `json:"last_seen"`
-	IsActive bool            `json:"is_active"`
+	ID                string                      `json:"id"`
+	Username          string                      `json:"username"`
+	Color             string                      `json:"color"`
+	Conn              *websocket.Conn             `json:"-"`
+	connMu            sync.Mutex                `json:"-"`
+	JoinedAt          int64                       `json:"joined_at"`
+	LastSeen          int64                       `json:"last_seen"`
+	IsActive          bool                        `json:"is_active"`
+	Frustum           *FrustumState             `json:"frustum,omitempty"`
+	VisibleAnnotations map[string]*VisibleAnnotation `json:"-"`
+	AnnotationCache   map[string]*CachedAnnotation `json:"-"`
+	hasSpatialSync    bool                        `json:"-"`
+	visibleMu          sync.RWMutex              `json:"-"`
+	cacheMu           sync.RWMutex              `json:"-"`
 }
 
 type RoomState struct {
@@ -176,13 +212,16 @@ func (s *CollaborationService) JoinRoom(roomID, userID, username string, conn *w
 
 	now := time.Now().Unix()
 	user := &User{
-		ID:       userID,
-		Username: username,
-		Color:    color,
-		Conn:     conn,
-		JoinedAt: now,
-		LastSeen: now,
-		IsActive: true,
+		ID:                 userID,
+		Username:           username,
+		Color:              color,
+		Conn:               conn,
+		JoinedAt:           now,
+		LastSeen:           now,
+		IsActive:           true,
+		VisibleAnnotations: make(map[string]*VisibleAnnotation),
+		AnnotationCache:    make(map[string]*CachedAnnotation),
+		hasSpatialSync:     false,
 	}
 
 	if existing, exists := room.Users[userID]; exists {
@@ -287,6 +326,10 @@ func (s *CollaborationService) HandleMessage(roomID, userID string, msg Message)
 		return s.handleCursor(room, user, msg)
 	case MessageTypeHeartbeat:
 		return nil
+	case MessageTypeFrustumUpdate:
+		return s.handleFrustumUpdate(room, user, msg)
+	case MessageTypeAnnotationFetch:
+		return s.handleAnnotationFetch(room, user, msg)
 	default:
 		s.broadcast(room, msg, userID)
 	}
@@ -425,6 +468,30 @@ func (s *CollaborationService) broadcast(room *Room, msg Message, excludeUserID 
 			continue
 		}
 
+		if msg.Type == MessageTypeAnnotationGone || msg.Type == MessageTypeAnnotationVisible {
+			go func(u *User, data []byte) {
+				u.connMu.Lock()
+				defer u.connMu.Unlock()
+				if u.Conn != nil {
+					_ = u.Conn.WriteMessage(websocket.TextMessage, data)
+				}
+			}(user, data)
+			continue
+		}
+
+		if msg.Type == MessageTypeAnnotation {
+			if user.hasSpatialSync && user.Frustum != nil && user.Frustum.Frustum != nil {
+				annotationAABB := s.extractAnnotationAABB(msg.Payload)
+				if annotationAABB != nil {
+					if !user.Frustum.Frustum.IntersectsAABB(*annotationAABB) {
+						s.cacheAnnotationForUser(user, msg.ID, data)
+						continue
+					}
+				}
+			}
+			s.updateUserAnnotationVisibility(user, msg.ID, true)
+		}
+
 		go func(u *User, data []byte) {
 			u.connMu.Lock()
 			defer u.connMu.Unlock()
@@ -471,6 +538,132 @@ func (s *CollaborationService) GetRoomState(roomID string) (*RoomState, error) {
 	return &state, nil
 }
 
+func (s *CollaborationService) GetVisibleAnnotationsForUser(roomID, userID string) ([]string, error) {
+	s.roomsMu.RLock()
+	room, exists := s.rooms[roomID]
+	s.roomsMu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("room %s not found", roomID)
+	}
+
+	room.mu.RLock()
+	user, userExists := room.Users[userID]
+	room.mu.RUnlock()
+
+	if !userExists {
+		return nil, fmt.Errorf("user %s not in room", userID)
+	}
+
+	user.visibleMu.RLock()
+	defer user.visibleMu.RUnlock()
+
+	var visibleIDs []string
+	for id, va := range user.VisibleAnnotations {
+		if va.IsVisible {
+			visibleIDs = append(visibleIDs, id)
+		}
+	}
+
+	return visibleIDs, nil
+}
+
+func (s *CollaborationService) UpdateUserFrustum(roomID, userID string, frustumState FrustumState) ([]json.RawMessage, error) {
+	s.roomsMu.RLock()
+	room, exists := s.rooms[roomID]
+	s.roomsMu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("room %s not found", roomID)
+	}
+
+	room.mu.RLock()
+	user, userExists := room.Users[userID]
+	room.mu.RUnlock()
+
+	if !userExists {
+		return nil, fmt.Errorf("user %s not in room", userID)
+	}
+
+	proj := math3d.Perspective(frustumState.Fov, frustumState.Aspect, frustumState.Near, frustumState.Far)
+	view := math3d.LookAt(frustumState.Position, frustumState.Target, frustumState.Up)
+	frustum := math3d.ExtractFrustum(proj.Mul(view))
+
+	frustumState.Frustum = frustum
+	frustumState.UpdatedAt = time.Now().Unix()
+
+	user.visibleMu.Lock()
+	user.Frustum = &frustumState
+	user.hasSpatialSync = true
+	user.visibleMu.Unlock()
+
+	newlyVisible := s.checkVisibleAnnotations(user, room)
+
+	var annotations []json.RawMessage
+	if len(newlyVisible) > 0 {
+		user.cacheMu.RLock()
+		for _, id := range newlyVisible {
+			if cached, ok := user.AnnotationCache[id]; ok {
+				annotations = append(annotations, cached.Data)
+			}
+		}
+		user.cacheMu.RUnlock()
+	}
+
+	return annotations, nil
+}
+
+func (s *CollaborationService) FetchAnnotationsInRegion(roomID string, region math3d.AABB) ([]json.RawMessage, error) {
+	s.roomsMu.RLock()
+	room, exists := s.rooms[roomID]
+	s.roomsMu.RUnlock()
+
+	if !exists {
+		return nil, fmt.Errorf("room %s not found", roomID)
+	}
+
+	room.mu.RLock()
+	defer room.mu.RUnlock()
+
+	seen := make(map[string]bool)
+	var result []json.RawMessage
+
+	for _, user := range room.Users {
+		user.cacheMu.RLock()
+		for id, cached := range user.AnnotationCache {
+			if seen[id] {
+				continue
+			}
+			seen[id] = true
+
+			aabb := s.extractAnnotationAABB(cached.Data)
+			if aabb != nil && region.Intersects(*aabb) {
+				result = append(result, cached.Data)
+			}
+		}
+		user.cacheMu.RUnlock()
+	}
+
+	room.operations.mu.RLock()
+	for _, op := range room.operations.operations {
+		if op.Type != "annotation_update" {
+			continue
+		}
+		if seen[op.EntityID] {
+			continue
+		}
+		seen[op.EntityID] = true
+
+		aabb := s.extractAnnotationAABB(op.Data)
+		if aabb != nil && region.Intersects(*aabb) {
+			result = append(result, op.Data)
+		}
+	}
+	room.operations.mu.RUnlock()
+
+	return result, nil
+}
+
 func (s *CollaborationService) ListRooms() []*Room {
 	s.roomsMu.RLock()
 	defer s.roomsMu.RUnlock()
@@ -504,26 +697,306 @@ func (s *CollaborationService) CleanupInactiveUsers() {
 		}
 
 		for _, userID := range inactiveUsers {
-			user := room.Users[userID]
-			if user.Conn != nil {
-				user.Conn.Close()
-			}
-			delete(room.Users, userID)
+		user := room.Users[userID]
+		if user.Conn != nil {
+			user.Conn.Close()
+		}
+		delete(room.Users, userID)
+	}
+
+	room.mu.Unlock()
+
+	if len(inactiveUsers) > 0 {
+		room.mu.RLock()
+		userCount := len(room.Users)
+		room.mu.RUnlock()
+
+		if userCount == 0 {
+			s.roomsMu.Lock()
+			delete(s.rooms, room.ID)
+			s.roomsMu.Unlock()
+		}
+	}
+	}
+}
+
+func (s *CollaborationService) handleFrustumUpdate(room *Room, user *User, msg Message) error {
+	var frustumState FrustumState
+	if err := json.Unmarshal(msg.Payload, &frustumState); err != nil {
+		return err
+	}
+
+	proj := math3d.Perspective(frustumState.Fov, frustumState.Aspect, frustumState.Near, frustumState.Far)
+	view := math3d.LookAt(frustumState.Position, frustumState.Target, frustumState.Up)
+	frustum := math3d.ExtractFrustum(proj.Mul(view))
+
+	frustumState.Frustum = frustum
+	frustumState.UpdatedAt = time.Now().Unix()
+
+	user.visibleMu.Lock()
+	user.Frustum = &frustumState
+	user.hasSpatialSync = true
+	user.visibleMu.Unlock()
+
+	newlyVisible := s.checkVisibleAnnotations(user, room)
+	if len(newlyVisible) > 0 {
+		s.sendNewlyVisibleAnnotations(user, room, newlyVisible)
+	}
+
+	go s.cleanupInvisibleAnnotations(user, room)
+
+	return nil
+}
+
+func (s *CollaborationService) handleAnnotationFetch(room *Room, user *User, msg Message) error {
+	var fetchRequest struct {
+		AnnotationIDs []string `json:"annotation_ids"`
+	}
+	if err := json.Unmarshal(msg.Payload, &fetchRequest); err != nil {
+		return err
+	}
+
+	user.cacheMu.RLock()
+	defer user.cacheMu.RUnlock()
+
+	var annotations []json.RawMessage
+	for _, id := range fetchRequest.AnnotationIDs {
+		if cached, ok := user.AnnotationCache[id]; ok && cached.ExpiresAt > time.Now().Unix() {
+			annotations = append(annotations, cached.Data)
+		}
+	}
+
+	if len(annotations) > 0 {
+		batchMsg := Message{
+			ID:        uuid.New().String(),
+			Type:      MessageTypeAnnotationBatch,
+			UserID:    "system",
+			RoomID:    room.ID,
+			Timestamp: time.Now().Unix(),
+			Version:   1,
+		}
+		batchMsg.Payload, _ = json.Marshal(map[string]interface{}{
+			"annotations": annotations,
+		})
+
+		data, _ := json.Marshal(batchMsg)
+		user.connMu.Lock()
+		if user.Conn != nil {
+			_ = user.Conn.WriteMessage(websocket.TextMessage, data)
+		}
+		user.connMu.Unlock()
+	}
+
+	return nil
+}
+
+func (s *CollaborationService) extractAnnotationAABB(payload json.RawMessage) *math3d.AABB {
+	var geometry struct {
+		Center   math3d.Vec3 `json:"center"`
+		Size     math3d.Vec3 `json:"size"`
+		Position math3d.Vec3 `json:"position"`
+		Points   []math3d.Vec3 `json:"points"`
+	}
+
+	if err := json.Unmarshal(payload, &geometry); err != nil {
+		return nil
+	}
+
+	if !geometry.Center.IsZero() && !geometry.Size.IsZero() {
+		return &math3d.AABB{
+			Min: geometry.Center.Sub(geometry.Size.Mul(0.5)),
+			Max: geometry.Center.Add(geometry.Size.Mul(0.5)),
+		}
+	}
+
+	if !geometry.Position.IsZero() {
+		size := math3d.Vec3{X: 0.5, Y: 0.5, Z: 0.5}
+		return &math3d.AABB{
+			Min: geometry.Position.Sub(size),
+			Max: geometry.Position.Add(size),
+		}
+	}
+
+	if len(geometry.Points) > 0 {
+		min := geometry.Points[0]
+		max := geometry.Points[0]
+		for _, p := range geometry.Points {
+			min = min.Min(p)
+			max = max.Max(p)
+		}
+		return &math3d.AABB{Min: min, Max: max}
+	}
+
+	return nil
+}
+
+func (s *CollaborationService) cacheAnnotationForUser(user *User, annotationID string, data []byte) {
+	user.cacheMu.Lock()
+	defer user.cacheMu.Unlock()
+
+	ttl := int64(300)
+	user.AnnotationCache[annotationID] = &CachedAnnotation{
+		ID:        annotationID,
+		Data:      data,
+		ExpiresAt: time.Now().Unix() + ttl,
+	}
+
+	user.visibleMu.Lock()
+	defer user.visibleMu.Unlock()
+
+	if va, ok := user.VisibleAnnotations[annotationID]; ok {
+		va.IsVisible = false
+		va.LastSeen = time.Now().Unix()
+	} else {
+		user.VisibleAnnotations[annotationID] = &VisibleAnnotation{
+			ID:        annotationID,
+			FirstSeen: time.Now().Unix(),
+			LastSeen:  time.Now().Unix(),
+			IsVisible: false,
+		}
+	}
+}
+
+func (s *CollaborationService) updateUserAnnotationVisibility(user *User, annotationID string, visible bool) {
+	user.visibleMu.Lock()
+	defer user.visibleMu.Unlock()
+
+	now := time.Now().Unix()
+	if va, ok := user.VisibleAnnotations[annotationID]; ok {
+		va.IsVisible = visible
+		va.LastSeen = now
+	} else {
+		user.VisibleAnnotations[annotationID] = &VisibleAnnotation{
+			ID:        annotationID,
+			FirstSeen: now,
+			LastSeen:  now,
+			IsVisible: visible,
+		}
+	}
+}
+
+func (s *CollaborationService) checkVisibleAnnotations(user *User, room *Room) []string {
+	user.visibleMu.RLock()
+	frustum := user.Frustum
+	user.visibleMu.RUnlock()
+
+	if frustum == nil || frustum.Frustum == nil {
+		return nil
+	}
+
+	var newlyVisible []string
+	now := time.Now().Unix()
+
+	user.cacheMu.RLock()
+	user.visibleMu.Lock()
+	defer user.cacheMu.RUnlock()
+	defer user.visibleMu.Unlock()
+
+	for id, cached := range user.AnnotationCache {
+		if cached.ExpiresAt <= now {
+			continue
 		}
 
-		room.mu.Unlock()
+		va, exists := user.VisibleAnnotations[id]
+		if exists && va.IsVisible {
+			continue
+		}
 
-		if len(inactiveUsers) > 0 {
-			room.mu.RLock()
-			userCount := len(room.Users)
-			room.mu.RUnlock()
-
-			if userCount == 0 {
-				s.roomsMu.Lock()
-				delete(s.rooms, room.ID)
-				s.roomsMu.Unlock()
+		aabb := s.extractAnnotationAABB(cached.Data)
+		if aabb != nil && frustum.Frustum.IntersectsAABB(*aabb) {
+			newlyVisible = append(newlyVisible, id)
+			if va != nil {
+				va.IsVisible = true
+				va.LastSeen = now
+			} else {
+				user.VisibleAnnotations[id] = &VisibleAnnotation{
+					ID:        id,
+					FirstSeen: now,
+					LastSeen:  now,
+					IsVisible: true,
+				}
 			}
 		}
+	}
+
+	return newlyVisible
+}
+
+func (s *CollaborationService) sendNewlyVisibleAnnotations(user *User, room *Room, annotationIDs []string) {
+	user.cacheMu.RLock()
+	defer user.cacheMu.RUnlock()
+
+	var annotations []json.RawMessage
+	for _, id := range annotationIDs {
+		if cached, ok := user.AnnotationCache[id]; ok {
+			annotations = append(annotations, cached.Data)
+		}
+	}
+
+	if len(annotations) > 0 {
+		batchMsg := Message{
+			ID:        uuid.New().String(),
+			Type:      MessageTypeAnnotationVisible,
+			UserID:    "system",
+			RoomID:    room.ID,
+			Timestamp: time.Now().Unix(),
+			Version:   1,
+		}
+		batchMsg.Payload, _ = json.Marshal(map[string]interface{}{
+			"annotations": annotations,
+		})
+
+		data, _ := json.Marshal(batchMsg)
+		user.connMu.Lock()
+		if user.Conn != nil {
+			_ = user.Conn.WriteMessage(websocket.TextMessage, data)
+		}
+		user.connMu.Unlock()
+	}
+}
+
+func (s *CollaborationService) cleanupInvisibleAnnotations(user *User, room *Room) {
+	time.Sleep(time.Second * 5)
+
+	threshold := int64(60)
+	now := time.Now().Unix()
+
+	user.cacheMu.Lock()
+	user.visibleMu.Lock()
+	defer user.cacheMu.Unlock()
+	defer user.visibleMu.Unlock()
+
+	var goneIDs []string
+
+	for id, va := range user.VisibleAnnotations {
+		if !va.IsVisible && now-va.LastSeen > threshold {
+			if cached, ok := user.AnnotationCache[id]; ok && cached.ExpiresAt <= now {
+				goneIDs = append(goneIDs, id)
+				delete(user.AnnotationCache, id)
+				delete(user.VisibleAnnotations, id)
+			}
+		}
+	}
+
+	if len(goneIDs) > 0 {
+		goneMsg := Message{
+			ID:        uuid.New().String(),
+			Type:      MessageTypeAnnotationGone,
+			UserID:    "system",
+			RoomID:    room.ID,
+			Timestamp: now,
+			Version:   1,
+		}
+		goneMsg.Payload, _ = json.Marshal(map[string]interface{}{
+			"annotation_ids": goneIDs,
+		})
+
+		data, _ := json.Marshal(goneMsg)
+		user.connMu.Lock()
+		if user.Conn != nil {
+			_ = user.Conn.WriteMessage(websocket.TextMessage, data)
+		}
+		user.connMu.Unlock()
 	}
 }
 
