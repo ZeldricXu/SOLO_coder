@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use slotmap::SlotMap;
 
 use physics_collision::{BroadPhase, ContactManifold, NarrowPhase};
-use physics_constraints::{Constraint, ConstraintSolverData, ContactConstraint, DistanceJoint, RevoluteJoint};
+use physics_constraints::{Constraint, ConstraintSolverData, ContactConstraint, DistanceJoint, RevoluteJoint, PrismaticJoint, WeldJoint};
 use physics_core::{Body, BodyHandle, BodyType, Material, Shape};
 use physics_events::{CollisionEvent, EventDispatcher, TriggerEvent};
 use physics_math::{AABB, Vec2};
@@ -15,6 +15,7 @@ pub struct SolverConfig {
     pub velocity_iterations: usize,
     pub position_iterations: usize,
     pub time_step: f32,
+    pub max_sub_steps: usize,
 }
 
 impl Default for SolverConfig {
@@ -23,6 +24,7 @@ impl Default for SolverConfig {
             velocity_iterations: 8,
             position_iterations: 3,
             time_step: 1.0 / 60.0,
+            max_sub_steps: 10,
         }
     }
 }
@@ -43,6 +45,8 @@ pub struct PhysicsWorld {
 
     pub revolute_joints: Vec<RevoluteJoint>,
     pub distance_joints: Vec<DistanceJoint>,
+    pub prismatic_joints: Vec<PrismaticJoint>,
+    pub weld_joints: Vec<WeldJoint>,
 
     pub event_dispatcher: EventDispatcher,
 
@@ -51,6 +55,8 @@ pub struct PhysicsWorld {
     pub fluid_system: Option<FluidSystem>,
 
     pub solver_config: SolverConfig,
+
+    accumulator: f32,
 
     previous_contacts: HashMap<(BodyHandle, BodyHandle), ContactManifold>,
 }
@@ -73,6 +79,8 @@ impl PhysicsWorld {
 
             revolute_joints: Vec::new(),
             distance_joints: Vec::new(),
+            prismatic_joints: Vec::new(),
+            weld_joints: Vec::new(),
 
             event_dispatcher: EventDispatcher::new(),
 
@@ -81,6 +89,8 @@ impl PhysicsWorld {
             fluid_system: None,
 
             solver_config: SolverConfig::default(),
+
+            accumulator: 0.0,
 
             previous_contacts: HashMap::new(),
         }
@@ -219,6 +229,16 @@ impl PhysicsWorld {
     }
 
     #[inline]
+    pub fn add_prismatic_joint(&mut self, joint: PrismaticJoint) {
+        self.prismatic_joints.push(joint);
+    }
+
+    #[inline]
+    pub fn add_weld_joint(&mut self, joint: WeldJoint) {
+        self.weld_joints.push(joint);
+    }
+
+    #[inline]
     pub fn add_particle(&mut self, particle: Particle) {
         if let Some(fluid) = &mut self.fluid_system {
             fluid.add_particle(particle);
@@ -248,8 +268,11 @@ impl PhysicsWorld {
         self.contact_constraints.clear();
         self.revolute_joints.clear();
         self.distance_joints.clear();
+        self.prismatic_joints.clear();
+        self.weld_joints.clear();
         self.particles.clear();
         self.fluid_system = None;
+        self.accumulator = 0.0;
         self.previous_contacts.clear();
         self.event_dispatcher.clear();
     }
@@ -303,11 +326,25 @@ impl PhysicsWorld {
         }
     }
 
-    pub fn step(&mut self) {
-        self.step_with_dt(self.solver_config.time_step);
+    pub fn step(&mut self, delta_time: f32) {
+        let fixed_dt = self.solver_config.time_step;
+        let max_sub_steps = self.solver_config.max_sub_steps;
+        
+        self.accumulator += delta_time;
+        
+        let mut sub_steps = 0;
+        while self.accumulator >= fixed_dt && sub_steps < max_sub_steps {
+            self.step_single(fixed_dt);
+            self.accumulator -= fixed_dt;
+            sub_steps += 1;
+        }
+        
+        if sub_steps >= max_sub_steps {
+            self.accumulator = 0.0;
+        }
     }
 
-    pub fn step_with_dt(&mut self, dt: f32) {
+    pub fn step_single(&mut self, dt: f32) {
         if dt <= 0.0 {
             return;
         }
@@ -397,6 +434,12 @@ impl PhysicsWorld {
             for j in &mut self.distance_joints {
                 j.prepare(&solver_data);
             }
+            for j in &mut self.prismatic_joints {
+                j.prepare(&solver_data);
+            }
+            for j in &mut self.weld_joints {
+                j.prepare(&solver_data);
+            }
 
             let vel_iters = self.solver_config.velocity_iterations;
 
@@ -408,6 +451,12 @@ impl PhysicsWorld {
                     j.solve_velocity(&mut solver_data);
                 }
                 for j in &mut self.distance_joints {
+                    j.solve_velocity(&mut solver_data);
+                }
+                for j in &mut self.prismatic_joints {
+                    j.solve_velocity(&mut solver_data);
+                }
+                for j in &mut self.weld_joints {
                     j.solve_velocity(&mut solver_data);
                 }
             }
@@ -437,6 +486,16 @@ impl PhysicsWorld {
                     }
                 }
                 for j in &mut self.distance_joints {
+                    if !j.solve_position(&mut solver_data) {
+                        done = false;
+                    }
+                }
+                for j in &mut self.prismatic_joints {
+                    if !j.solve_position(&mut solver_data) {
+                        done = false;
+                    }
+                }
+                for j in &mut self.weld_joints {
                     if !j.solve_position(&mut solver_data) {
                         done = false;
                     }
@@ -523,6 +582,16 @@ impl PhysicsWorld {
     }
 
     #[inline]
+    pub fn prismatic_joints(&self) -> &[PrismaticJoint] {
+        &self.prismatic_joints
+    }
+
+    #[inline]
+    pub fn weld_joints(&self) -> &[WeldJoint] {
+        &self.weld_joints
+    }
+
+    #[inline]
     pub fn particles(&self) -> &[Particle] {
         &self.particles
     }
@@ -542,7 +611,7 @@ impl Default for PhysicsWorld {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use physics_core::shape::{Circle, Rectangle};
+    use physics_core::shape::{Circle, Rectangle, HalfSpace, CollisionFilter};
     use approx::assert_abs_diff_eq;
 
     #[test]
@@ -611,7 +680,7 @@ mod tests {
         );
 
         for _ in 0..30 {
-            world.step_with_dt(1.0 / 60.0);
+            world.step(1.0 / 60.0);
         }
 
         let body = world.bodies().next().unwrap();
@@ -643,10 +712,236 @@ mod tests {
         );
 
         for _ in 0..60 {
-            world.step_with_dt(1.0 / 60.0);
+            world.step(1.0 / 60.0);
         }
 
         let ball = world.bodies().nth(1).unwrap();
         assert!(ball.position().y > -4.5);
+    }
+
+    #[test]
+    fn test_half_space_collision() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::new(0.0, -10.0));
+
+        let ground_shape = Shape::HalfSpace(HalfSpace::ground());
+        let ground_material = Material::DEFAULT.with_restitution(0.0);
+        world.add_body(
+            ground_shape,
+            Vec2::new(0.0, 0.0),
+            0.0,
+            BodyType::Static,
+            ground_material,
+        );
+
+        let ball_shape = Shape::Circle(Circle::new(1.0));
+        let ball_material = Material::DEFAULT.with_restitution(0.0);
+        world.add_body(
+            ball_shape,
+            Vec2::new(0.0, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            ball_material,
+        );
+
+        for _ in 0..60 {
+            world.step(1.0 / 60.0);
+        }
+
+        let ball = world.bodies().nth(1).unwrap();
+        assert!(ball.position().y < 1.0);
+        assert!(ball.position().y > -0.5);
+    }
+
+    #[test]
+    fn test_collision_filter() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::ZERO);
+
+        let filter1 = CollisionFilter::new(0x0001, 0x0001);
+        let filter2 = CollisionFilter::new(0x0002, 0x0002);
+
+        let shape1 = Shape::Circle(Circle::new(1.0));
+        let material = Material::DEFAULT;
+        
+        let handle1 = world.add_body(
+            shape1.clone(),
+            Vec2::new(-0.5, 0.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+        let handle2 = world.add_body(
+            shape1,
+            Vec2::new(0.5, 0.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        world.get_body_mut(handle1).unwrap().set_collision_filter(filter1);
+        world.get_body_mut(handle2).unwrap().set_collision_filter(filter2);
+
+        world.step(1.0 / 60.0);
+
+        assert_eq!(world.contact_manifolds().len(), 0);
+    }
+
+    #[test]
+    fn test_adaptive_time_step() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::new(0.0, -10.0));
+
+        let shape = Shape::Circle(Circle::new(1.0));
+        let material = Material::DEFAULT.with_density(1.0);
+        world.add_body(
+            shape,
+            Vec2::new(0.0, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        let dt = 1.0 / 60.0;
+        world.step(dt * 2.5);
+
+        let body = world.bodies().next().unwrap();
+        assert!(body.position().y < 5.0);
+    }
+
+    #[test]
+    fn test_max_sub_steps() {
+        let mut config = SolverConfig::default();
+        config.max_sub_steps = 3;
+        let mut world = PhysicsWorld::new()
+            .with_gravity(Vec2::new(0.0, -10.0))
+            .with_solver_config(config);
+
+        let shape = Shape::Circle(Circle::new(1.0));
+        let material = Material::DEFAULT.with_density(1.0);
+        world.add_body(
+            shape,
+            Vec2::new(0.0, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        let dt = 1.0 / 60.0 * 10.0;
+        world.step(dt);
+
+        let body = world.bodies().next().unwrap();
+        assert!(body.position().y < 5.0);
+    }
+
+    #[test]
+    fn test_revolute_joint_with_motor() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::ZERO);
+
+        let shape = Shape::Circle(Circle::new(0.5));
+        let material = Material::DEFAULT.with_density(1.0);
+        let ta = physics_math::Transform::new(Vec2::new(0.0, 0.0), physics_math::Rot2::new(0.0));
+        let tb = physics_math::Transform::new(Vec2::new(0.0, 0.0), physics_math::Rot2::new(0.0));
+        
+        let handle_a = world.add_body(
+            shape.clone(),
+            Vec2::new(0.0, 0.0),
+            0.0,
+            BodyType::Static,
+            material,
+        );
+        let handle_b = world.add_body(
+            shape,
+            Vec2::new(0.0, 0.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        let anchor = Vec2::new(0.0, 0.0);
+        let joint = RevoluteJoint::new(handle_a, handle_b, anchor, &ta, &tb)
+            .with_motor(2.0, 100.0);
+        world.add_revolute_joint(joint);
+
+        for _ in 0..60 {
+            world.step(1.0 / 60.0);
+        }
+
+        let body_b = world.get_body(handle_b).unwrap();
+        assert!(body_b.angular_velocity.abs() > 0.5);
+    }
+
+    #[test]
+    fn test_distance_joint() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::ZERO);
+
+        let shape = Shape::Circle(Circle::new(0.5));
+        let material = Material::DEFAULT.with_density(1.0);
+        let ta = physics_math::Transform::new(Vec2::new(-1.0, 0.0), physics_math::Rot2::new(0.0));
+        let tb = physics_math::Transform::new(Vec2::new(1.0, 0.0), physics_math::Rot2::new(0.0));
+        
+        let handle_a = world.add_body(
+            shape.clone(),
+            Vec2::new(-1.0, 0.0),
+            0.0,
+            BodyType::Static,
+            material,
+        );
+        let handle_b = world.add_body(
+            shape,
+            Vec2::new(1.0, 0.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        let joint = DistanceJoint::new(handle_a, handle_b, Vec2::new(-1.0, 0.0), Vec2::new(1.0, 0.0), &ta, &tb);
+        world.add_distance_joint(joint);
+
+        world.get_body_mut(handle_b).unwrap().linear_velocity = Vec2::new(0.0, 5.0);
+
+        for _ in 0..10 {
+            world.step(1.0 / 60.0);
+        }
+
+        let body_a = world.get_body(handle_a).unwrap();
+        let body_b = world.get_body(handle_b).unwrap();
+        let distance = (body_b.position() - body_a.position()).length();
+        assert_abs_diff_eq!(distance, 2.0, epsilon = 0.1);
+    }
+
+    #[test]
+    fn test_weld_joint() {
+        let mut world = PhysicsWorld::new().with_gravity(Vec2::new(0.0, -10.0));
+
+        let shape = Shape::Circle(Circle::new(0.5));
+        let material = Material::DEFAULT.with_density(1.0);
+        let ta = physics_math::Transform::new(Vec2::new(-0.5, 0.0), physics_math::Rot2::new(0.0));
+        let tb = physics_math::Transform::new(Vec2::new(0.5, 0.0), physics_math::Rot2::new(0.0));
+        
+        let handle_a = world.add_body(
+            shape.clone(),
+            Vec2::new(-0.5, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+        let handle_b = world.add_body(
+            shape,
+            Vec2::new(0.5, 5.0),
+            0.0,
+            BodyType::Dynamic,
+            material,
+        );
+
+        let anchor = Vec2::new(0.0, 5.0);
+        let joint = WeldJoint::new(handle_a, handle_b, anchor, &ta, &tb);
+        world.add_weld_joint(joint);
+
+        for _ in 0..30 {
+            world.step(1.0 / 60.0);
+        }
+
+        let body_a = world.get_body(handle_a).unwrap();
+        let body_b = world.get_body(handle_b).unwrap();
+        let angle_diff = (body_b.angle() - body_a.angle()).abs();
+        assert!(angle_diff < 0.1);
     }
 }

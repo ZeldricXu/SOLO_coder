@@ -2,7 +2,7 @@ use slotmap::{new_key_type, Key};
 
 use physics_math::{AABB, Rot2, Transform, Vec2};
 
-use crate::{material::Material, shape::Shape};
+use crate::{material::Material, shape::{CollisionFilter, Shape}};
 
 new_key_type! {
     pub struct BodyHandle;
@@ -48,6 +48,8 @@ pub struct Body {
 
     pub is_sensor: bool,
     pub is_active: bool,
+
+    pub collision_filter: CollisionFilter,
 
     pub user_data: u64,
 }
@@ -99,6 +101,7 @@ impl Body {
             angular_damping: 0.0,
             is_sensor: false,
             is_active: true,
+            collision_filter: CollisionFilter::default(),
             user_data: 0,
         }
     }
@@ -124,8 +127,25 @@ impl Body {
             angular_damping: 0.0,
             is_sensor: false,
             is_active: true,
+            collision_filter: CollisionFilter::default(),
             user_data: 0,
         }
+    }
+
+    #[inline]
+    pub fn with_collision_filter(mut self, filter: CollisionFilter) -> Self {
+        self.collision_filter = filter;
+        self
+    }
+
+    #[inline]
+    pub fn set_collision_filter(&mut self, filter: CollisionFilter) {
+        self.collision_filter = filter;
+    }
+
+    #[inline]
+    pub fn should_collide_with(&self, other: &Body) -> bool {
+        self.collision_filter.should_collide(&other.collision_filter)
     }
 
     #[inline]

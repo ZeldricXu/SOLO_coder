@@ -132,6 +132,31 @@ impl DebugRenderer {
                         Stroke::new(2.0, color),
                     ));
                 }
+                PhysicsShape::HalfSpace(half_space) => {
+                    let normal = body.transform.rotation.mul_vec(half_space.normal);
+                    let plane_point = normal * half_space.distance;
+                    let center = self.world_to_screen(plane_point, canvas_size);
+                    
+                    let tangent = Vec2::new(-normal.y, normal.x);
+                    let line_length = 1000.0;
+                    let start = self.world_to_screen(plane_point - tangent * line_length, canvas_size);
+                    let end = self.world_to_screen(plane_point + tangent * line_length, canvas_size);
+                    
+                    output.push(EguiShape::line_segment(
+                        [start, end],
+                        Stroke::new(3.0, color),
+                    ));
+                    
+                    let normal_start = center;
+                    let normal_end = Pos2::new(
+                        center.x + normal.x * 30.0,
+                        center.y - normal.y * 30.0,
+                    );
+                    output.push(EguiShape::line_segment(
+                        [normal_start, normal_end],
+                        Stroke::new(2.0, color),
+                    ));
+                }
             }
         }
 

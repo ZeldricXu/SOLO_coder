@@ -1,11 +1,121 @@
 use physics_math::{polygon_moment_of_inertia, AABB, Transform, Vec2};
 
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct CollisionFilter {
+    pub category_bits: u16,
+    pub mask_bits: u16,
+    pub group_index: i16,
+}
+
+impl Default for CollisionFilter {
+    fn default() -> Self {
+        CollisionFilter {
+            category_bits: 0x0001,
+            mask_bits: 0xFFFF,
+            group_index: 0,
+        }
+    }
+}
+
+impl CollisionFilter {
+    #[inline]
+    pub fn new(category_bits: u16, mask_bits: u16) -> Self {
+        CollisionFilter {
+            category_bits,
+            mask_bits,
+            group_index: 0,
+        }
+    }
+
+    #[inline]
+    pub fn with_group(mut self, group_index: i16) -> Self {
+        self.group_index = group_index;
+        self
+    }
+
+    #[inline]
+    pub fn should_collide(&self, other: &CollisionFilter) -> bool {
+        if self.group_index != 0 && other.group_index != 0 {
+            if self.group_index == other.group_index {
+                return self.group_index > 0;
+            }
+        }
+        (self.category_bits & other.mask_bits) != 0 && (other.category_bits & self.mask_bits) != 0
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
     Circle(Circle),
     Rectangle(Rectangle),
     Polygon(Polygon),
     Segment(Segment),
+    HalfSpace(HalfSpace),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HalfSpace {
+    pub normal: Vec2,
+    pub distance: f32,
+}
+
+impl HalfSpace {
+    #[inline]
+    pub fn new(normal: Vec2, distance: f32) -> Self {
+        HalfSpace {
+            normal: normal.normalize(),
+            distance,
+        }
+    }
+
+    #[inline]
+    pub fn from_point_normal(point: Vec2, normal: Vec2) -> Self {
+        let n = normal.normalize();
+        HalfSpace {
+            normal: n,
+            distance: point.dot(n),
+        }
+    }
+
+    #[inline]
+    pub fn ground() -> Self {
+        HalfSpace {
+            normal: Vec2::new(0.0, 1.0),
+            distance: 0.0,
+        }
+    }
+
+    #[inline]
+    pub fn compute_aabb(&self, _transform: &Transform) -> AABB {
+        AABB {
+            min: Vec2::new(f32::NEG_INFINITY, f32::NEG_INFINITY),
+            max: Vec2::new(f32::INFINITY, f32::INFINITY),
+        }
+    }
+
+    #[inline]
+    pub fn compute_mass(&self, _density: f32) -> f32 {
+        0.0
+    }
+
+    #[inline]
+    pub fn compute_inertia(&self, _mass: f32) -> f32 {
+        0.0
+    }
+
+    #[inline]
+    pub fn signed_distance(&self, point: Vec2) -> f32 {
+        point.dot(self.normal) - self.distance
+    }
+
+    #[inline]
+    pub fn support_point(&self, direction: Vec2, _transform: &Transform) -> Vec2 {
+        if direction.dot(self.normal) < 0.0 {
+            self.normal * (f32::NEG_INFINITY)
+        } else {
+            self.normal * f32::INFINITY
+        }
+    }
 }
 
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -313,6 +423,7 @@ impl Shape {
             Shape::Rectangle(r) => r.compute_aabb(transform),
             Shape::Polygon(p) => p.compute_aabb(transform),
             Shape::Segment(s) => s.compute_aabb(transform),
+            Shape::HalfSpace(h) => h.compute_aabb(transform),
         }
     }
 
@@ -323,6 +434,7 @@ impl Shape {
             Shape::Rectangle(r) => r.compute_mass(density),
             Shape::Polygon(p) => p.compute_mass(density),
             Shape::Segment(s) => s.compute_mass(density),
+            Shape::HalfSpace(h) => h.compute_mass(density),
         }
     }
 
@@ -333,6 +445,7 @@ impl Shape {
             Shape::Rectangle(r) => r.compute_inertia(mass),
             Shape::Polygon(p) => p.compute_inertia(mass),
             Shape::Segment(s) => s.compute_inertia(mass),
+            Shape::HalfSpace(h) => h.compute_inertia(mass),
         }
     }
 
@@ -343,6 +456,7 @@ impl Shape {
             Shape::Rectangle(r) => r.support_point(direction, transform),
             Shape::Polygon(p) => p.support_point(direction, transform),
             Shape::Segment(s) => s.support_point(direction, transform),
+            Shape::HalfSpace(h) => h.support_point(direction, transform),
         }
     }
 
@@ -353,7 +467,13 @@ impl Shape {
             Shape::Rectangle(_) => true,
             Shape::Polygon(_) => true,
             Shape::Segment(_) => true,
+            Shape::HalfSpace(_) => true,
         }
+    }
+
+    #[inline]
+    pub fn is_half_space(&self) -> bool {
+        matches!(self, Shape::HalfSpace(_))
     }
 }
 
@@ -383,5 +503,45 @@ mod tests {
         let aabb = r.compute_aabb(&t);
         assert_abs_diff_eq!(aabb.min, Vec2::new(-1.0, -1.0));
         assert_abs_diff_eq!(aabb.max, Vec2::new(1.0, 1.0));
+    }
+
+    #[test]
+    fn test_collision_filter_should_collide() {
+        let filter1 = CollisionFilter::new(0x0001, 0xFFFF);
+        let filter2 = CollisionFilter::new(0x0001, 0xFFFF);
+        assert!(filter1.should_collide(&filter2));
+
+        let filter3 = CollisionFilter::new(0x0002, 0x0002);
+        assert!(!filter1.should_collide(&filter3));
+        assert!(!filter3.should_collide(&filter1));
+    }
+
+    #[test]
+    fn test_collision_filter_group() {
+        let filter1 = CollisionFilter::new(0x0001, 0xFFFF).with_group(1);
+        let filter2 = CollisionFilter::new(0x0001, 0xFFFF).with_group(1);
+        assert!(filter1.should_collide(&filter2));
+
+        let filter3 = CollisionFilter::new(0x0001, 0xFFFF).with_group(-1);
+        let filter4 = CollisionFilter::new(0x0001, 0xFFFF).with_group(-1);
+        assert!(!filter3.should_collide(&filter4));
+    }
+
+    #[test]
+    fn test_half_space_signed_distance() {
+        let half_space = HalfSpace::ground();
+        assert_abs_diff_eq!(half_space.signed_distance(Vec2::new(0.0, 1.0)), 1.0);
+        assert_abs_diff_eq!(half_space.signed_distance(Vec2::new(0.0, -1.0)), -1.0);
+        assert_abs_diff_eq!(half_space.signed_distance(Vec2::new(5.0, 0.0)), 0.0);
+    }
+
+    #[test]
+    fn test_half_space_from_point_normal() {
+        let point = Vec2::new(0.0, 5.0);
+        let normal = Vec2::new(0.0, 1.0);
+        let half_space = HalfSpace::from_point_normal(point, normal);
+        assert_abs_diff_eq!(half_space.signed_distance(Vec2::new(0.0, 6.0)), 1.0);
+        assert_abs_diff_eq!(half_space.signed_distance(Vec2::new(0.0, 5.0)), 0.0);
+        assert_abs_diff_eq!(half_space.signed_distance(Vec2::new(0.0, 4.0)), -1.0);
     }
 }

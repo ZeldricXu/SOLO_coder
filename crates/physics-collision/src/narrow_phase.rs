@@ -41,12 +41,18 @@ fn should_collide(a: &Body, b: &Body) -> bool {
     use physics_core::BodyType::*;
 
     match (a.body_type, b.body_type) {
-        (Static, Static) => false,
-        (Static, Kinematic) => false,
-        (Kinematic, Static) => false,
-        (Kinematic, Kinematic) => false,
-        _ => true,
+        (Static, Static) => return false,
+        (Static, Kinematic) => return false,
+        (Kinematic, Static) => return false,
+        (Kinematic, Kinematic) => return false,
+        _ => {}
     }
+
+    if !a.should_collide_with(b) {
+        return false;
+    }
+
+    true
 }
 
 #[cfg(test)]

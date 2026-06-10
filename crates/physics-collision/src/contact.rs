@@ -120,9 +120,115 @@ impl Collide for Shape {
             (Shape::Polygon(a), Shape::Polygon(b)) => {
                 polygon_vs_polygon(a.vertices(), transform_a, b.vertices(), transform_b)
             }
+            (Shape::HalfSpace(h), Shape::Circle(c)) => {
+                half_space_vs_circle(h, transform_a, c, transform_b)
+            }
+            (Shape::Circle(c), Shape::HalfSpace(h)) => {
+                half_space_vs_circle(h, transform_b, c, transform_a)
+                    .map(|mut m| {
+                        m.normal = -m.normal;
+                        m
+                    })
+            }
+            (Shape::HalfSpace(h), Shape::Rectangle(r)) => {
+                half_space_vs_polygon(h, transform_a, &r.vertices(), transform_b)
+            }
+            (Shape::Rectangle(r), Shape::HalfSpace(h)) => {
+                half_space_vs_polygon(h, transform_b, &r.vertices(), transform_a)
+                    .map(|mut m| {
+                        m.normal = -m.normal;
+                        m
+                    })
+            }
+            (Shape::HalfSpace(h), Shape::Polygon(p)) => {
+                half_space_vs_polygon(h, transform_a, p.vertices(), transform_b)
+            }
+            (Shape::Polygon(p), Shape::HalfSpace(h)) => {
+                half_space_vs_polygon(h, transform_b, p.vertices(), transform_a)
+                    .map(|mut m| {
+                        m.normal = -m.normal;
+                        m
+                    })
+            }
+            (Shape::HalfSpace(_), Shape::HalfSpace(_)) => None,
             (Shape::Segment(_), _) | (_, Shape::Segment(_)) => None,
         }
     }
+}
+
+fn half_space_vs_circle(
+    half_space: &physics_core::HalfSpace,
+    th: &Transform,
+    circle: &physics_core::Circle,
+    tc: &Transform,
+) -> Option<ContactManifold> {
+    let center = tc.position;
+    let normal = th.rotation.mul_vec(half_space.normal);
+    let plane_point = normal * half_space.distance;
+    
+    let distance = (center - plane_point).dot(normal);
+    
+    if distance > circle.radius {
+        return None;
+    }
+    
+    let penetration = circle.radius - distance;
+    let point = center - normal * circle.radius;
+    
+    let mut manifold = ContactManifold::new(Key::null(), Key::null());
+    manifold.normal = normal;
+    manifold.add_point(ContactPoint::new(point, normal, penetration));
+    
+    Some(manifold)
+}
+
+fn half_space_vs_polygon(
+    half_space: &physics_core::HalfSpace,
+    th: &Transform,
+    vertices: &[Vec2],
+    tp: &Transform,
+) -> Option<ContactManifold> {
+    let normal = th.rotation.mul_vec(half_space.normal);
+    let plane_point = normal * half_space.distance;
+    
+    let mut min_distance = f32::INFINITY;
+    let mut deepest_point = Vec2::ZERO;
+    
+    for v in vertices {
+        let world_point = tp.mul_vec(*v);
+        let distance = (world_point - plane_point).dot(normal);
+        
+        if distance < min_distance {
+            min_distance = distance;
+            deepest_point = world_point;
+        }
+    }
+    
+    if min_distance > 0.0 {
+        return None;
+    }
+    
+    let penetration = -min_distance;
+    
+    let mut manifold = ContactManifold::new(Key::null(), Key::null());
+    manifold.normal = normal;
+    
+    let contact_point = ContactPoint::new(deepest_point, normal, penetration);
+    manifold.add_point(contact_point);
+    
+    for v in vertices {
+        let world_point = tp.mul_vec(*v);
+        let distance = (world_point - plane_point).dot(normal);
+        if distance <= 0.0 && world_point != deepest_point {
+            let cp = ContactPoint::new(world_point, normal, -distance);
+            manifold.add_point(cp);
+            if manifold.point_count >= 2 {
+                break;
+            }
+        }
+    }
+    
+    Some(manifold)
 }
 
 fn circle_vs_circle(
@@ -418,5 +524,51 @@ mod tests {
         let manifold = manifold.unwrap();
         assert!(manifold.points[0].penetration >= 0.0);
         assert!(manifold.normal.length_squared() > 0.0);
+    }
+
+    #[test]
+    fn test_half_space_vs_circle_overlap() {
+        use physics_core::HalfSpace;
+        let half_space = HalfSpace::ground();
+        let circle = physics_core::Circle { radius: 1.0 };
+        let th = Transform::IDENTITY;
+        let tc = Transform::new(Vec2::new(0.0, -0.5), Rot2::new(0.0));
+
+        let manifold = half_space_vs_circle(&half_space, &th, &circle, &tc);
+        assert!(manifold.is_some());
+
+        let manifold = manifold.unwrap();
+        assert_eq!(manifold.point_count, 1);
+        assert_abs_diff_eq!(manifold.normal.x, 0.0, epsilon = 1e-6);
+        assert_abs_diff_eq!(manifold.normal.y, 1.0, epsilon = 1e-6);
+        assert_abs_diff_eq!(manifold.points[0].penetration, 1.5, epsilon = 1e-6);
+    }
+
+    #[test]
+    fn test_half_space_vs_circle_no_overlap() {
+        use physics_core::HalfSpace;
+        let half_space = HalfSpace::ground();
+        let circle = physics_core::Circle { radius: 1.0 };
+        let th = Transform::IDENTITY;
+        let tc = Transform::new(Vec2::new(0.0, 2.0), Rot2::new(0.0));
+
+        let manifold = half_space_vs_circle(&half_space, &th, &circle, &tc);
+        assert!(manifold.is_none());
+    }
+
+    #[test]
+    fn test_half_space_vs_polygon_overlap() {
+        use physics_core::HalfSpace;
+        let half_space = HalfSpace::ground();
+        let square = Rectangle::new(2.0, 2.0);
+        let th = Transform::IDENTITY;
+        let tp = Transform::new(Vec2::new(0.0, -0.5), Rot2::new(0.0));
+
+        let manifold = half_space_vs_polygon(&half_space, &th, &square.vertices(), &tp);
+        assert!(manifold.is_some());
+
+        let manifold = manifold.unwrap();
+        assert!(manifold.point_count >= 1);
+        assert!(manifold.points[0].penetration > 0.0);
     }
 }
