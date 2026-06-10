@@ -174,4 +174,8 @@ public class SshConfig {
     public boolean isKeyAuth() {
         return privateKeyPath != null && !privateKeyPath.isEmpty();
     }
+
+    public boolean isKeepAliveEnabled() {
+        return keepAliveInterval > 0;
+    }
 }

@@ -7,6 +7,7 @@ import javafx.collections.ObservableList;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class TableData {
     private final SimpleStringProperty tableName;
@@ -19,6 +20,9 @@ public class TableData {
     private final SimpleObjectProperty<Integer> totalPages;
     private final SimpleStringProperty whereClause;
     private final SimpleStringProperty orderByClause;
+    private final SimpleObjectProperty<Long> generation;
+    private final SimpleObjectProperty<Long> loadedAt;
+    private static final AtomicLong generationCounter = new AtomicLong(0);
 
     public TableData() {
         this.tableName = new SimpleStringProperty();
@@ -31,6 +35,8 @@ public class TableData {
         this.totalPages = new SimpleObjectProperty<>(1);
         this.whereClause = new SimpleStringProperty();
         this.orderByClause = new SimpleStringProperty();
+        this.generation = new SimpleObjectProperty<>(0L);
+        this.loadedAt = new SimpleObjectProperty<>(0L);
     }
 
     public TableData(String tableName, String schemaName) {
@@ -162,6 +168,37 @@ public class TableData {
 
     public void setOrderByClause(String orderByClause) {
         this.orderByClause.set(orderByClause);
+    }
+
+    public Long getGeneration() {
+        return generation.get();
+    }
+
+    public SimpleObjectProperty<Long> generationProperty() {
+        return generation;
+    }
+
+    public void setGeneration(Long generation) {
+        this.generation.set(generation);
+    }
+
+    public long incrementGeneration() {
+        long newGeneration = generationCounter.incrementAndGet();
+        this.generation.set(newGeneration);
+        this.loadedAt.set(System.currentTimeMillis());
+        return newGeneration;
+    }
+
+    public Long getLoadedAt() {
+        return loadedAt.get();
+    }
+
+    public SimpleObjectProperty<Long> loadedAtProperty() {
+        return loadedAt;
+    }
+
+    public void setLoadedAt(Long loadedAt) {
+        this.loadedAt.set(loadedAt);
     }
 
     public boolean hasNextPage() {

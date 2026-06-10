@@ -93,7 +93,12 @@ public class SshTunnelManager implements AutoCloseable {
                 assignedPort, remoteHost, remotePort, sshHost, sshPort);
 
         SshTunnel tunnel = new SshTunnel(connectionId, session, assignedPort, remoteHost, remotePort, sshHost, sshPort);
+        tunnel.setConfig(config);
         tunnels.put(connectionId, tunnel);
+
+        if (config.isKeepAliveEnabled()) {
+            SshTunnelHealthChecker.getInstance().startMonitoring(connectionId, tunnel, config);
+        }
 
         return tunnel;
     }
@@ -132,6 +137,7 @@ public class SshTunnelManager implements AutoCloseable {
     }
 
     public void closeTunnel(String connectionId) {
+        SshTunnelHealthChecker.getInstance().stopMonitoring(connectionId);
         SshTunnel tunnel = tunnels.remove(connectionId);
         if (tunnel != null) {
             try {
@@ -162,13 +168,14 @@ public class SshTunnelManager implements AutoCloseable {
 
     public static class SshTunnel implements AutoCloseable {
         private final String connectionId;
-        private final Session session;
-        private final int localPort;
+        private Session session;
+        private int localPort;
         private final String remoteHost;
         private final int remotePort;
         private final String sshHost;
         private final int sshPort;
-        private final long createdAt;
+        private long createdAt;
+        private SshConfig config;
 
         public SshTunnel(String connectionId, Session session, int localPort,
                          String remoteHost, int remotePort, String sshHost, int sshPort) {
@@ -180,6 +187,31 @@ public class SshTunnelManager implements AutoCloseable {
             this.sshHost = sshHost;
             this.sshPort = sshPort;
             this.createdAt = System.currentTimeMillis();
+        }
+
+        public void setConfig(SshConfig config) {
+            this.config = config;
+        }
+
+        public SshConfig getConfig() {
+            return config;
+        }
+
+        public void updateFromNewTunnel(SshTunnel newTunnel) {
+            if (newTunnel != null && newTunnel.isOpen()) {
+                if (this.session != null && this.session.isConnected()) {
+                    try {
+                        this.session.delPortForwardingL(this.localPort);
+                    } catch (Exception e) {
+                        logger.debug("Error removing old port forwarding", e);
+                    }
+                    this.session.disconnect();
+                }
+                this.session = newTunnel.session;
+                this.localPort = newTunnel.localPort;
+                this.createdAt = System.currentTimeMillis();
+                logger.info("SSH tunnel updated: new port {}", this.localPort);
+            }
         }
 
         public boolean isOpen() {

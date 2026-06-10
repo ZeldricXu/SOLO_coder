@@ -10,10 +10,14 @@ import com.company.dbstudio.core.model.Result;
 import com.company.dbstudio.core.util.DateUtils;
 import com.company.dbstudio.core.util.StringUtils;
 import com.company.dbstudio.sql.model.ExecutionPlan;
+import com.company.dbstudio.sql.model.MultiStatementResult;
 import com.company.dbstudio.sql.model.QueryResult;
+import com.company.dbstudio.sql.model.StatementAnalysis;
 import javafx.application.Platform;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.sql.*;
 import java.time.LocalDateTime;
@@ -23,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 public class QueryExecutor {
+    private static final Logger logger = LoggerFactory.getLogger(QueryExecutor.class);
     private final DataSourceRegistry dataSourceRegistry;
     private final ConnectionManager connectionManager;
     private final QueryHistoryManager historyManager;
@@ -58,30 +63,53 @@ public class QueryExecutor {
             return Result.failure("没有可执行的SQL语句");
         }
 
+        List<StatementAnalysis> analyses = parserService.analyzeStatements(statements);
+        boolean hasImplicitCommit = analyses.stream().anyMatch(StatementAnalysis::causesImplicitCommit);
+
+        queryResult.setStatementAnalyses(analyses);
+
+        boolean wasAutoCommit = true;
         try (Connection conn = dataSourceRegistry.getConnection(connectionId)) {
-            for (int i = 0; i < statements.size(); i++) {
-                if (cancelled.get()) {
-                    queryResult.setErrorMessage("查询已取消");
-                    return Result.failure("查询已取消");
-                }
+            wasAutoCommit = conn.getAutoCommit();
+            boolean explicitTransactionStarted = false;
 
-                String stmtSql = statements.get(i);
-                executeSingleStatement(conn, stmtSql, queryResult, withPlan, fetchSize);
+            if (statements.size() > 1 && !hasImplicitCommit) {
+                conn.setAutoCommit(false);
+                explicitTransactionStarted = true;
+                logger.info("多语句执行，开启事务模式");
+            }
 
-                if (queryResult.getHasError()) {
-                    break;
-                }
+            MultiStatementResult multiResult = executeStatementsWithTransaction(
+                    conn, statements, analyses, queryResult, withPlan, fetchSize, explicitTransactionStarted);
 
-                if (statements.size() > 1 && !queryResult.getHasError() && i < statements.size() - 1) {
-                    queryResult.addRow(FXCollections.observableArrayList(
-                            "--- 语句 " + (i + 1) + " 执行完成 ---",
-                            "影响行数: " + queryResult.getAffectedRows()
-                    ));
+            queryResult.setMultiStatementResult(multiResult);
+
+            if (explicitTransactionStarted) {
+                try {
+                    if (multiResult.isSuccess()) {
+                        conn.commit();
+                        logger.info("多语句执行成功，提交事务");
+                    } else {
+                        conn.rollback();
+                        logger.warn("多语句执行失败，回滚事务。失败位置: 语句 {}, 错误: {}", 
+                                multiResult.getFailedIndex() + 1, multiResult.getErrorMessage());
+                    }
+                } catch (SQLException e) {
+                    logger.error("事务操作失败", e);
+                    throw e;
+                } finally {
+                    conn.setAutoCommit(wasAutoCommit);
                 }
+            }
+
+            if (!multiResult.isSuccess()) {
+                queryResult.setErrorMessage(multiResult.getErrorMessage());
+                queryResult.setHasError(true);
             }
         } catch (SQLException e) {
             queryResult.setErrorMessage("SQL执行错误: " + e.getMessage());
             queryResult.setHasError(true);
+            logger.error("SQL执行异常", e);
         }
 
         long executionTime = System.currentTimeMillis() - startTime;
@@ -94,6 +122,90 @@ public class QueryExecutor {
         }
 
         return Result.success(queryResult);
+    }
+
+    private MultiStatementResult executeStatementsWithTransaction(Connection conn, 
+            List<String> statements, List<StatementAnalysis> analyses,
+            QueryResult queryResult, boolean withPlan, int fetchSize,
+            boolean transactionEnabled) throws SQLException {
+
+        MultiStatementResult.Builder resultBuilder = MultiStatementResult.builder()
+                .statementAnalyses(analyses)
+                .success(true);
+
+        int executedCount = 0;
+        int successCount = 0;
+        boolean hasError = false;
+        String errorMessage = null;
+        int failedIndex = -1;
+
+        for (int i = 0; i < statements.size(); i++) {
+            if (cancelled.get()) {
+                errorMessage = "查询已取消";
+                hasError = true;
+                failedIndex = i;
+                break;
+            }
+
+            StatementAnalysis analysis = analyses.get(i);
+            String stmtSql = statements.get(i);
+
+            if (transactionEnabled && analysis.causesImplicitCommit() && executedCount > 0) {
+                logger.info("检测到隐式提交语句，先提交当前事务。语句: {}", stmtSql.substring(0, Math.min(50, stmtSql.length())));
+                try {
+                    conn.commit();
+                } catch (SQLException e) {
+                    logger.warn("提交当前事务失败", e);
+                }
+            }
+
+            try {
+                executeSingleStatement(conn, stmtSql, queryResult, withPlan, fetchSize);
+                executedCount++;
+                successCount++;
+
+                if (statements.size() > 1 && !queryResult.getHasError() && i < statements.size() - 1) {
+                    queryResult.addRow(FXCollections.observableArrayList(
+                            "--- 语句 " + (i + 1) + " 执行完成 ---",
+                            "影响行数: " + queryResult.getAffectedRows()
+                    ));
+                }
+
+                if (transactionEnabled && analysis.causesImplicitCommit()) {
+                    logger.info("隐式提交已执行，开启新事务");
+                    conn.setAutoCommit(true);
+                    conn.setAutoCommit(false);
+                }
+
+                if (queryResult.getHasError()) {
+                    errorMessage = queryResult.getErrorMessage();
+                    hasError = true;
+                    failedIndex = i;
+                    break;
+                }
+
+            } catch (SQLException e) {
+                executedCount++;
+                errorMessage = "语句 " + (i + 1) + " 执行失败: " + e.getMessage();
+                hasError = true;
+                failedIndex = i;
+                logger.error(errorMessage, e);
+                break;
+            }
+        }
+
+        resultBuilder
+                .success(!hasError)
+                .rolledBack(hasError && transactionEnabled)
+                .executedCount(executedCount)
+                .successCount(successCount)
+                .failedIndex(failedIndex)
+                .errorMessage(errorMessage)
+                .rollbackMessage(hasError && transactionEnabled 
+                        ? "已回滚事务，所有 " + successCount + " 条成功语句的变更已撤销" 
+                        : null);
+
+        return resultBuilder.build();
     }
 
     private void executeSingleStatement(Connection conn, String sql, QueryResult result, 

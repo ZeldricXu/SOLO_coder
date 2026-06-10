@@ -3,6 +3,7 @@ package com.company.dbstudio.connection;
 import com.company.dbstudio.connection.datasource.DataSourceRegistry;
 import com.company.dbstudio.connection.model.ConnectionConfig;
 import com.company.dbstudio.connection.model.ConnectionInfo;
+import com.company.dbstudio.connection.ssh.SshTunnelHealthChecker;
 import com.company.dbstudio.connection.ssh.SshTunnelManager;
 import com.company.dbstudio.connection.ssh.SshTunnelManager.SshTunnel;
 import com.company.dbstudio.core.ApplicationContext;
@@ -20,17 +21,22 @@ import java.sql.Connection;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Queue;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 public class ConnectionManager implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(ConnectionManager.class);
+    private static final int MAX_QUEUED_QUERIES = 100;
 
     private final ConnectionRepository repository;
     private final DataSourceRegistry dataSourceRegistry;
     private final SshTunnelManager tunnelManager;
     private final EventBus eventBus;
+    private final SshTunnelHealthChecker healthChecker;
 
     private final Map<String, ConnectionInfo> activeConnections = new ConcurrentHashMap<>();
     private final ObservableList<ConnectionInfo> activeConnectionsList =
@@ -38,11 +44,15 @@ public class ConnectionManager implements AutoCloseable {
     private final SimpleObjectProperty<ConnectionInfo> currentConnection =
             new SimpleObjectProperty<>();
 
+    private final Map<String, AtomicBoolean> reconnectingFlags = new ConcurrentHashMap<>();
+    private final Map<String, Queue<Runnable>> pendingQueries = new ConcurrentHashMap<>();
+
     public ConnectionManager() {
         this.repository = new ConnectionRepository();
         this.dataSourceRegistry = DataSourceRegistry.getInstance();
         this.tunnelManager = SshTunnelManager.getInstance();
         this.eventBus = EventBus.getInstance();
+        this.healthChecker = SshTunnelHealthChecker.getInstance();
     }
 
     public ConnectionRepository getRepository() {
@@ -75,6 +85,11 @@ public class ConnectionManager implements AutoCloseable {
     public boolean isConnected(String connectionId) {
         ConnectionInfo info = activeConnections.get(connectionId);
         return info != null && info.isConnected();
+    }
+
+    public boolean isReconnecting(String connectionId) {
+        AtomicBoolean flag = reconnectingFlags.get(connectionId);
+        return flag != null && flag.get();
     }
 
     public void connectAsync(ConnectionConfig config,
@@ -118,6 +133,10 @@ public class ConnectionManager implements AutoCloseable {
             activeConnectionsList.add(info);
             currentConnection.set(info);
 
+            if (config.getSshConfig() != null && config.getSshConfig().isEnabled()) {
+                setupSshReconnectListener(config.getId(), config);
+            }
+
             repository.markRecent(config.getId());
 
             eventBus.publish(new EventBus.ConnectionCreatedEvent(config.getId()));
@@ -136,8 +155,105 @@ public class ConnectionManager implements AutoCloseable {
         }
     }
 
+    private void setupSshReconnectListener(String connectionId, ConnectionConfig config) {
+        healthChecker.addReconnectListener(connectionId, event -> {
+            logger.info("SSH重连事件: {}", event);
+
+            Platform.runLater(() -> {
+                if (event.isSuccess()) {
+                    reconnectingFlags.remove(connectionId);
+                    logger.info("SSH重连成功，重建连接池: {}", connectionId);
+
+                    try {
+                        SshTunnel tunnel = tunnelManager.getTunnel(connectionId);
+                        if (tunnel != null) {
+                            ConnectionConfig newConfig = config.copy();
+                            newConfig.setHost("localhost");
+                            newConfig.setPort(tunnel.getLocalPort());
+                            newConfig.setSshConfig(tunnel.getConfig());
+
+                            dataSourceRegistry.removeDataSource(connectionId);
+                            dataSourceRegistry.createDataSource(connectionId, newConfig, newConfig.getJdbcUrl());
+
+                            logger.info("连接池已重建: {}", connectionId);
+
+                            eventBus.publish(new EventBus.StatusMessageEvent(
+                                    "SSH连接已恢复",
+                                    EventBus.StatusMessageEvent.MessageType.SUCCESS));
+
+                            processPendingQueries(connectionId);
+                        }
+                    } catch (Exception e) {
+                        logger.error("重建连接池失败", e);
+                    }
+                } else {
+                    if (event.getAttempt() == 1) {
+                        reconnectingFlags.putIfAbsent(connectionId, new AtomicBoolean(true));
+                        reconnectingFlags.get(connectionId).set(true);
+
+                        eventBus.publish(new EventBus.StatusMessageEvent(
+                                "SSH连接断开，正在自动重连... (" + event.getAttempt() + "/" + event.getMaxAttempts() + ")",
+                                EventBus.StatusMessageEvent.MessageType.WARNING));
+                    } else {
+                        eventBus.publish(new EventBus.StatusMessageEvent(
+                                "SSH重连中... (" + event.getAttempt() + "/" + event.getMaxAttempts() + ")",
+                                EventBus.StatusMessageEvent.MessageType.WARNING));
+                    }
+
+                    if (event.getAttempt() >= event.getMaxAttempts()) {
+                        reconnectingFlags.remove(connectionId);
+                        eventBus.publish(new EventBus.StatusMessageEvent(
+                                "SSH连接断开，重连失败，请手动重新连接",
+                                EventBus.StatusMessageEvent.MessageType.ERROR));
+                    }
+                }
+            });
+        });
+    }
+
+    public void queueQuery(String connectionId, Runnable query) {
+        Queue<Runnable> queue = pendingQueries.computeIfAbsent(
+                connectionId, k -> new ConcurrentLinkedQueue<>());
+
+        if (queue.size() >= MAX_QUEUED_QUERIES) {
+            logger.warn("查询队列已满，丢弃请求: {}", connectionId);
+            return;
+        }
+
+        queue.offer(query);
+        logger.debug("查询已入队，队列大小: {} - {}", queue.size(), connectionId);
+    }
+
+    private void processPendingQueries(String connectionId) {
+        Queue<Runnable> queue = pendingQueries.get(connectionId);
+        if (queue == null || queue.isEmpty()) {
+            return;
+        }
+
+        logger.info("处理排队的查询，队列大小: {} - {}", queue.size(), connectionId);
+
+        int processed = 0;
+        while (!queue.isEmpty()) {
+            Runnable query = queue.poll();
+            if (query != null) {
+                try {
+                    query.run();
+                    processed++;
+                } catch (Exception e) {
+                    logger.error("执行排队查询失败", e);
+                }
+            }
+        }
+
+        logger.info("已处理 {} 个排队查询 - {}", processed, connectionId);
+    }
+
     public void disconnect(String connectionId) {
         logger.info("Disconnecting: {}", connectionId);
+
+        reconnectingFlags.remove(connectionId);
+        pendingQueries.remove(connectionId);
+        healthChecker.removeReconnectListener(connectionId);
 
         ConnectionInfo info = activeConnections.remove(connectionId);
         if (info != null) {
@@ -163,9 +279,15 @@ public class ConnectionManager implements AutoCloseable {
     public void disconnectAll() {
         logger.info("Disconnecting all connections...");
         new ConcurrentHashMap<>(activeConnections).keySet().forEach(this::disconnect);
+        healthChecker.close();
     }
 
     public Connection getConnection(String connectionId) throws SQLException {
+        if (isReconnecting(connectionId)) {
+            logger.debug("SSH正在重连，查询将排队: {}", connectionId);
+            throw new SQLException("SSH连接正在恢复中，请稍后重试");
+        }
+
         if (!isConnected(connectionId)) {
             throw new SQLException("Not connected to: " + connectionId);
         }
@@ -265,6 +387,10 @@ public class ConnectionManager implements AutoCloseable {
 
     public HikariDataSource getDataSource(String connectionId) {
         return dataSourceRegistry.getDataSource(connectionId);
+    }
+
+    public SshTunnelHealthChecker getHealthChecker() {
+        return healthChecker;
     }
 
     @Override

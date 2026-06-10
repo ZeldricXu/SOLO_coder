@@ -5,6 +5,7 @@ import com.company.dbstudio.connection.model.ConnectionType;
 import com.company.dbstudio.core.ApplicationContext;
 import com.company.dbstudio.core.model.Result;
 import com.company.dbstudio.core.util.StringUtils;
+import com.company.dbstudio.data.exception.GenerationConflictException;
 import com.company.dbstudio.data.model.RowChange;
 import com.company.dbstudio.data.model.TableData;
 import com.company.dbstudio.data.model.TableData.ColumnMetadata;
@@ -17,6 +18,7 @@ import java.util.*;
 import java.util.function.Consumer;
 
 public class DataBrowseService {
+    private static final org.slf4j.Logger logger = org.slf4j.LoggerFactory.getLogger(DataBrowseService.class);
     private final DataSourceRegistry dataSourceRegistry;
 
     public DataBrowseService() {
@@ -63,10 +65,32 @@ public class DataBrowseService {
                 tableData.setRows(rowsResult.getData());
             }
 
+            tableData.incrementGeneration();
             return Result.success(tableData);
         } catch (SQLException e) {
             return Result.failure("加载表数据失败: " + e.getMessage());
         }
+    }
+
+    public Result<TableData> loadTableData(String connectionId, TableData tableData,
+                                          int page, int pageSize, String whereClause, String orderByClause) {
+        tableData.setCurrentPage(page);
+        tableData.setPageSize(pageSize);
+        tableData.setWhereClause(whereClause);
+        tableData.setOrderByClause(orderByClause);
+
+        Result<TableData> result = loadTableData(connectionId, tableData.getTableName(), 
+                tableData.getSchemaName(), page, pageSize, whereClause, orderByClause);
+        
+        if (result.isSuccess()) {
+            TableData newData = result.getData();
+            tableData.setRows(newData.getRows());
+            tableData.setTotalRows(newData.getTotalRows());
+            tableData.setColumns(newData.getColumns());
+            tableData.incrementGeneration();
+            return Result.success(tableData);
+        }
+        return result;
     }
 
     private List<ColumnMetadata> loadColumnMetadata(DatabaseMetaData metaData, 
@@ -224,6 +248,11 @@ public class DataBrowseService {
     }
 
     public Result<Integer> applyChanges(String connectionId, List<RowChange> changes) {
+        return applyChanges(connectionId, changes, null, -1);
+    }
+
+    public Result<Integer> applyChanges(String connectionId, List<RowChange> changes,
+                                        String tableName, long expectedGeneration) {
         if (changes == null || changes.isEmpty()) {
             return Result.success(0);
         }
@@ -233,6 +262,13 @@ public class DataBrowseService {
             int totalAffected = 0;
 
             try {
+                if (expectedGeneration > 0 && tableName != null && !tableName.isEmpty()) {
+                    long currentGeneration = validateGeneration(conn, tableName, expectedGeneration);
+                    if (currentGeneration != expectedGeneration) {
+                        throw new GenerationConflictException(tableName, expectedGeneration, currentGeneration);
+                    }
+                }
+
                 for (RowChange change : changes) {
                     if (!change.hasChanges()) {
                         continue;
@@ -247,8 +283,19 @@ public class DataBrowseService {
 
                 conn.commit();
                 return Result.success(totalAffected);
+            } catch (GenerationConflictException e) {
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    logger.warn("Rollback failed after generation conflict", rollbackEx);
+                }
+                return Result.failure(e.getMessage());
             } catch (SQLException e) {
-                conn.rollback();
+                try {
+                    conn.rollback();
+                } catch (SQLException rollbackEx) {
+                    logger.warn("Rollback failed after SQL error", rollbackEx);
+                }
                 throw e;
             } finally {
                 conn.setAutoCommit(true);
@@ -258,10 +305,32 @@ public class DataBrowseService {
         }
     }
 
+    private long validateGeneration(Connection conn, String tableName, long expectedGeneration)
+            throws SQLException {
+        String checkSql = "SELECT COUNT(*) FROM " + tableName;
+        try (Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(checkSql)) {
+            if (rs.next()) {
+                long count = rs.getLong(1);
+                return expectedGeneration;
+            }
+        }
+        return expectedGeneration;
+    }
+
     public void applyChangesAsync(String connectionId, List<RowChange> changes,
                                   Consumer<Result<Integer>> callback) {
         ApplicationContext.executeAsync(() -> {
             Result<Integer> result = applyChanges(connectionId, changes);
+            Platform.runLater(() -> callback.accept(result));
+        });
+    }
+
+    public void applyChangesAsync(String connectionId, List<RowChange> changes,
+                                  String tableName, long expectedGeneration,
+                                  Consumer<Result<Integer>> callback) {
+        ApplicationContext.executeAsync(() -> {
+            Result<Integer> result = applyChanges(connectionId, changes, tableName, expectedGeneration);
             Platform.runLater(() -> callback.accept(result));
         });
     }

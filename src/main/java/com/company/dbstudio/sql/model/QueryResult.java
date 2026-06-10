@@ -22,6 +22,8 @@ public class QueryResult {
     private final SimpleObjectProperty<Boolean> hasError;
     private final SimpleObjectProperty<ExecutionPlan> executionPlan;
     private final SimpleStringProperty queryType;
+    private final SimpleObjectProperty<List<StatementAnalysis>> statementAnalyses;
+    private final SimpleObjectProperty<MultiStatementResult> multiStatementResult;
 
     public QueryResult() {
         this.sql = new SimpleStringProperty();
@@ -35,6 +37,8 @@ public class QueryResult {
         this.hasError = new SimpleObjectProperty<>(false);
         this.executionPlan = new SimpleObjectProperty<>();
         this.queryType = new SimpleStringProperty();
+        this.statementAnalyses = new SimpleObjectProperty<>(new ArrayList<>());
+        this.multiStatementResult = new SimpleObjectProperty<>();
     }
 
     public QueryResult(String sql, String connectionId) {
@@ -198,6 +202,41 @@ public class QueryResult {
 
     public void setQueryType(String queryType) {
         this.queryType.set(queryType);
+    }
+
+    public List<StatementAnalysis> getStatementAnalyses() {
+        return statementAnalyses.get();
+    }
+
+    public SimpleObjectProperty<List<StatementAnalysis>> statementAnalysesProperty() {
+        return statementAnalyses;
+    }
+
+    public void setStatementAnalyses(List<StatementAnalysis> statementAnalyses) {
+        this.statementAnalyses.set(statementAnalyses);
+    }
+
+    public MultiStatementResult getMultiStatementResult() {
+        return multiStatementResult.get();
+    }
+
+    public SimpleObjectProperty<MultiStatementResult> multiStatementResultProperty() {
+        return multiStatementResult;
+    }
+
+    public void setMultiStatementResult(MultiStatementResult multiStatementResult) {
+        this.multiStatementResult.set(multiStatementResult);
+    }
+
+    public boolean isRolledBack() {
+        return multiStatementResult.get() != null && multiStatementResult.get().isRolledBack();
+    }
+
+    public List<String> getRollbackMessages() {
+        if (multiStatementResult.get() == null) {
+            return new ArrayList<>();
+        }
+        return multiStatementResult.get().getAllWarnings();
     }
 
     public boolean isResultSet() {

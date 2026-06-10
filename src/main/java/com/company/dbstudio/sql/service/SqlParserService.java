@@ -4,6 +4,7 @@ import com.company.dbstudio.core.model.Result;
 import com.company.dbstudio.sql.model.ExecutionPlan;
 import com.company.dbstudio.sql.model.IndexSuggestion;
 import com.company.dbstudio.sql.model.SqlKeyword;
+import com.company.dbstudio.sql.model.StatementAnalysis;
 import net.sf.jsqlparser.JSQLParserException;
 import net.sf.jsqlparser.expression.Expression;
 import net.sf.jsqlparser.expression.operators.conditional.AndExpression;
@@ -345,6 +346,97 @@ public class SqlParserService {
             statements.add(lastStmt);
         }
         return statements;
+    }
+
+    private static final Set<String> DDL_KEYWORDS = new HashSet<>(Arrays.asList(
+            "CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME", "COMMENT"
+    ));
+
+    private static final Set<String> IMPLICIT_COMMIT_KEYWORDS = new HashSet<>(Arrays.asList(
+            "CREATE DATABASE", "ALTER DATABASE", "DROP DATABASE",
+            "CREATE TABLE", "ALTER TABLE", "DROP TABLE", "TRUNCATE TABLE", "RENAME TABLE",
+            "CREATE INDEX", "ALTER INDEX", "DROP INDEX",
+            "CREATE VIEW", "ALTER VIEW", "DROP VIEW",
+            "CREATE USER", "ALTER USER", "DROP USER",
+            "CREATE ROLE", "ALTER ROLE", "DROP ROLE",
+            "CREATE SCHEMA", "ALTER SCHEMA", "DROP SCHEMA",
+            "CREATE PROCEDURE", "ALTER PROCEDURE", "DROP PROCEDURE",
+            "CREATE FUNCTION", "ALTER FUNCTION", "DROP FUNCTION",
+            "CREATE TRIGGER", "ALTER TRIGGER", "DROP TRIGGER",
+            "GRANT", "REVOKE",
+            "LOCK TABLES", "UNLOCK TABLES",
+            "BEGIN", "COMMIT", "ROLLBACK",
+            "START TRANSACTION"
+    ));
+
+    public StatementAnalysis analyzeStatement(String sql) {
+        String trimmed = sql.trim();
+        String upperSql = trimmed.toUpperCase();
+        String statementType = determineQueryType(sql);
+        boolean isDDL = DDL_KEYWORDS.contains(statementType);
+
+        boolean causesImplicitCommit = false;
+        String description = "";
+
+        for (String keyword : IMPLICIT_COMMIT_KEYWORDS) {
+            if (upperSql.startsWith(keyword) || upperSql.contains(keyword + " ")) {
+                causesImplicitCommit = true;
+                description = "语句 \"" + keyword + "\" 会导致隐式提交当前事务";
+                break;
+            }
+        }
+
+        if ("CREATE".equals(statementType) && upperSql.contains("TEMPORARY")) {
+            causesImplicitCommit = false;
+            description = "CREATE TEMPORARY TABLE 不会导致隐式提交";
+        }
+
+        if ("SET".equals(statementType)) {
+            causesImplicitCommit = false;
+            description = "SET 语句不会导致隐式提交";
+        }
+
+        StatementAnalysis analysis = new StatementAnalysis(sql, statementType, isDDL, 
+                causesImplicitCommit, description);
+
+        if (causesImplicitCommit) {
+            analysis.addWarning("⚠️ 此语句会隐式提交当前事务，无法回滚");
+        }
+
+        if (isDDL && !causesImplicitCommit) {
+            analysis.addWarning("ℹ️ 此为DDL语句，执行后无法回滚");
+        }
+
+        return analysis;
+    }
+
+    public List<StatementAnalysis> analyzeStatements(List<String> statements) {
+        List<StatementAnalysis> analyses = new ArrayList<>();
+        for (String stmt : statements) {
+            analyses.add(analyzeStatement(stmt));
+        }
+        return analyses;
+    }
+
+    public boolean hasImplicitCommitStatements(List<String> statements) {
+        for (String stmt : statements) {
+            StatementAnalysis analysis = analyzeStatement(stmt);
+            if (analysis.causesImplicitCommit()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public List<String> getImplicitCommitWarnings(List<String> statements) {
+        List<String> warnings = new ArrayList<>();
+        for (int i = 0; i < statements.size(); i++) {
+            StatementAnalysis analysis = analyzeStatement(statements.get(i));
+            if (analysis.causesImplicitCommit()) {
+                warnings.add("语句 " + (i + 1) + ": " + analysis.getDescription());
+            }
+        }
+        return warnings;
     }
 
     public List<IndexSuggestion> analyzeForIndexSuggestions(String sql, ExecutionPlan plan) {

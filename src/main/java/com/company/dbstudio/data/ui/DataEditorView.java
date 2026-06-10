@@ -603,7 +603,11 @@ public class DataEditorView extends BorderPane {
 
         statusLabel.setText("正在保存更改...");
 
-        dataBrowseService.applyChangesAsync(connectionId, validChanges, result -> {
+        long currentGeneration = tableData.getGeneration();
+        String currentTableName = tableData.getFullTableName();
+
+        dataBrowseService.applyChangesAsync(connectionId, validChanges, 
+                currentTableName, currentGeneration, result -> {
             if (result.isSuccess()) {
                 statusLabel.setText("保存成功: 影响 " + result.getData() + " 行");
                 pendingChanges.clear();
@@ -611,8 +615,35 @@ public class DataEditorView extends BorderPane {
                 updateChangesLabel();
                 loadTableData();
             } else {
+                String errorMessage = result.getMessage();
                 statusLabel.setText("保存失败");
-                showError("保存更改失败", result.getMessage());
+                
+                if (errorMessage != null && errorMessage.contains("数据版本冲突")) {
+                    Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+                    confirm.setTitle("数据版本冲突");
+                    confirm.setHeaderText("数据已被其他用户修改");
+                    confirm.setContentText(errorMessage + "\n\n是否刷新数据后重试？您的更改将被保留。");
+                    
+                    ButtonType refreshButton = new ButtonType("刷新并保留更改");
+                    ButtonType discardButton = new ButtonType("放弃更改");
+                    ButtonType cancelButton = new ButtonType("取消", ButtonBar.ButtonData.CANCEL_CLOSE);
+                    
+                    confirm.getButtonTypes().setAll(refreshButton, discardButton, cancelButton);
+                    
+                    confirm.showAndWait().ifPresent(buttonType -> {
+                        if (buttonType == refreshButton) {
+                            loadTableData();
+                            statusLabel.setText("已刷新，请检查数据后重试");
+                        } else if (buttonType == discardButton) {
+                            pendingChanges.clear();
+                            originalValues.clear();
+                            updateChangesLabel();
+                            loadTableData();
+                        }
+                    });
+                } else {
+                    showError("保存更改失败", errorMessage);
+                }
             }
         });
     }
