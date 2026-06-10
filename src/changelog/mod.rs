@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 use crate::command::{CommandHandler, ModuleCommand};
 use crate::config::Config;
@@ -341,10 +341,37 @@ impl ChangelogManager {
             .cloned()
             .collect();
 
+        let expanded_commits = self.expand_merge_commits(commits)?;
+
         let mut categories: BTreeMap<String, Vec<ChangelogItem>> = BTreeMap::new();
         let mut breaking_changes = Vec::new();
+        let mut processed_shas: HashSet<String> = HashSet::new();
 
-        for commit in commits {
+        for commit in &expanded_commits {
+            if processed_shas.contains(&commit.sha) {
+                continue;
+            }
+            processed_shas.insert(commit.sha.clone());
+
+            if commit.is_merge() {
+                if let Some(pr_num) = commit.pr_number {
+                    let issues = vec![format!("#{}", pr_num)];
+                    let item = ChangelogItem {
+                        commit_sha: commit.short_sha.clone(),
+                        scope: Some("merge".to_string()),
+                        description: format!("Merge PR #{}: {}", pr_num, commit.summary),
+                        is_breaking: false,
+                        author: commit.author.clone(),
+                        issues,
+                    };
+                    categories
+                        .entry("🔀 合并请求".to_string())
+                        .or_default()
+                        .push(item);
+                }
+                continue;
+            }
+
             if let Some(conv) = parse_commit_for_conventional(&commit.message) {
                 if !include_types.contains(&conv.r#type) {
                     continue;
@@ -383,6 +410,42 @@ impl ChangelogManager {
             is_unreleased,
             categories,
         })
+    }
+
+    fn expand_merge_commits(&self, commits: &[CommitInfo]) -> Result<Vec<CommitInfo>> {
+        let mut result = Vec::new();
+        let mut seen_shas: HashSet<String> = HashSet::new();
+
+        for commit in commits {
+            if seen_shas.contains(&commit.sha) {
+                continue;
+            }
+
+            if commit.is_merge() {
+                result.push(commit.clone());
+                seen_shas.insert(commit.sha.clone());
+
+                match self.git.get_merge_feature_commits(commit) {
+                    Ok(feature_commits) => {
+                        for fc in feature_commits {
+                            if !seen_shas.contains(&fc.sha) {
+                                result.push(fc.clone());
+                                seen_shas.insert(fc.sha);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        warn!("无法获取merge commit {} 的feature分支commits: {}", commit.sha, e);
+                    }
+                }
+            } else {
+                result.push(commit.clone());
+                seen_shas.insert(commit.sha.clone());
+            }
+        }
+
+        result.sort_by(|a, b| b.time.cmp(&a.time));
+        Ok(result)
     }
 
     fn get_category_name(&self, commit_type: &str) -> String {

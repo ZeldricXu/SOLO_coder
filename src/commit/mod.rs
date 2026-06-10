@@ -28,6 +28,9 @@ pub mod cli {
 
             #[arg(short, long, help = "严格模式，所有规则都必须通过")]
             strict: bool,
+
+            #[arg(long, help = "检查commit范围 (格式: from..to)")]
+            range: Option<String>,
         },
 
         #[command(about = "交互式创建符合规范的提交")]
@@ -62,7 +65,7 @@ pub mod cli {
             #[arg(short, long, help = "强制覆盖现有hook")]
             force: bool,
 
-            #[arg(long, help = "hook类型", default_value = "pre-commit", value_parser = ["pre-commit", "commit-msg"])]
+            #[arg(long, help = "hook类型", default_value = "pre-commit", value_parser = ["pre-commit", "commit-msg", "pre-push"])]
             hook_type: String,
         },
     }
@@ -126,13 +129,24 @@ impl CommitManager {
         Self { git, config }
     }
 
+    pub fn git(&self) -> &Arc<GitContext> {
+        &self.git
+    }
+
     pub fn handle(&self, command: &CommitCommands) -> Result<()> {
         match command {
             CommitCommands::Check {
                 message,
                 file,
                 strict,
-            } => self.check(message.as_deref(), file.as_deref(), *strict),
+                range,
+            } => {
+                if let Some(range) = range {
+                    self.check_range(range, *strict)
+                } else {
+                    self.check(message.as_deref(), file.as_deref(), *strict)
+                }
+            }
             CommitCommands::Create {
                 no_lint,
                 no_test,
@@ -216,7 +230,168 @@ impl CommitManager {
         Ok(())
     }
 
-    fn validate_message(
+    pub fn check_range(&self, range: &str, strict: bool) -> Result<()> {
+        println!();
+        println!("{} 检查commit范围: {}", "🔍".cyan(), range.bold());
+        println!();
+
+        let parts: Vec<&str> = range.split("..").collect();
+        if parts.len() != 2 {
+            return Err(GitFlowError::ValidationError(format!(
+                "无效的commit范围格式: '{}'，应为 'from..to'",
+                range
+            )));
+        }
+
+        let from_ref = if parts[0].is_empty() || parts[0].ends_with('^') {
+            parts[0].trim_end_matches('^')
+        } else {
+            parts[0]
+        };
+        let to_ref = if parts[1].is_empty() { "HEAD" } else { parts[1] };
+
+        let commits = self.git.get_commit_range(
+            if from_ref.is_empty() { None } else { Some(from_ref) },
+            Some(to_ref),
+        )?;
+
+        if commits.is_empty() {
+            println!("{} 没有需要检查的commits", "ℹ".blue());
+            return Ok(());
+        }
+
+        println!("{} 共找到 {} 个commits待检查", "ℹ".blue(), commits.len());
+        println!();
+
+        let mut failed_commits = Vec::new();
+        let mut total_errors = 0;
+        let mut total_warnings = 0;
+
+        for (idx, commit) in commits.iter().enumerate() {
+            print!("  [{}/{}] 检查 {} {}... ",
+                idx + 1,
+                commits.len(),
+                commit.short_sha.bold(),
+                commit.summary.split('\n').next().unwrap_or("").chars().take(60).collect::<String>()
+            );
+
+            let msg_result = self.validate_message(&commit.message, strict)?;
+            let author_result = self.validate_commit_author(commit, strict)?;
+
+            let all_errors: Vec<String> = msg_result.errors.into_iter().chain(author_result.errors).collect();
+            let all_warnings: Vec<String> = msg_result.warnings.into_iter().chain(author_result.warnings).collect();
+
+            let passed = all_errors.is_empty() && (!strict || all_warnings.is_empty());
+
+            if passed {
+                println!("{}", "✓".green());
+            } else {
+                println!("{}", "✗".red());
+                failed_commits.push((commit.clone(), all_errors.clone(), all_warnings.clone()));
+                total_errors += all_errors.len();
+                total_warnings += all_warnings.len();
+            }
+        }
+
+        println!();
+
+        if failed_commits.is_empty() {
+            println!("{} 所有commits检查通过!", "✓".green().bold());
+            Ok(())
+        } else {
+            println!("{} 发现 {} 个commit有问题 ({} 个错误, {} 个警告)",
+                "✗".red().bold(),
+                failed_commits.len(),
+                total_errors,
+                total_warnings
+            );
+            println!();
+
+            for (commit, errors, warnings) in &failed_commits {
+                println!("{} {} - {}",
+                    "✗".red(),
+                    commit.short_sha.bold(),
+                    commit.summary.split('\n').next().unwrap_or("")
+                );
+                println!("  Author: {} <{}>", commit.author, commit.email);
+
+                if !errors.is_empty() {
+                    println!("  错误:");
+                    for error in errors {
+                        println!("    - {}", error.red());
+                    }
+                }
+
+                if !warnings.is_empty() {
+                    println!("  警告:");
+                    for warning in warnings {
+                        println!("    - {}", warning.yellow());
+                    }
+                }
+                println!();
+            }
+
+            self.print_commit_template();
+
+            Err(GitFlowError::InvalidCommitMessage(format!(
+                "{} 个commits不符合规范",
+                failed_commits.len()
+            )))
+        }
+    }
+
+    pub fn validate_commit_author(&self, commit: &crate::git::CommitInfo, strict: bool) -> Result<ValidationResult> {
+        let config = &self.config.commit;
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
+
+        if config.require_author_name && commit.author.trim().is_empty() {
+            errors.push("提交作者名称不能为空".into());
+        }
+
+        if config.require_author_email && commit.email.trim().is_empty() {
+            errors.push("提交作者邮箱不能为空".into());
+        }
+
+        if let Some(ref valid_domains) = config.valid_email_domains {
+            if !commit.email.is_empty() && !valid_domains.is_empty() {
+                let has_valid_domain = valid_domains.iter().any(|domain| {
+                    commit.email.ends_with(&format!("@{}", domain)) || commit.email.ends_with(&format!(".{}", domain))
+                });
+                if !has_valid_domain {
+                    warnings.push(format!(
+                        "提交邮箱 '{}' 不在允许的域名列表中: {}",
+                        commit.email,
+                        valid_domains.join(", ")
+                    ));
+                }
+            }
+        }
+
+        if config.require_signoff {
+            if !commit.message.contains("Signed-off-by:") {
+                errors.push("提交缺少 Signed-off-by 签名".into());
+            }
+        }
+
+        if config.require_gpg_signature {
+            match self.git.get_commit_signature(&commit.sha) {
+                Ok(Some(_)) => {}
+                Ok(None) => errors.push("提交缺少 GPG 签名".into()),
+                Err(_) => warnings.push("无法验证 GPG 签名".into()),
+            }
+        }
+
+        let passed = errors.is_empty() && (!strict || warnings.is_empty());
+
+        Ok(ValidationResult {
+            passed,
+            errors,
+            warnings,
+        })
+    }
+
+    pub fn validate_message(
         &self,
         message: &str,
         strict: bool,
@@ -683,7 +858,7 @@ impl CommitManager {
         Ok(())
     }
 
-    fn install_hook(&self, force: bool, hook_type: &str) -> Result<()> {
+    pub fn install_hook(&self, force: bool, hook_type: &str) -> Result<()> {
         let git_dir = self.git.git_dir();
         let hooks_dir = git_dir.join("hooks");
         std::fs::create_dir_all(&hooks_dir)?;
@@ -741,6 +916,41 @@ COMMIT_MSG_FILE="$1"
 if ! {exe_str} commit check --file "$COMMIT_MSG_FILE" --strict; then
     echo ""
     echo "✗ 提交消息格式不符合规范，请修改后重试"
+    exit 1
+fi
+
+exit 0
+"#,
+                exe_str = exe_str
+            ),
+            "pre-push" => format!(
+                r#"#!/bin/sh
+# GitFlow CLI pre-push hook
+# 在推送前检查所有将要推送的commit
+
+set -e
+
+REMOTE_NAME="$1"
+REMOTE_URL="$2"
+
+# 获取当前分支
+BRANCH=$(git symbolic-ref --short HEAD 2>/dev/null || echo "HEAD")
+
+# 检查是否是首次推送（没有remote追踪分支）
+if ! git rev-parse --verify "$REMOTE_NAME/$BRANCH" >/dev/null 2>&1; then
+    # 首次推送，检查从初始commit到HEAD的所有commit
+    FIRST_COMMIT=$(git rev-list --max-parents=0 HEAD | head -1)
+    RANGE="${{FIRST_COMMIT}}^..HEAD"
+else
+    # 增量推送，检查远程分支到HEAD的差异
+    RANGE="$REMOTE_NAME/$BRANCH..HEAD"
+fi
+
+echo "ℹ  正在检查推送范围内的commits..."
+
+if ! {exe_str} commit check --range "$RANGE" --strict; then
+    echo ""
+    echo "✗ 推送被pre-push hook阻止，请修复上述问题后重试"
     exit 1
 fi
 

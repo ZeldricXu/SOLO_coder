@@ -202,6 +202,21 @@ pub struct CommitConfig {
 
     #[serde(default)]
     pub pre_commit: PreCommitConfig,
+
+    #[serde(default)]
+    pub require_author_name: bool,
+
+    #[serde(default)]
+    pub require_author_email: bool,
+
+    #[serde(default)]
+    pub valid_email_domains: Option<Vec<String>>,
+
+    #[serde(default)]
+    pub require_signoff: bool,
+
+    #[serde(default)]
+    pub require_gpg_signature: bool,
 }
 
 impl Default for CommitConfig {
@@ -217,6 +232,11 @@ impl Default for CommitConfig {
             allow_custom_types: false,
             custom_template: default_custom_template(),
             pre_commit: PreCommitConfig::default(),
+            require_author_name: false,
+            require_author_email: false,
+            valid_email_domains: None,
+            require_signoff: false,
+            require_gpg_signature: false,
         }
     }
 }
@@ -935,6 +955,11 @@ fn merge_commit_config(base: CommitConfig, overlay: CommitConfig) -> CommitConfi
         allow_custom_types: overlay.allow_custom_types || base.allow_custom_types,
         custom_template: overlay.custom_template.or(base.custom_template),
         pre_commit: merge_pre_commit_config(base.pre_commit, overlay.pre_commit),
+        require_author_name: overlay.require_author_name || base.require_author_name,
+        require_author_email: overlay.require_author_email || base.require_author_email,
+        valid_email_domains: overlay.valid_email_domains.or(base.valid_email_domains),
+        require_signoff: overlay.require_signoff || base.require_signoff,
+        require_gpg_signature: overlay.require_gpg_signature || base.require_gpg_signature,
     }
 }
 

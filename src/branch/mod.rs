@@ -677,6 +677,25 @@ impl BranchManager {
             return Ok(());
         }
 
+        let current_branch = self.git.current_branch().ok();
+        let branches_to_delete: Vec<_> = branches_to_delete
+            .into_iter()
+            .filter(|(branch, _)| {
+                if let Some(ref curr) = current_branch {
+                    if branch.short_name == *curr {
+                        warn!("跳过当前分支: {}", branch.short_name);
+                        return false;
+                    }
+                }
+                true
+            })
+            .collect();
+
+        if branches_to_delete.is_empty() {
+            println!("{} 没有可删除的分支", "ℹ".blue());
+            return Ok(());
+        }
+
         let delete_pb = ProgressBar::new(branches_to_delete.len() as u64);
         delete_pb.set_style(
             ProgressStyle::default_bar()

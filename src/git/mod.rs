@@ -34,6 +34,18 @@ pub struct CommitInfo {
     pub email: String,
     pub time: DateTime<Utc>,
     pub parents: Vec<String>,
+    pub is_merge_commit: bool,
+    pub pr_number: Option<u32>,
+}
+
+impl CommitInfo {
+    pub fn parent_count(&self) -> usize {
+        self.parents.len()
+    }
+
+    pub fn is_merge(&self) -> bool {
+        self.parent_count() > 1
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +54,13 @@ pub struct TagInfo {
     pub sha: String,
     pub message: Option<String>,
     pub time: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SignatureInfo {
+    pub signature_type: String,
+    pub signed_by: Option<String>,
+    pub verified: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -334,9 +353,23 @@ impl GitContext {
     }
 
     pub fn delete_branch(&self, name: &str, force: bool) -> Result<()> {
+        self.preflight_check_head_operation(name, "删除")?;
+
         let mut branch = self.repo.find_branch(name, BranchType::Local)?;
         branch.delete()?;
         info!("删除分支: {}", name);
+        Ok(())
+    }
+
+    fn preflight_check_head_operation(&self, target_branch: &str, operation: &str) -> Result<()> {
+        if let Ok(current_branch) = self.current_branch() {
+            if current_branch == target_branch {
+                return Err(GitFlowError::ValidationError(format!(
+                    "无法{}当前分支 '{}'，请先切换到其他分支",
+                    operation, target_branch
+                )));
+            }
+        }
         Ok(())
     }
 
@@ -450,6 +483,32 @@ impl GitContext {
         };
 
         self.commit_to_info(&commit)
+    }
+
+    pub fn get_commit_signature(&self, sha_or_ref: &str) -> Result<Option<crate::git::SignatureInfo>> {
+        let commit = if sha_or_ref == "HEAD" {
+            self.repo.head()?.peel_to_commit()?
+        } else {
+            let oid = git2::Oid::from_str(sha_or_ref)?;
+            self.repo.find_commit(oid)?
+        };
+
+        let raw = commit.as_object();
+        let odb = self.repo.odb()?;
+        let obj = odb.read(raw.id())?;
+
+        if obj.kind() == git2::ObjectType::Commit {
+            let data = obj.data();
+            if let Some(sig_start) = data.windows(8).position(|w| w == b"gpgsig ") {
+                return Ok(Some(crate::git::SignatureInfo {
+                    signature_type: "gpg".to_string(),
+                    signed_by: None,
+                    verified: false,
+                }));
+            }
+        }
+
+        Ok(None)
     }
 
     pub fn get_commit_range(
@@ -690,10 +749,13 @@ impl GitContext {
             .map(|(s, b)| (s.trim().to_string(), Some(b.trim().to_string())))
             .unwrap_or_else(|| (message.trim().to_string(), None));
 
-        let parents = commit
+        let parents: Vec<String> = commit
             .parent_ids()
             .map(|oid| oid.to_string())
             .collect();
+
+        let is_merge_commit = parents.len() > 1;
+        let pr_number = extract_pr_number(&message);
 
         let time = DateTime::from_timestamp(commit.time().seconds(), 0).unwrap_or_else(|| Utc::now());
         let author = commit.author().name().unwrap_or("").to_string();
@@ -709,8 +771,35 @@ impl GitContext {
             email,
             time,
             parents,
+            is_merge_commit,
+            pr_number,
         };
         Ok(result)
+    }
+
+    pub fn get_merge_feature_commits(&self, merge_commit: &CommitInfo) -> Result<Vec<CommitInfo>> {
+        if !merge_commit.is_merge() {
+            return Ok(Vec::new());
+        }
+
+        if merge_commit.parents.len() < 2 {
+            return Ok(Vec::new());
+        }
+
+        let first_parent = &merge_commit.parents[0];
+        let second_parent = &merge_commit.parents[1];
+
+        let merge_base_oid = self.repo.merge_base(
+            git2::Oid::from_str(first_parent)?,
+            git2::Oid::from_str(second_parent)?,
+        )?;
+
+        let commits = self.get_commit_range(
+            Some(&merge_base_oid.to_string()),
+            Some(second_parent),
+        )?;
+
+        Ok(commits)
     }
 
     fn branch_to_info(&self, branch: &Branch, current_branch: Option<&str>) -> Result<BranchInfo> {
@@ -725,7 +814,7 @@ impl GitContext {
                 .unwrap_or(&name)
                 .to_string()
         };
-        let is_current = Some(short_name.as_str()) == current_branch && !is_remote;
+        let is_current = Some(name.as_str()) == current_branch && !is_remote;
 
         let upstream = branch.upstream().ok().and_then(|b| b.name().ok().flatten().map(|s| s.to_string()));
 
@@ -758,6 +847,13 @@ pub fn get_jira_issue_from_branch(branch_name: &str, pattern: &str) -> Option<St
     re.captures(branch_name)
         .and_then(|c| c.get(1))
         .map(|m| m.as_str().to_string())
+}
+
+pub fn extract_pr_number(message: &str) -> Option<u32> {
+    let re = regex::Regex::new(r"#(\d+)").ok()?;
+    re.captures(message)
+        .and_then(|c| c.get(1))
+        .and_then(|m| m.as_str().parse::<u32>().ok())
 }
 
 #[derive(Debug, Clone)]
