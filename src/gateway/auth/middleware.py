@@ -46,6 +46,17 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             if not is_authenticated:
                 logger.warning("Authentication failed", path=path, strategy=strategy.strategy, error=error)
+                headers = {}
+                auth_type = strategy.strategy.lower()
+                if auth_type in ["jwt", "oauth2"]:
+                    headers["WWW-Authenticate"] = f'Bearer realm="{path}", error="invalid_token", error_description="{error or "Authentication required"}"'
+                elif auth_type == "api_key":
+                    headers["WWW-Authenticate"] = 'ApiKey realm="API Gateway"'
+                elif auth_type == "mtls":
+                    headers["WWW-Authenticate"] = 'Certificate realm="API Gateway"'
+                else:
+                    headers["WWW-Authenticate"] = f'{strategy.strategy} realm="API Gateway"'
+
                 return JSONResponse(
                     status_code=401,
                     content={
@@ -55,6 +66,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
                             "detail": error or "Authentication required",
                         }
                     },
+                    headers=headers,
                 )
 
             request.state.user = user_info

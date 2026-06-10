@@ -1,31 +1,42 @@
 from typing import Any, Dict, List, Optional
 import clickhouse_connect
-from clickhouse_connect.driver.asyncclient import AsyncClient
 
 from gateway.config import get_settings
 from gateway.logger import get_logger
 
 logger = get_logger("clickhouse")
 
-_client: Optional[AsyncClient] = None
+_client: Optional[Any] = None
 
 
-def get_clickhouse() -> AsyncClient:
+def get_clickhouse():
     global _client
     if _client is None:
         settings = get_settings()
         ch_settings = settings.clickhouse
 
-        _client = clickhouse_connect.get_async_client(
-            host=ch_settings.host,
-            port=ch_settings.port,
-            username=ch_settings.user,
-            password=ch_settings.password,
-            database=ch_settings.database,
-            secure=ch_settings.secure,
-            connect_timeout=ch_settings.connect_timeout,
-            send_receive_timeout=ch_settings.send_receive_timeout,
-        )
+        try:
+            _client = clickhouse_connect.get_async_client(
+                host=ch_settings.host,
+                port=ch_settings.port,
+                username=ch_settings.user,
+                password=ch_settings.password,
+                database=ch_settings.database,
+                secure=ch_settings.secure,
+                connect_timeout=ch_settings.connect_timeout,
+                send_receive_timeout=ch_settings.send_receive_timeout,
+            )
+        except AttributeError:
+            _client = clickhouse_connect.get_client(
+                host=ch_settings.host,
+                port=ch_settings.port,
+                username=ch_settings.user,
+                password=ch_settings.password,
+                database=ch_settings.database,
+                secure=ch_settings.secure,
+                connect_timeout=ch_settings.connect_timeout,
+                send_receive_timeout=ch_settings.send_receive_timeout,
+            )
     return _client
 
 

@@ -67,6 +67,7 @@ class CircuitBreaker:
             if open_at and (now - int(open_at)) >= wait_duration:
                 await self._set_state(service_name, CircuitState.HALF_OPEN)
                 await self._reset_half_open_metrics(service_name, half_open_calls)
+                remaining = await self.redis.decr(self._get_key(service_name, "half_open_remaining"))
                 return CircuitBreakerResult(
                     allowed=True,
                     state=CircuitState.HALF_OPEN,
