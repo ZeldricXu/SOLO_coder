@@ -4,6 +4,8 @@ import com.cardgame.common.enums.MessageType;
 import com.cardgame.common.protocol.GameMessage;
 import com.cardgame.netty.session.ChannelManager;
 import com.cardgame.netty.session.PlayerSession;
+import com.cardgame.netty.validation.MessageValidationChain;
+import com.cardgame.netty.validation.ValidationResult;
 import io.netty.channel.Channel;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +25,9 @@ public class MessageDispatcher {
     @Autowired
     private ChannelManager channelManager;
 
+    @Autowired
+    private MessageValidationChain validationChain;
+
     public void registerHandler(MessageHandler handler) {
         handlerMap.put(handler.getType(), handler);
     }
@@ -37,6 +42,14 @@ public class MessageDispatcher {
         MessageHandler handler = handlerMap.get(message.getType());
         if (handler == null) {
             log.warn("No handler found for message type: {}", message.getType());
+            sendError(session, message, 404, "No handler for message type: " + message.getType());
+            return;
+        }
+
+        ValidationResult validationResult = validationChain.validate(message);
+        if (!validationResult.isValid()) {
+            log.warn("Message validation failed for type {}: {}", message.getType(), validationResult.getFirstError());
+            sendError(session, message, validationResult.getErrorCode(), validationResult.getFirstError());
             return;
         }
 

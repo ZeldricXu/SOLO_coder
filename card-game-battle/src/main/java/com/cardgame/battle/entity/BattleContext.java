@@ -26,6 +26,8 @@ public class BattleContext {
     private int currentTurn;
     private int currentRound;
     private String currentActorId;
+    private PendingAction pendingAction;
+    private BattleAction lastAction;
     @Builder.Default
     private List<Player> players = new ArrayList<>();
     @Builder.Default
@@ -89,6 +91,23 @@ public class BattleContext {
 
     public void addAction(BattleAction action) {
         actionHistory.add(action);
+    }
+
+    public boolean hasPendingAction() {
+        return pendingAction != null;
+    }
+
+    public void clearPendingAction() {
+        this.pendingAction = null;
+    }
+
+    public void setPendingPlayCardAction(String playerId, String cardId, List<String> targetIds) {
+        this.pendingAction = PendingAction.builder()
+                .playerId(playerId)
+                .cardId(cardId)
+                .targetIds(targetIds)
+                .actionType("PLAY_CARD")
+                .build();
     }
 
     public int calculateDamage(com.cardgame.common.entity.GameCharacter attacker,

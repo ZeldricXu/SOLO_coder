@@ -3,6 +3,9 @@ package com.cardgame.battle.engine;
 import com.cardgame.battle.entity.BattleAction;
 import com.cardgame.battle.entity.BattleContext;
 import com.cardgame.battle.entity.TimelineEntry;
+import com.cardgame.battle.pipeline.BattlePipeline;
+import com.cardgame.battle.pipeline.DeathCheckPhase;
+import com.cardgame.battle.pipeline.PostTurnCleanupPhase;
 import com.cardgame.common.config.GameConfig;
 import com.cardgame.common.entity.Card;
 import com.cardgame.common.entity.Enemy;
@@ -25,6 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class BattleEngine {
 
     private final Map<String, BattleContext> activeBattles = new ConcurrentHashMap<>();
+    private final Map<String, BattlePipeline> battlePipelines = new ConcurrentHashMap<>();
 
     @Autowired
     private TimelineEngine timelineEngine;
@@ -55,7 +59,7 @@ public class BattleEngine {
                 .roomId(roomId)
                 .floor(floor)
                 .status(BattleStatus.NOT_STARTED)
-                .currentTurn(1)
+                .currentTurn(0)
                 .currentRound(1)
                 .players(new ArrayList<>(players))
                 .enemies(new ArrayList<>(enemies))
@@ -79,8 +83,31 @@ public class BattleEngine {
         context.setStatus(BattleStatus.PLAYER_TURN);
         activeBattles.put(battleId, context);
 
+        BattlePipeline pipeline = createPipeline(battleId);
+        battlePipelines.put(battleId, pipeline);
+
+        try {
+            pipeline.execute(context);
+        } catch (Exception e) {
+            log.error("Error executing initial battle pipeline for battle {}", battleId, e);
+        }
+
         log.info("Started battle {} in room {} on floor {}", battleId, roomId, floor);
         return context;
+    }
+
+    private BattlePipeline createPipeline(String battleId) {
+        return BattlePipeline.builder()
+                .buffSystem(buffSystem)
+                .timelineEngine(timelineEngine)
+                .deckManager(deckManager)
+                .gameConfig(gameConfig)
+                .effectProcessor(effectProcessor)
+                .intentGenerator(enemyAIService::generateIntent)
+                .enemyActionExecutor(enemyAIService::executeEnemyAction)
+                .battleLogService(battleLogService)
+                .cleanupCallback(() -> cleanupBattle(battleId))
+                .build();
     }
 
     public BattleContext getBattle(String battleId) {
@@ -147,25 +174,35 @@ public class BattleEngine {
         if (battleLogService != null) {
             battleLogService.logAction(battleId, action);
         }
-        checkBattleEnd(context);
+
+        try {
+            BattlePipeline pipeline = battlePipelines.get(battleId);
+            if (pipeline != null) {
+                DeathCheckPhase deathCheck = new DeathCheckPhase(battleLogService, () -> cleanupBattle(battleId));
+                deathCheck.execute(context);
+            }
+        } catch (Exception e) {
+            log.error("Error executing death check after playing card", e);
+        }
 
         log.debug("Player {} played card {} in battle {}", playerId, card.getName(), battleId);
         return action;
     }
 
-    public BattleAction endTurn(String battleId, String playerId) {
+    public BattleAction endTurn(String battleId) {
         BattleContext context = activeBattles.get(battleId);
         if (context == null || context.isBattleOver()) {
             return null;
         }
 
-        Player player = context.getPlayer(playerId);
-        if (player == null) {
+        TimelineEntry currentActor = timelineEngine.getCurrentActor(context);
+        if (currentActor == null || !currentActor.isPlayer()) {
             return null;
         }
 
-        TimelineEntry currentActor = timelineEngine.getCurrentActor(context);
-        if (currentActor == null || !currentActor.getCharacterId().equals(playerId)) {
+        String playerId = currentActor.getCharacterId();
+        Player player = context.getPlayer(playerId);
+        if (player == null) {
             return null;
         }
 
@@ -181,22 +218,48 @@ public class BattleEngine {
                 .buffsRemoved(new HashMap<>())
                 .build();
 
-        buffSystem.processTurnEndBuffs(player);
-        player.discardHand();
-        timelineEngine.advanceToNextActor(context);
+        BattlePipeline pipeline = battlePipelines.get(battleId);
+        if (pipeline != null) {
+            try {
+                PostTurnCleanupPhase cleanupPhase = new PostTurnCleanupPhase(
+                        buffSystem, timelineEngine, enemyAIService::generateIntent, deckManager
+                );
+                cleanupPhase.setNext(new DeathCheckPhase(battleLogService, () -> cleanupBattle(battleId)));
+                cleanupPhase.execute(context);
+
+                if (!context.isBattleOver()) {
+                    pipeline.execute(context);
+                }
+            } catch (Exception e) {
+                log.error("Error executing pipeline for end turn", e);
+            }
+        } else {
+            buffSystem.processTurnEndBuffs(player);
+            player.discardHand();
+            timelineEngine.advanceToNextActor(context);
+
+            context.addAction(action);
+            if (battleLogService != null) {
+                battleLogService.logAction(battleId, action);
+            }
+            checkBattleEnd(context);
+
+            if (!context.isBattleOver()) {
+                processNextActor(context);
+            }
+        }
 
         context.addAction(action);
         if (battleLogService != null) {
             battleLogService.logAction(battleId, action);
         }
-        checkBattleEnd(context);
-
-        if (!context.isBattleOver()) {
-            processNextActor(context);
-        }
 
         log.debug("Player {} ended turn in battle {}", playerId, battleId);
         return action;
+    }
+
+    public BattleAction endTurn(String battleId, String playerId) {
+        return endTurn(battleId);
     }
 
     private void processNextActor(BattleContext context) {
@@ -337,6 +400,7 @@ public class BattleEngine {
 
     public void cleanupBattle(String battleId) {
         activeBattles.remove(battleId);
+        battlePipelines.remove(battleId);
     }
 
     public int getActiveBattleCount() {
