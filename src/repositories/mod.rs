@@ -1,0 +1,19 @@
+pub mod user_repo;
+pub mod repo_repo;
+pub mod merge_request_repo;
+pub mod comment_repo;
+pub mod checklist_repo;
+pub mod issue_repo;
+pub mod ai_review_repo;
+pub mod notification_repo;
+pub mod stats_repo;
+
+pub use user_repo::UserRepository;
+pub use repo_repo::RepoRepository;
+pub use merge_request_repo::MergeRequestRepository;
+pub use comment_repo::CommentRepository;
+pub use checklist_repo::ChecklistRepository;
+pub use issue_repo::IssueRepository;
+pub use ai_review_repo::AiReviewRepository;
+pub use notification_repo::NotificationRepository;
+pub use stats_repo::StatsRepository;

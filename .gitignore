@@ -1,0 +1,11 @@
+.env
+config/local.yaml
+config/development.yaml
+config/production.yaml
+target/
+*.log
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
