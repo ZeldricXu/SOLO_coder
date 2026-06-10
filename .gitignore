@@ -1,0 +1,52 @@
+# Rust build artifacts
+/target/
+**/*.rs.bk
+Cargo.lock.bak
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Test artifacts
+test/output/
+test/tmp/
+test/fixtures/*.fasta
+test/fixtures/*.fastq.gz
+test/fixtures/*.bam
+test/fixtures/*.bai
+test/fixtures/*.gff3
+test/fixtures/*.gtf
+test/fixtures/*.vcf
+
+# Coverage
+*.gcov
+*.gcda
+*.gcno
+/coverage/
+/tarpaulin/
+
+# Benchmarks
+/bench_results/
+
+# Release artifacts
+/release/
+*.tar.gz
+*.zip
+*.sif
+*.simg
+
+# CI/CD artifacts
+.gh-actions-cache/
+
+# Logs
+*.log
+logs/
+
+# Local config
+*.local
+.env
+.env.*

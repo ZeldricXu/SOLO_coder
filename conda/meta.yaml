@@ -1,0 +1,75 @@
+{% set version = "0.1.0" %}
+
+package:
+  name: genome-pipeline
+  version: {{ version }}
+
+source:
+  url: https://github.com/your-org/genome_pipeline/archive/v{{ version }}.tar.gz
+  sha256: TBD
+
+build:
+  number: 0
+  skip: True  # [win]
+  script:
+    - cargo build --release --features parallel,simd
+    - cp target/release/genome_pipeline {{ PREFIX }}/bin/genome_pipeline
+    - ln -s {{ PREFIX }}/bin/genome_pipeline {{ PREFIX }}/bin/gp
+
+requirements:
+  build:
+    - {{ compiler('rust') }}
+    - {{ compiler('c') }}
+    - {{ compiler('cxx') }}
+    - cargo
+    - make
+    - pkg-config
+  host:
+    - zlib
+    - bzip2
+    - xz
+    - libgomp  # [linux]
+  run:
+    - zlib
+    - bzip2
+    - xz
+    - libgomp  # [linux]
+
+test:
+  commands:
+    - genome_pipeline --help
+    - genome_pipeline --version 2>&1 || genome_pipeline --help
+    - gp --help
+    - test -f ${PREFIX}/bin/genome_pipeline
+    - test -f ${PREFIX}/bin/gp
+
+about:
+  home: https://github.com/your-org/genome_pipeline
+  license: MIT
+  license_file: LICENSE
+  summary: High-performance genome sequence analysis pipeline
+  description: |
+    A high-performance integrated genome sequence analysis pipeline written in Rust,
+    combining FASTQ quality control, BWT-FM alignment, Bayesian variant calling,
+    gene annotation, and BAM indexing into a single efficient tool.
+    
+    Features:
+    - FASTQ/FASTA parsing with gzip/bgzip support
+    - BWT-FM short read alignment with global, local, and splice-aware modes
+    - Bayesian variant calling with multi-sample joint genotyping
+    - Gene annotation with GFF3/GTF support
+    - Adaptive BAM indexing with density-aware binning
+    - SIMD-accelerated alignment scoring
+    - Rayon-based parallel processing
+  
+  dev_url: https://github.com/your-org/genome_pipeline
+  doc_url: https://github.com/your-org/genome_pipeline/wiki
+
+extra:
+  identifiers:
+    - biotools:genome-pipeline
+  recipe-maintainers:
+    - your-github-username
+  additional-platforms:
+    - linux-aarch64
+    - osx-arm64

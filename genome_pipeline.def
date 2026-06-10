@@ -1,0 +1,50 @@
+Bootstrap: docker
+From: ghcr.io/your-org/genome_pipeline:0.1.0
+
+%help
+    High-performance genome sequence analysis pipeline
+    Usage:
+      singularity run genome_pipeline.sif <command> [options]
+    
+    Commands:
+      quality-control    Run FASTQ quality control
+      align              Align reads to reference genome
+      call-variants      Call variants from BAM file
+      annotate           Annotate variants with gene information
+      index-bam          Build BAM index
+      query-bam          Query BAM file by region
+      pipeline           Run full analysis pipeline
+    
+    Bind paths:
+      /reference - Reference genome directory (bind to host reference path)
+      /data     - Working directory (bind to host data path)
+
+%labels
+    org.label-schema.name="genome_pipeline"
+    org.label-schema.version="0.1.0"
+    org.label-schema.description="High-performance genome sequence analysis pipeline"
+    org.label-schema.vendor="Bioinformatics Pipeline Team"
+    org.label-schema.schema-version="1.0"
+
+%post
+    mkdir -p /reference
+    mkdir -p /data
+    
+    ln -s /usr/local/bin/genome_pipeline /usr/local/bin/gp
+
+%environment
+    export GENOME_REFERENCE_DIR=/reference
+    export PATH=/usr/local/bin:$PATH
+
+%runscript
+    if [ $# -eq 0 ]; then
+        genome_pipeline --help
+    else
+        genome_pipeline "$@"
+    fi
+
+%test
+    genome_pipeline --version || genome_pipeline --help
+
+%startscript
+    exec /bin/bash
