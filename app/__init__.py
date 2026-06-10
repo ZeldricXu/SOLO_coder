@@ -6,6 +6,7 @@ from flask_migrate import Migrate
 from flask_login import LoginManager, login_required
 from flask_wtf.csrf import CSRFProtect
 from flask_cors import CORS
+from whitenoise import WhiteNoise
 from celery import Celery
 from config import config
 
@@ -25,6 +26,13 @@ def create_app(config_name='default'):
                 template_folder=os.path.join(os.path.dirname(__file__), 'templates'),
                 static_folder=os.path.join(os.path.dirname(__file__), 'static'))
     app.config.from_object(config[config_name])
+
+    app.wsgi_app = WhiteNoise(
+        app.wsgi_app,
+        root=os.path.join(os.path.dirname(__file__), 'static'),
+        prefix='/static/',
+        max_age=3600 if app.config['DEBUG'] else 604800
+    )
 
     for folder in [app.config['UPLOAD_FOLDER'], app.config['EXPORT_FOLDER'], app.config['SNAPSHOT_FOLDER']]:
         os.makedirs(folder, exist_ok=True)

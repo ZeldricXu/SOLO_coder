@@ -1,8 +1,12 @@
-FROM python:3.11-slim
+FROM python:3.12-slim AS builder
 
 WORKDIR /app
 
-# 安装系统依赖
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
@@ -15,16 +19,55 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     liblcms2-dev \
     libopenjp2-7-dev \
     libtiff-dev \
-    tk-dev \
-    tcl-dev \
     libxml2-dev \
     libxslt-dev \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz0b \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    libffi8 \
     wget \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 安装Playwright系统依赖
+COPY requirements.txt .
+
+RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+
+FROM python:3.12-slim AS runtime
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    FLASK_APP=run.py \
+    FLASK_ENV=production \
+    PATH=/app/venv/bin:$PATH
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq5 \
+    libmariadb3 \
+    libssl3 \
+    libjpeg62-turbo \
+    zlib1g \
+    libfreetype6 \
+    liblcms2-2 \
+    libopenjp2-7 \
+    libtiff6 \
+    libxml2 \
+    libxslt1.1 \
+    libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libharfbuzz0b \
+    libcairo2 \
+    libgdk-pixbuf-2.0-0 \
+    libffi8 \
+    wget \
+    curl \
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -37,37 +80,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxrandr2 \
     libgbm1 \
-    libpango-1.0-0 \
-    libcairo2 \
     libasound2 \
     libatspi2.0-0 \
     libgtk-3-0 \
     libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 创建必要的目录
-RUN mkdir -p /app/instance /app/data /app/uploads/reports /app/uploads/snapshots
+RUN python3 -m venv /app/venv
+ENV PATH="/app/venv/bin:$PATH"
 
-# 复制requirements
+COPY --from=builder /wheels /wheels
 COPY requirements.txt .
 
-# 安装Python依赖
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt \
+    && rm -rf /wheels
 
-# 安装Playwright浏览器
 RUN playwright install chromium --with-deps
 
-# 复制应用代码
 COPY . .
 
-# 初始化数据库和数据
-RUN python -c "from app import create_app; app = create_app(); app.app_context().push(); from app.models import db; db.create_all()"
+RUN mkdir -p /app/instance /app/data /app/data/uploads /app/data/exports /app/data/snapshots
 
-# 暴露端口
+RUN python -m compileall /app
+
 EXPOSE 5000
 
-# 健康检查
-HEALTHCHECK CMD curl -f http://localhost:5000/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:5000/health || exit 1
 
-# 启动命令
-CMD ["python", "run.py", "--host", "0.0.0.0", "--port", "5000"]
+RUN chmod +x /app/start.sh
+
+CMD ["/app/start.sh"]
