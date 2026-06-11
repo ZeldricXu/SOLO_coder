@@ -5,12 +5,18 @@ import com.exam.common.Constants;
 import com.exam.common.ResultCode;
 import com.exam.entity.*;
 import com.exam.mapper.*;
+import com.exam.ratelimit.TokenBucketRateLimiter;
 import com.exam.service.constraint.*;
 import com.exam.service.index.QuestionInvertedIndex;
 import com.exam.service.sampler.WeightedReservoirSampler;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.benmanes.caffeine.cache.Cache;
 import lombok.extern.slf4j.Slf4j;
 import org.redisson.api.RLock;
 import org.redisson.api.RedissonClient;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,6 +37,13 @@ public class PaperGenerationService {
     private final RedissonClient redissonClient;
     private final QuestionInvertedIndex questionInvertedIndex;
     private final WeightedReservoirSampler weightedSampler;
+    private final TokenBucketRateLimiter rateLimiter;
+    private final Cache<Long, PaperTemplate> paperTemplateCache;
+    private final RedisTemplate<String, Object> redisTemplate;
+    private final ObjectMapper objectMapper;
+
+    private static final String GENERATION_CACHE_PREFIX = "exam:generation:cache:";
+    private static final int GENERATION_CACHE_SECONDS = 1800;
 
     public PaperGenerationService(QuestionMapper questionMapper, PaperMapper paperMapper,
                                   PaperQuestionMapper paperQuestionMapper, PaperTemplateMapper paperTemplateMapper,
@@ -43,6 +56,17 @@ public class PaperGenerationService {
                                   PaperQuestionMapper paperQuestionMapper, PaperTemplateMapper paperTemplateMapper,
                                   RedissonClient redissonClient, QuestionInvertedIndex questionInvertedIndex,
                                   WeightedReservoirSampler weightedSampler) {
+        this(questionMapper, paperMapper, paperQuestionMapper, paperTemplateMapper, redissonClient,
+                questionInvertedIndex, weightedSampler, null, null, null, null);
+    }
+
+    @Autowired
+    public PaperGenerationService(QuestionMapper questionMapper, PaperMapper paperMapper,
+                                  PaperQuestionMapper paperQuestionMapper, PaperTemplateMapper paperTemplateMapper,
+                                  RedissonClient redissonClient, QuestionInvertedIndex questionInvertedIndex,
+                                  WeightedReservoirSampler weightedSampler, TokenBucketRateLimiter rateLimiter,
+                                  Cache<Long, PaperTemplate> paperTemplateCache,
+                                  RedisTemplate<String, Object> redisTemplate, ObjectMapper objectMapper) {
         this.questionMapper = questionMapper;
         this.paperMapper = paperMapper;
         this.paperQuestionMapper = paperQuestionMapper;
@@ -50,6 +74,11 @@ public class PaperGenerationService {
         this.redissonClient = redissonClient;
         this.questionInvertedIndex = questionInvertedIndex != null ? questionInvertedIndex : new QuestionInvertedIndex(null);
         this.weightedSampler = weightedSampler != null ? weightedSampler : new WeightedReservoirSampler();
+        this.rateLimiter = rateLimiter != null ? rateLimiter : new TokenBucketRateLimiter();
+        this.paperTemplateCache = paperTemplateCache != null ? paperTemplateCache : com.github.benmanes.caffeine.cache.Caffeine.newBuilder()
+                .maximumSize(1000).expireAfterWrite(10, TimeUnit.MINUTES).build();
+        this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper().findAndRegisterModules();
     }
 
     private static final String PAPER_GENERATION_LOCK_PREFIX = "exam:paper:generation:lock:";
@@ -65,7 +94,18 @@ public class PaperGenerationService {
 
     @Transactional
     public Paper generatePaper(PaperTemplate template, String paperName, Long userId) {
-        String lockKey = PAPER_GENERATION_LOCK_PREFIX + template.getSubjectId() + ":" + Thread.currentThread().getId();
+        TokenBucketRateLimiter.RateLimitResult rateResult = rateLimiter.tryAcquire();
+        if (!rateResult.isAllowed()) {
+            log.warn("组卷触发限流，剩余令牌={}，排队中，retryAfterMs={}",
+                    rateResult.getRemainingTokens(), rateResult.getRetryAfterMs());
+            throw new BusinessException("QUEUED", "组卷排队中，请稍后重试",
+                    Map.of("remainingTokens", String.valueOf(rateResult.getRemainingTokens()),
+                           "retryAfterMs", String.valueOf(rateResult.getRetryAfterMs())));
+        }
+
+        PaperTemplate effectiveTemplate = getCachedPaperTemplate(template.getId(), template);
+
+        String lockKey = PAPER_GENERATION_LOCK_PREFIX + effectiveTemplate.getSubjectId() + ":" + Thread.currentThread().getId();
         RLock lock = redissonClient.getLock(lockKey);
 
         try {
@@ -73,9 +113,9 @@ public class PaperGenerationService {
                 throw new BusinessException("系统繁忙，请稍后重试");
             }
 
-            Paper paper = createPaperBasic(template, paperName, userId);
+            Paper paper = createPaperBasic(effectiveTemplate, paperName, userId);
 
-            List<PaperQuestion> paperQuestions = generateQuestions(template, paper);
+            List<PaperQuestion> paperQuestions = generateQuestionsWithCache(effectiveTemplate, paper, userId);
             if (paperQuestions.isEmpty()) {
                 throw new BusinessException(ResultCode.PAPER_GENERATE_ERROR);
             }
@@ -99,6 +139,58 @@ public class PaperGenerationService {
                 lock.unlock();
             }
         }
+    }
+
+    private PaperTemplate getCachedPaperTemplate(Long templateId, PaperTemplate fallback) {
+        if (templateId == null) return fallback;
+        PaperTemplate cached = paperTemplateCache.getIfPresent(templateId);
+        if (cached != null) {
+            return cached;
+        }
+        try {
+            PaperTemplate fresh = paperTemplateMapper.selectById(templateId);
+            if (fresh != null) {
+                paperTemplateCache.put(templateId, fresh);
+                return fresh;
+            }
+        } catch (Exception e) {
+            log.warn("读取试卷模板缓存失败，使用传入模板", e);
+        }
+        return fallback;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<PaperQuestion> generateQuestionsWithCache(PaperTemplate template, Paper paper, Long userId) {
+        String cacheKey = GENERATION_CACHE_PREFIX + userId + ":" + template.getId();
+        if (redisTemplate != null && template.getId() != null && userId != null) {
+            try {
+                Object cached = redisTemplate.opsForValue().get(cacheKey);
+                if (cached != null) {
+                    List<LinkedHashMap<String, Object>> raw = (List<LinkedHashMap<String, Object>>) cached;
+                    List<PaperQuestion> result = new ArrayList<>();
+                    for (LinkedHashMap<String, Object> item : raw) {
+                        result.add(objectMapper.convertValue(item, PaperQuestion.class));
+                    }
+                    if (!result.isEmpty()) {
+                        log.debug("从Redis命中抽题缓存，userId={}, templateId={}", userId, template.getId());
+                        return result;
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("读取抽题Redis缓存失败", e);
+            }
+        }
+
+        List<PaperQuestion> result = generateQuestions(template, paper);
+
+        if (redisTemplate != null && template.getId() != null && userId != null && !result.isEmpty()) {
+            try {
+                redisTemplate.opsForValue().set(cacheKey, result, GENERATION_CACHE_SECONDS, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                log.warn("写入抽题Redis缓存失败", e);
+            }
+        }
+        return result;
     }
 
     private Paper createPaperBasic(PaperTemplate template, String paperName, Long userId) {

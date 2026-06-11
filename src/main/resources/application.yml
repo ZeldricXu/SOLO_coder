@@ -9,6 +9,14 @@ spring:
     url: jdbc:postgresql://localhost:5432/exam_db?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai
     username: postgres
     password: postgres
+    hikari:
+      maximum-pool-size: 100
+      minimum-idle: 20
+      idle-timeout: 300000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+      leak-detection-threshold: 60000
+      pool-name: ExamHikariPool
 
   data:
     redis:
@@ -19,10 +27,10 @@ spring:
       timeout: 3000ms
       lettuce:
         pool:
-          max-active: 8
-          max-wait: -1ms
-          max-idle: 8
-          min-idle: 0
+          max-active: 50
+          max-wait: 5000ms
+          max-idle: 20
+          min-idle: 5
 
   rabbitmq:
     host: localhost
