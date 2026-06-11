@@ -783,38 +783,24 @@ export const experimentLineageService = new ExperimentLineageService(prisma);
 export async function registerLineageRoutes(fastify: any): Promise<void> {
   const service = experimentLineageService;
 
-  fastify.get('/api/v1/runs/:id/evolution-tree', async (
-    request: FastifyRequest<{ Params: { id: string }; Querystring: {
-      depth?: string;
-      direction?: string;
-      primaryMetric?: string;
-      improvementDirection?: string;
-    } },
-  ) => {
+  fastify.get('/api/v1/runs/:id/evolution-tree', async (request: any) => {
     const result = await service.getEvolutionTree({
       runId: request.params.id,
       depth: request.query.depth ? parseInt(request.query.depth) : 3,
-      direction: (request.query.direction as any) || 'both',
+      direction: request.query.direction || 'both',
       primaryMetric: request.query.primaryMetric,
-      improvementDirection: (request.query.improvementDirection as any) || 'higher',
+      improvementDirection: request.query.improvementDirection || 'higher',
     });
     return result;
   });
 
-  fastify.get('/api/v1/experiments/:id/evolution-tree', async (
-    request: FastifyRequest<{ Params: { id: string }; Querystring: {
-      depth?: string;
-      direction?: string;
-      primaryMetric?: string;
-      improvementDirection?: string;
-    } },
-  ) => {
+  fastify.get('/api/v1/experiments/:id/evolution-tree', async (request: any) => {
     const result = await service.getEvolutionTree({
       experimentId: request.params.id,
       depth: request.query.depth ? parseInt(request.query.depth) : 3,
-      direction: (request.query.direction as any) || 'both',
+      direction: request.query.direction || 'both',
       primaryMetric: request.query.primaryMetric,
-      improvementDirection: (request.query.improvementDirection as any) || 'higher',
+      improvementDirection: request.query.improvementDirection || 'higher',
     });
     return result;
   });

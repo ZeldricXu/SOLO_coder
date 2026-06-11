@@ -1,12 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'node:crypto';
-import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../config/database';
 import { redisCache, RedisKeys } from '../config/redis';
 import { logger } from '../config/logger';
 import { env } from '../config/env';
-import { modelStorage } from '../storage';
-import { modelLoaderRegistry } from './loader';
+import { modelStorage } from '../storage/index';
+import { modelLoaderRegistry } from '../model/loader';
 import type {
   InferenceRequest,
   InferenceResponse,
@@ -31,18 +30,49 @@ interface QueuedRequest {
   sessionId?: string;
 }
 
+interface TokenBucketConfig {
+  maxBatchSize: number;
+  windowMs: number;
+  maxBurstSize: number;
+  refillRate: number;
+  minBatchSize: number;
+  adaptiveEnabled: boolean;
+  targetLatencyMs: number;
+  latencyToleranceRatio: number;
+}
+
+const DEFAULT_TOKEN_BUCKET_CONFIG: TokenBucketConfig = {
+  maxBatchSize: 32,
+  windowMs: 10,
+  maxBurstSize: 64,
+  refillRate: 100,
+  minBatchSize: 1,
+  adaptiveEnabled: true,
+  targetLatencyMs: 50,
+  latencyToleranceRatio: 0.3,
+};
+
 interface ModelBatcher {
   modelId: string;
   version: string;
   queue: QueuedRequest[];
-  maxBatchSize: number;
-  batchTimeoutMs: number;
+  config: TokenBucketConfig;
+  tokens: number;
+  lastRefillTime: number;
+  windowStart: number;
   timer: NodeJS.Timeout | null;
+  processing: boolean;
   stats: {
     totalRequests: number;
     totalBatches: number;
     batchSizes: number[];
     queueTimes: number[];
+    processingTimes: number[];
+    tokensConsumed: number;
+    tokensRefilled: number;
+    windowFlushes: number;
+    sizeFlushes: number;
+    adaptiveAdjustments: number;
   };
 }
 
@@ -127,35 +157,53 @@ export class InferenceGateway {
         return model;
       }
 
-      const modelPath = await modelStorage.getDownloadUrl(version.storagePath);
-      const loader = modelLoaderRegistry.get(version.format as any);
-      const tempPath = `/tmp/${uuidv4()}.${version.format}`;
-      const buffer = await modelStorage.getObject(version.storagePath);
-      const fs = require('fs');
-      fs.writeFileSync(tempPath, buffer);
+      try {
+        const modelPath = await modelStorage.getDownloadUrl(version.storagePath);
+        const loader = modelLoaderRegistry.get(version.format as any);
+        const tempPath = `/tmp/${uuidv4()}.${version.format}`;
+        const buffer = await modelStorage.getObject(version.storagePath);
+        const fs = require('fs');
+        fs.writeFileSync(tempPath, buffer);
 
-      const handle = await loader.load(tempPath, version.loaderConfig as Record<string, unknown>);
+        const handle = await loader.load(tempPath, version.loaderConfig as Record<string, unknown>);
 
-      const loadedModel: LoadedModel = {
-        modelId,
-        version: version.id,
-        handle,
-        loaderType: loader.format,
-        loadedAt: Date.now(),
-        lastUsedAt: Date.now(),
-        usageCount: 0,
-        memoryUsageBytes: Number(version.sizeBytes),
-      };
+        const loadedModel: LoadedModel = {
+          modelId,
+          version: version.id,
+          handle,
+          loaderType: loader.format,
+          loadedAt: Date.now(),
+          lastUsedAt: Date.now(),
+          usageCount: 0,
+          memoryUsageBytes: Number(version.sizeBytes),
+        };
 
-      this.loadedModels.set(cacheKey, loadedModel);
-      this.loadedModels.set(actualCacheKey, loadedModel);
+        this.loadedModels.set(cacheKey, loadedModel);
+        this.loadedModels.set(actualCacheKey, loadedModel);
 
-      logger.info(
-        { modelId, versionId: version.id, format: version.format, duration: Date.now() - loadedModel.loadedAt },
-        'Model loaded successfully'
-      );
+        logger.info(
+          { modelId, versionId: version.id, format: version.format, duration: Date.now() - loadedModel.loadedAt },
+          'Model loaded successfully'
+        );
 
-      return loadedModel;
+        return loadedModel;
+      } catch (err) {
+        logger.error({ error: err, modelId, versionId }, 'Failed to load model');
+
+        if (!versionId) {
+          const fallbackVersion = await prisma.modelVersion.findFirst({
+            where: { modelId, status: 'ready', id: { not: version.id } },
+            orderBy: { createdAt: 'desc' },
+          });
+
+          if (fallbackVersion) {
+            logger.info({ modelId, fallbackVersionId: fallbackVersion.id }, 'Attempting fallback to previous version');
+            return this.loadModel(modelId, fallbackVersion.id);
+          }
+        }
+
+        throw err;
+      }
     })();
 
     this.loadPromises.set(cacheKey, loadPromise);
@@ -186,28 +234,145 @@ export class InferenceGateway {
   private getOrCreateBatcher(modelId: string, version: string): ModelBatcher {
     const key = `${modelId}:${version}`;
     if (!this.batchers.has(key)) {
+      const config: TokenBucketConfig = {
+        ...DEFAULT_TOKEN_BUCKET_CONFIG,
+        maxBatchSize: env.INFERENCE_BATCH_MAX_SIZE,
+        windowMs: env.INFERENCE_BATCH_TIMEOUT_MS,
+      };
+      const now = Date.now();
       this.batchers.set(key, {
         modelId,
         version,
         queue: [],
-        maxBatchSize: env.INFERENCE_BATCH_MAX_SIZE,
-        batchTimeoutMs: env.INFERENCE_BATCH_TIMEOUT_MS,
+        config,
+        tokens: config.maxBurstSize,
+        lastRefillTime: now,
+        windowStart: now,
         timer: null,
+        processing: false,
         stats: {
           totalRequests: 0,
           totalBatches: 0,
           batchSizes: [],
           queueTimes: [],
+          processingTimes: [],
+          tokensConsumed: 0,
+          tokensRefilled: 0,
+          windowFlushes: 0,
+          sizeFlushes: 0,
+          adaptiveAdjustments: 0,
         },
       });
     }
     return this.batchers.get(key)!;
   }
 
-  private async processBatch(batcher: ModelBatcher): Promise<void> {
-    if (batcher.queue.length === 0) return;
+  private refillTokens(batcher: ModelBatcher): void {
+    const now = Date.now();
+    const elapsed = now - batcher.lastRefillTime;
+    const tokensToAdd = Math.floor((elapsed / 1000) * batcher.config.refillRate);
+    if (tokensToAdd > 0) {
+      batcher.tokens = Math.min(
+        batcher.config.maxBurstSize,
+        batcher.tokens + tokensToAdd
+      );
+      batcher.lastRefillTime = now;
+      batcher.stats.tokensRefilled += tokensToAdd;
+    }
+  }
 
-    const batch = batcher.queue.splice(0, Math.min(batcher.queue.length, batcher.maxBatchSize));
+  private tryConsumeTokens(batcher: ModelBatcher, count: number): boolean {
+    this.refillTokens(batcher);
+    if (batcher.tokens >= count) {
+      batcher.tokens -= count;
+      batcher.stats.tokensConsumed += count;
+      return true;
+    }
+    return false;
+  }
+
+  private shouldFlushBatch(batcher: ModelBatcher): boolean {
+    if (batcher.queue.length === 0) return false;
+    if (batcher.processing) return false;
+
+    const now = Date.now();
+    const windowElapsed = now - batcher.windowStart;
+
+    if (batcher.queue.length >= batcher.config.maxBatchSize) {
+      batcher.stats.sizeFlushes++;
+      return true;
+    }
+
+    if (windowElapsed >= batcher.config.windowMs) {
+      if (batcher.queue.length >= batcher.config.minBatchSize) {
+        if (this.tryConsumeTokens(batcher, batcher.queue.length)) {
+          batcher.stats.windowFlushes++;
+          return true;
+        }
+      }
+    }
+
+    if (windowElapsed >= batcher.config.windowMs * 2 && batcher.queue.length > 0) {
+      batcher.stats.windowFlushes++;
+      return true;
+    }
+
+    return false;
+  }
+
+  private adaptBatchConfig(batcher: ModelBatcher): void {
+    if (!batcher.config.adaptiveEnabled) return;
+    if (batcher.stats.processingTimes.length < 5) return;
+
+    const recentProcessingTimes = batcher.stats.processingTimes.slice(-20);
+    const avgProcessingTime = recentProcessingTimes.reduce((a, b) => a + b, 0) / recentProcessingTimes.length;
+    const recentQueueTimes = batcher.stats.queueTimes.slice(-20);
+    const avgQueueTime = recentQueueTimes.reduce((a, b) => a + b, 0) / recentQueueTimes.length;
+
+    const totalLatency = avgProcessingTime + avgQueueTime;
+    const targetLatency = batcher.config.targetLatencyMs;
+    const tolerance = targetLatency * batcher.config.latencyToleranceRatio;
+
+    if (totalLatency > targetLatency + tolerance) {
+      const newMaxBatch = Math.max(4, Math.floor(batcher.config.maxBatchSize * 0.8));
+      if (newMaxBatch !== batcher.config.maxBatchSize) {
+        batcher.config.maxBatchSize = newMaxBatch;
+        batcher.config.windowMs = Math.max(5, Math.floor(batcher.config.windowMs * 0.8));
+        batcher.stats.adaptiveAdjustments++;
+        logger.warn(
+          { modelId: batcher.modelId, avgLatency: totalLatency, targetLatency, newMaxBatch, newWindowMs: batcher.config.windowMs },
+          'High latency detected, reducing batch size'
+        );
+      }
+    } else if (totalLatency < targetLatency - tolerance && avgQueueTime < targetLatency * 0.5) {
+      const newMaxBatch = Math.min(128, Math.floor(batcher.config.maxBatchSize * 1.2));
+      if (newMaxBatch !== batcher.config.maxBatchSize) {
+        batcher.config.maxBatchSize = newMaxBatch;
+        batcher.config.windowMs = Math.min(100, Math.floor(batcher.config.windowMs * 1.1));
+        batcher.stats.adaptiveAdjustments++;
+      }
+    }
+  }
+
+  private scheduleBatch(batcher: ModelBatcher): void {
+    if (batcher.timer) return;
+
+    batcher.timer = setTimeout(() => {
+      batcher.timer = null;
+      if (this.shouldFlushBatch(batcher)) {
+        this.processBatch(batcher);
+      } else if (batcher.queue.length > 0) {
+        this.scheduleBatch(batcher);
+      }
+    }, Math.max(1, batcher.config.windowMs));
+  }
+
+  private async processBatch(batcher: ModelBatcher): Promise<void> {
+    if (batcher.queue.length === 0 || batcher.processing) return;
+
+    batcher.processing = true;
+    const batch = batcher.queue.splice(0, Math.min(batcher.queue.length, batcher.config.maxBatchSize));
+    batcher.windowStart = Date.now();
     batcher.stats.totalBatches++;
     batcher.stats.batchSizes.push(batch.length);
     if (batcher.stats.batchSizes.length > 1000) {
@@ -215,7 +380,22 @@ export class InferenceGateway {
     }
 
     try {
-      const model = await this.loadModel(batcher.modelId, batcher.version);
+      let model: LoadedModel;
+      try {
+        model = await this.loadModel(batcher.modelId, batcher.version);
+      } catch (loadErr) {
+        const fallbackVersion = await prisma.modelVersion.findFirst({
+          where: { modelId: batcher.modelId, status: 'ready', id: { not: batcher.version } },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (fallbackVersion) {
+          logger.info({ modelId: batcher.modelId, fallbackVersionId: fallbackVersion.id }, 'Attempting fallback to previous version in batch processing');
+          batcher.version = fallbackVersion.id;
+          model = await this.loadModel(batcher.modelId, fallbackVersion.id);
+        } else {
+          throw loadErr;
+        }
+      }
       const loader = modelLoaderRegistry.get(model.loaderType as any);
 
       const inputs = batch.map((req) => req.inputs);
@@ -223,7 +403,11 @@ export class InferenceGateway {
 
       const outputs = await loader.batchPredict(model.handle, inputs);
 
-      const latency = Date.now() - startTime;
+      const processingTime = Date.now() - startTime;
+      batcher.stats.processingTimes.push(processingTime);
+      if (batcher.stats.processingTimes.length > 1000) {
+        batcher.stats.processingTimes = batcher.stats.processingTimes.slice(-1000);
+      }
       model.usageCount += batch.length;
 
       batch.forEach((req, idx) => {
@@ -240,7 +424,7 @@ export class InferenceGateway {
           inferenceId: uuidv4(),
           modelId: batcher.modelId,
           version: batcher.version,
-          latencyMs: latency,
+          latencyMs: processingTime,
           queueTimeMs: queueTime,
           batchSize: batch.length,
           inputSize: JSON.stringify(req.inputs).length,
@@ -256,6 +440,8 @@ export class InferenceGateway {
 
         req.resolve(output);
       });
+
+      this.adaptBatchConfig(batcher);
     } catch (error) {
       batch.forEach((req) => {
         this.recordMetrics({
@@ -279,16 +465,16 @@ export class InferenceGateway {
 
         req.reject(error instanceof Error ? error : new Error('Inference failed'));
       });
+    } finally {
+      batcher.processing = false;
+      if (batcher.queue.length > 0) {
+        if (this.shouldFlushBatch(batcher)) {
+          setImmediate(() => this.processBatch(batcher));
+        } else {
+          this.scheduleBatch(batcher);
+        }
+      }
     }
-  }
-
-  private scheduleBatch(batcher: ModelBatcher): void {
-    if (batcher.timer) return;
-
-    batcher.timer = setTimeout(() => {
-      batcher.timer = null;
-      this.processBatch(batcher);
-    }, batcher.batchTimeoutMs);
   }
 
   async infer(request: InferenceRequest): Promise<InferenceResponse> {
@@ -385,7 +571,7 @@ export class InferenceGateway {
           sessionId: validated.sessionId,
         });
 
-        if (batcher.queue.length >= batcher.maxBatchSize) {
+        if (this.shouldFlushBatch(batcher)) {
           if (batcher.timer) {
             clearTimeout(batcher.timer);
             batcher.timer = null;
@@ -409,9 +595,13 @@ export class InferenceGateway {
     outputs = Array.isArray(validated.inputs) ? results : results[0]!;
     batchSize = inputArray.length;
 
+    const actualVersion = this.batchers.has(`${validated.modelId}:${versionId}`)
+      ? this.batchers.get(`${validated.modelId}:${versionId}`)!.version
+      : versionId;
+
     return {
       modelId: validated.modelId,
-      version: versionId,
+      version: actualVersion,
       outputs,
       requestId,
       inferenceId: uuidv4(),
@@ -514,6 +704,15 @@ export class InferenceGateway {
         p50QueueTimeMs: percentile(50),
         p95QueueTimeMs: percentile(95),
         p99QueueTimeMs: percentile(99),
+        tokenBucket: {
+          currentTokens: batcher.tokens,
+          maxBurstSize: batcher.config.maxBurstSize,
+          refillRate: batcher.config.refillRate,
+          windowMs: batcher.config.windowMs,
+          maxBatchSize: batcher.config.maxBatchSize,
+          adaptiveEnabled: batcher.config.adaptiveEnabled,
+          adaptiveAdjustments: batcher.stats.adaptiveAdjustments,
+        },
       };
     });
   }
@@ -541,58 +740,3 @@ export class InferenceGateway {
 }
 
 export const inferenceGateway = new InferenceGateway();
-
-export async function registerInferenceRoutes(fastify: any): Promise<void> {
-  const gateway = inferenceGateway;
-
-  fastify.post('/api/v1/inference', async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const result = await gateway.infer(request.body as InferenceRequest);
-      return result;
-    } catch (error) {
-      logger.error({ error }, 'Inference failed');
-      return reply.status(500).send({
-        error: error instanceof Error ? error.message : 'Inference failed',
-      });
-    }
-  });
-
-  fastify.post('/api/v1/inference/batch', async (request: FastifyRequest, reply: FastifyReply) => {
-    try {
-      const result = await gateway.batchInfer(request.body as BatchInferenceRequest);
-      return result;
-    } catch (error) {
-      logger.error({ error }, 'Batch inference failed');
-      return reply.status(500).send({
-        error: error instanceof Error ? error.message : 'Batch inference failed',
-      });
-    }
-  });
-
-  fastify.get('/api/v1/inference/status', async () => {
-    return gateway.getStatus();
-  });
-
-  fastify.post('/api/v1/models/:id/load', async (request: FastifyRequest<{ Params: { id: string }; Body: { versionId?: string } }>, reply: FastifyReply) => {
-    try {
-      const result = await gateway.loadModel(request.params.id, request.body.versionId);
-      return reply.status(200).send({
-        modelId: result.modelId,
-        version: result.version,
-        status: 'loaded',
-        memoryUsageBytes: result.memoryUsageBytes,
-      });
-    } catch (error) {
-      return reply.status(500).send({ error: error instanceof Error ? error.message : 'Failed to load model' });
-    }
-  });
-
-  fastify.post('/api/v1/models/:id/unload', async (request: FastifyRequest<{ Params: { id: string }; Body: { versionId: string } }>, reply: FastifyReply) => {
-    try {
-      await gateway.unloadModel(request.params.id, request.body.versionId);
-      return reply.status(200).send({ status: 'unloaded' });
-    } catch (error) {
-      return reply.status(500).send({ error: error instanceof Error ? error.message : 'Failed to unload model' });
-    }
-  });
-}

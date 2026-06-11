@@ -92,6 +92,16 @@ export interface BatchConfig {
   maxQueueDepth: number;
 }
 
+export interface TokenBucketStats {
+  currentTokens: number;
+  maxBurstSize: number;
+  refillRate: number;
+  windowMs: number;
+  maxBatchSize: number;
+  adaptiveEnabled: boolean;
+  adaptiveAdjustments: number;
+}
+
 export interface BatcherStats {
   modelId: string;
   version: string;
@@ -103,6 +113,7 @@ export interface BatcherStats {
   p50QueueTimeMs: number;
   p95QueueTimeMs: number;
   p99QueueTimeMs: number;
+  tokenBucket?: TokenBucketStats;
 }
 
 export interface ModelLoadStatus {

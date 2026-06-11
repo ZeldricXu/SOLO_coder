@@ -4,9 +4,10 @@ import type { Model, ModelVersion, ModelFormat, StorageBackend, Status } from '@
 import type {
   FeatureSet,
   FeatureSetVersion,
-  FeatureStorageMode,
+  FeatureMode,
+  FeatureValueType,
 } from '@mlops/shared';
-import type { ABTest, ABVariant, ABTestStatus, BucketingStrategy } from '@mlops/shared';
+import type { ABTest, ABVariant, ABTestStatus, BucketStrategy, TrafficAllocation } from '@mlops/shared';
 import type {
   InferenceRequest,
   InferenceResponse,
@@ -14,18 +15,20 @@ import type {
 } from '@mlops/shared';
 
 export function createMockModel(overrides: Partial<Model> = {}): Model {
-  const now = new Date();
+  const now = Date.now();
   return {
     id: uuidv4(),
     name: faker.commerce.productName().replace(/\s+/g, '-').toLowerCase(),
     description: faker.lorem.sentence(),
-    owner: faker.person.fullName(),
+    ownerId: faker.person.fullName(),
     team: faker.commerce.department(),
     tags: [faker.word.noun(), faker.word.noun()],
-    status: 'ACTIVE' as Status,
-    latestVersionId: null,
+    status: 'active' as Status,
     createdAt: now,
     updatedAt: now,
+    latestVersion: undefined,
+    versions: [],
+    metadata: {},
     ...overrides,
   };
 }
@@ -35,31 +38,36 @@ export function createMockModelVersion(
   overrides: Partial<ModelVersion> = {}
 ): ModelVersion {
   const formats: ModelFormat[] = ['pkl', 'onnx', 'pt', 'joblib', 'h5', 'pb'];
-  const now = new Date();
+  const now = Date.now();
+  const major = faker.number.int({ min: 1, max: 10 });
+  const minor = faker.number.int({ min: 0, max: 20 });
+  const patch = faker.number.int({ min: 0, max: 100 });
   return {
     id: uuidv4(),
     modelId,
-    version: `${faker.number.int({ min: 1, max: 10 })}.${faker.number.int({ min: 0, max: 20 })}.${faker.number.int({ min: 0, max: 100 })}`,
+    version: `${major}.${minor}.${patch}`,
+    semanticVersion: `${major}.${minor}.${patch}`,
     format: faker.helpers.arrayElement(formats),
-    storageBackend: 'LOCAL' as StorageBackend,
+    sizeBytes: faker.number.int({ min: 1024, max: 1024 * 1024 * 100 }),
+    storageBackend: 'local' as StorageBackend,
     storagePath: `/tmp/mlops-test/${modelId}/${uuidv4()}.pkl`,
     checksum: faker.string.alphanumeric(64),
-    sizeBytes: faker.number.int({ min: 1024, max: 1024 * 1024 * 100 }),
-    metrics: [
-      { key: 'accuracy', value: faker.number.float({ min: 0.7, max: 0.99 }), timestamp: now },
-      { key: 'f1_score', value: faker.number.float({ min: 0.6, max: 0.95 }), timestamp: now },
-    ],
-    hyperparameters: [
-      { key: 'learning_rate', value: faker.number.float({ min: 0.0001, max: 0.1 }) },
-      { key: 'epochs', value: faker.number.int({ min: 10, max: 1000 }) },
-    ],
-    schema: {
-      input: { type: 'object', properties: { features: { type: 'array' } } },
-      output: { type: 'object', properties: { prediction: { type: 'number' } } },
-    },
-    isLatest: false,
-    isStable: false,
+    status: 'ready',
     createdAt: now,
+    metrics: [
+      { name: 'accuracy', value: faker.number.float({ min: 0.7, max: 0.99 }), timestamp: now },
+      { name: 'f1_score', value: faker.number.float({ min: 0.6, max: 0.95 }), timestamp: now },
+    ],
+    hyperParameters: {
+      learning_rate: faker.number.float({ min: 0.0001, max: 0.1 }),
+      epochs: faker.number.int({ min: 10, max: 1000 }),
+    },
+    dataSchema: {
+      inputs: [{ name: 'features', type: 'float32' as const, shape: [10] }],
+      outputs: [{ name: 'prediction', type: 'float32' as const, shape: [1] }],
+    },
+    loaderConfig: {},
+    tags: [],
     ...overrides,
   };
 }
@@ -85,18 +93,41 @@ export function createCorruptedModelFile(): Buffer {
 }
 
 export function createMockFeatureSet(overrides: Partial<FeatureSet> = {}): FeatureSet {
-  const now = new Date();
+  const now = Date.now();
   return {
     id: uuidv4(),
     name: faker.commerce.productName().replace(/\s+/g, '_').toLowerCase() + '_features',
     description: faker.lorem.sentence(),
-    owner: faker.person.fullName(),
-    entityKey: faker.helpers.arrayElement(['user_id', 'session_id', 'device_id']),
+    projectId: uuidv4(),
+    ownerId: faker.person.fullName(),
+    team: faker.commerce.department(),
+    mode: 'both' as FeatureMode,
+    entities: [
+      { name: 'user_id', joinKey: 'user_id' },
+    ],
+    features: [
+      {
+        name: 'feature_1',
+        valueType: 'float' as FeatureValueType,
+        isNullable: true,
+        tags: [],
+      },
+      {
+        name: 'feature_2',
+        valueType: 'int' as FeatureValueType,
+        isNullable: true,
+        tags: [],
+      },
+    ],
+    tags: [],
+    status: 'active' as Status,
     ttlSeconds: faker.number.int({ min: 3600, max: 86400 * 30 }),
-    storageMode: 'DUAL' as FeatureStorageMode,
-    latestVersionId: null,
+    onlineStorage: { type: 'redis' as const },
+    offlineStorage: { type: 's3' as const, bucketName: 'features', prefix: 'features/' },
     createdAt: now,
     updatedAt: now,
+    latestVersion: undefined,
+    versions: [],
     ...overrides,
   };
 }
@@ -105,34 +136,33 @@ export function createMockFeatureSetVersion(
   featureSetId: string,
   overrides: Partial<FeatureSetVersion> = {}
 ): FeatureSetVersion {
-  const now = new Date();
+  const now = Date.now();
   return {
     id: uuidv4(),
     featureSetId,
-    version: faker.number.int({ min: 1, max: 100 }),
-    features: [
-      {
-        name: faker.finance.accountName().replace(/\s+/g, '_').toLowerCase(),
-        type: 'float',
-        description: faker.lorem.sentence(),
-        defaultValue: faker.number.float(),
-      },
-      {
-        name: faker.commerce.productMaterial().replace(/\s+/g, '_').toLowerCase(),
-        type: 'int',
-        description: faker.lorem.sentence(),
-        defaultValue: faker.number.int(),
-      },
-    ],
-    storageConfig: {
-      online: { enabled: true, redisKeyPrefix: `feature:${featureSetId}` },
-      offline: { enabled: true, s3Bucket: 'features', s3Prefix: `${featureSetId}/` },
+    version: String(faker.number.int({ min: 1, max: 100 })),
+    featureSchema: {
+      entities: [{ name: 'user_id', joinKey: 'user_id' }],
+      features: [
+        {
+          name: 'feature_1',
+          valueType: 'float' as FeatureValueType,
+          isNullable: true,
+          tags: [],
+        },
+        {
+          name: 'feature_2',
+          valueType: 'int' as FeatureValueType,
+          isNullable: true,
+          tags: [],
+        },
+      ],
     },
-    statistics: [
-      { featureName: 'feature_1', mean: faker.number.float(), stddev: faker.number.float() },
-    ],
-    isLatest: true,
+    sourceUri: `s3://features/${featureSetId}/data.parquet`,
+    rowCount: faker.number.int({ min: 100, max: 100000 }),
+    sizeBytes: faker.number.int({ min: 1024, max: 1024 * 1024 * 10 }),
     createdAt: now,
+    status: 'active',
     ...overrides,
   };
 }
@@ -147,24 +177,36 @@ export function createMockFeatureData(count: number = 10): Record<string, any>[]
 }
 
 export function createMockABTest(overrides: Partial<ABTest> = {}): ABTest {
-  const now = new Date();
-  const future = faker.date.future({ years: 1 });
+  const now = Date.now();
+  const future = faker.date.future({ years: 1 }).getTime();
   return {
     id: uuidv4(),
     name: `ab-test-${faker.commerce.productName().replace(/\s+/g, '-').toLowerCase()}`,
     description: faker.lorem.sentence(),
-    owner: faker.person.fullName(),
+    projectId: uuidv4(),
+    ownerId: faker.person.fullName(),
+    team: faker.commerce.department(),
     hypothesis: faker.lorem.sentence(),
     primaryMetric: 'conversion_rate',
-    status: 'DRAFT' as ABTestStatus,
-    bucketingStrategy: 'USER_ID' as BucketingStrategy,
+    status: 'draft' as ABTestStatus,
+    bucketStrategy: 'user_id' as BucketStrategy,
     bucketKey: 'user_id',
-    seed: faker.number.int(),
     variants: [],
+    trafficAllocation: {
+      type: 'equal' as TrafficAllocation,
+      totalTrafficPercentage: 100,
+      weights: {},
+    },
+    targetingRules: [],
+    metrics: [],
+    results: undefined,
     startTime: now,
     endTime: future,
+    statusUpdatedAt: now,
     createdAt: now,
     updatedAt: now,
+    tags: [],
+    metadata: {},
     ...overrides,
   };
 }
@@ -177,10 +219,12 @@ export function createMockVariants(count: number = 3): ABVariant[] {
     id: uuidv4(),
     name: i === 0 ? 'control' : `variant_${i}`,
     description: faker.lorem.sentence(),
-    weight: weights[i],
     isControl: i === 0,
-    trafficAllocation: weights[i],
-    modelVersionId: uuidv4(),
+    trafficWeight: weights[i]!,
+    trafficPercentage: weights[i]!,
+    config: {},
+    status: 'active' as const,
+    ...((i === 0) ? {} : { modelVersionId: uuidv4() }),
   }));
 }
 

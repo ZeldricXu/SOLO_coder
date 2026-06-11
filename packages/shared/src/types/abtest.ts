@@ -1,4 +1,4 @@
-import type { Status, PaginatedResponse } from './common';
+import type { PaginatedResponse } from './common';
 
 export type BucketStrategy = 'random' | 'user_id' | 'session_id' | 'device_id' | 'custom';
 export type TrafficAllocation = 'equal' | 'weighted' | 'custom';

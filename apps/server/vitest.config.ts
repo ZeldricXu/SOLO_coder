@@ -40,7 +40,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
-      '@mlops/shared': path.resolve(__dirname, '../shared/src'),
+      '@mlops/shared': path.resolve(__dirname, '../../packages/shared/src'),
     },
   },
 });

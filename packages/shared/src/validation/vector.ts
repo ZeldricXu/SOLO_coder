@@ -1,11 +1,4 @@
 import { z } from 'zod';
-import type {
-  VectorSearchRequest,
-  RangeQueryRequest,
-  VectorIndexBuildRequest,
-  VectorIndexUpdateRequest,
-  VectorIngestRequest,
-} from '../types/vector';
 
 export const hnswConfigSchema = z.object({
   m: z.number().int().positive().min(4).max(64).default(16),

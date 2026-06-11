@@ -1,8 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { Plus, FlaskConical, Play, Square, GitBranch, Clock, Tag, TrendingUp, Search, BarChart3 } from 'lucide-react';
+import { Plus, FlaskConical, Play, GitBranch, Clock, Tag, TrendingUp, Search, BarChart3 } from 'lucide-react';
 import {
   LineChart,
   Line,
@@ -13,61 +12,89 @@ import {
   ResponsiveContainer,
   Legend,
 } from 'recharts';
-import ReactFlow, { Background, Controls, MiniMap, Node, Edge } from 'reactflow';
+import ReactFlow, { Background, Controls, MiniMap } from 'reactflow';
 import 'reactflow/dist/style.css';
 import { toast } from 'sonner';
-import { api } from '@/lib/api';
+import { useExperimentStore, type EvolutionTreeNodeData } from '@/store/experiment';
 import { formatDate, formatRelativeTime, getStatusColor, cn } from '@/lib/utils';
-import type { Experiment, ExperimentRun } from '@mlops/shared';
+import type { ExperimentRun } from '@mlops/shared';
+
+function EvolutionTreeNode({ data }: { data: { nodeData?: EvolutionTreeNodeData & { primaryMetric?: string; metricDelta?: any } } }) {
+  const nd = data.nodeData;
+  if (!nd) return null;
+  const metricDelta = nd.metricDelta;
+  const isImprovement = metricDelta?.isImprovement;
+  const changeText = metricDelta
+    ? `${metricDelta.relativeChange >= 0 ? '+' : ''}${(metricDelta.relativeChange * 100).toFixed(1)}%`
+    : '';
+
+  return (
+    <div className="p-2 min-w-[200px]">
+      <div className="font-semibold text-sm mb-1">{nd.runName || nd.runId?.slice(0, 8)}</div>
+      <div className="text-xs text-gray-500 mb-2">{nd.experimentName || ''}</div>
+      {metricDelta && (
+        <div className={`text-xs font-mono px-2 py-1 rounded ${
+          isImprovement ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
+        }`}>
+          {nd.primaryMetric}: {metricDelta.currentValue?.toFixed(4)}
+          <span className="ml-1">
+            {isImprovement ? '↑' : '↓'} {changeText}
+          </span>
+        </div>
+      )}
+      <div className="text-xs text-gray-400 mt-2">
+        {nd.status} · depth {nd.depth}
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = { evolutionNode: EvolutionTreeNode };
 
 export default function ExperimentsPage() {
-  const [experiments, setExperiments] = useState<Experiment[]>([]);
-  const [runs, setRuns] = useState<ExperimentRun[]>([]);
-  const [selectedRun, setSelectedRun] = useState<ExperimentRun | null>(null);
-  const [compareMode, setCompareMode] = useState(false);
-  const [selectedRunIds, setSelectedRunIds] = useState<string[]>([]);
-  const [comparisonData, setComparisonData] = useState<any>(null);
+  const {
+    experiments,
+    runs,
+    selectedRun,
+    compareMode,
+    selectedRunIds,
+    comparisonData,
+    lineageData,
+    evolutionTreeData,
+    loading,
+    searchTerm,
+    evolutionDirection,
+    evolutionDepth,
+    primaryMetric,
+    fetchExperimentsAndRuns,
+    setSelectedRun,
+    setCompareMode,
+    toggleRunSelection,
+    compareRuns,
+    setLineageData,
+    fetchEvolutionTree,
+    setSearchTerm,
+    setEvolutionDirection,
+    setEvolutionDepth,
+    setPrimaryMetric,
+    createExperiment,
+    startRun,
+    fetchLineage,
+  } = useExperimentStore();
+
   const [showLineage, setShowLineage] = useState(false);
-  const [lineageData, setLineageData] = useState<any>(null);
   const [showEvolutionTree, setShowEvolutionTree] = useState(false);
-  const [evolutionTreeData, setEvolutionTreeData] = useState<any>(null);
-  const [evolutionDirection, setEvolutionDirection] = useState<'both' | 'up' | 'down'>('both');
-  const [evolutionDepth, setEvolutionDepth] = useState(3);
-  const [primaryMetric, setPrimaryMetric] = useState('accuracy');
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
-    fetchData();
+    fetchExperimentsAndRuns();
   }, []);
-
-  const fetchData = async () => {
-    try {
-      const [expRes, runsRes] = await Promise.all([
-        api.experiments.list({ pageSize: 10 }),
-        api.experiments.listRuns({ pageSize: 20 }),
-      ]);
-      setExperiments(expRes.data.data);
-      setRuns(runsRes.data.data);
-    } catch (error) {
-      console.error('Failed to fetch experiments:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleCreateExperiment = async () => {
     const name = prompt('Enter experiment name:');
     if (!name) return;
     try {
-      await api.experiments.create({
-        name,
-        projectId: 'proj-1',
-        ownerId: 'admin',
-        team: 'data-science',
-      });
+      await createExperiment(name, 'proj-1', 'admin', 'data-science');
       toast.success('Experiment created');
-      fetchData();
     } catch (error) {
       toast.error('Failed to create experiment');
     }
@@ -79,17 +106,12 @@ export default function ExperimentsPage() {
       return;
     }
     try {
-      await api.experiments.createRun({
-        experimentId: experiments[0]!.id,
-        name: `Run ${new Date().toLocaleTimeString()}`,
-        hyperParameters: [
-          { name: 'learning_rate', value: 0.001, type: 'number' },
-          { name: 'batch_size', value: 32, type: 'number' },
-          { name: 'optimizer', value: 'adam', type: 'string' },
-        ],
-      });
+      await startRun(experiments[0]!.id, `Run ${new Date().toLocaleTimeString()}`, [
+        { name: 'learning_rate', value: 0.001, type: 'number' },
+        { name: 'batch_size', value: 32, type: 'number' },
+        { name: 'optimizer', value: 'adam', type: 'string' },
+      ]);
       toast.success('Run started');
-      fetchData();
     } catch (error) {
       toast.error('Failed to start run');
     }
@@ -101,9 +123,7 @@ export default function ExperimentsPage() {
       return;
     }
     try {
-      const res = await api.experiments.compareRuns(selectedRunIds);
-      setComparisonData(res.data);
-      setCompareMode(true);
+      await compareRuns(selectedRunIds);
     } catch (error) {
       toast.error('Failed to compare runs');
     }
@@ -111,25 +131,7 @@ export default function ExperimentsPage() {
 
   const handleShowLineage = async (runId: string) => {
     try {
-      const res = await api.experiments.getLineage(runId, 3);
-      const nodes: Node[] = res.data.nodes.map((n: any) => ({
-        id: n.id,
-        data: { label: n.name },
-        position: { x: Math.random() * 400, y: Math.random() * 300 },
-        style: {
-          background: n.type === 'model' ? '#dbeafe' : n.type === 'experiment' ? '#f3e8ff' : '#d1fae5',
-          border: '1px solid #d1d5db',
-          borderRadius: '8px',
-          padding: '8px',
-        },
-      }));
-      const edges: Edge[] = res.data.edges.map((e: any, i: number) => ({
-        id: `edge-${i}`,
-        source: e.source,
-        target: e.target,
-        label: e.relation,
-      }));
-      setLineageData({ nodes, edges });
+      await fetchLineage(runId, 3);
       setShowLineage(true);
     } catch (error) {
       toast.error('Failed to load lineage');
@@ -138,131 +140,25 @@ export default function ExperimentsPage() {
 
   const handleShowEvolutionTree = async (runId: string) => {
     try {
-      const res = await api.experiments.getEvolutionTree(runId, {
+      await fetchEvolutionTree(runId, {
         depth: evolutionDepth,
         direction: evolutionDirection,
         primaryMetric,
         improvementDirection: 'higher',
       });
-
-      const treeData = res.data;
-      const { nodes: rfNodes, edges: rfEdges } = buildEvolutionTreeGraph(treeData);
-
-      setEvolutionTreeData({ ...treeData, reactFlowNodes: rfNodes, reactFlowEdges: rfEdges });
       setShowEvolutionTree(true);
     } catch (error) {
       toast.error('Failed to load evolution tree');
     }
   };
 
-  const buildEvolutionTreeGraph = (treeData: any) => {
-    const nodes: Node[] = [];
-    const edges: Edge[] = [];
-    const allNodes = treeData.allNodes || {};
-
-    const nodeLevels = new Map<number, string[]>();
-    Object.values(allNodes).forEach((node: any) => {
-      const depth = node.depth || 0;
-      if (!nodeLevels.has(depth)) {
-        nodeLevels.set(depth, []);
-      }
-      nodeLevels.get(depth)!.push(node.runId);
-    });
-
-    const sortedLevels = Array.from(nodeLevels.keys()).sort((a, b) => a - b);
-    const levelWidth = 280;
-    const nodeHeight = 120;
-
-    sortedLevels.forEach((level) => {
-      const nodeIds = nodeLevels.get(level)!;
-      const startY = (nodeIds.length - 1) * nodeHeight / -2;
-
-      nodeIds.forEach((nodeId, idx) => {
-        const nodeData = allNodes[nodeId];
-        const metricDelta = nodeData?.metricDeltas?.[primaryMetric];
-        const isImprovement = metricDelta?.isImprovement;
-        const changeText = metricDelta
-          ? `${metricDelta.relativeChange >= 0 ? '+' : ''}${(metricDelta.relativeChange * 100).toFixed(1)}%`
-          : '';
-
-        nodes.push({
-          id: nodeId,
-          position: {
-            x: (level - (sortedLevels[0] || 0)) * levelWidth,
-            y: startY + idx * nodeHeight,
-          },
-          data: {
-            label: (
-              <div className="p-2 min-w-[200px]">
-                <div className="font-semibold text-sm mb-1">{nodeData?.runName || nodeId.slice(0, 8)}</div>
-                <div className="text-xs text-gray-500 mb-2">{nodeData?.experimentName || ''}</div>
-                {metricDelta && (
-                  <div className={`text-xs font-mono px-2 py-1 rounded ${
-                    isImprovement ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
-                  }`}>
-                    {primaryMetric}: {metricDelta.currentValue.toFixed(4)}
-                    <span className="ml-1">
-                      {isImprovement ? '↑' : '↓'} {changeText}
-                    </span>
-                  </div>
-                )}
-                <div className="text-xs text-gray-400 mt-2">
-                  {nodeData?.status} · depth {nodeData?.depth}
-                </div>
-              </div>
-            ),
-          },
-          style: {
-            background: nodeData?.direction === 'current'
-              ? '#fef3c7'
-              : nodeData?.direction === 'up'
-              ? '#dbeafe'
-              : '#d1fae5',
-            border: `2px solid ${
-              nodeData?.direction === 'current'
-                ? '#f59e0b'
-                : nodeData?.direction === 'up'
-                ? '#3b82f6'
-                : '#10b981'
-            }`,
-            borderRadius: '12px',
-            padding: '0px',
-            width: 220,
-          },
-        });
-      });
-    });
-
-    (treeData.edges || []).forEach((edge: any, i: number) => {
-      edges.push({
-        id: `edge-${i}`,
-        source: edge.source,
-        target: edge.target,
-        animated: true,
-        style: { stroke: '#94a3b8', strokeWidth: 2 },
-      });
-    });
-
-    return { nodes, edges };
-  };
-
-  const refreshEvolutionTree = async (runId: string) => {
-    await handleShowEvolutionTree(runId);
-  };
-
-  const toggleRunSelection = (runId: string) => {
-    setSelectedRunIds((prev) =>
-      prev.includes(runId) ? prev.filter((id) => id !== runId) : [...prev, runId]
-    );
-  };
-
-  const filteredRuns = runs.filter((r) =>
+  const filteredRuns = runs.filter((r: ExperimentRun) =>
     r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     r.experimentId.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const chartData = selectedRun?.metrics
-    ? selectedRun.metrics.reduce((acc: any[], m) => {
+    ? selectedRun.metrics.reduce((acc: any[], m: any) => {
         const existing = acc.find((a) => a.step === m.step);
         if (existing) {
           existing[m.name] = m.value;
@@ -300,7 +196,7 @@ export default function ExperimentsPage() {
       </div>
 
       <div className="grid grid-cols-4 gap-4">
-        {experiments.slice(0, 4).map((exp) => (
+        {experiments.slice(0, 4).map((exp: any) => (
           <div key={exp.id} className="card">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -337,13 +233,7 @@ export default function ExperimentsPage() {
                 <input
                   type="checkbox"
                   checked={compareMode}
-                  onChange={(e) => {
-                    setCompareMode(e.target.checked);
-                    if (!e.target.checked) {
-                      setSelectedRunIds([]);
-                      setComparisonData(null);
-                    }
-                  }}
+                  onChange={(e) => setCompareMode(e.target.checked)}
                   className="rounded"
                 />
                 Compare mode
@@ -366,7 +256,7 @@ export default function ExperimentsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {filteredRuns.map((run) => (
+                {filteredRuns.map((run: ExperimentRun) => (
                   <tr
                     key={run.id}
                     className={cn(
@@ -393,7 +283,7 @@ export default function ExperimentsPage() {
                       </div>
                     </td>
                     <td className="table-cell text-gray-500">
-                      {experiments.find((e) => e.id === run.experimentId)?.name || run.experimentId.slice(0, 8)}
+                      {experiments.find((e: any) => e.id === run.experimentId)?.name || run.experimentId.slice(0, 8)}
                     </td>
                     <td className="table-cell">
                       <span className={cn('badge', getStatusColor(run.status))}>{run.status}</span>
@@ -443,7 +333,7 @@ export default function ExperimentsPage() {
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 mb-2">Hyperparameters</h4>
                   <div className="bg-gray-50 rounded-lg p-3 space-y-1">
-                    {selectedRun.hyperParameters.map((hp, idx) => (
+                    {selectedRun.hyperParameters.map((hp: any, idx: number) => (
                       <div key={idx} className="flex justify-between text-sm">
                         <span className="text-gray-500">{hp.name}</span>
                         <span className="font-mono">{String(hp.value)}</span>
@@ -455,7 +345,7 @@ export default function ExperimentsPage() {
                 <div>
                   <h4 className="text-sm font-medium text-gray-700 mb-2">Tags</h4>
                   <div className="flex flex-wrap gap-2">
-                    {selectedRun.tags.map((tag, idx) => (
+                    {selectedRun.tags.map((tag: any, idx: number) => (
                       <span key={idx} className="badge bg-gray-100 text-gray-700">{tag}</span>
                     ))}
                   </div>
@@ -510,7 +400,7 @@ export default function ExperimentsPage() {
                   <tr className="border-b border-gray-200">
                     <th className="text-left py-3 px-4 text-sm font-medium text-gray-500">Metric</th>
                     {comparisonData.runIds.map((id: string) => {
-                      const run = runs.find((r) => r.id === id);
+                      const run = runs.find((r: any) => r.id === id);
                       return (
                         <th key={id} className="text-left py-3 px-4 text-sm font-medium">
                           {run?.name || id.slice(0, 8)}
@@ -571,7 +461,7 @@ export default function ExperimentsPage() {
           <div className="bg-white rounded-2xl p-6 w-full max-w-4xl h-[600px]">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-bold">Experiment Lineage</h2>
-              <button onClick={() => setShowLineage(false)} className="btn-secondary">Close</button>
+              <button onClick={() => { setShowLineage(false); setLineageData(null); }} className="btn-secondary">Close</button>
             </div>
             <ReactFlow nodes={lineageData.nodes} edges={lineageData.edges} fitView>
               <Background />
@@ -630,7 +520,7 @@ export default function ExperimentsPage() {
               <button
                 onClick={() => {
                   const currentRoot = evolutionTreeData.rootNodes?.[0]?.runId;
-                  if (currentRoot) refreshEvolutionTree(currentRoot);
+                  if (currentRoot) handleShowEvolutionTree(currentRoot);
                 }}
                 className="btn-primary text-sm py-1.5"
               >
@@ -658,6 +548,7 @@ export default function ExperimentsPage() {
 
             <div className="flex-1 border border-gray-200 rounded-lg overflow-hidden">
               <ReactFlow
+                nodeTypes={nodeTypes}
                 nodes={evolutionTreeData.reactFlowNodes || []}
                 edges={evolutionTreeData.reactFlowEdges || []}
                 fitView
