@@ -222,6 +222,20 @@ func (r *Room) StartGame() error {
 	return nil
 }
 
+func (r *Room) ValidateAction(action *common.GameAction) error {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	if r.State != common.StatePlaying {
+		return common.ErrGameNotStarted
+	}
+	if action.UserID != r.CurrentTurn {
+		return common.ErrNotYourTurn
+	}
+
+	return r.Rule.ValidateAction(r.GameCtx, action)
+}
+
 func (r *Room) HandleAction(action *common.GameAction) (*common.GameAction, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

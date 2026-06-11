@@ -6,6 +6,7 @@ var (
 	ErrRoomNotFound        = errors.New("room not found")
 	ErrRoomFull            = errors.New("room is full")
 	ErrRoomNotJoinable     = errors.New("room is not joinable")
+	ErrRoomAlreadyExists   = errors.New("room already exists")
 	ErrPlayerNotFound      = errors.New("player not found")
 	ErrPlayerAlreadyInRoom = errors.New("player already in room")
 	ErrNotHost             = errors.New("operation requires host privilege")

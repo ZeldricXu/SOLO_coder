@@ -139,11 +139,14 @@ func (am *AckManager) Ack(msgID string) bool {
 }
 
 func (am *AckManager) GetExpired() []*PendingMessage {
+	return am.GetExpiredAt(common.NowMs())
+}
+
+func (am *AckManager) GetExpiredAt(now int64) []*PendingMessage {
 	am.mu.Lock()
 	defer am.mu.Unlock()
 
 	expired := make([]*PendingMessage, 0)
-	now := common.NowMs()
 	for id, pm := range am.pending {
 		if now-pm.LastSentAt >= am.timeout.Milliseconds() {
 			if pm.SendCount < pm.MaxRetries {
@@ -157,6 +160,10 @@ func (am *AckManager) GetExpired() []*PendingMessage {
 		}
 	}
 	return expired
+}
+
+func (am *AckManager) MaxRetries() int {
+	return am.maxRetries
 }
 
 func (am *AckManager) Size() int {

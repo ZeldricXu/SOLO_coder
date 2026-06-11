@@ -108,7 +108,7 @@ func (r *MahjongRule) DealCards(ctx *game.GameContext, config *common.RoomConfig
 		}
 		hand := make([]common.Card, end-start)
 		copy(hand, ctx.Deck[start:end])
-		ctx.PlayerHands[p.UserID] = hand
+		game.SetPlayerHand(ctx, p.UserID, hand)
 	}
 	ctx.Deck = ctx.Deck[len(ctx.Players)*cardsPerPlayer:]
 	return nil

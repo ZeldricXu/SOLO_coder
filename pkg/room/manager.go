@@ -218,3 +218,57 @@ func (m *Manager) Count() int {
 	defer m.mu.RUnlock()
 	return len(m.rooms)
 }
+
+func (m *Manager) GetAllRoomIDs() []common.RoomID {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	result := make([]common.RoomID, 0, len(m.rooms))
+	for id := range m.rooms {
+		result = append(result, id)
+	}
+	return result
+}
+
+func (m *Manager) RemoveRoom(roomID common.RoomID) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	r, ok := m.rooms[roomID]
+	if !ok {
+		return
+	}
+
+	if r.Config.InviteCode != "" {
+		delete(m.inviteIndex, r.Config.InviteCode)
+	}
+	for uid := range r.Players {
+		if m.userRoomMap[uid] == roomID {
+			delete(m.userRoomMap, uid)
+		}
+	}
+	delete(m.rooms, roomID)
+}
+
+func (m *Manager) AddRoom(r *Room) error {
+	if r == nil {
+		return common.ErrInvalidAction
+	}
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if _, exists := m.rooms[r.ID]; exists {
+		return common.ErrRoomAlreadyExists
+	}
+
+	m.rooms[r.ID] = r
+	for uid := range r.Players {
+		m.userRoomMap[uid] = r.ID
+	}
+	if r.Config.InviteCode != "" {
+		m.inviteIndex[r.Config.InviteCode] = r.ID
+	}
+
+	return nil
+}

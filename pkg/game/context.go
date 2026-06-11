@@ -1,6 +1,8 @@
 package game
 
 import (
+	"sync"
+
 	"github.com/studio/gameroom/pkg/common"
 )
 
@@ -14,10 +16,12 @@ type GameContext struct {
 	DiscardPile  []common.Card
 	PublicCards  []common.Card
 	PlayerHands  map[common.UserID][]common.Card
+	CowHands     *CowHandManager
 	PlayerBets   map[common.UserID]int64
 	LastAction   *common.GameAction
 	ExtraData    map[string]interface{}
 	Seq          int64
+	mu           sync.RWMutex
 }
 
 func NewGameContext(roomID common.RoomID) *GameContext {
@@ -29,6 +33,7 @@ func NewGameContext(roomID common.RoomID) *GameContext {
 		DiscardPile: make([]common.Card, 0),
 		PublicCards: make([]common.Card, 0),
 		PlayerHands: make(map[common.UserID][]common.Card),
+		CowHands:    NewCowHandManager(),
 		PlayerBets:  make(map[common.UserID]int64),
 		ExtraData:   make(map[string]interface{}),
 		Seq:         0,

@@ -185,7 +185,7 @@ func (r *TexasRule) DealCards(ctx *game.GameContext, config *common.RoomConfig) 
 		hand[0] = ctx.Deck[deckIdx]
 		hand[1] = ctx.Deck[deckIdx+1]
 		deckIdx += 2
-		ctx.PlayerHands[p.UserID] = hand
+		game.SetPlayerHand(ctx, p.UserID, hand)
 	}
 	ctx.PublicCards = make([]common.Card, 0, 5)
 	ctx.ExtraData["stage"] = "preflop"

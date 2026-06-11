@@ -63,7 +63,7 @@ func (s *LandlordSettlement) Calculate(ctx *game.GameContext, config *common.Roo
 
 	landlordWin := false
 	for i, p := range ctx.Players {
-		hand := ctx.PlayerHands[p.UserID]
+		hand := game.GetPlayerHand(ctx, p.UserID)
 		if i == 0 && len(hand) == 0 {
 			landlordWin = true
 			break
@@ -138,7 +138,7 @@ func (r *LandlordRule) DealCards(ctx *game.GameContext, config *common.RoomConfi
 		end := start + cardsPerPlayer
 		hand := make([]common.Card, cardsPerPlayer)
 		copy(hand, ctx.Deck[start:end])
-		ctx.PlayerHands[p.UserID] = hand
+		game.SetPlayerHand(ctx, p.UserID, hand)
 	}
 	ctx.ExtraData["bottom_cards"] = ctx.Deck[51:54]
 	ctx.Deck = ctx.Deck[54:]
@@ -158,7 +158,7 @@ func (r *LandlordRule) ApplyAction(ctx *game.GameContext, action *common.GameAct
 	if action.ActionType == common.ActionPlayCard {
 		if cardsData, ok := action.Data["cards"]; ok {
 			if cards, ok := cardsData.([]common.Card); ok {
-				hand := ctx.PlayerHands[action.UserID]
+				hand := game.GetPlayerHandForWrite(ctx, action.UserID)
 				for _, c := range cards {
 					for i, h := range hand {
 						if h.Index == c.Index {
@@ -167,8 +167,8 @@ func (r *LandlordRule) ApplyAction(ctx *game.GameContext, action *common.GameAct
 						}
 					}
 				}
-				ctx.PlayerHands[action.UserID] = hand
-				ctx.DiscardPile = append(ctx.DiscardPile, cards...)
+				game.SetPlayerHand(ctx, action.UserID, hand)
+		ctx.DiscardPile = append(ctx.DiscardPile, cards...)
 			}
 		}
 	}
@@ -177,8 +177,8 @@ func (r *LandlordRule) ApplyAction(ctx *game.GameContext, action *common.GameAct
 }
 
 func (r *LandlordRule) IsRoundOver(ctx *game.GameContext) bool {
-	for uid, hand := range ctx.PlayerHands {
-		_ = uid
+	for _, p := range ctx.Players {
+		hand := game.GetPlayerHand(ctx, p.UserID)
 		if len(hand) == 0 {
 			return true
 		}
