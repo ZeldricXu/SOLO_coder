@@ -10,6 +10,7 @@ import (
 
 type RouterManager struct {
 	trieRouter    *TrieRouter
+	radixRouter   *MethodRadixRouter
 	regexRouter   *RegexRouter
 	routes        map[string]*models.Route
 	mu            sync.RWMutex
@@ -18,6 +19,7 @@ type RouterManager struct {
 func NewRouterManager() *RouterManager {
 	return &RouterManager{
 		trieRouter:  NewTrieRouter(),
+		radixRouter: NewMethodRadixRouter(),
 		regexRouter: NewRegexRouter(),
 		routes:      make(map[string]*models.Route),
 	}
@@ -53,9 +55,23 @@ func (m *RouterManager) AddRoute(route *models.Route) error {
 		if err := m.trieRouter.Insert(prefixPath, route); err != nil {
 			return fmt.Errorf("failed to insert into trie router: %w", err)
 		}
+		method := route.Method
+		if method == "" {
+			method = "*"
+		}
+		if err := m.radixRouter.Insert(method, prefixPath, route); err != nil {
+			return fmt.Errorf("failed to insert into radix router: %w", err)
+		}
 	case models.RouteMatchTypeExact:
 		if err := m.trieRouter.Insert(route.Path, route); err != nil {
 			return fmt.Errorf("failed to insert into trie router: %w", err)
+		}
+		method := route.Method
+		if method == "" {
+			method = "*"
+		}
+		if err := m.radixRouter.Insert(method, route.Path, route); err != nil {
+			return fmt.Errorf("failed to insert into radix router: %w", err)
 		}
 	case models.RouteMatchTypeRegex:
 		if route.RegexPattern == "" {
@@ -142,6 +158,10 @@ func (m *RouterManager) MatchRoute(method, path string) (*models.Route, map[stri
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
+	if route, params := m.radixRouter.Match(method, path); route != nil {
+		return route, params
+	}
+
 	if route, params := m.trieRouter.Match(path); route != nil {
 		if route.Method == "" || strings.EqualFold(route.Method, method) || route.Method == "*" {
 			return route, params
@@ -167,6 +187,7 @@ func (m *RouterManager) ReloadRoutes(routes map[string]*models.Route) {
 
 func (m *RouterManager) rebuild() error {
 	m.trieRouter = NewTrieRouter()
+	m.radixRouter = NewMethodRadixRouter()
 	m.regexRouter = NewRegexRouter()
 
 	for _, route := range m.routes {
@@ -183,9 +204,23 @@ func (m *RouterManager) rebuild() error {
 			if err := m.trieRouter.Insert(prefixPath, route); err != nil {
 				return fmt.Errorf("failed to rebuild trie router for route %s: %w", route.ID, err)
 			}
+			method := route.Method
+			if method == "" {
+				method = "*"
+			}
+			if err := m.radixRouter.Insert(method, prefixPath, route); err != nil {
+				return fmt.Errorf("failed to rebuild radix router for route %s: %w", route.ID, err)
+			}
 		case models.RouteMatchTypeExact:
 			if err := m.trieRouter.Insert(route.Path, route); err != nil {
 				return fmt.Errorf("failed to rebuild trie router for route %s: %w", route.ID, err)
+			}
+			method := route.Method
+			if method == "" {
+				method = "*"
+			}
+			if err := m.radixRouter.Insert(method, route.Path, route); err != nil {
+				return fmt.Errorf("failed to rebuild radix router for route %s: %w", route.ID, err)
 			}
 		case models.RouteMatchTypeRegex:
 			if route.RegexPattern == "" {
