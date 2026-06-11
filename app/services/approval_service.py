@@ -1,6 +1,6 @@
 from __future__ import annotations
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Dict, Any, Tuple, Union
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy import and_, or_, func, desc
 
@@ -16,9 +16,18 @@ from app.models.approval_workflow import (
     ApprovalType,
     ApprovalStatus,
 )
+from app.models.approval_condition import (
+    ApprovalCondition,
+    ConditionType,
+    ConditionOperator,
+)
 from app.models.user import User
 from app.models.role import Role
 from app.models.purchase_order import PurchaseOrder
+from app.utils.constants import (
+    AUTO_APPROVE_MAX_AMOUNT,
+    CO_SIGN_MIN_AMOUNT,
+)
 from app.schemas.approval import (
     ApprovalWorkflowCreate,
     ApprovalWorkflowUpdate,
@@ -28,6 +37,8 @@ from app.schemas.approval import (
     ApprovalSubmissionRequest,
     ApprovalActionEnum,
     ApprovalRecordListFilter,
+    ApprovalConditionCreate,
+    ApprovalConditionUpdate,
 )
 
 logger = get_logger(__name__)
@@ -380,7 +391,7 @@ class ApprovalService:
                     ApprovalWorkflow.is_active,
                 )
             )
-            .order_by(ApprovalWorkflow.created_at.desc())
+            .order_by(ApprovalWorkflow.priority.desc(), ApprovalWorkflow.created_at.desc())
         )
 
         workflows = query.all()
@@ -391,14 +402,116 @@ class ApprovalService:
         if len(workflows) == 1:
             return workflows[0]
 
-        if resource_data:
-            amount = resource_data.get("amount", 0)
-            for workflow in workflows:
-                if workflow.conditions and "min_amount" in workflow.conditions:
-                    if amount >= workflow.conditions["min_amount"]:
-                        return workflow
+        default_workflow = None
+        for workflow in workflows:
+            if not workflow.conditions:
+                default_workflow = workflow
+                continue
 
-        return workflows[0]
+            if resource_data and self._evaluate_conditions(workflow.conditions, resource_data):
+                logger.info(f"Matched workflow {workflow.name} with conditions {workflow.conditions}")
+                return workflow
+
+        return default_workflow or workflows[0]
+
+    def _evaluate_conditions(
+        self,
+        conditions: Dict[str, Any],
+        resource_data: Dict[str, Any],
+        logic: str = "AND",
+    ) -> bool:
+        if not conditions:
+            return True
+
+        results: List[bool] = []
+
+        min_amount = conditions.get("min_amount")
+        max_amount = conditions.get("max_amount")
+        amount = resource_data.get("amount", 0)
+
+        if min_amount is not None:
+            results.append(amount >= min_amount)
+        if max_amount is not None:
+            results.append(amount < max_amount)
+
+        categories = conditions.get("categories")
+        if categories is not None:
+            resource_categories = resource_data.get("categories", [])
+            if isinstance(resource_categories, list):
+                results.append(any(cat in categories for cat in resource_categories))
+            else:
+                results.append(resource_categories in categories)
+
+        warehouse_regions = conditions.get("warehouse_regions")
+        if warehouse_regions is not None:
+            resource_region = resource_data.get("warehouse_region")
+            results.append(resource_region in warehouse_regions)
+
+        departments = conditions.get("departments")
+        if departments is not None:
+            resource_department = resource_data.get("department")
+            results.append(resource_department in departments)
+
+        roles = conditions.get("roles")
+        if roles is not None:
+            resource_role = resource_data.get("role_id")
+            results.append(resource_role in roles)
+
+        if logic == "OR":
+            return any(results) if results else True
+        return all(results) if results else True
+
+    def _process_auto_approve(
+        self,
+        node: ApprovalNode,
+        resource_id: int,
+        resource_type: ResourceType,
+        resource_data: Dict[str, Any],
+        workflow: ApprovalWorkflow,
+    ) -> Tuple[bool, Optional[ApprovalNode]]:
+        if not node.is_auto_approve:
+            return False, None
+
+        should_auto_approve = True
+        matched_condition = None
+
+        if node.auto_approve_condition:
+            should_auto_approve = self._evaluate_conditions(node.auto_approve_condition, resource_data)
+            matched_condition = node.auto_approve_condition if should_auto_approve else None
+        else:
+            amount = resource_data.get("amount", 0)
+            should_auto_approve = amount <= AUTO_APPROVE_MAX_AMOUNT
+            if should_auto_approve:
+                matched_condition = {"auto_approve": True, "max_amount": AUTO_APPROVE_MAX_AMOUNT, "amount": amount}
+
+        if not should_auto_approve:
+            return False, None
+
+        approver_ids = self._get_node_approvers(node)
+        if not approver_ids:
+            logger.warning(f"No approvers for auto-approve node {node.node_name}")
+            return False, None
+
+        auto_approver_id = approver_ids[0]
+
+        record = ApprovalRecord(
+            workflow_id=workflow.id,
+            node_id=node.id,
+            resource_id=resource_id,
+            resource_type=resource_type,
+            approver_id=auto_approver_id,
+            status=ApprovalStatus.AUTO_APPROVED,
+            approval_opinion="Auto-approved by system",
+            approved_at=datetime.utcnow(),
+            is_auto_approved=True,
+            matched_condition=matched_condition,
+        )
+        self.db.add(record)
+        self.db.flush()
+
+        logger.info(f"Auto-approved node {node.node_name} for {resource_type} {resource_id}")
+
+        return True, node
 
     def _get_resource_data(
         self,
@@ -424,7 +537,7 @@ class ApprovalService:
 
     def submit_approval(
         self,
-        submission_data: ApprovalSubmissionRequest | Dict[str, Any],
+        submission_data: Union[ApprovalSubmissionRequest, Dict[str, Any]],
     ) -> Dict[str, Any]:
         if isinstance(submission_data, dict):
             submission_data = ApprovalSubmissionRequest(**submission_data)
@@ -464,6 +577,33 @@ class ApprovalService:
             raise ValueError("Workflow has no approval nodes")
 
         first_node = approval_nodes[0]
+
+        auto_approved, auto_node = self._process_auto_approve(
+            first_node, resource_id, resource_type, resource_data, workflow
+        )
+        if auto_approved and auto_node:
+            workflow_complete, next_node = self._move_to_next_node(
+                workflow, auto_node, resource_id, resource_type, resource_data
+            )
+
+            if workflow_complete:
+                callback = self._get_resource_callback(resource_type)
+                if callback:
+                    callback(resource_id, ApprovalStatus.AUTO_APPROVED, None)
+
+                return {
+                    "success": True,
+                    "workflow_id": workflow.id,
+                    "workflow_name": workflow.name,
+                    "current_node_id": auto_node.id,
+                    "current_node_name": auto_node.node_name,
+                    "is_auto_approved": True,
+                    "workflow_complete": True,
+                    "final_status": "AUTO_APPROVED",
+                    "records": [],
+                    "next_approvers": [],
+                }
+
         approver_ids = self._get_node_approvers(first_node)
 
         if not approver_ids:
@@ -544,6 +684,7 @@ class ApprovalService:
             "workflow_name": workflow.name,
             "current_node_id": first_node.id,
             "current_node_name": first_node.node_name,
+            "is_auto_approved": False,
             "records": created_records,
             "next_approvers": next_approvers,
         }
@@ -626,40 +767,138 @@ class ApprovalService:
             if next_node.node_type == NodeType.END:
                 return True, None
 
+            if next_node.node_type == NodeType.CONDITION:
+                target_node = self._evaluate_condition_node(next_node, resource_data)
+                if target_node:
+                    if target_node.node_type == NodeType.END:
+                        return True, None
+                    if target_node.node_type == NodeType.APPROVAL:
+                        return self._activate_approval_node(
+                            workflow, target_node, resource_id, resource_type, resource_data
+                        )
+                continue
+
             if next_node.node_type == NodeType.APPROVAL:
-                approver_ids = self._get_node_approvers(next_node)
-
-                if not approver_ids:
-                    logger.warning(f"No approvers for node {next_node.node_name}, skipping")
-                    continue
-
-                for approver_id in approver_ids:
-                    record = ApprovalRecord(
-                        workflow_id=workflow.id,
-                        node_id=next_node.id,
-                        resource_id=resource_id,
-                        resource_type=resource_type,
-                        approver_id=approver_id,
-                        status=ApprovalStatus.PENDING,
-                    )
-                    self.db.add(record)
-
-                self._send_notification(
-                    user_ids=approver_ids,
-                    notification_type="APPROVAL_REQUEST",
-                    title=f"Approval Request: {resource_data.get('title', '')}",
-                    content=f"Approval request moved to {next_node.node_name}.",
-                    data={
-                        "resource_id": resource_id,
-                        "resource_type": resource_type.value,
-                        "workflow_id": workflow.id,
-                        "node_id": next_node.id,
-                    },
+                return self._activate_approval_node(
+                    workflow, next_node, resource_id, resource_type, resource_data
                 )
 
-                return False, next_node
-
         return True, None
+
+    def _evaluate_condition_node(
+        self,
+        condition_node: ApprovalNode,
+        resource_data: Dict[str, Any],
+    ) -> Optional[ApprovalNode]:
+        if condition_node.conditions_list:
+            for condition in condition_node.conditions_list:
+                if self._evaluate_single_condition(condition, resource_data):
+                    if condition.target_node:
+                        return condition.target_node
+
+        if condition_node.conditions and self._evaluate_conditions(condition_node.conditions, resource_data):
+            if condition_node.target_node:
+                return condition_node.target_node
+
+        if condition_node.target_node:
+            return condition_node.target_node
+
+        return None
+
+    def _evaluate_single_condition(
+        self,
+        condition: ApprovalCondition,
+        resource_data: Dict[str, Any],
+    ) -> bool:
+        field_value = resource_data.get(condition.field_name)
+        condition_value = condition.value
+        operator = condition.operator
+
+        if field_value is None:
+            return False
+
+        try:
+            if operator == ConditionOperator.EQ:
+                return field_value == condition_value
+            elif operator == ConditionOperator.GT:
+                return field_value > condition_value
+            elif operator == ConditionOperator.LT:
+                return field_value < condition_value
+            elif operator == ConditionOperator.GTE:
+                return field_value >= condition_value
+            elif operator == ConditionOperator.LTE:
+                return field_value <= condition_value
+            elif operator == ConditionOperator.IN:
+                if isinstance(condition_value, list):
+                    return field_value in condition_value
+                return False
+            elif operator == ConditionOperator.NOT_IN:
+                if isinstance(condition_value, list):
+                    return field_value not in condition_value
+                return False
+            elif operator == ConditionOperator.CONTAINS:
+                if isinstance(field_value, str) and isinstance(condition_value, str):
+                    return condition_value in field_value
+                if isinstance(field_value, list):
+                    return condition_value in field_value
+                return False
+        except Exception as e:
+            logger.error(f"Error evaluating condition {condition.id}: {e}")
+            return False
+
+        return False
+
+    def _activate_approval_node(
+        self,
+        workflow: ApprovalWorkflow,
+        node: ApprovalNode,
+        resource_id: int,
+        resource_type: ResourceType,
+        resource_data: Dict[str, Any],
+    ) -> Tuple[bool, Optional[ApprovalNode]]:
+        auto_approved, auto_node = self._process_auto_approve(
+            node, resource_id, resource_type, resource_data, workflow
+        )
+        if auto_approved and auto_node:
+            return self._move_to_next_node(
+                workflow, auto_node, resource_id, resource_type, resource_data
+            )
+
+        if node.conditions and not self._evaluate_conditions(node.conditions, resource_data):
+            logger.info(f"Skipping node {node.node_name} as conditions not met")
+            return False, None
+
+        approver_ids = self._get_node_approvers(node)
+
+        if not approver_ids:
+            logger.warning(f"No approvers for node {node.node_name}, skipping")
+            return False, None
+
+        for approver_id in approver_ids:
+            record = ApprovalRecord(
+                workflow_id=workflow.id,
+                node_id=node.id,
+                resource_id=resource_id,
+                resource_type=resource_type,
+                approver_id=approver_id,
+                status=ApprovalStatus.PENDING,
+            )
+            self.db.add(record)
+
+        self._send_notification(
+            user_ids=approver_ids,
+            notification_type="APPROVAL_REQUEST",
+            title=f"Approval Request: {resource_data.get('title', '')}",
+            content=f"Approval request moved to {node.node_name}.",
+            data={
+                "resource_id": resource_id,
+                "resource_type": resource_type.value,
+                "workflow_id": workflow.id,
+                "node_id": node.id,
+            },
+        )
+
+        return False, node
 
     def process_approval_action(
         self,
@@ -1179,6 +1418,165 @@ class ApprovalService:
         cache.delete_pattern("approval:pending:*")
 
         return escalated_count
+
+    def add_condition(
+        self,
+        workflow_id: int,
+        condition_data: ApprovalConditionCreate,
+        created_by: User,
+    ) -> ApprovalCondition:
+        workflow = self.get_workflow(workflow_id)
+        if not workflow:
+            raise ValueError("Workflow not found")
+
+        node_id = condition_data.node_id
+        if node_id:
+            node = (
+                self.db.query(ApprovalNode)
+                .filter(
+                    and_(
+                        ApprovalNode.id == node_id,
+                        ApprovalNode.workflow_id == workflow_id,
+                    )
+                )
+                .first()
+            )
+            if not node:
+                raise ValueError("Node not found in this workflow")
+
+        condition_dict = condition_data.model_dump()
+        condition_dict.pop("node_id", None)
+
+        condition = ApprovalCondition(
+            workflow_id=workflow_id,
+            node_id=node_id,
+            **condition_dict,
+        )
+
+        self.db.add(condition)
+        self.db.flush()
+
+        self.audit_logger.log_create(
+            user=created_by,
+            resource_type="approval_condition",
+            resource_id=condition.id,
+            new_value={
+                "workflow_id": workflow_id,
+                "node_id": node_id,
+                "condition_type": condition.condition_type.value,
+                "field_name": condition.field_name,
+                "operator": condition.operator.value,
+            },
+        )
+
+        cache.delete(f"approval:workflow:{workflow_id}")
+
+        return condition
+
+    def update_condition(
+        self,
+        workflow_id: int,
+        condition_id: int,
+        update_data: ApprovalConditionUpdate,
+        updated_by: User,
+    ) -> Optional[ApprovalCondition]:
+        condition = (
+            self.db.query(ApprovalCondition)
+            .filter(
+                and_(
+                    ApprovalCondition.id == condition_id,
+                    ApprovalCondition.workflow_id == workflow_id,
+                )
+            )
+            .first()
+        )
+        if not condition:
+            return None
+
+        old_value = {
+            "condition_type": condition.condition_type.value,
+            "field_name": condition.field_name,
+            "operator": condition.operator.value,
+        }
+
+        update_dict = update_data.model_dump(exclude_unset=True)
+        for key, value in update_dict.items():
+            setattr(condition, key, value)
+
+        self.db.flush()
+
+        self.audit_logger.log_update(
+            user=updated_by,
+            resource_type="approval_condition",
+            resource_id=condition.id,
+            old_value=old_value,
+            new_value={
+                "condition_type": condition.condition_type.value,
+                "field_name": condition.field_name,
+                "operator": condition.operator.value,
+            },
+        )
+
+        cache.delete(f"approval:workflow:{workflow_id}")
+
+        return condition
+
+    def delete_condition(
+        self,
+        workflow_id: int,
+        condition_id: int,
+        deleted_by: User,
+    ) -> bool:
+        condition = (
+            self.db.query(ApprovalCondition)
+            .filter(
+                and_(
+                    ApprovalCondition.id == condition_id,
+                    ApprovalCondition.workflow_id == workflow_id,
+                )
+            )
+            .first()
+        )
+        if not condition:
+            return False
+
+        old_value = {
+            "condition_type": condition.condition_type.value,
+            "field_name": condition.field_name,
+            "workflow_id": workflow_id,
+        }
+
+        self.db.delete(condition)
+        self.db.flush()
+
+        self.audit_logger.log_delete(
+            user=deleted_by,
+            resource_type="approval_condition",
+            resource_id=condition_id,
+            old_value=old_value,
+        )
+
+        cache.delete(f"approval:workflow:{workflow_id}")
+
+        return True
+
+    def list_workflow_conditions(
+        self,
+        workflow_id: int,
+        node_id: Optional[int] = None,
+    ) -> List[ApprovalCondition]:
+        query = self.db.query(ApprovalCondition).filter(ApprovalCondition.workflow_id == workflow_id)
+
+        if node_id is not None:
+            query = query.filter(ApprovalCondition.node_id == node_id)
+
+        return query.order_by(ApprovalCondition.created_at.desc()).all()
+
+    def get_condition(
+        self,
+        condition_id: int,
+    ) -> Optional[ApprovalCondition]:
+        return self.db.query(ApprovalCondition).filter(ApprovalCondition.id == condition_id).first()
 
 
 def create_approval_service(

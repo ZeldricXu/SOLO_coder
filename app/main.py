@@ -26,6 +26,7 @@ from app.routers import (
     audit,
     health,
     supplier,
+    import_export,
 )
 
 configure_logging()
@@ -106,6 +107,12 @@ app.include_router(
 )
 app.include_router(audit.router, prefix=f"{settings.API_PREFIX}/audit", tags=["Audit Logs"])
 app.include_router(health.router, prefix=f"{settings.API_PREFIX}/health", tags=["Health Check"])
+app.include_router(
+    import_export.router, prefix=f"{settings.API_PREFIX}", tags=["Import & Export"]
+)
+app.include_router(
+    sync_strategy.router, prefix=f"{settings.API_PREFIX}/warehouses", tags=["Inventory Sync Strategy"]
+)
 
 
 def custom_openapi():

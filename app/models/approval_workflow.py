@@ -1,9 +1,9 @@
 from __future__ import annotations
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 
-from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, Index, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, Index, UniqueConstraint, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -19,6 +19,7 @@ class NodeType(PyEnum):
     START = "START"
     APPROVAL = "APPROVAL"
     END = "END"
+    CONDITION = "CONDITION"
 
 
 class ApprovalType(PyEnum):
@@ -32,6 +33,7 @@ class ApprovalStatus(PyEnum):
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
     ESCALATED = "ESCALATED"
+    AUTO_APPROVED = "AUTO_APPROVED"
 
 
 class ApprovalWorkflow(Base):
@@ -44,6 +46,8 @@ class ApprovalWorkflow(Base):
         Enum(ResourceType), nullable=False, index=True
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    conditions: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    priority: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -54,6 +58,9 @@ class ApprovalWorkflow(Base):
     )
     records: Mapped[List["ApprovalRecord"]] = relationship(
         "ApprovalRecord", back_populates="workflow"
+    )
+    conditions_list: Mapped[List["ApprovalCondition"]] = relationship(
+        "ApprovalCondition", back_populates="workflow", cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -86,6 +93,12 @@ class ApprovalNode(Base):
     timeout_action: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     auto_upgrade: Mapped[Optional[bool]] = mapped_column(Boolean, default=False, nullable=True)
     upgrade_user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
+    conditions: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    is_auto_approve: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    auto_approve_condition: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
+    target_node_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("approval_nodes.id", ondelete="SET NULL"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     workflow: Mapped["ApprovalWorkflow"] = relationship("ApprovalWorkflow", back_populates="nodes")
@@ -94,6 +107,12 @@ class ApprovalNode(Base):
     upgrade_user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[upgrade_user_id])
     records: Mapped[List["ApprovalRecord"]] = relationship(
         "ApprovalRecord", back_populates="node"
+    )
+    conditions_list: Mapped[List["ApprovalCondition"]] = relationship(
+        "ApprovalCondition", back_populates="node", cascade="all, delete-orphan"
+    )
+    target_node: Mapped[Optional["ApprovalNode"]] = relationship(
+        "ApprovalNode", remote_side=[id], foreign_keys=[target_node_id]
     )
 
     __table_args__ = (
@@ -125,6 +144,8 @@ class ApprovalRecord(Base):
     )
     approval_opinion: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
+    is_auto_approved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    matched_condition: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
     workflow: Mapped["ApprovalWorkflow"] = relationship("ApprovalWorkflow", back_populates="records")

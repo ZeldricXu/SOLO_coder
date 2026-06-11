@@ -1,18 +1,23 @@
+from __future__ import annotations
+
 from datetime import datetime
 import hashlib
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Union
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
 from app.models.cdc import CDCLog, CDCEvent, CDCOperation, CDCSourceSystem, CDCEventType
 from app.models.inventory import Inventory
-from app.models.inventory_sync import InventorySync
+from app.models.inventory_sync import InventorySync, SyncStatus, SyncType
 from app.models.sync_conflict import SyncConflict, ConflictType, ResolutionStrategy, ConflictStatus
+from app.models.warehouse import Warehouse
+from app.models.sync_strategy import InventorySnapshot
 from app.utils.constants import (
     CDC_EVENT_BATCH_SIZE,
     SYNC_DELAY_THRESHOLD_SECONDS,
+    SyncStrategy,
 )
 from app.utils.exceptions import CDCException, SyncDelayAlertException
 from app.utils.helpers import get_current_utc_time, calculate_seconds_between
@@ -71,6 +76,27 @@ class CDCCaptureEngine:
         operation: CDCOperation,
         old_data: Optional[dict[str, Any]] = None,
     ) -> CDCLog:
+        process_result = self.should_process_event(inventory.warehouse_id)
+        strategy = process_result.get("strategy")
+        action = process_result.get("action")
+
+        if action == "take_snapshot" and strategy == SyncStrategy.VIRTUAL:
+            logger.info(
+                f"Virtual warehouse {inventory.warehouse_id}: taking snapshot instead of CDC"
+            )
+            self.take_virtual_snapshot(inventory.warehouse_id)
+
+        if not process_result.get("should_process", True):
+            if action in ["queue_for_scheduled", "queue_for_manual"]:
+                logger.info(
+                    f"Event queued for warehouse {inventory.warehouse_id}, "
+                    f"strategy={strategy}, action={action}"
+                )
+            elif action == "take_snapshot":
+                logger.info(
+                    f"Virtual warehouse {inventory.warehouse_id}: snapshot taken, CDC skipped"
+                )
+
         new_data = {
             "id": inventory.id,
             "sku_id": inventory.sku_id,
@@ -83,6 +109,8 @@ class CDCCaptureEngine:
             "unit_cost": float(inventory.unit_cost),
             "total_value": float(inventory.total_value),
             "updated_at": inventory.updated_at.isoformat() if inventory.updated_at else None,
+            "sync_strategy": strategy.value if strategy else None,
+            "sync_action": action,
         }
         return self.capture_change(
             table_name="inventories",
@@ -116,6 +144,117 @@ class CDCCaptureEngine:
             event.status = "FAILED"
             event.error_message = error_message
             self.db.flush()
+
+    def should_process_event(self, warehouse_id: int) -> dict[str, Any]:
+        warehouse = self.db.get(Warehouse, warehouse_id)
+        if not warehouse:
+            return {"should_process": False, "strategy": None, "reason": "Warehouse not found"}
+
+        strategy = warehouse.sync_strategy or SyncStrategy.REALTIME
+
+        if strategy == SyncStrategy.REALTIME:
+            return {"should_process": True, "strategy": strategy, "action": "process_immediately"}
+        elif strategy == SyncStrategy.SCHEDULED:
+            return {"should_process": False, "strategy": strategy, "action": "queue_for_scheduled"}
+        elif strategy == SyncStrategy.MANUAL:
+            return {"should_process": False, "strategy": strategy, "action": "queue_for_manual"}
+        elif strategy == SyncStrategy.VIRTUAL:
+            return {"should_process": False, "strategy": strategy, "action": "take_snapshot"}
+        else:
+            return {"should_process": True, "strategy": strategy, "action": "process_immediately"}
+
+    def get_sync_queue(
+        self,
+        warehouse_id: int,
+        strategy: Optional[Union[SyncStrategy, list[SyncStrategy]]] = None,
+        limit: int = 100,
+    ) -> list[CDCEvent]:
+        query = (
+            self.db.query(CDCEvent)
+            .join(CDCLog, CDCEvent.cdc_log_id == CDCLog.id)
+            .filter(
+                CDCEvent.status == "PENDING",
+                CDCLog.table_name == "inventories",
+            )
+            .order_by(CDCEvent.created_at.asc())
+        )
+
+        if strategy:
+            if isinstance(strategy, list):
+                strategies = [s.value for s in strategy]
+            else:
+                strategies = [strategy.value]
+
+        query = query.limit(limit)
+        return query.all()
+
+    def process_scheduled_sync(self, warehouse_id: int) -> dict[str, Any]:
+        warehouse = self.db.get(Warehouse, warehouse_id)
+        if not warehouse:
+            return {"success": False, "processed_count": 0, "error": "Warehouse not found"}
+
+        if warehouse.sync_strategy != SyncStrategy.SCHEDULED:
+            return {
+                "success": False,
+                "processed_count": 0,
+                "error": f"Warehouse strategy is {warehouse.sync_strategy}, not SCHEDULED",
+            }
+
+        pending_events = self.get_sync_queue(warehouse_id, limit=CDC_EVENT_BATCH_SIZE)
+        processed_count = 0
+        failed_count = 0
+
+        for event in pending_events:
+            try:
+                self.mark_event_processed(event.id)
+                processed_count += 1
+            except Exception as e:
+                self.mark_event_failed(event.id, str(e))
+                failed_count += 1
+                logger.error(f"Failed to process scheduled event {event.id}: {str(e)}")
+
+        return {
+            "success": True,
+            "warehouse_id": warehouse_id,
+            "processed_count": processed_count,
+            "failed_count": failed_count,
+            "total_count": len(pending_events),
+        }
+
+    def take_virtual_snapshot(self, warehouse_id: int) -> dict[str, Any]:
+        warehouse = self.db.get(Warehouse, warehouse_id)
+        if not warehouse:
+            return {"success": False, "snapshot_count": 0, "error": "Warehouse not found"}
+
+        inventories = (
+            self.db.query(Inventory)
+            .filter(Inventory.warehouse_id == warehouse_id)
+            .all()
+        )
+
+        snapshot_date = get_current_utc_time()
+        snapshots = []
+
+        for inventory in inventories:
+            snapshot = InventorySnapshot(
+                warehouse_id=warehouse_id,
+                sku_id=inventory.sku_id,
+                quantity=inventory.quantity,
+                available_quantity=inventory.available_quantity,
+                snapshot_date=snapshot_date,
+            )
+            snapshots.append(snapshot)
+            self.db.add(snapshot)
+
+        warehouse.last_snapshot_at = snapshot_date
+        self.db.flush()
+
+        return {
+            "success": True,
+            "warehouse_id": warehouse_id,
+            "snapshot_count": len(snapshots),
+            "snapshot_date": snapshot_date,
+        }
 
 
 class ConflictDetectionEngine:

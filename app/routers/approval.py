@@ -1,6 +1,7 @@
 from __future__ import annotations
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Optional, Dict, Any
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -24,9 +25,15 @@ from app.schemas.approval import (
     ApprovalStatisticsResponse,
     ResourceTypeEnum,
     ApprovalStatusEnum,
+    ApprovalConditionCreate,
+    ApprovalConditionUpdate,
+    ApprovalCondition,
+    DefaultRulesInitRequest,
+    WorkflowMatchRequest,
 )
 from app.models.user import User
 from app.services.approval_service import create_approval_service
+from app.services.approval_rule_service import create_approval_rule_service
 from app.utils.exceptions import ApprovalException
 
 router = APIRouter(tags=["审批流"])
@@ -291,5 +298,137 @@ def get_approval_record_detail(
         if not record:
             raise HTTPException(status_code=404, detail="审批记录不存在")
         return APIResponse(data=record)
+    except ApprovalException as e:
+        raise HTTPException(status_code=e.code, detail=e.message) from e
+
+
+@router.post("/api/v1/approval-workflows/{workflow_id}/conditions", response_model=APIResponse[IdResponse])
+def add_condition(
+    workflow_id: int,
+    condition_in: ApprovalConditionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        service = create_approval_service(db, current_user)
+        condition = service.add_condition(workflow_id, condition_in, current_user)
+        return APIResponse(data=IdResponse(id=condition.id))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ApprovalException as e:
+        raise HTTPException(status_code=e.code, detail=e.message) from e
+
+
+@router.put("/api/v1/approval-workflows/{workflow_id}/conditions/{condition_id}", response_model=APIResponse[SuccessResponse])
+def update_condition(
+    workflow_id: int,
+    condition_id: int,
+    condition_in: ApprovalConditionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        service = create_approval_service(db, current_user)
+        condition = service.update_condition(workflow_id, condition_id, condition_in, current_user)
+        if not condition:
+            raise HTTPException(status_code=404, detail="条件规则不存在")
+        return APIResponse(data=SuccessResponse(success=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ApprovalException as e:
+        raise HTTPException(status_code=e.code, detail=e.message) from e
+
+
+@router.delete("/api/v1/approval-workflows/{workflow_id}/conditions/{condition_id}", response_model=APIResponse[SuccessResponse])
+def delete_condition(
+    workflow_id: int,
+    condition_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        service = create_approval_service(db, current_user)
+        success = service.delete_condition(workflow_id, condition_id, current_user)
+        if not success:
+            raise HTTPException(status_code=404, detail="条件规则不存在")
+        return APIResponse(data=SuccessResponse(success=True))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ApprovalException as e:
+        raise HTTPException(status_code=e.code, detail=e.message) from e
+
+
+@router.post("/api/v1/approval-rules/init-defaults", response_model=APIResponse[Dict[str, Any]])
+def init_default_rules(
+    request: Optional[DefaultRulesInitRequest] = Body(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        service = create_approval_rule_service(db, current_user)
+        results = service.create_default_purchase_order_rules(request)
+        return APIResponse(data=results)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except ApprovalException as e:
+        raise HTTPException(status_code=e.code, detail=e.message) from e
+
+
+@router.get("/api/v1/approval-workflows/match", response_model=APIResponse[Optional[ApprovalWorkflow]])
+def match_workflow(
+    resource_type: ResourceTypeEnum = Query(..., description="资源类型"),
+    amount: Optional[float] = Query(None, description="金额"),
+    category: Optional[int] = Query(None, description="品类ID"),
+    warehouse_region: Optional[str] = Query(None, description="仓库区域"),
+    department: Optional[str] = Query(None, description="部门"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        service = create_approval_service(db, current_user)
+        resource_data = {
+            "amount": amount or 0,
+            "categories": [category] if category else [],
+            "warehouse_region": warehouse_region,
+            "department": department,
+        }
+        workflow = service._match_workflow(resource_type, resource_data)
+        return APIResponse(data=workflow)
+    except ApprovalException as e:
+        raise HTTPException(status_code=e.code, detail=e.message) from e
+
+
+@router.get("/api/v1/approval-workflows/{workflow_id}/conditions", response_model=APIResponse[PaginatedResponse[ApprovalCondition]])
+def list_conditions(
+    workflow_id: int,
+    node_id: Optional[int] = Query(None, description="节点ID"),
+    paginated: PaginatedParams = Depends(),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    try:
+        service = create_approval_service(db, current_user)
+        workflow = service.get_workflow(workflow_id)
+        if not workflow:
+            raise HTTPException(status_code=404, detail="工作流不存在")
+
+        conditions = service.list_workflow_conditions(workflow_id, node_id)
+        total = len(conditions)
+        total_pages = (total + paginated.page_size - 1) // paginated.page_size
+
+        offset = (paginated.page - 1) * paginated.page_size
+        paginated_conditions = conditions[offset:offset + paginated.page_size]
+
+        return APIResponse(
+            data=PaginatedResponse(
+                items=paginated_conditions,
+                page=paginated.page,
+                page_size=paginated.page_size,
+                total=total,
+                total_pages=total_pages,
+                has_next=paginated.page < total_pages,
+                has_prev=paginated.page > 1,
+            )
+        )
     except ApprovalException as e:
         raise HTTPException(status_code=e.code, detail=e.message) from e

@@ -1,6 +1,29 @@
 from enum import Enum
 
 
+class ConditionOperator(str, Enum):
+    EQ = "EQ"
+    GT = "GT"
+    LT = "LT"
+    GTE = "GTE"
+    LTE = "LTE"
+    IN = "IN"
+    NOT_IN = "NOT_IN"
+    CONTAINS = "CONTAINS"
+
+
+class ConditionType(str, Enum):
+    AMOUNT_RANGE = "AMOUNT_RANGE"
+    CATEGORY = "CATEGORY"
+    WAREHOUSE_REGION = "WAREHOUSE_REGION"
+    ROLE = "ROLE"
+    DEPARTMENT = "DEPARTMENT"
+
+
+AUTO_APPROVE_MAX_AMOUNT = 5000
+CO_SIGN_MIN_AMOUNT = 100000
+
+
 class InventoryTransactionType(str, Enum):
     IN = "IN"
     OUT = "OUT"
@@ -14,6 +37,32 @@ class WarehouseType(str, Enum):
     BRANCH = "BRANCH"
     FULFILLMENT = "FULFILLMENT"
     RETURNS = "RETURNS"
+    VIRTUAL = "VIRTUAL"
+
+
+class ImportJobType(str, Enum):
+    PRODUCT_IMPORT = "PRODUCT_IMPORT"
+    SKU_IMPORT = "SKU_IMPORT"
+
+
+class ImportStatus(str, Enum):
+    PENDING = "PENDING"
+    PROCESSING = "PROCESSING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class FileType(str, Enum):
+    EXCEL = "EXCEL"
+    CSV = "CSV"
+
+
+class ImportErrorCode(str, Enum):
+    REQUIRED_FIELD_MISSING = "REQUIRED_FIELD_MISSING"
+    INVALID_ATTRIBUTE = "INVALID_ATTRIBUTE"
+    DUPLICATE_SKU_CODE = "DUPLICATE_SKU_CODE"
+    INVALID_PRICE = "INVALID_PRICE"
+    INVALID_STATUS = "INVALID_STATUS"
 
 
 class SyncType(str, Enum):
@@ -78,6 +127,15 @@ class FIFOStrategy(str, Enum):
     FEFO = "FEFO"
     LIFO = "LIFO"
 
+
+class SyncStrategy(str, Enum):
+    REALTIME = "REALTIME"
+    SCHEDULED = "SCHEDULED"
+    MANUAL = "MANUAL"
+    VIRTUAL = "VIRTUAL"
+
+
+DEFAULT_SCHEDULED_SYNC_TIME = "02:00"
 
 SYNC_DELAY_THRESHOLD_SECONDS = 300
 

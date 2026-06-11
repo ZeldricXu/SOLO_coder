@@ -1,6 +1,7 @@
+from __future__ import annotations
 from datetime import datetime
 from enum import Enum as PyEnum
-from typing import Optional, Any, List, Dict
+from typing import Optional, Any, List, Dict, Union
 from pydantic import BaseModel, Field, ConfigDict
 
 from app.schemas.common import APIResponse, PaginatedResponse
@@ -16,6 +17,7 @@ class NodeTypeEnum(str, PyEnum):
     START = "START"
     APPROVAL = "APPROVAL"
     END = "END"
+    CONDITION = "CONDITION"
 
 
 class ApprovalTypeEnum(str, PyEnum):
@@ -28,6 +30,26 @@ class ApprovalStatusEnum(str, PyEnum):
     PENDING = "PENDING"
     APPROVED = "APPROVED"
     REJECTED = "REJECTED"
+    AUTO_APPROVED = "AUTO_APPROVED"
+
+
+class ConditionOperatorEnum(str, PyEnum):
+    EQ = "EQ"
+    GT = "GT"
+    LT = "LT"
+    GTE = "GTE"
+    LTE = "LTE"
+    IN = "IN"
+    NOT_IN = "NOT_IN"
+    CONTAINS = "CONTAINS"
+
+
+class ConditionTypeEnum(str, PyEnum):
+    AMOUNT_RANGE = "AMOUNT_RANGE"
+    CATEGORY = "CATEGORY"
+    WAREHOUSE_REGION = "WAREHOUSE_REGION"
+    ROLE = "ROLE"
+    DEPARTMENT = "DEPARTMENT"
 
 
 class ApprovalActionEnum(str, PyEnum):
@@ -68,6 +90,11 @@ class ApprovalNodeBase(BaseModel):
     conditions: Optional[Dict[str, Any]] = Field(
         default=None, description="节点条件配置（金额范围、部门等）"
     )
+    is_auto_approve: bool = Field(default=False, description="是否自动批准")
+    auto_approve_condition: Optional[Dict[str, Any]] = Field(
+        default=None, description="自动批准条件"
+    )
+    target_node_id: Optional[int] = Field(default=None, description="目标节点ID（条件节点跳转目标）")
 
 
 class ApprovalNodeCreate(ApprovalNodeBase):
@@ -92,6 +119,11 @@ class ApprovalNodeUpdate(BaseModel):
     conditions: Optional[Dict[str, Any]] = Field(
         default=None, description="节点条件配置"
     )
+    is_auto_approve: Optional[bool] = Field(default=None, description="是否自动批准")
+    auto_approve_condition: Optional[Dict[str, Any]] = Field(
+        default=None, description="自动批准条件"
+    )
+    target_node_id: Optional[int] = Field(default=None, description="目标节点ID（条件节点跳转目标）")
 
 
 class ApprovalNode(ApprovalNodeBase):
@@ -121,6 +153,7 @@ class ApprovalWorkflowBase(BaseModel):
     conditions: Optional[Dict[str, Any]] = Field(
         default=None, description="工作流触发条件（金额范围等）"
     )
+    priority: int = Field(default=0, description="条件匹配优先级")
 
 
 class ApprovalWorkflowCreate(ApprovalWorkflowBase):
@@ -137,6 +170,7 @@ class ApprovalWorkflowUpdate(BaseModel):
     conditions: Optional[Dict[str, Any]] = Field(
         default=None, description="工作流触发条件"
     )
+    priority: Optional[int] = Field(default=None, description="条件匹配优先级")
 
 
 class ApprovalWorkflow(ApprovalWorkflowBase):
@@ -186,6 +220,8 @@ class ApprovalRecord(ApprovalRecordBase):
     status: ApprovalStatusEnum
     approval_opinion: Optional[str] = None
     approved_at: Optional[datetime] = None
+    is_auto_approved: bool = Field(default=False, description="是否自动批准")
+    matched_condition: Optional[Dict[str, Any]] = Field(default=None, description="匹配的条件")
     created_at: datetime
 
     workflow_name: Optional[str] = None
@@ -297,4 +333,81 @@ class ApprovalActionResponse(APIResponse[dict]):
 
 
 class ApprovalNodeResponse(APIResponse[ApprovalNode]):
+    pass
+
+
+class ApprovalConditionBase(BaseModel):
+    condition_type: ConditionTypeEnum = Field(description="条件类型")
+    field_name: str = Field(max_length=100, description="字段名称")
+    operator: ConditionOperatorEnum = Field(description="操作符")
+    value: Any = Field(description="条件值")
+    target_node_id: Optional[int] = Field(default=None, description="条件满足时跳转的目标节点ID")
+
+
+class ApprovalConditionCreate(ApprovalConditionBase):
+    node_id: Optional[int] = Field(default=None, description="关联的节点ID（节点级条件）")
+
+
+class ApprovalConditionUpdate(BaseModel):
+    condition_type: Optional[ConditionTypeEnum] = Field(default=None, description="条件类型")
+    field_name: Optional[str] = Field(default=None, max_length=100, description="字段名称")
+    operator: Optional[ConditionOperatorEnum] = Field(default=None, description="操作符")
+    value: Optional[Any] = Field(default=None, description="条件值")
+    target_node_id: Optional[int] = Field(default=None, description="条件满足时跳转的目标节点ID")
+
+
+class ApprovalCondition(ApprovalConditionBase):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workflow_id: Optional[int] = None
+    node_id: Optional[int] = None
+    created_at: datetime
+
+
+class WorkflowConditionConfig(BaseModel):
+    min_amount: Optional[float] = Field(default=None, description="最小金额")
+    max_amount: Optional[float] = Field(default=None, description="最大金额")
+    categories: Optional[List[int]] = Field(default=None, description="品类ID列表")
+    warehouse_regions: Optional[List[str]] = Field(default=None, description="仓库区域列表")
+    departments: Optional[List[str]] = Field(default=None, description="部门列表")
+
+
+class AutoApproveRuleCreate(BaseModel):
+    rule_name: str = Field(default="小额自动批准", description="规则名称")
+    max_amount: float = Field(default=5000, description="自动批准最大金额")
+    auto_approve: bool = Field(default=True, description="是否自动批准")
+
+
+class CoSignRuleCreate(BaseModel):
+    rule_name: str = Field(default="大额双签", description="规则名称")
+    min_amount: float = Field(default=100000, description="双签最小金额")
+    first_role_id: int = Field(description="第一个审批角色ID（财务）")
+    second_role_id: int = Field(description="第二个审批角色ID（部门负责人）")
+    approval_type: ApprovalTypeEnum = Field(default=ApprovalTypeEnum.AND, description="审批类型")
+
+
+class DefaultRulesInitRequest(BaseModel):
+    auto_approve_config: Optional[AutoApproveRuleCreate] = None
+    co_sign_config: Optional[CoSignRuleCreate] = None
+
+
+class WorkflowMatchRequest(BaseModel):
+    resource_type: ResourceTypeEnum = Field(description="资源类型")
+    resource_data: Dict[str, Any] = Field(description="资源数据")
+
+
+class ApprovalConditionResponse(APIResponse[ApprovalCondition]):
+    pass
+
+
+class ApprovalConditionListResponse(APIResponse[PaginatedResponse[ApprovalCondition]]):
+    pass
+
+
+class WorkflowMatchResponse(APIResponse[Optional[ApprovalWorkflow]]):
+    pass
+
+
+class DefaultRulesInitResponse(APIResponse[Dict[str, Any]]):
     pass

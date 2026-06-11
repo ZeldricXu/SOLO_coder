@@ -8,6 +8,8 @@ from app.models.sync_conflict import (
     ResolutionStrategy,
     SyncConflict,
 )
+from app.models.sync_strategy import InventorySnapshot
+from app.utils.constants import SyncStrategy
 from app.models.supplier import Supplier
 from app.models.permission import Permission
 from app.models.role import Role, role_permission
@@ -50,6 +52,11 @@ from app.models.approval_workflow import (
     ApprovalNode,
     ApprovalRecord,
 )
+from app.models.approval_condition import (
+    ConditionOperator,
+    ConditionType,
+    ApprovalCondition,
+)
 from app.models.stocktake import (
     StocktakePlanType,
     StocktakePlanStatus,
@@ -75,6 +82,14 @@ from app.models.sku import SKU, SkuStatus, SkuLifecycleStatus
 from app.models.product import Product, ProductStatus
 from app.models.attribute import Attribute, AttributeTemplate, AttributeDataType
 from app.models.category import Category
+from app.models.import_export import (
+    ImportJob,
+    ImportError,
+    ImportJobType,
+    ImportStatus,
+    FileType,
+    ImportErrorCode,
+)
 
 __all__ = [
     "Warehouse",
@@ -90,6 +105,8 @@ __all__ = [
     "ConflictType",
     "ResolutionStrategy",
     "ConflictStatus",
+    "InventorySnapshot",
+    "SyncStrategy",
     "Supplier",
     "Permission",
     "Role",
@@ -127,6 +144,9 @@ __all__ = [
     "ApprovalWorkflow",
     "ApprovalNode",
     "ApprovalRecord",
+    "ConditionOperator",
+    "ConditionType",
+    "ApprovalCondition",
     "StocktakePlanType",
     "StocktakePlanStatus",
     "StocktakeTaskStatus",
@@ -154,4 +174,10 @@ __all__ = [
     "AttributeTemplate",
     "AttributeDataType",
     "Category",
+    "ImportJob",
+    "ImportError",
+    "ImportJobType",
+    "ImportStatus",
+    "FileType",
+    "ImportErrorCode",
 ]

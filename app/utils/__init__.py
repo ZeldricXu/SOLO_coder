@@ -11,6 +11,16 @@ from app.utils.constants import (
     CDCEventType,
     CDCEventStatus,
     FIFOStrategy,
+    ConditionOperator,
+    ConditionType,
+    AUTO_APPROVE_MAX_AMOUNT,
+    CO_SIGN_MIN_AMOUNT,
+    SyncStrategy,
+    DEFAULT_SCHEDULED_SYNC_TIME,
+    ImportJobType,
+    ImportStatus,
+    FileType,
+    ImportErrorCode,
     SYNC_DELAY_THRESHOLD_SECONDS,
     INVENTORY_CODE_PREFIX,
     WAREHOUSE_CODE_PREFIX,
@@ -55,15 +65,22 @@ from app.utils.helpers import (
     get_date_range,
     days_between,
 )
-from app.utils.sync_engine import (
-    CDCCaptureEngine,
-    ConflictDetectionEngine,
-    ConflictResolver,
-    ConsistencyChecker,
-    SyncDelayMonitor,
-)
-from app.utils.batch_generator import BatchNumberGenerator
-from app.utils.trace_engine import TraceEngine
+def __getattr__(name):
+    _lazy_modules = {
+        "CDCCaptureEngine": ("app.utils.sync_engine", "CDCCaptureEngine"),
+        "ConflictDetectionEngine": ("app.utils.sync_engine", "ConflictDetectionEngine"),
+        "ConflictResolver": ("app.utils.sync_engine", "ConflictResolver"),
+        "ConsistencyChecker": ("app.utils.sync_engine", "ConsistencyChecker"),
+        "SyncDelayMonitor": ("app.utils.sync_engine", "SyncDelayMonitor"),
+        "BatchNumberGenerator": ("app.utils.batch_generator", "BatchNumberGenerator"),
+        "TraceEngine": ("app.utils.trace_engine", "TraceEngine"),
+    }
+    if name in _lazy_modules:
+        module_path, attr_name = _lazy_modules[name]
+        import importlib
+        mod = importlib.import_module(module_path)
+        return getattr(mod, attr_name)
+    raise AttributeError(f"module 'app.utils' has no attribute '{name}'")
 
 __all__ = [
     "InventoryTransactionType",
@@ -78,6 +95,16 @@ __all__ = [
     "CDCEventType",
     "CDCEventStatus",
     "FIFOStrategy",
+    "ConditionOperator",
+    "ConditionType",
+    "AUTO_APPROVE_MAX_AMOUNT",
+    "CO_SIGN_MIN_AMOUNT",
+    "SyncStrategy",
+    "DEFAULT_SCHEDULED_SYNC_TIME",
+    "ImportJobType",
+    "ImportStatus",
+    "FileType",
+    "ImportErrorCode",
     "SYNC_DELAY_THRESHOLD_SECONDS",
     "INVENTORY_CODE_PREFIX",
     "WAREHOUSE_CODE_PREFIX",

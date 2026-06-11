@@ -10,6 +10,7 @@ from app.services.inventory_sync_service import InventorySyncService
 from app.services.supplier_service import SupplierService
 from app.services.purchase_order_service import PurchaseOrderService
 from app.services.approval_service import ApprovalService
+from app.services.approval_rule_service import ApprovalRuleService
 from app.services.forecast_service import ForecastService
 from app.services.alert_service import AlertService
 from app.services.replenishment_service import ReplenishmentService
@@ -18,6 +19,8 @@ from app.services.serial_service import SerialNumberService
 from app.services.document_service import DocumentService
 from app.services.stocktake_service import StocktakeService
 from app.services.audit_service import AuditService
+from app.services.import_export_service import ImportExportService
+from app.services.sync_strategy_service import SyncStrategyService
 
 __all__ = [
     "CRUDBase",
@@ -33,6 +36,7 @@ __all__ = [
     "SupplierService",
     "PurchaseOrderService",
     "ApprovalService",
+    "ApprovalRuleService",
     "ForecastService",
     "AlertService",
     "ReplenishmentService",
@@ -41,4 +45,6 @@ __all__ = [
     "DocumentService",
     "StocktakeService",
     "AuditService",
+    "ImportExportService",
+    "SyncStrategyService",
 ]

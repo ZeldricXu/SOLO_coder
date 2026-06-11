@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 import pickle
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, List, Dict, Set
 from redis import Redis
-from rediscluster import RedisCluster
+
+try:
+    from rediscluster import RedisCluster
+except ImportError:
+    RedisCluster = None  # type: ignore
 
 from app.core.config import settings
 
@@ -16,17 +20,20 @@ class CacheManager:
         self._use_cluster = False
 
     def connect(self) -> None:
-        try:
-            self._cluster = RedisCluster(
-                startup_nodes=settings.redis_cluster_node_list,
-                decode_responses=False,
-                skip_full_coverage_check=True,
-            )
-            self._cluster.ping()
-            self._use_cluster = True
-        except Exception:
-            self._redis = Redis.from_url(settings.REDIS_BROKER_URL)
-            self._use_cluster = False
+        if RedisCluster is not None:
+            try:
+                self._cluster = RedisCluster(
+                    startup_nodes=settings.redis_cluster_node_list,
+                    decode_responses=False,
+                    skip_full_coverage_check=True,
+                )
+                self._cluster.ping()
+                self._use_cluster = True
+                return
+            except Exception:
+                pass
+        self._redis = Redis.from_url(settings.REDIS_BROKER_URL)
+        self._use_cluster = False
 
     def _get_client(self) -> Union[Redis, RedisCluster]:
         if self._use_cluster and self._cluster:
@@ -92,7 +99,7 @@ class CacheManager:
         client = self._get_client()
         return client.srem(key, *[pickle.dumps(v) for v in values])
 
-    def smembers(self, key: str) -> set[Any]:
+    def smembers(self, key: str) -> Set[Any]:
         client = self._get_client()
         return {pickle.loads(v) for v in client.smembers(key)}
 
@@ -105,7 +112,7 @@ class CacheManager:
         value = client.lpop(key)
         return pickle.loads(value) if value else None
 
-    def lrange(self, key: str, start: int = 0, end: int = -1) -> list[Any]:
+    def lrange(self, key: str, start: int = 0, end: int = -1) -> List[Any]:
         client = self._get_client()
         return [pickle.loads(v) for v in client.lrange(key, start, end)]
 
@@ -118,7 +125,7 @@ class CacheManager:
         value = client.hget(key, field)
         return pickle.loads(value) if value else None
 
-    def hgetall(self, key: str) -> dict[str, Any]:
+    def hgetall(self, key: str) -> Dict[str, Any]:
         client = self._get_client()
         return {k.decode("utf-8"): pickle.loads(v) for k, v in client.hgetall(key).items()}
 

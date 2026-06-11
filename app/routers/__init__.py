@@ -17,6 +17,8 @@ from app.routers.stocktake import router as stocktake_router
 from app.routers.audit import router as audit_router
 from app.routers.health import router as health_router
 from app.routers.supplier import router as supplier_router
+from app.routers.import_export import router as import_export_router
+from app.routers.sync_strategy import router as sync_strategy_router
 
 __all__ = [
     "auth_router",
@@ -38,4 +40,6 @@ __all__ = [
     "audit_router",
     "health_router",
     "supplier_router",
+    "import_export_router",
+    "sync_strategy_router",
 ]

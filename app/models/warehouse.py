@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum as PyEnum
+from typing import Optional, Any, List
 
-from sqlalchemy import DateTime, Enum, Float, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, Enum, Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -12,6 +15,17 @@ class WarehouseType(PyEnum):
     BRANCH = "BRANCH"
     FULFILLMENT = "FULFILLMENT"
     RETURNS = "RETURNS"
+    VIRTUAL = "VIRTUAL"
+
+
+def _default_sync_strategy():
+    from app.utils.constants import SyncStrategy
+    return SyncStrategy.REALTIME
+
+
+def _default_scheduled_sync_time():
+    from app.utils.constants import DEFAULT_SCHEDULED_SYNC_TIME
+    return DEFAULT_SCHEDULED_SYNC_TIME
 
 
 class Warehouse(Base):
@@ -34,24 +48,38 @@ class Warehouse(Base):
     is_active: Mapped[bool] = mapped_column(default=True, index=True)
     capacity: Mapped[int] = mapped_column(Integer, nullable=True)
     utilization_rate: Mapped[float] = mapped_column(Float, nullable=True)
+    sync_strategy: Mapped[Optional[Any]] = mapped_column(
+        Enum("REALTIME", "SCHEDULED", "MANUAL", "VIRTUAL", name="sync_strategy_enum"),
+        nullable=True,
+        default=_default_sync_strategy,
+        index=True,
+    )
+    is_virtual: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    last_snapshot_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    scheduled_sync_time: Mapped[str] = mapped_column(
+        String(10), nullable=False, default=_default_scheduled_sync_time
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
 
-    zones: Mapped[list["Zone"]] = relationship("Zone", back_populates="warehouse", cascade="all, delete-orphan")
-    inventories: Mapped[list["Inventory"]] = relationship("Inventory", back_populates="warehouse")
-    inventory_transactions: Mapped[list["InventoryTransaction"]] = relationship(
+    zones: Mapped[List["Zone"]] = relationship("Zone", back_populates="warehouse", cascade="all, delete-orphan")
+    inventories: Mapped[List["Inventory"]] = relationship("Inventory", back_populates="warehouse")
+    inventory_transactions: Mapped[List["InventoryTransaction"]] = relationship(
         "InventoryTransaction", back_populates="warehouse"
     )
-    source_syncs: Mapped[list["InventorySync"]] = relationship(
+    source_syncs: Mapped[List["InventorySync"]] = relationship(
         "InventorySync", back_populates="source_warehouse", foreign_keys="InventorySync.source_warehouse_id"
     )
-    target_syncs: Mapped[list["InventorySync"]] = relationship(
+    target_syncs: Mapped[List["InventorySync"]] = relationship(
         "InventorySync", back_populates="target_warehouse", foreign_keys="InventorySync.target_warehouse_id"
     )
-    stocktake_plans: Mapped[list["StocktakePlan"]] = relationship(
+    stocktake_plans: Mapped[List["StocktakePlan"]] = relationship(
         "StocktakePlan", back_populates="warehouse"
+    )
+    inventory_snapshots: Mapped[List["InventorySnapshot"]] = relationship(
+        "InventorySnapshot", back_populates="warehouse", cascade="all, delete-orphan"
     )
 
     def __repr__(self) -> str:
@@ -70,8 +98,8 @@ class Zone(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
     warehouse: Mapped["Warehouse"] = relationship("Warehouse", back_populates="zones")
-    inventories: Mapped[list["Inventory"]] = relationship("Inventory", back_populates="zone")
-    inventory_transactions: Mapped[list["InventoryTransaction"]] = relationship(
+    inventories: Mapped[List["Inventory"]] = relationship("Inventory", back_populates="zone")
+    inventory_transactions: Mapped[List["InventoryTransaction"]] = relationship(
         "InventoryTransaction", back_populates="zone"
     )
 
