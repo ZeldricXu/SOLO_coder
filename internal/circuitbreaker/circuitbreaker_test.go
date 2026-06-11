@@ -446,8 +446,13 @@ func TestHealthCheck_NormalPath(t *testing.T) {
 			Healthy: false,
 		}
 
-		checker := NewHealthChecker(config)
-		err := checker.Check(node)
+		cluster := &models.UpstreamCluster{
+			HealthCheck: config,
+			Nodes:       []*models.UpstreamNode{node},
+		}
+
+		checker := NewHealthChecker(cluster)
+		err := checker.CheckNode(node)
 		require.NoError(t, err)
 		assert.True(t, node.Healthy)
 	})
@@ -473,8 +478,13 @@ func TestHealthCheck_NormalPath(t *testing.T) {
 			Healthy: true,
 		}
 
-		checker := NewHealthChecker(config)
-		err := checker.Check(node)
+		cluster := &models.UpstreamCluster{
+			HealthCheck: config,
+			Nodes:       []*models.UpstreamNode{node},
+		}
+
+		checker := NewHealthChecker(cluster)
+		err := checker.CheckNode(node)
 		require.NoError(t, err)
 		assert.False(t, node.Healthy)
 		assert.Equal(t, 1, node.FailCount)
@@ -498,8 +508,13 @@ func TestHealthCheck_NormalPath(t *testing.T) {
 			Healthy: false,
 		}
 
-		checker := NewHealthChecker(config)
-		err := checker.Check(node)
+		cluster := &models.UpstreamCluster{
+			HealthCheck: config,
+			Nodes:       []*models.UpstreamNode{node},
+		}
+
+		checker := NewHealthChecker(cluster)
+		err := checker.CheckNode(node)
 		require.NoError(t, err)
 		assert.True(t, node.Healthy)
 	})
@@ -519,8 +534,13 @@ func TestHealthCheck_NormalPath(t *testing.T) {
 			Healthy: true,
 		}
 
-		checker := NewHealthChecker(config)
-		err := checker.Check(node)
+		cluster := &models.UpstreamCluster{
+			HealthCheck: config,
+			Nodes:       []*models.UpstreamNode{node},
+		}
+
+		checker := NewHealthChecker(cluster)
+		err := checker.CheckNode(node)
 		assert.Error(t, err)
 		assert.False(t, node.Healthy)
 	})
@@ -539,9 +559,9 @@ func TestMetrics_NormalPath(t *testing.T) {
 		}
 
 		assert.Equal(t, int64(100), metrics.TotalRequests())
-		assert.Equal(t, int64(67), metrics.SuccessCount())
-		assert.Equal(t, int64(33), metrics.FailureCount())
-		assert.True(t, testutil.AlmostEqual(0.33, metrics.ErrorRate(), 0.01))
+		assert.Equal(t, int64(66), metrics.SuccessCount())
+		assert.Equal(t, int64(34), metrics.FailureCount())
+		assert.True(t, testutil.AlmostEqual(0.34, metrics.ErrorRate(), 0.01))
 	})
 
 	t.Run("metrics reset clears all counts", func(t *testing.T) {

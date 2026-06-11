@@ -14,10 +14,11 @@ const (
 	ContextKeyUserID      ContextKey = "user_id"
 	ContextKeyAPIKey      ContextKey = "api_key"
 	ContextKeyClaims      ContextKey = "claims"
-	ContextKeyRateLimit   ContextKey = "rate_limit"
-	ContextKeyRequestID   ContextKey = "request_id"
-	ContextKeyTraceID     ContextKey = "trace_id"
-	ContextKeyGrayVersion ContextKey = "gray_version"
+	ContextKeyRateLimit     ContextKey = "rate_limit"
+	ContextKeyCircuitBroken ContextKey = "circuit_broken"
+	ContextKeyRequestID     ContextKey = "request_id"
+	ContextKeyTraceID       ContextKey = "trace_id"
+	ContextKeyGrayVersion   ContextKey = "gray_version"
 )
 
 type Route struct {
@@ -66,7 +67,33 @@ type RateLimitPolicy struct {
 	Rules      []RateLimitRule     `json:"rules"`
 	Algorithm  RateLimitAlgorithm  `json:"algorithm"`
 	KeyBuilder RateLimitKeyBuilder `json:"key_builder"`
+	Adaptive   *AdaptiveRateLimit  `json:"adaptive,omitempty"`
 	Enabled    bool                `json:"enabled"`
+}
+
+type AdaptiveRateLimit struct {
+	Enabled            bool          `json:"enabled"`
+	MinLimit           int64         `json:"min_limit"`
+	BaselineRTp99      time.Duration `json:"baseline_rt_p99"`
+	RTThreshold        float64       `json:"rt_threshold"`
+	ErrorRateThreshold float64       `json:"error_rate_threshold"`
+	RTScaleDownFactor  float64       `json:"rt_scale_down_factor"`
+	ErrorScaleDownFactor float64     `json:"error_scale_down_factor"`
+	ScaleUpFactor      float64       `json:"scale_up_factor"`
+	AdjustInterval     time.Duration `json:"adjust_interval"`
+	WindowSize         time.Duration `json:"window_size"`
+}
+
+type UpstreamMetrics struct {
+	RouteID     string
+	RTp99       time.Duration
+	RTp90       time.Duration
+	RTp50       time.Duration
+	ErrorRate   float64
+	TotalCount  int64
+	ErrorCount  int64
+	WindowStart time.Time
+	WindowEnd   time.Time
 }
 
 type RateLimitAlgorithm string
@@ -131,15 +158,24 @@ type AuthStrategy struct {
 type AuthType string
 
 const (
-	AuthTypeJWT    AuthType = "jwt"
-	AuthTypeAPIKey AuthType = "api_key"
-	AuthTypeOAuth2 AuthType = "oauth2"
+	AuthTypeJWT       AuthType = "jwt"
+	AuthTypeAPIKey    AuthType = "api_key"
+	AuthTypeOAuth2    AuthType = "oauth2"
+	AuthTypeCustom    AuthType = "custom"
 )
 
 type AuthConfig struct {
-	JWTConfig    *JWTConfig    `json:"jwt_config,omitempty"`
-	APIKeyConfig *APIKeyConfig `json:"api_key_config,omitempty"`
-	OAuth2Config *OAuth2Config `json:"oauth2_config,omitempty"`
+	JWTConfig        *JWTConfig              `json:"jwt_config,omitempty"`
+	APIKeyConfig     *APIKeyConfig           `json:"api_key_config,omitempty"`
+	OAuth2Config     *OAuth2Config           `json:"oauth2_config,omitempty"`
+	CustomProvider   *CustomProviderConfig   `json:"custom_provider,omitempty"`
+}
+
+type CustomProviderConfig struct {
+	Name       string                 `json:"name"`
+	Type       string                 `json:"type"`
+	Config     map[string]interface{} `json:"config"`
+	PluginPath string                 `json:"plugin_path,omitempty"`
 }
 
 type JWTConfig struct {

@@ -14,6 +14,7 @@ import (
 	"go.uber.org/zap"
 
 	"DF1-56/internal/config"
+	"DF1-56/internal/diagnostics"
 	"DF1-56/internal/middleware"
 	"DF1-56/internal/mirror"
 	"DF1-56/internal/models"
@@ -73,6 +74,7 @@ type Gateway struct {
 	grayManager    *mirror.GrayManager
 	mirrorManager  *mirror.MirrorManager
 	chainBuilder   *middleware.ChainBuilder
+	diagnosticManager *diagnostics.DiagnosticManager
 	httpServer     *http.Server
 	adminServer    *http.Server
 	middlewareChains map[string]*models.MiddlewareChain
@@ -96,6 +98,7 @@ func NewGateway(cfg *Config) (*Gateway, error) {
 		cfg:              cfg,
 		logger:           logger,
 		configStore:      config.NewConfigStore(),
+		diagnosticManager: diagnostics.NewDiagnosticManager(),
 		middlewareChains: make(map[string]*models.MiddlewareChain),
 		stopCh:           make(chan struct{}),
 	}
@@ -448,6 +451,8 @@ func (g *Gateway) Start() error {
 		return fmt.Errorf("failed to start admin server: %w", err)
 	}
 
+	g.diagnosticManager.Start()
+
 	g.logger.Info("gateway started",
 		zap.String("server_host", g.cfg.Server.Host),
 		zap.Int("server_port", g.cfg.Server.Port),
@@ -495,6 +500,8 @@ func (g *Gateway) startAdminServer() error {
 	mux.HandleFunc("/api/v1/routes/", g.handleRouteByID)
 	mux.HandleFunc("/api/v1/config", g.handleConfig)
 	mux.HandleFunc("/api/v1/config/reload", g.handleConfigReload)
+	mux.HandleFunc("/api/v1/diagnostics/traffic", g.handleDiagnosticsTraffic)
+	mux.HandleFunc("/api/v1/diagnostics/status", g.handleDiagnosticsStatus)
 
 	g.adminServer = &http.Server{
 		Addr:         addr,
@@ -547,6 +554,10 @@ func (g *Gateway) Stop() error {
 		g.chainBuilder.Stop()
 	}
 
+	if g.diagnosticManager != nil {
+		g.diagnosticManager.Stop()
+	}
+
 	if g.configWatcher != nil {
 		g.configWatcher.Stop()
 	}
@@ -593,15 +604,54 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.sendError(ctx, http.StatusInternalServerError, err.Error())
 	}
 
+	duration := time.Since(ctx.StartTime)
+	statusCode := http.StatusOK
+
+	if recorder, ok := ctx.Response.(interface{ StatusCode() int }); ok {
+		statusCode = recorder.StatusCode()
+	}
+
+	routeID := ""
+	if ctx.Route != nil {
+		routeID = ctx.Route.ID
+	}
+
 	if g.telemetry != nil {
-		duration := time.Since(ctx.StartTime)
-		statusCode := http.StatusOK
-		routeID := ""
-		if ctx.Route != nil {
-			routeID = ctx.Route.ID
-		}
 		g.telemetry.RecordRequest(ctx.Request.Method, ctx.Request.URL.Path, routeID, statusCode, duration)
 	}
+
+	rateLimited := false
+	if v, ok := ctx.Get(string(models.ContextKeyRateLimit)); ok {
+		if rl, ok := v.(bool); ok {
+			rateLimited = rl
+		}
+	}
+
+	circuitBroken := false
+	if v, ok := ctx.Get(string(models.ContextKeyCircuitBroken)); ok {
+		if cb, ok := v.(bool); ok {
+			circuitBroken = cb
+		}
+	}
+
+	errorType := ""
+	if v, ok := ctx.Get("error_type"); ok {
+		if et, ok := v.(string); ok {
+			errorType = et
+		}
+	}
+
+	g.diagnosticManager.Record(&diagnostics.RequestMetric{
+		Timestamp:          time.Now(),
+		Path:               ctx.Request.URL.Path,
+		RouteID:            routeID,
+		Method:             ctx.Request.Method,
+		StatusCode:         statusCode,
+		Latency:            duration,
+		RateLimitRejected:  rateLimited,
+		CircuitBreakerOpen: circuitBroken,
+		ErrorType:          errorType,
+	})
 
 	if g.postgresClient != nil {
 		go g.saveAuditLog(ctx)
@@ -919,6 +969,86 @@ func (g *Gateway) handleConfigReload(w http.ResponseWriter, r *http.Request) {
 
 func (g *Gateway) Logger() *zap.Logger {
 	return g.logger
+}
+
+func (g *Gateway) handleDiagnosticsTraffic(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	filter, err := g.parseDiagnosticFilter(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	summary, err := g.diagnosticManager.Query(filter)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(summary)
+}
+
+func (g *Gateway) handleDiagnosticsStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	status := map[string]interface{}{
+		"buffer_count":  g.diagnosticManager.GetBufferCount(),
+		"bucket_count":  g.diagnosticManager.GetBucketCount(),
+		"bucket_size":   10,
+		"retention":     3600,
+		"timestamp":     time.Now().UTC(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
+}
+
+func (g *Gateway) parseDiagnosticFilter(r *http.Request) (*diagnostics.DiagnosticFilter, error) {
+	filter := &diagnostics.DiagnosticFilter{}
+
+	if r.Method == http.MethodPost {
+		if err := json.NewDecoder(r.Body).Decode(filter); err != nil {
+			return nil, fmt.Errorf("invalid filter: %w", err)
+		}
+		return filter, nil
+	}
+
+	query := r.URL.Query()
+
+	if startTimeStr := query.Get("start_time"); startTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339, startTimeStr); err == nil {
+			filter.StartTime = t
+		}
+	}
+
+	if endTimeStr := query.Get("end_time"); endTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339, endTimeStr); err == nil {
+			filter.EndTime = t
+		}
+	}
+
+	filter.Path = query.Get("path")
+	filter.RouteID = query.Get("route_id")
+	filter.Method = query.Get("method")
+	filter.ErrorType = query.Get("error_type")
+	filter.StatusClass = query.Get("status_class")
+
+	if stepStr := query.Get("step"); stepStr != "" {
+		var step int
+		if _, err := fmt.Sscanf(stepStr, "%d", &step); err == nil {
+			filter.Step = step
+		}
+	}
+
+	return filter, nil
 }
 
 func GetOutboundIP() (string, error) {

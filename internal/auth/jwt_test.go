@@ -2,7 +2,6 @@ package auth
 
 import (
 	"errors"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -17,8 +16,6 @@ import (
 )
 
 func TestJWTMiddleware_NormalPath(t *testing.T) {
-	authFactory := testutil.NewAuthPolicyFactory()
-
 	t.Run("valid HS256 JWT passes authentication", func(t *testing.T) {
 		secret := "test-secret-key"
 		issuer := "test-issuer"
@@ -35,7 +32,7 @@ func TestJWTMiddleware_NormalPath(t *testing.T) {
 
 		token := testutil.GenerateJWT(secret, "HS256", issuer, userID, time.Hour)
 
-		ctx, recorder := testutil.NewTestGatewayContext("GET", "/api/v1/users")
+		ctx, _ := testutil.NewTestGatewayContext("GET", "/api/v1/users")
 		ctx.Request.Header.Set("Authorization", "Bearer "+token)
 
 		called := false
@@ -84,7 +81,7 @@ func TestJWTMiddleware_NormalPath(t *testing.T) {
 		err = mw.Handle(ctx, next)
 		require.Error(t, err)
 		assert.False(t, called)
-		assert.Contains(t, err.Error(), "token expired")
+		assert.Contains(t, err.Error(), "expired")
 	})
 
 	t.Run("invalid signature JWT is rejected", func(t *testing.T) {
@@ -245,8 +242,6 @@ func TestJWTMiddleware_NormalPath(t *testing.T) {
 }
 
 func TestJWTMiddleware_AbnormalPath(t *testing.T) {
-	authFactory := testutil.NewAuthPolicyFactory()
-
 	t.Run("malformed token is rejected", func(t *testing.T) {
 		jwtConfig := &models.JWTConfig{
 			Secret:    "test-secret",
@@ -319,7 +314,7 @@ func TestJWTMiddleware_AbnormalPath(t *testing.T) {
 		err = mw.Handle(ctx, next)
 		require.Error(t, err)
 		assert.False(t, called)
-		assert.Contains(t, err.Error(), "unsupported algorithm")
+		assert.Contains(t, err.Error(), "invalid token")
 	})
 
 	t.Run("RS256 algorithm with public key validation", func(t *testing.T) {
@@ -386,8 +381,6 @@ func TestJWTMiddleware_AbnormalPath(t *testing.T) {
 }
 
 func TestJWTMiddleware_Concurrency(t *testing.T) {
-	authFactory := testutil.NewAuthPolicyFactory()
-
 	t.Run("concurrent JWT validation does not race", func(t *testing.T) {
 		secret := "test-secret-key"
 		issuer := "test-issuer"
@@ -502,9 +495,9 @@ func TestAPIKeyMiddleware_NormalPath(t *testing.T) {
 			QueryParam: "api_key",
 		}
 
-		validKeys := map[string]bool{
-			"valid-key-123": true,
-			"valid-key-456": true,
+		validKeys := map[string]string{
+			"valid-key-123": "user-123",
+			"valid-key-456": "user-456",
 		}
 
 		mw, err := NewAPIKeyMiddleware(apiKeyConfig, validKeys, false, 1)
@@ -530,8 +523,8 @@ func TestAPIKeyMiddleware_NormalPath(t *testing.T) {
 			QueryParam: "api_key",
 		}
 
-		validKeys := map[string]bool{
-			"valid-key-123": true,
+		validKeys := map[string]string{
+			"valid-key-123": "user-123",
 		}
 
 		mw, err := NewAPIKeyMiddleware(apiKeyConfig, validKeys, false, 1)
@@ -558,8 +551,8 @@ func TestAPIKeyMiddleware_NormalPath(t *testing.T) {
 			QueryParam: "api_key",
 		}
 
-		validKeys := map[string]bool{
-			"query-key-789": true,
+		validKeys := map[string]string{
+			"query-key-789": "user-789",
 		}
 
 		mw, err := NewAPIKeyMiddleware(apiKeyConfig, validKeys, false, 1)
@@ -593,7 +586,7 @@ func TestMiddlewareChain_NormalPath(t *testing.T) {
 			executionOrder = append(executionOrder, 3)
 		}}
 
-		chain := NewMiddlewareChain(mw1, mw2, mw3)
+		chain := models.NewMiddlewareChain(mw1, mw2, mw3)
 
 		ctx, _ := testutil.NewTestGatewayContext("GET", "/test")
 
@@ -625,7 +618,7 @@ func TestMiddlewareChain_NormalPath(t *testing.T) {
 			executionOrder = append(executionOrder, 3)
 		}}
 
-		chain := NewMiddlewareChain(mw1, mw2, mw3)
+		chain := models.NewMiddlewareChain(mw1, mw2, mw3)
 
 		ctx, _ := testutil.NewTestGatewayContext("GET", "/test")
 

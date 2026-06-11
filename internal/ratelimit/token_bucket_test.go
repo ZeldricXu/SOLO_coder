@@ -3,6 +3,7 @@ package ratelimit
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -116,16 +117,26 @@ func (m *mockRedisScriptClient) Do(ctx context.Context, args ...interface{}) *re
 	return m.Client.Do(ctx, args...)
 }
 
+type mockFailingTokenBucketStore struct {
+	fail bool
+}
+
+func (m *mockFailingTokenBucketStore) TokenBucketTake(ctx context.Context, key string, capacity, refillRate int64, window time.Duration) (*TokenBucketResult, error) {
+	if m.fail {
+		return nil, errors.New("redis connection failed")
+	}
+	return &TokenBucketResult{
+		Allowed:    true,
+		Remaining:  capacity,
+		Limit:      capacity,
+		ResetAfter: window,
+	}, nil
+}
+
 func TestTokenBucket_RedisFailure(t *testing.T) {
 	t.Run("Redis failure degrades to local allow mode", func(t *testing.T) {
-		mockRedis := newMockRedisClient()
-		mockRedis.setFail(true)
-
-		realClient := &redis.Client{}
-		store := NewRedisStore(realClient)
-		tb := NewTokenBucket(store)
-
-		store.client = &mockRedisScriptClient{Client: realClient, mock: mockRedis}
+		mockStore := &mockFailingTokenBucketStore{fail: true}
+		tb := NewTokenBucket(mockStore)
 
 		capacity := int64(10)
 		refillRate := int64(1)
@@ -141,25 +152,20 @@ func TestTokenBucket_RedisFailure(t *testing.T) {
 	})
 
 	t.Run("Redis recovers and normal operation resumes", func(t *testing.T) {
-		mockRedis := newMockRedisClient()
-		realClient := &redis.Client{}
-		store := NewRedisStore(realClient)
-		tb := NewTokenBucket(store)
-
-		store.client = &mockRedisScriptClient{Client: realClient, mock: mockRedis}
+		mockStore := &mockFailingTokenBucketStore{fail: true}
+		tb := NewTokenBucket(mockStore)
 
 		capacity := int64(5)
 		refillRate := int64(1)
 		window := time.Second
 		key := "test-token-bucket-recovery"
 
-		mockRedis.setFail(true)
 		for i := 0; i < 50; i++ {
 			allowed, _, _, _ := tb.Take(context.Background(), key, capacity, refillRate, window)
 			assert.True(t, allowed, "should allow during Redis failure")
 		}
 
-		mockRedis.setFail(false)
+		mockStore.fail = false
 		memStore := NewMemoryStore()
 		tb.store = memStore
 		for i := 0; i < int(capacity); i++ {
@@ -276,32 +282,29 @@ func TestSlidingWindow_NormalPath(t *testing.T) {
 
 func TestConcurrency_NormalPath(t *testing.T) {
 	t.Run("concurrent acquire respects max concurrent limit", func(t *testing.T) {
-		mockRedis := newMockRedisClient()
-		realClient := &redis.Client{}
-		store := NewRedisStore(realClient)
-		conc := NewConcurrency(store)
-
-		store.client = &mockRedisScriptClient{Client: realClient, mock: mockRedis}
+		store := NewMemoryStore()
 
 		maxConcurrent := int64(5)
 		key := "test-concurrency-normal"
+		ttl := 5 * time.Minute
 
 		var releaseFuncs []func()
 		for i := 0; i < int(maxConcurrent); i++ {
-			allowed, release, err := conc.Acquire(context.Background(), key, maxConcurrent)
+			requestID := fmt.Sprintf("req-%d", i)
+			result, err := store.ConcurrencyAcquire(context.Background(), key, maxConcurrent, requestID, ttl)
 			require.NoError(t, err)
-			assert.True(t, allowed, "acquire %d should be allowed", i)
-			releaseFuncs = append(releaseFuncs, release)
+			assert.True(t, result.Allowed, "acquire %d should be allowed", i)
+			releaseFuncs = append(releaseFuncs, result.ReleaseFunc)
 		}
 
-		allowed, _, err := conc.Acquire(context.Background(), key, maxConcurrent)
+		result, err := store.ConcurrencyAcquire(context.Background(), key, maxConcurrent, "req-excess", ttl)
 		require.NoError(t, err)
-		assert.False(t, allowed, "should not allow more than max concurrent")
+		assert.False(t, result.Allowed, "should not allow more than max concurrent")
 
 		releaseFuncs[0]()
-		allowed, release, err := conc.Acquire(context.Background(), key, maxConcurrent)
+		result, err = store.ConcurrencyAcquire(context.Background(), key, maxConcurrent, "req-after-release", ttl)
 		require.NoError(t, err)
-		assert.True(t, allowed, "should allow after release")
-		release()
+		assert.True(t, result.Allowed, "should allow after release")
+		result.ReleaseFunc()
 	})
 }

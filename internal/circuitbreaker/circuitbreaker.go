@@ -108,6 +108,10 @@ func (cb *CircuitBreaker) OnSuccess() {
 	cb.metrics.RecordSuccess()
 
 	switch cb.state {
+	case models.StateClosed:
+		if cb.shouldOpen() {
+			cb.transitionToOpen()
+		}
 	case models.StateHalfOpen:
 		cb.halfOpenSuccess++
 		if cb.halfOpenSuccess >= cb.policy.SuccessThreshold {
@@ -116,6 +120,10 @@ func (cb *CircuitBreaker) OnSuccess() {
 	case models.StateOpen:
 		if time.Since(cb.openedAt) >= cb.policy.SleepWindow {
 			cb.transitionToHalfOpen()
+			cb.halfOpenSuccess++
+			if cb.halfOpenSuccess >= cb.policy.SuccessThreshold {
+				cb.transitionToClosed()
+			}
 		}
 	}
 }

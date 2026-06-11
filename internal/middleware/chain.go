@@ -18,6 +18,27 @@ import (
 	"DF1-56/internal/telemetry"
 )
 
+type statusRecorder struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func newStatusRecorder(w http.ResponseWriter) *statusRecorder {
+	return &statusRecorder{
+		ResponseWriter: w,
+		statusCode:     http.StatusOK,
+	}
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	r.statusCode = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) StatusCode() int {
+	return r.statusCode
+}
+
 const (
 	MiddlewareTracing      = "tracing"
 	MiddlewareRateLimit    = "ratelimit"
@@ -333,6 +354,8 @@ func (m *rateLimitMiddleware) Handle(ctx *models.GatewayContext, next models.Han
 		return next(ctx)
 	}
 
+	m.rateLimitManager.RegisterPolicy(policy)
+
 	result, err := m.rateLimitManager.Allow(ctx, policy)
 	if err != nil {
 		m.logger.Error("rate limit check failed",
@@ -501,7 +524,13 @@ func (m *forwardMiddleware) Handle(ctx *models.GatewayContext, next models.Handl
 		return fmt.Errorf("forwarder is not initialized")
 	}
 
+	recorder := newStatusRecorder(ctx.Response)
+	ctx.Response = recorder
+
+	startTime := time.Now()
+	isError := false
 	clusterID := ""
+	upstreamIdentifier := ""
 
 	if v, ok := ctx.Get("target_cluster"); ok {
 		if cid, ok := v.(string); ok {
@@ -511,16 +540,28 @@ func (m *forwardMiddleware) Handle(ctx *models.GatewayContext, next models.Handl
 
 	if clusterID == "" && ctx.Route != nil {
 		if ctx.Route.UpstreamCluster != "" {
+			upstreamIdentifier = ctx.Route.UpstreamCluster
 			cluster, exists := m.chainBuilder.configStore.GetUpstream(ctx.Route.UpstreamCluster)
 			if exists {
 				m.chainBuilder.getOrCreateHealthChecker(ctx.Route.UpstreamCluster)
 				if m.loadBalancer != nil {
-					if err := m.forwarder.ForwardWithLoadBalancer(ctx, cluster, m.loadBalancer); err != nil {
-						if m.telemetry != nil {
-							m.telemetry.RecordUpstreamDuration(ctx.Route.UpstreamCluster, time.Since(ctx.StartTime), 500, false)
+					err := m.forwarder.ForwardWithLoadBalancer(ctx, cluster, m.loadBalancer)
+					duration := time.Since(startTime)
+					isError = err != nil || recorder.StatusCode() >= 500
+
+					if m.telemetry != nil {
+						statusCode := 200
+						if recorder.StatusCode() > 0 {
+							statusCode = recorder.StatusCode()
 						}
+						m.telemetry.RecordUpstreamDuration(ctx.Route.UpstreamCluster, duration, statusCode, !isError)
+					}
+
+					if err != nil {
 						return fmt.Errorf("forward with load balancer failed: %w", err)
 					}
+
+					m.recordUpstreamMetrics(ctx, duration, isError, upstreamIdentifier)
 					return next(ctx)
 				}
 			}
@@ -528,15 +569,37 @@ func (m *forwardMiddleware) Handle(ctx *models.GatewayContext, next models.Handl
 	}
 
 	if ctx.Route != nil && ctx.Route.UpstreamURL != "" {
-		if err := m.forwarder.ForwardWithRetry(ctx, ctx.Route.UpstreamURL); err != nil {
-			if m.telemetry != nil {
-				m.telemetry.RecordUpstreamDuration(ctx.Route.UpstreamURL, time.Since(ctx.StartTime), 500, false)
+		upstreamIdentifier = ctx.Route.UpstreamURL
+		err := m.forwarder.ForwardWithRetry(ctx, ctx.Route.UpstreamURL)
+		duration := time.Since(startTime)
+		isError = err != nil || recorder.StatusCode() >= 500
+
+		if m.telemetry != nil {
+			statusCode := 200
+			if recorder.StatusCode() > 0 {
+				statusCode = recorder.StatusCode()
 			}
+			m.telemetry.RecordUpstreamDuration(ctx.Route.UpstreamURL, duration, statusCode, !isError)
+		}
+
+		if err != nil {
 			return fmt.Errorf("forward failed: %w", err)
 		}
+
+		m.recordUpstreamMetrics(ctx, duration, isError, upstreamIdentifier)
 	}
 
 	return next(ctx)
+}
+
+func (m *forwardMiddleware) recordUpstreamMetrics(ctx *models.GatewayContext, duration time.Duration, isError bool, upstreamIdentifier string) {
+	if ctx.Route == nil || ctx.Route.RateLimitPolicy == "" {
+		return
+	}
+
+	if m.chainBuilder != nil && m.chainBuilder.rateLimitManager != nil {
+		m.chainBuilder.rateLimitManager.RecordUpstreamLatency(ctx, ctx.Route.RateLimitPolicy, duration, isError)
+	}
 }
 
 type mirrorMiddleware struct {
