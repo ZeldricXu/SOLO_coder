@@ -1,7 +1,10 @@
 import type { Point, BoundingBox, Stroke, StrokeStyle, CRDTOperation, WASMBindings } from '../types';
+import { CanvasFacade, SyncFacade, ExportFacade } from './facades';
 
 class WasmModule implements WASMBindings {
   private initialized = false;
+  private wasmInstance: any = null;
+  public canvas: CanvasFacade | null = null;
 
   async init(): Promise<void> {
     if (this.initialized) return;
@@ -9,7 +12,7 @@ class WasmModule implements WASMBindings {
     try {
       const wasmPath = '/wasm/whiteboard_bg.wasm';
       const response = await fetch(wasmPath);
-      
+
       if (!response.ok) {
         console.warn('WASM module not found, using fallback implementation');
         this.initialized = true;
@@ -17,7 +20,8 @@ class WasmModule implements WASMBindings {
       }
 
       const bytes = await response.arrayBuffer();
-      await WebAssembly.instantiate(bytes, {});
+      const { instance } = await WebAssembly.instantiate(bytes, {});
+      this.wasmInstance = instance.exports;
       this.initialized = true;
     } catch (error) {
       console.warn('Failed to load WASM, using fallback:', error);
@@ -43,17 +47,17 @@ class WasmModule implements WASMBindings {
     if (points.length <= 2) return points;
 
     const result: Point[] = [points[0]];
-    
+
     for (let i = 1; i < points.length - 1; i++) {
       const prev = result[result.length - 1];
       const curr = points[i];
       const dist = Math.sqrt(Math.pow(curr.x - prev.x, 2) + Math.pow(curr.y - prev.y, 2));
-      
+
       if (dist >= tolerance) {
         result.push(curr);
       }
     }
-    
+
     result.push(points[points.length - 1]);
     return result;
   }
@@ -103,7 +107,41 @@ class WasmModule implements WASMBindings {
   mergeCRDTOperations(ops: CRDTOperation[]): CRDTOperation[] {
     return ops.sort((a, b) => a.timestamp - b.timestamp);
   }
+
+  createCanvasFacade(width: number, height: number): CanvasFacade | null {
+    if (!this.wasmInstance?.CanvasFacade) return null;
+    try {
+      const facade = new CanvasFacade();
+      (facade as any).facade = new this.wasmInstance.CanvasFacade(width, height);
+      return facade;
+    } catch {
+      return null;
+    }
+  }
+
+  createSyncFacade(documentId: string, userId: string, username: string): SyncFacade | null {
+    if (!this.wasmInstance?.SyncFacade) return null;
+    try {
+      const facade = new SyncFacade();
+      (facade as any).facade = new this.wasmInstance.SyncFacade(documentId, userId, username);
+      return facade;
+    } catch {
+      return null;
+    }
+  }
+
+  createExportFacade(): ExportFacade | null {
+    if (!this.wasmInstance?.ExportFacade) return null;
+    try {
+      const facade = new ExportFacade();
+      (facade as any).facade = new this.wasmInstance.ExportFacade();
+      return facade;
+    } catch {
+      return null;
+    }
+  }
 }
 
 export const wasm = new WasmModule();
 export default wasm;
+export { CanvasFacade, SyncFacade, ExportFacade };

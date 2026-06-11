@@ -14,8 +14,16 @@ import type {
   ArrowConfig,
   RichTextConfig,
 } from '../types';
+import type { CanvasFacade, SyncFacade, ExportFacade } from '../wasm/facades';
+
+interface FacadeState {
+  canvasFacade: CanvasFacade | null;
+  syncFacade: SyncFacade | null;
+  exportFacade: ExportFacade | null;
+}
 
 interface BoardActions {
+  initFacades: () => Promise<void>;
   setViewport: (viewport: Partial<Viewport>) => void;
   zoomIn: () => void;
   zoomOut: () => void;
@@ -105,7 +113,7 @@ const defaultLayer: Layer = {
   objectIds: [],
 };
 
-export const useBoardStore = create<BoardState & BoardActions>((set, get) => ({
+export const useBoardStore = create<BoardState & FacadeState & BoardActions>((set, get) => ({
   id: 'default-board',
   name: '未命名白板',
   viewport: defaultViewport,
@@ -127,6 +135,24 @@ export const useBoardStore = create<BoardState & BoardActions>((set, get) => ({
   showVersionTree: false,
   showComments: false,
   history: [],
+  canvasFacade: null,
+  syncFacade: null,
+  exportFacade: null,
+
+  initFacades: async () => {
+    const { wasm } = await import('../wasm');
+    await wasm.init();
+
+    const canvas = wasm.createCanvasFacade(window.innerWidth, window.innerHeight);
+    const sync = wasm.createSyncFacade('default-board', 'local-user', 'anonymous');
+    const exp = wasm.createExportFacade();
+
+    set({
+      canvasFacade: canvas,
+      syncFacade: sync,
+      exportFacade: exp,
+    });
+  },
 
   setViewport: (viewport) =>
     set((state) => ({
@@ -297,10 +323,26 @@ export const useBoardStore = create<BoardState & BoardActions>((set, get) => ({
     })),
 
   undo: () => {
+    const { syncFacade } = get();
+    if (syncFacade && syncFacade.canUndo()) {
+      const opJson = syncFacade.undo();
+      if (opJson) {
+        console.log('Undo via SyncFacade:', opJson);
+        return;
+      }
+    }
     console.log('Undo operation');
   },
 
   redo: () => {
+    const { syncFacade } = get();
+    if (syncFacade && syncFacade.canRedo()) {
+      const opJson = syncFacade.redo();
+      if (opJson) {
+        console.log('Redo via SyncFacade:', opJson);
+        return;
+      }
+    }
     console.log('Redo operation');
   },
 }));
