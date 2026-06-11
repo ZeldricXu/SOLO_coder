@@ -12,6 +12,7 @@ import java.util.List;
 public class TimeUtils {
 
     private static final List<DateTimeFormatter> FORMATTERS = new ArrayList<>();
+    private static final ZoneId UTC_ZONE = ZoneId.of("UTC");
     private static final ZoneId DEFAULT_ZONE = ZoneId.systemDefault();
 
     static {
@@ -94,7 +95,7 @@ public class TimeUtils {
     }
 
     public static Instant truncateToGranularity(Instant instant, Granularity granularity) {
-        ZonedDateTime zdt = ZonedDateTime.ofInstant(instant, DEFAULT_ZONE);
+        ZonedDateTime zdt = ZonedDateTime.ofInstant(instant, UTC_ZONE);
         switch (granularity) {
             case SECOND:
                 return zdt.withNano(0).toInstant();
