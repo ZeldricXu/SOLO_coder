@@ -154,9 +154,11 @@ func (o *Octree) insert(node *OctreeNode, p parser.Point, depth int) {
 
 	node.PointCount++
 	node.Points = append(node.Points, p)
-	o.TotalPoints++
-
 	o.markDirty(node)
+
+	if depth == 0 {
+		o.TotalPoints++
+	}
 
 	if depth >= o.MaxDepth || node.PointCount <= o.MaxPointsPerNode {
 		return

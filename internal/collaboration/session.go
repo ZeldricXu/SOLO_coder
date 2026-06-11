@@ -484,7 +484,7 @@ func (s *CollaborationService) broadcast(room *Room, msg Message, excludeUserID 
 				annotationAABB := s.extractAnnotationAABB(msg.Payload)
 				if annotationAABB != nil {
 					if !user.Frustum.Frustum.IntersectsAABB(*annotationAABB) {
-						s.cacheAnnotationForUser(user, msg.ID, data)
+						s.cacheAnnotationForUser(user, msg.ID, msg.Payload)
 						continue
 					}
 				}

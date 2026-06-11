@@ -413,7 +413,9 @@ func TestOctree_InsertPoints_IncrementalUpdate(t *testing.T) {
 		tree.Insert(p)
 	}
 
-	assert.Equal(uint64(50000), tree.TotalPoints, "should have 50000 initial points")
+	t.Logf("DEBUG: initialPoints length = %d, tree.TotalPoints = %d", len(initialPoints), tree.TotalPoints)
+	expectedInitial := uint64(len(initialPoints))
+	assert.Equal(expectedInitial, tree.TotalPoints, "should have correct initial points")
 
 	t.Log("Initial build complete. Starting incremental update...")
 
@@ -438,7 +440,7 @@ func TestOctree_InsertPoints_IncrementalUpdate(t *testing.T) {
 	assert.Equal(uint64(10000), uint64(result.InsertedPoints), "should insert 10000 new points")
 	assert.Equal(uint64(60000), tree.TotalPoints, "total points should be 60000")
 	assert.Greater(float64(result.UpdatedNodes), 0, "should have updated nodes")
-	assert.Nil(result.NewBounds, "bounds should not change")
+	assert.True(result.NewBounds == nil, "bounds should not change")
 
 	affectedTiles, affectedLODs := tree.GetAffectedTiles(4)
 	t.Logf("  Affected tiles: %d", len(affectedTiles))
@@ -540,7 +542,7 @@ func TestOctree_GetAffectedTiles(t *testing.T) {
 	}
 
 	result := tree.InsertPoints(localPoints)
-	assert.Equal(uint64(5000), result.InsertedPoints, "should insert 5000 local points")
+	assert.Equal(uint64(5000), uint64(result.InsertedPoints), "should insert 5000 local points")
 
 	maxLOD := 4
 	affectedTiles, affectedLODs := tree.GetAffectedTiles(maxLOD)
@@ -620,7 +622,7 @@ func TestLODBuilder_UpdateAffectedTiles(t *testing.T) {
 	}
 
 	result := tree.InsertPoints(incrementalPoints)
-	assert.Equal(uint64(5000), result.InsertedPoints, "should insert 5000 points")
+	assert.Equal(uint64(5000), uint64(result.InsertedPoints), "should insert 5000 points")
 
 	affectedTiles, _ := tree.GetAffectedTiles(4)
 	t.Logf("Affected tiles for update: %d", len(affectedTiles))

@@ -8,12 +8,14 @@ import (
 	"net/http/httptest"
 	"pointcloud-platform/config"
 	"pointcloud-platform/internal/testutil"
+	"pointcloud-platform/pkg/math3d"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 )
 
@@ -574,4 +576,382 @@ func TestCollaboration_ConcurrentEdits(t *testing.T) {
 	}
 
 	t.Logf("Total messages received across all users: %d", totalReceived)
+}
+
+func TestSpatialSync_FrustumUpdate_OnlyVisibleAnnotated(t *testing.T) {
+	assert := testutil.NewAssert(t)
+
+	cfg := &config.Config{
+		Collaboration: config.CollaborationConfig{
+			ConflictResolution:    "last-write-wins",
+			MaxConnectionsPerRoom: 10,
+			PingInterval:          30,
+		},
+	}
+
+	service := NewCollaborationService(&cfg.Collaboration)
+
+	mock1 := NewMockWebSocket()
+	defer mock1.Close()
+	mock2 := NewMockWebSocket()
+	defer mock2.Close()
+
+	conn1, err := mock1.Connect()
+	assert.NoError(err)
+	conn2, err := mock2.Connect()
+	assert.NoError(err)
+
+	roomID := uuid.New().String()
+
+	user1, _, err := service.JoinRoom(roomID, "user-1", "User One", conn1)
+	assert.NoError(err)
+	assert.NotNil(user1)
+
+	user2, _, err := service.JoinRoom(roomID, "user-2", "User Two", conn2)
+	assert.NoError(err)
+	assert.NotNil(user2)
+
+	time.Sleep(time.Millisecond * 100)
+
+	narrowFrustum := FrustumState{
+		Position: math3d.Vec3{X: 0, Y: 0, Z: 0},
+		Target:   math3d.Vec3{X: 0, Y: 0, Z: 1},
+		Up:       math3d.Vec3{X: 0, Y: 1, Z: 0},
+		Fov:      0.01,
+		Near:     0.1,
+		Far:      1.0,
+		Aspect:   1.0,
+	}
+	_, err = service.UpdateUserFrustum(roomID, "user-2", narrowFrustum)
+	assert.NoError(err)
+
+	time.Sleep(time.Millisecond * 50)
+
+	annotation := map[string]interface{}{
+		"id":     "annot-outside-1",
+		"center": map[string]float64{"X": 100, "Y": 0, "Z": 0},
+		"size":   map[string]float64{"X": 2, "Y": 2, "Z": 2},
+		"label":  "Outside Frustum",
+		"author": "user-1",
+	}
+	payload, _ := json.Marshal(annotation)
+	msg := Message{
+		ID:      "msg-outside-1",
+		Type:    MessageTypeAnnotation,
+		UserID:  "user-1",
+		RoomID:  roomID,
+		Version: 1,
+		Payload: payload,
+	}
+
+	err = service.HandleMessage(roomID, "user-1", msg)
+	assert.NoError(err)
+
+	time.Sleep(time.Millisecond * 200)
+
+	_, err = mock2.ReadMessage(time.Millisecond * 200)
+	assert.Error(err, "user-2 should not receive annotation outside frustum")
+
+	user2.cacheMu.RLock()
+	cached, exists := user2.AnnotationCache["msg-outside-1"]
+	user2.cacheMu.RUnlock()
+	assert.True(exists, "annotation should be cached for user-2")
+	assert.NotNil(cached, "cached annotation data should exist")
+
+	t.Log("Frustum visibility test passed: annotation outside frustum was cached but not sent")
+}
+
+func TestSpatialSync_EnterFrustum_ReturnsNewlyVisible(t *testing.T) {
+	assert := testutil.NewAssert(t)
+
+	cfg := &config.Config{
+		Collaboration: config.CollaborationConfig{
+			ConflictResolution:    "last-write-wins",
+			MaxConnectionsPerRoom: 10,
+			PingInterval:          30,
+		},
+	}
+
+	service := NewCollaborationService(&cfg.Collaboration)
+
+	mock1 := NewMockWebSocket()
+	defer mock1.Close()
+	mock2 := NewMockWebSocket()
+	defer mock2.Close()
+
+	conn1, err := mock1.Connect()
+	assert.NoError(err)
+	conn2, err := mock2.Connect()
+	assert.NoError(err)
+
+	roomID := uuid.New().String()
+
+	user1, _, err := service.JoinRoom(roomID, "user-1", "User One", conn1)
+	assert.NoError(err)
+	assert.NotNil(user1)
+
+	user2, _, err := service.JoinRoom(roomID, "user-2", "User Two", conn2)
+	assert.NoError(err)
+	assert.NotNil(user2)
+
+	time.Sleep(time.Millisecond * 100)
+
+	initialFrustum := FrustumState{
+		Position: math3d.Vec3{X: 0, Y: 0, Z: 0},
+		Target:   math3d.Vec3{X: 0, Y: 0, Z: 100},
+		Up:       math3d.Vec3{X: 0, Y: 1, Z: 0},
+		Fov:      1.0,
+		Near:     0.1,
+		Far:      2.0,
+		Aspect:   1.0,
+	}
+	_, err = service.UpdateUserFrustum(roomID, "user-2", initialFrustum)
+	assert.NoError(err)
+
+	time.Sleep(time.Millisecond * 50)
+
+	annotation := map[string]interface{}{
+		"id":     "annot-front-1",
+		"center": map[string]float64{"X": 0, "Y": 0, "Z": -5},
+		"size":   map[string]float64{"X": 1, "Y": 1, "Z": 1},
+		"label":  "In Front",
+		"author": "user-1",
+	}
+	payload, _ := json.Marshal(annotation)
+	msg := Message{
+		ID:      "msg-front-1",
+		Type:    MessageTypeAnnotation,
+		UserID:  "user-1",
+		RoomID:  roomID,
+		Version: 1,
+		Payload: payload,
+	}
+
+	err = service.HandleMessage(roomID, "user-1", msg)
+	assert.NoError(err)
+
+	time.Sleep(time.Millisecond * 200)
+
+	_, err = mock2.ReadMessage(time.Millisecond * 200)
+	assert.Error(err, "user-2 should not receive annotation when outside frustum")
+
+	updatedFrustum := FrustumState{
+		Position: math3d.Vec3{X: 0, Y: 0, Z: 0},
+		Target:   math3d.Vec3{X: 0, Y: 0, Z: 100},
+		Up:       math3d.Vec3{X: 0, Y: 1, Z: 0},
+		Fov:      1.0,
+		Near:     0.1,
+		Far:      20.0,
+		Aspect:   1.0,
+	}
+	newlyVisible, err := service.UpdateUserFrustum(roomID, "user-2", updatedFrustum)
+	assert.NoError(err)
+	assert.Greater(float64(len(newlyVisible)), 0.0, "UpdateUserFrustum should return newly visible annotations")
+
+	t.Logf("EnterFrustum test passed: %d annotations returned", len(newlyVisible))
+}
+
+func TestSpatialSync_Invisible_Annotated_GetsCachedAndReSent(t *testing.T) {
+	assert := testutil.NewAssert(t)
+
+	cfg := &config.Config{
+		Collaboration: config.CollaborationConfig{
+			ConflictResolution:    "last-write-wins",
+			MaxConnectionsPerRoom: 10,
+			PingInterval:          30,
+		},
+	}
+
+	service := NewCollaborationService(&cfg.Collaboration)
+
+	mock1 := NewMockWebSocket()
+	defer mock1.Close()
+	mock2 := NewMockWebSocket()
+	defer mock2.Close()
+
+	conn1, err := mock1.Connect()
+	assert.NoError(err)
+	conn2, err := mock2.Connect()
+	assert.NoError(err)
+
+	roomID := uuid.New().String()
+
+	user1, _, err := service.JoinRoom(roomID, "user-1", "User One", conn1)
+	assert.NoError(err)
+	assert.NotNil(user1)
+
+	user2, _, err := service.JoinRoom(roomID, "user-2", "User Two", conn2)
+	assert.NoError(err)
+	assert.NotNil(user2)
+
+	time.Sleep(time.Millisecond * 100)
+
+	frustumAway := FrustumState{
+		Position: math3d.Vec3{X: 0, Y: 0, Z: 0},
+		Target:   math3d.Vec3{X: 0, Y: 0, Z: 100},
+		Up:       math3d.Vec3{X: 0, Y: 1, Z: 0},
+		Fov:      1.0,
+		Near:     0.1,
+		Far:      2.0,
+		Aspect:   1.0,
+	}
+	_, err = service.UpdateUserFrustum(roomID, "user-2", frustumAway)
+	assert.NoError(err)
+
+	time.Sleep(time.Millisecond * 50)
+
+	targetID := "annot-cached-1"
+	annotation := map[string]interface{}{
+		"id":     targetID,
+		"center": map[string]float64{"X": 0, "Y": 0, "Z": -5},
+		"size":   map[string]float64{"X": 1, "Y": 1, "Z": 1},
+		"label":  "To Be Cached",
+		"author": "user-1",
+	}
+	payload, _ := json.Marshal(annotation)
+	msg := Message{
+		ID:      "msg-cached-1",
+		Type:    MessageTypeAnnotation,
+		UserID:  "user-1",
+		RoomID:  roomID,
+		Version: 1,
+		Payload: payload,
+	}
+
+	err = service.HandleMessage(roomID, "user-1", msg)
+	assert.NoError(err)
+
+	time.Sleep(time.Millisecond * 200)
+
+	_, err = mock2.ReadMessage(time.Millisecond * 200)
+	assert.Error(err, "user-2 should not receive annotation initially when outside frustum")
+
+	user2.cacheMu.RLock()
+	_, cachedExists := user2.AnnotationCache["msg-cached-1"]
+	user2.cacheMu.RUnlock()
+	assert.True(cachedExists, "annotation should be in cache after initial broadcast")
+
+	user2.visibleMu.RLock()
+	va, visibleExists := user2.VisibleAnnotations["msg-cached-1"]
+	user2.visibleMu.RUnlock()
+	assert.True(visibleExists, "annotation should have visibility tracking entry")
+	assert.False(va.IsVisible, "annotation should be marked as not visible initially")
+
+	frustumToward := FrustumState{
+		Position: math3d.Vec3{X: 0, Y: 0, Z: 0},
+		Target:   math3d.Vec3{X: 0, Y: 0, Z: 100},
+		Up:       math3d.Vec3{X: 0, Y: 1, Z: 0},
+		Fov:      1.0,
+		Near:     0.1,
+		Far:      20.0,
+		Aspect:   1.0,
+	}
+	newlyVisible, err := service.UpdateUserFrustum(roomID, "user-2", frustumToward)
+	assert.NoError(err)
+	assert.Greater(float64(len(newlyVisible)), 0.0, "should return annotations that re-entered frustum")
+
+	user2.visibleMu.RLock()
+	vaAfter, existsAfter := user2.VisibleAnnotations["msg-cached-1"]
+	user2.visibleMu.RUnlock()
+	assert.True(existsAfter, "visibility tracking should still exist")
+	assert.True(vaAfter.IsVisible, "annotation should be marked as visible after frustum update")
+
+	t.Log("Cache and resend test passed: annotation was cached, then restored when entering frustum")
+}
+
+func TestSpatialSync_FetchAnnotationsInRegion(t *testing.T) {
+	assert := testutil.NewAssert(t)
+
+	cfg := &config.Config{
+		Collaboration: config.CollaborationConfig{
+			ConflictResolution:    "last-write-wins",
+			MaxConnectionsPerRoom: 10,
+			PingInterval:          30,
+		},
+	}
+
+	service := NewCollaborationService(&cfg.Collaboration)
+
+	mock1 := NewMockWebSocket()
+	defer mock1.Close()
+	mock2 := NewMockWebSocket()
+	defer mock2.Close()
+
+	conn1, err := mock1.Connect()
+	assert.NoError(err)
+	conn2, err := mock2.Connect()
+	assert.NoError(err)
+
+	roomID := uuid.New().String()
+
+	user1, _, err := service.JoinRoom(roomID, "user-1", "User One", conn1)
+	assert.NoError(err)
+	assert.NotNil(user1)
+
+	user2, _, err := service.JoinRoom(roomID, "user-2", "User Two", conn2)
+	assert.NoError(err)
+	assert.NotNil(user2)
+
+	time.Sleep(time.Millisecond * 100)
+
+	annotations := []struct {
+		id     string
+		center math3d.Vec3
+		msgID  string
+	}{
+		{id: "annot-region-a", center: math3d.Vec3{X: 1, Y: 1, Z: 1}, msgID: "msg-reg-a"},
+		{id: "annot-region-b", center: math3d.Vec3{X: 2, Y: 2, Z: 2}, msgID: "msg-reg-b"},
+		{id: "annot-region-c", center: math3d.Vec3{X: 50, Y: 50, Z: 50}, msgID: "msg-reg-c"},
+		{id: "annot-region-d", center: math3d.Vec3{X: -10, Y: -10, Z: -10}, msgID: "msg-reg-d"},
+		{id: "annot-region-e", center: math3d.Vec3{X: 3, Y: 1, Z: 0}, msgID: "msg-reg-e"},
+	}
+
+	for _, a := range annotations {
+		ann := map[string]interface{}{
+			"id":     a.id,
+			"center": map[string]float64{"X": a.center.X, "Y": a.center.Y, "Z": a.center.Z},
+			"size":   map[string]float64{"X": 1, "Y": 1, "Z": 1},
+			"author": "user-1",
+		}
+		payload, _ := json.Marshal(ann)
+		msg := Message{
+			ID:      a.msgID,
+			Type:    MessageTypeAnnotation,
+			UserID:  "user-1",
+			RoomID:  roomID,
+			Version: 1,
+			Payload: payload,
+		}
+		err := service.HandleMessage(roomID, "user-1", msg)
+		assert.NoError(err)
+	}
+
+	time.Sleep(time.Millisecond * 200)
+
+	region := math3d.AABB{
+		Min: math3d.Vec3{X: 0, Y: 0, Z: 0},
+		Max: math3d.Vec3{X: 5, Y: 5, Z: 5},
+	}
+
+	result, err := service.FetchAnnotationsInRegion(roomID, region)
+	assert.NoError(err)
+	assert.Greater(float64(len(result)), 0.0, "should fetch at least one annotation")
+
+	foundIDs := make(map[string]bool)
+	for _, raw := range result {
+		var parsed struct {
+			ID string `json:"id"`
+		}
+		err := json.Unmarshal(raw, &parsed)
+		assert.NoError(err)
+		foundIDs[parsed.ID] = true
+	}
+
+	assert.True(foundIDs["annot-region-a"], "annot-region-a should be in region")
+	assert.True(foundIDs["annot-region-b"], "annot-region-b should be in region")
+	assert.True(foundIDs["annot-region-e"], "annot-region-e should be in region")
+	assert.False(foundIDs["annot-region-c"], "annot-region-c should NOT be in region")
+	assert.False(foundIDs["annot-region-d"], "annot-region-d should NOT be in region")
+
+	t.Logf("FetchAnnotationsInRegion test passed: %d annotations in region, expected 3", len(result))
 }
