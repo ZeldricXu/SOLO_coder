@@ -1,0 +1,149 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: exam-postgres
+    environment:
+      POSTGRES_DB: exam_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./src/main/resources/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - exam-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: exam-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - exam-net
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: exam-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "check_port_connectivity"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - exam-net
+
+  minio:
+    image: minio/minio:latest
+    container_name: exam-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - exam-net
+
+  config-server:
+    image: eclipse-temurin:21-jre-alpine
+    container_name: exam-config-server
+    working_dir: /app
+    volumes:
+      - ./config-repo:/config-repo
+    environment:
+      SPRING_PROFILES_ACTIVE: native
+      SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS: file:/config-repo
+      SERVER_PORT: 8888
+    command: >
+      sh -c "wget -q https://repo1.maven.org/maven2/org/springframework/cloud/spring-cloud-config-server/4.1.1/spring-cloud-config-server-4.1.1.jar -O config-server.jar &&
+             java -jar config-server.jar"
+    ports:
+      - "8888:8888"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - exam-net
+
+  exam-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: exam-app
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_CLOUD_CONFIG_URI: http://config-server:8888
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: exam_db
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+      MQ_HOST: rabbitmq
+      MQ_PORT: 5672
+      MQ_USERNAME: guest
+      MQ_PASSWORD: guest
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      JWT_SECRET: dev-jwt-secret-key-change-me
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      config-server:
+        condition: service_started
+    networks:
+      - exam-net
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  miniodata:
+
+networks:
+  exam-net:
+    driver: bridge

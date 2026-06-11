@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sandbox-nodegroup-config
+  namespace: exam-platform
+  labels:
+    app: online-exam
+data:
+  nodegroup-name: "exam-sandbox-workers"
+  instance-type: "c6i.8xlarge"
+  min-size: "2"
+  max-size: "20"
+  desired-size: "2"
+  node-labels: |
+    exam-node-type=sandbox-highcpu
+    dedicated=sandbox
+  taints: |
+    sandbox-only=true:NoSchedule
+    sandbox-only=true:NoExecute
+  cpu-arch: "x86_64"
+  vcpu-per-node: "32"
+  memory-per-node: "64Gi"

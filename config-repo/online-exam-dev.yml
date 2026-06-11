@@ -1,0 +1,68 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+spring:
+  application:
+    name: online-exam
+
+  cloud:
+    config:
+      uri: http://config-server:8888
+      name: online-exam
+      profile: dev
+      label: main
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:exam_db}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 30
+      minimum-idle: 5
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 5000
+      lettuce:
+        pool:
+          max-active: 20
+          max-idle: 8
+          min-idle: 0
+
+  rabbitmq:
+    host: ${MQ_HOST:localhost}
+    port: ${MQ_PORT:5672}
+    username: ${MQ_USERNAME:guest}
+    password: ${MQ_PASSWORD:guest}
+    virtual-host: /
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  accessKey: ${MINIO_ACCESS_KEY:minioadmin}
+  secretKey: ${MINIO_SECRET_KEY:minioadmin}
+  bucketName: exam-files
+
+jwt:
+  secret: ${JWT_SECRET:default-jwt-secret-key-please-change-in-production}
+  expiration: 7200000
+  header: Authorization
+  prefix: Bearer
+
+exam:
+  grading:
+    default-arbitration-strategy: AVERAGE
+  heartbeat-timeout: 60000

@@ -1,0 +1,125 @@
+stages:
+  - build
+  - test
+  - package
+
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository -Dorg.slf4j.simpleLogger.showDateTime=true"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version -DinstallAtEnd=true -DdeployAtEnd=true"
+  DOCKER_HOST: tcp://docker:2376
+  DOCKER_TLS_CERTDIR: "/certs"
+  DOCKER_TLS_VERIFY: 1
+  DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  HARBOR_REGISTRY: "harbor.company.com/exam-platform"
+  HARBOR_IMAGE_APP: "exam-app"
+  HARBOR_IMAGE_SANDBOX: "exam-sandbox"
+  TESTCONTAINERS_RYUK_PRIVILEGED: "true"
+  TESTCONTAINERS_RYUK_DISABLED: "false"
+
+cache:
+  key: "$CI_COMMIT_REF_SLUG"
+  paths:
+    - .m2/repository
+    - target/
+
+build:
+  stage: build
+  image: maven:3.9-eclipse-temurin-21
+  tags:
+    - docker-build
+  script:
+    - echo "=== Start Build Stage ==="
+    - mvn $MAVEN_CLI_OPTS -T 1C clean compile -DskipTests
+    - echo "=== Static Analysis - Checkstyle ==="
+    - mvn $MAVEN_CLI_OPTS checkstyle:check -Dcheckstyle.consoleOutput=true || true
+    - echo "=== Static Analysis - SpotBugs ==="
+    - mvn $MAVEN_CLI_OPTS spotbugs:check || true
+    - echo "=== Build Complete ==="
+  artifacts:
+    paths:
+      - target/*.jar
+      - target/classes/
+      - target/generated-sources/
+    expire_in: 1 week
+  only:
+    - main
+    - develop
+    - merge_requests
+    - tags
+
+test:
+  stage: test
+  image: maven:3.9-eclipse-temurin-21
+  services:
+    - name: docker:24-dind
+      alias: docker
+      command: ["--tls=false"]
+  tags:
+    - docker-test
+  variables:
+    DOCKER_HOST: "tcp://docker:2375"
+    DOCKER_TLS_CERTDIR: ""
+  before_script:
+    - docker info
+    - sysctl -w vm.max_map_count=262144 || true
+  script:
+    - echo "=== Start Test Stage ==="
+    - echo "=== Unit Tests ==="
+    - mvn $MAVEN_CLI_OPTS test -Dtest='*ServiceTest,*SamplerTest,*ConstraintSolverTest,*ArbitrationStrategyTest'
+    - echo "=== Integration Tests (Testcontainers) ==="
+    - mvn $MAVEN_CLI_OPTS verify -Dtest='*IntegrationTest' -DfailIfNoTests=false
+  artifacts:
+    when: always
+    paths:
+      - target/surefire-reports/
+      - target/failsafe-reports/
+      - target/site/jacoco/
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+        - target/failsafe-reports/TEST-*.xml
+    expire_in: 1 month
+  only:
+    - main
+    - develop
+    - merge_requests
+    - tags
+  allow_failure: false
+
+package:
+  stage: package
+  image:
+    name: gcr.io/kaniko-project/executor:debug
+    entrypoint: [""]
+  tags:
+    - docker-package
+  before_script:
+    - mkdir -p /kaniko/.docker
+    - echo "{\"auths\":{\"${HARBOR_REGISTRY}\":{\"auth\":\"$(printf "%s:%s" "${HARBOR_USER}" "${HARBOR_PASSWORD}" | base64 | tr -d '\n')\"}}}" > /kaniko/.docker/config.json
+  script:
+    - echo "=== Package Main Application Image ==="
+    - export IMAGE_TAG=${CI_COMMIT_TAG:-$CI_COMMIT_SHORT_SHA}
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR
+      --dockerfile $CI_PROJECT_DIR/Dockerfile
+      --destination ${HARBOR_REGISTRY}/${HARBOR_IMAGE_APP}:${IMAGE_TAG}
+      --destination ${HARBOR_REGISTRY}/${HARBOR_IMAGE_APP}:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      --cache=true
+      --cache-ttl=168h
+    - echo "=== Package Sandbox Image ==="
+    - /kaniko/executor
+      --context $CI_PROJECT_DIR/sandbox
+      --dockerfile $CI_PROJECT_DIR/sandbox/Dockerfile
+      --destination ${HARBOR_REGISTRY}/${HARBOR_IMAGE_SANDBOX}:${IMAGE_TAG}
+      --destination ${HARBOR_REGISTRY}/${HARBOR_IMAGE_SANDBOX}:latest
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      --cache=true
+      --cache-ttl=168h
+    - echo "=== Package Complete ==="
+  only:
+    - main
+    - tags
+  dependencies:
+    - build
+    - test

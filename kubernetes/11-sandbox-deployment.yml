@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: exam-sandbox
+  namespace: exam-platform
+  labels:
+    app: online-exam
+    component: sandbox
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app: online-exam
+      component: sandbox
+  template:
+    metadata:
+      labels:
+        app: online-exam
+        component: sandbox
+    spec:
+      nodeSelector:
+        exam-node-type: sandbox-highcpu
+      tolerations:
+        - key: "sandbox-only"
+          operator: "Equal"
+          value: "true"
+          effect: "NoSchedule"
+        - key: "sandbox-only"
+          operator: "Equal"
+          value: "true"
+          effect: "NoExecute"
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        fsGroup: 1000
+      containers:
+        - name: sandbox
+          image: harbor.company.com/exam-platform/exam-sandbox:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8081
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "4"
+              memory: "8Gi"
+            limits:
+              cpu: "16"
+              memory: "16Gi"
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: SANDBOX_TIMEOUT_MS
+              value: "30000"
+            - name: SANDBOX_MEMORY_LIMIT_MB
+              value: "512"
+            - name: JAVA_OPTS
+              value: "-XX:+UseG1GC -XX:MaxRAMPercentage=60.0 -XX:+UseContainerSupport"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+          volumeMounts:
+            - name: docker-sock
+              mountPath: /var/run/docker.sock
+              readOnly: true
+            - name: sandbox-tmp
+              mountPath: /sandbox/tmp
+      volumes:
+        - name: docker-sock
+          hostPath:
+            path: /var/run/docker.sock
+            type: Socket
+        - name: sandbox-tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+      terminationGracePeriodSeconds: 120

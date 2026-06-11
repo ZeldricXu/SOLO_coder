@@ -1,0 +1,45 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: online-exam-ingress
+  namespace: exam-platform
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "30"
+    nginx.ingress.kubernetes.io/websocket-services: "online-exam"
+    nginx.org/websocket-services: "online-exam"
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  tls:
+    - hosts:
+        - exam.company.com
+      secretName: exam-tls
+  rules:
+    - host: exam.company.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: online-exam
+                port:
+                  number: 80
+          - path: /api/ws
+            pathType: Prefix
+            backend:
+              service:
+                name: online-exam
+                port:
+                  number: 80
+          - path: /actuator
+            pathType: Prefix
+            backend:
+              service:
+                name: online-exam
+                port:
+                  number: 80

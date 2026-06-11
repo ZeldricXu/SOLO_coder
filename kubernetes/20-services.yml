@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: online-exam
+  namespace: exam-platform
+  labels:
+    app: online-exam
+    component: app
+spec:
+  type: ClusterIP
+  selector:
+    app: online-exam
+    component: app
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: exam-sandbox
+  namespace: exam-platform
+  labels:
+    app: online-exam
+    component: sandbox
+spec:
+  type: ClusterIP
+  selector:
+    app: online-exam
+    component: sandbox
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8081
+      protocol: TCP
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: exam-app-sa
+  namespace: exam-platform
+  labels:
+    app: online-exam

@@ -1,0 +1,23 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: online-exam-pdb
+  namespace: exam-platform
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: online-exam
+      component: app
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: exam-sandbox-pdb
+  namespace: exam-platform
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: online-exam
+      component: sandbox
