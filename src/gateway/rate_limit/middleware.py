@@ -6,6 +6,7 @@ from starlette.responses import JSONResponse, Response
 from gateway.rate_limit.limiter import get_rate_limiter
 from gateway.rate_limit.resolvers import get_rate_limit_key_resolver
 from gateway.config import get_settings
+from gateway.observability import record_rate_limit_rejection, record_rate_limit_remaining
 from gateway.logger import get_logger
 
 logger = get_logger("rate-limit-middleware")
@@ -72,6 +73,10 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
             request.state.rate_limited = True
 
+            rl_key = getattr(result, "rate_limit_key", None) or "unknown"
+            route_name = route.name if hasattr(route, "name") else None
+            record_rate_limit_rejection(route=route_name, key=rl_key)
+
             return JSONResponse(
                 status_code=429,
                 content={
@@ -90,6 +95,11 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             )
 
         request.state.rate_limit_result = result
+
+        rl_key = getattr(result, "rate_limit_key", None)
+        route_name = route.name if hasattr(route, "name") else None
+        if rl_key:
+            record_rate_limit_remaining(route=route_name, key=rl_key, remaining=result.remaining)
 
         response = await call_next(request)
 

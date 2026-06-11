@@ -23,6 +23,12 @@ from gateway.analytics import get_analytics_collector, AnalyticsMiddleware
 from gateway.developer_portal import portal_router
 from gateway.security import SecurityFilterMiddleware, get_security_filter
 from gateway.notifications.webhook import get_webhook_notifier
+from gateway.observability import (
+    MetricsMiddleware,
+    init_opentelemetry,
+    get_latest_metrics,
+    get_metrics_content_type,
+)
 
 setup_logging()
 logger = get_logger("main")
@@ -36,6 +42,8 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json",
 )
+
+init_opentelemetry(app)
 
 app.add_middleware(CORSMiddleware)
 
@@ -66,6 +74,8 @@ class RouteMatchingMiddleware(BaseHTTPMiddleware):
 
         skip_paths = [
             "/health",
+            "/live",
+            "/ready",
             "/metrics",
             "/docs",
             "/openapi.json",
@@ -142,6 +152,7 @@ class ProxyMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(SecurityFilterMiddleware)
 app.add_middleware(AuthMiddleware)
 app.add_middleware(RouteMatchingMiddleware)
@@ -179,12 +190,58 @@ async def health_check():
     }
 
 
+@app.get("/live")
+async def liveness_probe():
+    return {
+        "status": "alive",
+        "service": "api-gateway",
+        "timestamp": time.time(),
+    }
+
+
+@app.get("/ready")
+async def readiness_probe():
+    from gateway.db.redis_client import get_redis
+    from gateway.db.database import get_engine
+    from sqlalchemy import text
+
+    checks = {}
+    all_ok = True
+
+    try:
+        redis_client = get_redis()
+        await redis_client.ping()
+        checks["redis"] = "ok"
+    except Exception as e:
+        checks["redis"] = f"failed: {str(e)}"
+        all_ok = False
+
+    try:
+        engine = get_engine()
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+        checks["postgresql"] = "ok"
+    except Exception as e:
+        checks["postgresql"] = f"failed: {str(e)}"
+        all_ok = False
+
+    status_code = 200 if all_ok else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "ready" if all_ok else "not_ready",
+            "service": "api-gateway",
+            "checks": checks,
+            "timestamp": time.time(),
+        },
+    )
+
+
 @app.get("/metrics")
-async def metrics():
-    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+async def metrics_endpoint():
     return Response(
-        content=generate_latest(),
-        media_type=CONTENT_TYPE_LATEST,
+        content=get_latest_metrics(),
+        media_type=get_metrics_content_type(),
     )
 
 

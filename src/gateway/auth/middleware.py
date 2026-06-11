@@ -10,6 +10,7 @@ from gateway.auth.mtls import get_mtls_validator
 from gateway.auth.api_key import get_api_key_validator
 from gateway.db.repository import IdPConfigRepository
 from gateway.db import get_db
+from gateway.observability import record_auth_success, record_auth_failure
 from gateway.logger import get_logger
 
 logger = get_logger("auth-middleware")
@@ -46,6 +47,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             if not is_authenticated:
                 logger.warning("Authentication failed", path=path, strategy=strategy.strategy, error=error)
+
+                route_match = getattr(request.state, "route_match", None)
+                route_name = route_match.route.name if route_match and route_match.route else None
+                record_auth_failure(route=route_name, reason=error or "authentication_failed", auth_type=strategy.strategy.lower())
+
                 headers = {}
                 auth_type = strategy.strategy.lower()
                 if auth_type in ["jwt", "oauth2"]:
@@ -71,6 +77,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
             request.state.user = user_info
             request.state.is_authenticated = True
+
+            route_match = getattr(request.state, "route_match", None)
+            route_name = route_match.route.name if route_match and route_match.route else None
+            record_auth_success(route=route_name, auth_type=strategy.strategy.lower())
 
             if not self._authorize(request, user_info):
                 return JSONResponse(

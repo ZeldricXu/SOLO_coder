@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "api-gateway.fullname" . }}
+  labels:
+    {{- include "api-gateway.labels" . | nindent 4 }}
+data:
+  GATEWAY_LOG_LEVEL: {{ .Values.gateway.logLevel | quote }}
+  GATEWAY_WORKERS: {{ .Values.gateway.workers | quote }}
+  GATEWAY_REQUEST_TIMEOUT: {{ .Values.gateway.requestTimeout | quote }}
+
+  DB_HOST: {{ .Values.database.host | quote }}
+  DB_PORT: {{ .Values.database.port | quote }}
+  DB_NAME: {{ .Values.database.name | quote }}
+  DB_USER: {{ .Values.database.user | quote }}
+
+  REDIS_HOST: {{ .Values.redis.host | quote }}
+  REDIS_PORT: {{ .Values.redis.port | quote }}
+  REDIS_DB: {{ .Values.redis.db | quote }}
+
+  {{- if .Values.clickhouse.enabled }}
+  CLICKHOUSE_HOST: {{ .Values.clickhouse.host | quote }}
+  CLICKHOUSE_PORT: {{ .Values.clickhouse.port | quote }}
+  CLICKHOUSE_USER: {{ .Values.clickhouse.user | quote }}
+  CLICKHOUSE_DATABASE: {{ .Values.clickhouse.database | quote }}
+  {{- end }}
+
+  RATE_LIMIT_ENABLED: {{ .Values.gateway.rateLimit.enabled | quote }}
+  RATE_LIMIT_MULTI_DIMENSION_ENABLED: {{ .Values.gateway.rateLimit.multiDimensionEnabled | quote }}
+  RATE_LIMIT_DEFAULT_USER_LIMIT: {{ .Values.gateway.rateLimit.defaultUserLimit | quote }}
+  RATE_LIMIT_DEFAULT_API_LIMIT: {{ .Values.gateway.rateLimit.defaultApiLimit | quote }}
+  RATE_LIMIT_BURST_MULTIPLIER: {{ .Values.gateway.rateLimit.burstMultiplier | quote }}
+  RATE_LIMIT_WINDOW_SECONDS: {{ .Values.gateway.rateLimit.windowSeconds | quote }}
+
+  SECURITY_FILTER_ENABLED: {{ .Values.gateway.securityFilter.enabled | quote }}
+  SECURITY_FILTER_MODE: {{ .Values.gateway.securityFilter.mode | quote }}
+
+  AUTH_ENABLED: {{ .Values.gateway.auth.enabled | quote }}
+  ANALYTICS_ENABLED: {{ .Values.gateway.analytics.enabled | quote }}
+
+  {{- if .Values.gateway.otel.enabled }}
+  OTEL_ENABLED: "true"
+  OTEL_SERVICE_NAME: {{ .Values.gateway.otel.serviceName | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.gateway.otel.endpoint | quote }}
+  {{- end }}

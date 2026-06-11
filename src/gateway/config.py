@@ -237,6 +237,16 @@ class AnalyticsSettings(BaseSettings):
     retry_backoff: float = 0.5
 
 
+class OpenTelemetrySettings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="OTEL_", extra="ignore")
+
+    enabled: bool = False
+    service_name: str = "api-gateway"
+    endpoint: str = "http://localhost:4317"
+    insecure: bool = True
+    excluded_urls: str = "/health,/live,/ready,/metrics,/docs,/openapi.json,/redoc"
+
+
 class Settings(BaseSettings):
     db: DatabaseSettings = Field(default_factory=DatabaseSettings)
     redis: RedisSettings = Field(default_factory=RedisSettings)
@@ -249,6 +259,7 @@ class Settings(BaseSettings):
     security_filter: SecurityFilterSettings = Field(default_factory=SecurityFilterSettings)
     webhook: WebhookSettings = Field(default_factory=WebhookSettings)
     portal: DeveloperPortalSettings = Field(default_factory=DeveloperPortalSettings)
+    otel: OpenTelemetrySettings = Field(default_factory=OpenTelemetrySettings)
 
     model_config = SettingsConfigDict(env_nested_delimiter="__", extra="ignore")
 

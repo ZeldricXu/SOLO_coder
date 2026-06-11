@@ -1,0 +1,29 @@
+{{- if .Values.tests.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: "{{ include "api-gateway.fullname" . }}-test-connection"
+  labels:
+    {{- include "api-gateway.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: curl
+      image: "{{ .Values.tests.image.repository }}:{{ .Values.tests.image.tag }}"
+      imagePullPolicy: {{ .Values.tests.image.pullPolicy }}
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -e
+          echo "Testing /live endpoint..."
+          curl -sf http://{{ include "api-gateway.fullname" . }}:{{ .Values.service.port }}/live
+          echo ""
+          echo "Testing /health endpoint..."
+          curl -sf http://{{ include "api-gateway.fullname" . }}:{{ .Values.service.port }}/health
+          echo ""
+          echo "All tests passed!"
+{{- end }}

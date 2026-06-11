@@ -4,6 +4,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 
 from gateway.security.filter import get_security_filter, SecurityScanResult
+from gateway.observability import record_security_blocked, record_security_cleaned
 from gateway.logger import get_logger
 
 logger = get_logger("security-middleware")
@@ -33,10 +34,25 @@ class SecurityFilterMiddleware(BaseHTTPMiddleware):
 
         scan_result = await self.filter.scan_request(request, body)
 
+        route_match = getattr(request.state, "route_match", None)
+        route_name = route_match.route.name if route_match and route_match.route else None
+
         if scan_result.blocked:
+            for rule in scan_result.matched_rules:
+                rule_id = getattr(rule, "id", "unknown")
+                category = getattr(rule, "category", "unknown")
+                severity = getattr(rule, "severity", "unknown")
+                record_security_blocked(route=route_name, category=category, severity=severity, rule_id=rule_id)
             return self.filter.get_blocked_response(scan_result)
 
         if scan_result.is_suspicious:
+            categories = set()
+            for rule in scan_result.matched_rules:
+                category = getattr(rule, "category", "unknown")
+                categories.add(category)
+            for category in categories:
+                record_security_cleaned(route=route_name, category=category)
+
             request.state.security_scan_result = scan_result
             request.state.security_sanitized = True
 

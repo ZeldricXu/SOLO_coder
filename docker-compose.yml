@@ -1,0 +1,148 @@
+version: "3.9"
+
+x-common-env: &common-env
+  DB_HOST: postgres
+  DB_PORT: 5432
+  DB_NAME: api_gateway
+  DB_USER: postgres
+  DB_PASSWORD: postgres
+  REDIS_HOST: redis
+  REDIS_PORT: 6379
+  REDIS_DB: 0
+  CLICKHOUSE_HOST: clickhouse
+  CLICKHOUSE_PORT: 8123
+  CLICKHOUSE_USER: default
+  CLICKHOUSE_DATABASE: api_gateway
+  JWT_SECRET_KEY: dev-secret-key-change-in-production
+  GATEWAY_LOG_LEVEL: debug
+  RATE_LIMIT_MULTI_DIMENSION_ENABLED: "true"
+  SECURITY_FILTER_ENABLED: "true"
+  SECURITY_FILTER_MODE: sanitize
+  OTEL_ENABLED: "false"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: api-gateway-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: api_gateway
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: api-gateway-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: api-gateway-clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+    environment:
+      CLICKHOUSE_DB: api_gateway
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    container_name: api-gateway-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: api-gateway-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+      - "4318:4318"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-gateway
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      OTEL_ENABLED: "true"
+      OTEL_SERVICE_NAME: "api-gateway"
+      OTEL_ENDPOINT: "http://jaeger:4317"
+    ports:
+      - "8080:8080"
+      - "9091:9090"
+    volumes:
+      - ./migrations:/app/migrations:ro
+
+  gateway-dev:
+    image: python:3.12-slim-bookworm
+    container_name: api-gateway-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *common-env
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    working_dir: /app
+    command: >
+      bash -c "pip install --no-cache-dir -r requirements.txt
+      && python -m uvicorn gateway.main:app
+         --host 0.0.0.0
+         --port 8080
+         --reload
+         --reload-dir /app/src
+         --loop uvloop"
+    ports:
+      - "8081:8080"
+    volumes:
+      - ./src:/app/src:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro
+      - ./migrations:/app/migrations:ro
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
+  prometheus_data:

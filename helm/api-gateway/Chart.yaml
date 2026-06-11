@@ -1,0 +1,21 @@
+apiVersion: v2
+name: api-gateway
+description: Unified API Gateway Service
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.24.0-0"
+home: https://github.com/your-org/api-gateway
+sources:
+  - https://github.com/your-org/api-gateway
+maintainers:
+  - name: API Gateway Team
+    email: platform@your-org.com
+keywords:
+  - api-gateway
+  - gateway
+  - reverse-proxy
+  - rate-limiting
+  - authentication
+annotations:
+  category: Infrastructure

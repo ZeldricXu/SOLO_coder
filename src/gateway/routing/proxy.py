@@ -1,4 +1,5 @@
 from typing import Any, Dict, Optional, Tuple
+import time
 import httpx
 from httpx import AsyncClient, Response, TimeoutException, HTTPStatusError, RequestError
 
@@ -6,6 +7,7 @@ from starlette.requests import Request
 from starlette.responses import StreamingResponse, Response as StarletteResponse
 
 from gateway.config import get_settings
+from gateway.observability import inject_trace_context_headers, record_upstream_request, record_upstream_error
 from gateway.logger import get_logger
 from gateway.routing.models import RouteMatch
 
@@ -63,6 +65,8 @@ class ProxyClient:
         if modified_headers:
             headers.update(modified_headers)
 
+        headers = inject_trace_context_headers(headers)
+
         if modified_body is not None:
             body = modified_body
         else:
@@ -76,7 +80,7 @@ class ProxyClient:
                      route_name=route.name,
                      request_id=request.state.request_id)
 
-        start_time = request.state.start_time
+        upstream_start = time.time()
         upstream_latency = 0
 
         try:
@@ -87,25 +91,41 @@ class ProxyClient:
                 content=body,
                 timeout=timeout,
             )
-            upstream_latency = int((httpx._utils.get_elapsed_time(response.request) if response.request else 0) * 1000)
+            upstream_latency = int((time.time() - upstream_start) * 1000)
+            record_upstream_request(
+                route=route.name,
+                target=target.url,
+                status_code=response.status_code,
+                duration_seconds=upstream_latency / 1000.0,
+            )
             return response, upstream_latency
 
         except TimeoutException as e:
             logger.warning("Request timeout", target_url=target_url, error=str(e), request_id=request.state.request_id)
+            record_upstream_error(route=route.name, target=target.url, error_type="timeout")
             return self._create_error_response(504, "Gateway Timeout", str(e)), 0
 
         except HTTPStatusError as e:
             logger.warning("HTTP status error", target_url=target_url, status_code=e.response.status_code,
                            error=str(e), request_id=request.state.request_id)
-            return e.response, 0
+            upstream_latency = int((time.time() - upstream_start) * 1000)
+            record_upstream_request(
+                route=route.name,
+                target=target.url,
+                status_code=e.response.status_code,
+                duration_seconds=upstream_latency / 1000.0,
+            )
+            return e.response, upstream_latency
 
         except RequestError as e:
             logger.error("Request error", target_url=target_url, error=str(e), request_id=request.state.request_id)
+            record_upstream_error(route=route.name, target=target.url, error_type="request_error")
             return self._create_error_response(502, "Bad Gateway", str(e)), 0
 
         except Exception as e:
             logger.error("Unexpected error during proxy", target_url=target_url, error=str(e),
                          request_id=request.state.request_id, exc_info=True)
+            record_upstream_error(route=route.name, target=target.url, error_type="exception")
             return self._create_error_response(500, "Internal Server Error", str(e)), 0
 
     def _create_error_response(self, status_code: int, message: str, detail: str) -> Response:
