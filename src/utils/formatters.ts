@@ -161,3 +161,12 @@ export function formatCascadeDiffReport(report: CascadeDiffReport, useColors = t
   const engine = new DiffEngine()
   return engine.formatCascadeDiff(report, useColors)
 }
+
+export function formatDiffs(
+  diffs: DiffItem[],
+  format: 'terminal' | 'json' | 'csv' = 'terminal',
+  useColors = true,
+): string {
+  const { renderDiffReport } = require('../engine/DiffRenderers')
+  return renderDiffReport(diffs, format, { useColors })
+}

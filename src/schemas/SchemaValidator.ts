@@ -24,8 +24,12 @@ export interface SchemaConfig {
 export class SchemaValidator {
   private zodSchema: ZodSchema
   private fieldConfigs: Map<string, SchemaFieldConfig> = new Map()
+  private validationCache = new Map<string, ValidationError[]>()
+  private accessedKeys = new Set<string>()
+  private config: SchemaConfig
 
   constructor(config: SchemaConfig) {
+    this.config = config
     this.zodSchema = this.buildSchema(config)
     this.indexFields(config.fields)
   }
@@ -138,6 +142,24 @@ export class SchemaValidator {
     return result
   }
 
+  private resolveExpected(issue: z.ZodIssue): string {
+    const path = issue.path.join('.')
+    const fieldConfig = this.fieldConfigs.get(path)
+
+    let expected = fieldConfig?.type || 'unknown'
+    if (fieldConfig?.enum) {
+      expected = `one of [${fieldConfig.enum.join(', ')}]`
+    } else if (fieldConfig?.pattern) {
+      expected = `string matching /${fieldConfig.pattern}/`
+    } else if (fieldConfig?.min !== undefined || fieldConfig?.max !== undefined) {
+      const constraints: string[] = []
+      if (fieldConfig.min !== undefined) constraints.push(`min=${fieldConfig.min}`)
+      if (fieldConfig.max !== undefined) constraints.push(`max=${fieldConfig.max}`)
+      expected = `${fieldConfig.type} (${constraints.join(', ')})`
+    }
+    return expected
+  }
+
   validate(data: ConfigData, environment: string): ValidationReport {
     const errors: ValidationError[] = []
 
@@ -145,6 +167,12 @@ export class SchemaValidator {
     const result = this.zodSchema.safeParse(nestedData)
 
     if (result.success) {
+      const allSchemaKeys = this.collectSchemaKeys(this.config.fields)
+      for (const key of allSchemaKeys) {
+        if (!this.validationCache.has(key)) {
+          this.validationCache.set(key, [])
+        }
+      }
       return {
         environment,
         valid: true,
@@ -179,12 +207,192 @@ export class SchemaValidator {
       })
     }
 
+    for (const err of errors) {
+      const existing = this.validationCache.get(err.key) || []
+      if (!existing.some((e) => e.message === err.message)) {
+        existing.push(err)
+      }
+      this.validationCache.set(err.key, existing)
+    }
+    const allSchemaKeys = this.collectSchemaKeys(this.config.fields)
+    for (const key of allSchemaKeys) {
+      if (!this.validationCache.has(key)) {
+        this.validationCache.set(key, [])
+      }
+    }
+
     return {
       environment,
       valid: false,
       errors,
       timestamp: Date.now(),
     }
+  }
+
+  validatePath(data: ConfigData, environment: string, path: string): ValidationReport {
+    const nestedData = this.unflattenData(data)
+    const pathParts = path.split('.')
+    const errors: ValidationError[] = []
+
+    const cacheKey = path
+    const cached = this.validationCache.get(cacheKey)
+    if (cached !== undefined) {
+      return {
+        valid: cached.length === 0,
+        environment,
+        errors: cached,
+        totalErrors: cached.length,
+        validatedAt: Date.now(),
+        cached: true,
+        timestamp: Date.now(),
+      }
+    }
+
+    let current: any = nestedData
+    for (const part of pathParts) {
+      if (current === null || current === undefined) break
+      current = current[part]
+    }
+
+    const partialConfig: any = {}
+    let pc = partialConfig
+    for (let i = 0; i < pathParts.length; i++) {
+      if (i === pathParts.length - 1) {
+        pc[pathParts[i]] = current
+      } else {
+        pc[pathParts[i]] = {}
+        pc = pc[pathParts[i]]
+      }
+    }
+
+    const result = this.zodSchema.safeParse(partialConfig)
+
+    if (!result.success) {
+      for (const issue of result.error.issues) {
+        const issuePath = issue.path.join('.')
+        if (issuePath === path || issuePath.startsWith(path + '.')) {
+          const expected = this.resolveExpected(issue)
+          errors.push({
+            key: issuePath,
+            environment,
+            message: issue.message,
+            expected,
+            actual: this.getActualValue(nestedData, issue.path),
+            schemaPath: issuePath,
+          })
+        }
+      }
+    }
+
+    this.validationCache.set(cacheKey, [...errors])
+
+    return {
+      valid: errors.length === 0,
+      environment,
+      errors,
+      totalErrors: errors.length,
+      validatedAt: Date.now(),
+      cached: false,
+      timestamp: Date.now(),
+    }
+  }
+
+  markAccessed(path: string): void {
+    this.accessedKeys.add(path)
+    const parts = path.split('.')
+    for (let i = 1; i < parts.length; i++) {
+      this.accessedKeys.add(parts.slice(0, i).join('.'))
+    }
+  }
+
+  clearAccessTracker(): void {
+    this.accessedKeys.clear()
+  }
+
+  validateAccessed(data: ConfigData, environment: string): ValidationReport {
+    if (this.accessedKeys.size === 0) {
+      return this.validate(data, environment)
+    }
+
+    const allErrors: ValidationError[] = []
+    for (const path of this.accessedKeys) {
+      const report = this.validatePath(data, environment, path)
+      allErrors.push(...report.errors)
+    }
+
+    return {
+      valid: allErrors.length === 0,
+      environment,
+      errors: allErrors,
+      totalErrors: allErrors.length,
+      validatedAt: Date.now(),
+      accessedKeyCount: this.accessedKeys.size,
+      timestamp: Date.now(),
+    }
+  }
+
+  startBackgroundValidation(
+    data: ConfigData,
+    environment: string,
+    yieldIntervalMs = 10,
+  ): Promise<ValidationReport> {
+    const nestedData = this.unflattenData(data)
+    const allKeys = this.collectSchemaKeys(this.config.fields)
+
+    let currentIndex = 0
+
+    return new Promise((resolve) => {
+      const processBatch = () => {
+        const startTime = Date.now()
+        const errors: ValidationError[] = []
+
+        while (currentIndex < allKeys.length) {
+          const key = allKeys[currentIndex]
+          currentIndex++
+
+          if (this.validationCache.has(key)) {
+            const cached = this.validationCache.get(key)!
+            errors.push(...cached)
+            continue
+          }
+
+          const result = this.validatePath(data, environment, key)
+          errors.push(...result.errors)
+
+          if (Date.now() - startTime > yieldIntervalMs) {
+            setImmediate(processBatch)
+            return
+          }
+        }
+
+        resolve({
+          valid: errors.length === 0,
+          environment,
+          errors,
+          totalErrors: errors.length,
+          validatedAt: Date.now(),
+          background: true,
+          timestamp: Date.now(),
+        })
+      }
+
+      setImmediate(processBatch)
+    })
+  }
+
+  private collectSchemaKeys(
+    fields: SchemaFieldConfig[],
+    prefix = '',
+  ): string[] {
+    const keys: string[] = []
+    for (const field of fields) {
+      const fullKey = prefix ? `${prefix}.${field.key}` : field.key
+      keys.push(fullKey)
+      if (field.type === 'object' && field.properties) {
+        keys.push(...this.collectSchemaKeys(field.properties, fullKey))
+      }
+    }
+    return keys
   }
 
   validateValue(key: string, value: ConfigValue, environment: string): ValidationError | null {
@@ -249,6 +457,14 @@ export class SchemaValidator {
 
   getAllFieldKeys(): string[] {
     return Array.from(this.fieldConfigs.keys())
+  }
+
+  clearCache(): void {
+    this.validationCache.clear()
+  }
+
+  getCacheStats(): { size: number } {
+    return { size: this.validationCache.size }
   }
 
   static loadFromFile(filePath: string): SchemaValidator {

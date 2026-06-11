@@ -3,10 +3,14 @@ import chalk from 'chalk'
 import Table = require('cli-table3')
 
 export class DiffEngine {
-  compare(dataA: ConfigData, dataB: ConfigData, environmentA: string, environmentB: string): DiffReport {
+  compareRaw(before: ConfigData, after: ConfigData): DiffItem[] {
     const diffs: DiffItem[] = []
+    this.traverseAndCompare(before, after, '', diffs)
+    return diffs.sort((a, b) => a.path.localeCompare(b.path))
+  }
 
-    this.traverseAndCompare(dataA, dataB, '', diffs)
+  compare(dataA: ConfigData, dataB: ConfigData, environmentA: string, environmentB: string): DiffReport {
+    const diffs = this.compareRaw(dataA, dataB)
 
     const summary = {
       added: diffs.filter((d) => d.type === 'added').length,

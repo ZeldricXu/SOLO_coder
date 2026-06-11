@@ -1,5 +1,5 @@
-import { BaseConfigSource } from './ConfigSource'
-import { ConfigData, ConfigValue } from '../types'
+import { BaseConnector, RetryPolicy } from './BaseConnector'
+import { ConfigValue } from '../types'
 
 interface VaultSourceOptions {
   endpoint?: string
@@ -8,26 +8,27 @@ interface VaultSourceOptions {
   namespace?: string
   roleId?: string
   secretId?: string
+  retryPolicy?: Partial<RetryPolicy>
+  loadTimeoutMs?: number
 }
 
-export class VaultSource extends BaseConfigSource {
+export class VaultSource extends BaseConnector {
   readonly type = 'vault'
   readonly priority: number
   readonly name: string
 
+  protected readonly sourceName = 'Vault'
+
   private options: VaultSourceOptions
-  private client: any
-  private data: ConfigData = {}
-  private loaded = false
 
   constructor(name: string, priority: number, options: VaultSourceOptions) {
-    super()
+    super(options.retryPolicy, options.loadTimeoutMs)
     this.name = name
     this.priority = priority
     this.options = options
   }
 
-  private async initClient(): Promise<void> {
+  protected async initClient(): Promise<void> {
     if (this.client) return
 
     const vault = await import('node-vault')
@@ -53,46 +54,17 @@ export class VaultSource extends BaseConfigSource {
     }
   }
 
-  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
-    const result: ConfigData = {}
-
-    for (const [key, value] of Object.entries(obj)) {
-      const fullKey = prefix ? `${prefix}.${key}` : key
-
-      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
-      } else {
-        result[fullKey] = value as ConfigValue
-      }
-    }
-
-    return result
-  }
-
-  async load(): Promise<ConfigData> {
-    await this.initClient()
-
+  protected async fetchConfig(): Promise<Record<string, ConfigValue>> {
     try {
       const result = await this.client.read(this.options.path)
       const rawData = result?.data?.data || result?.data || {}
-      this.data = rawData as ConfigData
-      this.loaded = true
-      return this.flattenData(rawData)
+      return this.flattenData(rawData) as Record<string, ConfigValue>
     } catch (error) {
       throw new Error(`Failed to load from Vault: ${(error as Error).message}`)
     }
   }
 
-  async get(key: string): Promise<ConfigValue | undefined> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return this.getNestedValue(this.data, key)
-  }
-
-  async set(key: string, value: ConfigValue): Promise<void> {
-    await this.initClient()
-
+  protected async writeConfig(key: string, value: ConfigValue): Promise<void> {
     try {
       const current = await this.client.read(this.options.path)
       const existingData = current?.data?.data || current?.data || {}
@@ -108,16 +80,12 @@ export class VaultSource extends BaseConfigSource {
       target[parts[parts.length - 1]] = value
 
       await this.client.write(this.options.path, { data: existingData })
-
-      this.setNestedValue(this.data, key, value)
     } catch (error) {
       throw new Error(`Failed to write to Vault: ${(error as Error).message}`)
     }
   }
 
-  async delete(key: string): Promise<void> {
-    await this.initClient()
-
+  protected async deleteConfig(key: string): Promise<void> {
     try {
       const current = await this.client.read(this.options.path)
       const existingData = current?.data?.data || current?.data || {}
@@ -133,26 +101,8 @@ export class VaultSource extends BaseConfigSource {
       delete target[parts[parts.length - 1]]
 
       await this.client.write(this.options.path, { data: existingData })
-
-      const data = this.data
-      let targetData = data
-      for (let i = 0; i < parts.length - 1; i++) {
-        const part = parts[i]
-        if (!targetData[part] || typeof targetData[part] !== 'object' || Array.isArray(targetData[part])) {
-          return
-        }
-        targetData = targetData[part] as ConfigData
-      }
-      delete targetData[parts[parts.length - 1]]
     } catch (error) {
       throw new Error(`Failed to delete from Vault: ${(error as Error).message}`)
     }
-  }
-
-  async listKeys(): Promise<string[]> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

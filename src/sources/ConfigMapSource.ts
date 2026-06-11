@@ -1,4 +1,4 @@
-import { BaseConfigSource } from './ConfigSource'
+import { BaseConnector, RetryPolicy } from './BaseConnector'
 import { ConfigData, ConfigValue } from '../types'
 import * as yaml from 'js-yaml'
 
@@ -8,20 +8,22 @@ interface ConfigMapSourceOptions {
   kubeconfig?: string
   context?: string
   dataKey?: string
+  retryPolicy?: Partial<RetryPolicy>
+  loadTimeoutMs?: number
 }
 
-export class ConfigMapSource extends BaseConfigSource {
+export class ConfigMapSource extends BaseConnector {
   readonly type = 'configmap'
   readonly priority: number
   readonly name: string
 
+  protected readonly sourceName = 'ConfigMap'
+
   private options: ConfigMapSourceOptions
-  private k8sApi: any
-  private data: ConfigData = {}
-  private loaded = false
+  protected k8sApi: any = null
 
   constructor(name: string, priority: number, options: ConfigMapSourceOptions) {
-    super()
+    super(options.retryPolicy, options.loadTimeoutMs)
     this.name = name
     this.priority = priority
     this.options = {
@@ -30,7 +32,7 @@ export class ConfigMapSource extends BaseConfigSource {
     }
   }
 
-  private async initClient(): Promise<void> {
+  protected async initClient(): Promise<void> {
     if (this.k8sApi) return
 
     const k8s = await import('@kubernetes/client-node')
@@ -102,25 +104,7 @@ export class ConfigMapSource extends BaseConfigSource {
     return JSON.stringify(value)
   }
 
-  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
-    const result: ConfigData = {}
-
-    for (const [key, value] of Object.entries(obj)) {
-      const fullKey = prefix ? `${prefix}.${key}` : key
-
-      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
-      } else {
-        result[fullKey] = value as ConfigValue
-      }
-    }
-
-    return result
-  }
-
-  async load(): Promise<ConfigData> {
-    await this.initClient()
-
+  protected async fetchConfig(): Promise<Record<string, ConfigValue>> {
     try {
       const response = await this.k8sApi.readNamespacedConfigMap(
         this.options.name,
@@ -129,29 +113,16 @@ export class ConfigMapSource extends BaseConfigSource {
 
       const cmData = response.body?.data || {}
       const parsed = this.parseConfigMapData(cmData)
-      this.data = parsed
-      this.loaded = true
-      return this.flattenData(parsed)
+      return this.flattenData(parsed as Record<string, unknown>) as Record<string, ConfigValue>
     } catch (error) {
       if ((error as { response?: { statusCode: number } }).response?.statusCode === 404) {
-        this.data = {}
-        this.loaded = true
         return {}
       }
       throw new Error(`Failed to load from ConfigMap: ${(error as Error).message}`)
     }
   }
 
-  async get(key: string): Promise<ConfigValue | undefined> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return this.getNestedValue(this.data, key)
-  }
-
-  async set(key: string, value: ConfigValue): Promise<void> {
-    await this.initClient()
-
+  protected async writeConfig(key: string, value: ConfigValue): Promise<void> {
     try {
       const response = await this.k8sApi.readNamespacedConfigMap(
         this.options.name,
@@ -203,16 +174,15 @@ export class ConfigMapSource extends BaseConfigSource {
         undefined,
         { headers: { 'Content-Type': 'application/merge-patch+json' } }
       )
-
-      this.setNestedValue(this.data, key, value)
     } catch (error) {
+      if ((error as { response?: { statusCode: number } }).response?.statusCode === 404) {
+        throw new Error(`Failed to write to ConfigMap: ConfigMap not found`)
+      }
       throw new Error(`Failed to write to ConfigMap: ${(error as Error).message}`)
     }
   }
 
-  async delete(key: string): Promise<void> {
-    await this.initClient()
-
+  protected async deleteConfig(key: string): Promise<void> {
     try {
       const response = await this.k8sApi.readNamespacedConfigMap(
         this.options.name,
@@ -265,26 +235,11 @@ export class ConfigMapSource extends BaseConfigSource {
         undefined,
         { headers: { 'Content-Type': 'application/merge-patch+json' } }
       )
-
-      const parts = key.split('.')
-      let targetData = this.data
-      for (let i = 0; i < parts.length - 1; i++) {
-        const part = parts[i]
-        if (!targetData[part] || typeof targetData[part] !== 'object' || Array.isArray(targetData[part])) {
-          return
-        }
-        targetData = targetData[part] as ConfigData
-      }
-      delete targetData[parts[parts.length - 1]]
     } catch (error) {
+      if ((error as { response?: { statusCode: number } }).response?.statusCode === 404) {
+        throw new Error(`Failed to delete from ConfigMap: ConfigMap not found`)
+      }
       throw new Error(`Failed to delete from ConfigMap: ${(error as Error).message}`)
     }
-  }
-
-  async listKeys(): Promise<string[]> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

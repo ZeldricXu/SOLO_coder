@@ -1,4 +1,5 @@
 export * from './ConfigSource'
+export * from './BaseConnector'
 export * from './VaultSource'
 export * from './SSMSource'
 export * from './ConfigMapSource'

@@ -36,6 +36,11 @@ export interface ValidationReport {
   valid: boolean
   errors: ValidationError[]
   timestamp: number
+  cached?: boolean
+  background?: boolean
+  accessedKeyCount?: number
+  totalErrors?: number
+  validatedAt?: number
 }
 
 export type DiffType = 'added' | 'removed' | 'changed'

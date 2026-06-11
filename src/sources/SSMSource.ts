@@ -1,5 +1,5 @@
-import { BaseConfigSource } from './ConfigSource'
-import { ConfigData, ConfigValue } from '../types'
+import { BaseConnector, RetryPolicy } from './BaseConnector'
+import { ConfigValue } from '../types'
 
 interface SSMSourceOptions {
   region?: string
@@ -8,20 +8,21 @@ interface SSMSourceOptions {
   recursive?: boolean
   accessKeyId?: string
   secretAccessKey?: string
+  retryPolicy?: Partial<RetryPolicy>
+  loadTimeoutMs?: number
 }
 
-export class SSMSource extends BaseConfigSource {
+export class SSMSource extends BaseConnector {
   readonly type = 'ssm'
   readonly priority: number
   readonly name: string
 
+  protected readonly sourceName = 'SSM'
+
   private options: SSMSourceOptions
-  private client: any
-  private data: ConfigData = {}
-  private loaded = false
 
   constructor(name: string, priority: number, options: SSMSourceOptions) {
-    super()
+    super(options.retryPolicy, options.loadTimeoutMs)
     this.name = name
     this.priority = priority
     this.options = {
@@ -31,7 +32,7 @@ export class SSMSource extends BaseConfigSource {
     }
   }
 
-  private async initClient(): Promise<void> {
+  protected async initClient(): Promise<void> {
     if (this.client) return
 
     const { SSMClient } = await import('@aws-sdk/client-ssm')
@@ -81,25 +82,7 @@ export class SSMSource extends BaseConfigSource {
     return JSON.stringify(value)
   }
 
-  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
-    const result: ConfigData = {}
-
-    for (const [key, value] of Object.entries(obj)) {
-      const fullKey = prefix ? `${prefix}.${key}` : key
-
-      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
-      } else {
-        result[fullKey] = value as ConfigValue
-      }
-    }
-
-    return result
-  }
-
-  async load(): Promise<ConfigData> {
-    await this.initClient()
-
+  protected async fetchConfig(): Promise<Record<string, ConfigValue>> {
     try {
       const { GetParametersByPathCommand } = await import('@aws-sdk/client-ssm')
       const params: Record<string, unknown> = {
@@ -109,7 +92,7 @@ export class SSMSource extends BaseConfigSource {
       }
 
       let nextToken: string | undefined
-      this.data = {}
+      const flatResult: Record<string, ConfigValue> = {}
 
       do {
         if (nextToken) {
@@ -124,30 +107,20 @@ export class SSMSource extends BaseConfigSource {
             const stripped = this.stripPrefix(param.Name)
             const key = this.normalizeKey(stripped)
             const value = this.convertValue(param.Value || '')
-            this.setNestedValue(this.data, key, value)
+            flatResult[key] = value
           }
         }
 
         nextToken = response.NextToken
       } while (nextToken)
 
-      this.loaded = true
-      return this.flattenData(this.data as Record<string, unknown>)
+      return flatResult
     } catch (error) {
       throw new Error(`Failed to load from SSM: ${(error as Error).message}`)
     }
   }
 
-  async get(key: string): Promise<ConfigValue | undefined> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return this.getNestedValue(this.data, key)
-  }
-
-  async set(key: string, value: ConfigValue): Promise<void> {
-    await this.initClient()
-
+  protected async writeConfig(key: string, value: ConfigValue): Promise<void> {
     try {
       const { PutParameterCommand } = await import('@aws-sdk/client-ssm')
       const paramName = `${this.options.pathPrefix.replace(/\/$/, '')}/${this.denormalizeKey(key)}`
@@ -160,41 +133,20 @@ export class SSMSource extends BaseConfigSource {
       })
 
       await this.client.send(command)
-      this.setNestedValue(this.data, key, value)
     } catch (error) {
       throw new Error(`Failed to write to SSM: ${(error as Error).message}`)
     }
   }
 
-  async delete(key: string): Promise<void> {
-    await this.initClient()
-
+  protected async deleteConfig(key: string): Promise<void> {
     try {
       const { DeleteParameterCommand } = await import('@aws-sdk/client-ssm')
       const paramName = `${this.options.pathPrefix.replace(/\/$/, '')}/${this.denormalizeKey(key)}`
 
       const command = new DeleteParameterCommand({ Name: paramName })
       await this.client.send(command)
-
-      const parts = key.split('.')
-      let target = this.data
-      for (let i = 0; i < parts.length - 1; i++) {
-        const part = parts[i]
-        if (!target[part] || typeof target[part] !== 'object' || Array.isArray(target[part])) {
-          return
-        }
-        target = target[part] as ConfigData
-      }
-      delete target[parts[parts.length - 1]]
     } catch (error) {
       throw new Error(`Failed to delete from SSM: ${(error as Error).message}`)
     }
-  }
-
-  async listKeys(): Promise<string[]> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }

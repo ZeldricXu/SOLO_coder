@@ -1,4 +1,4 @@
-import { BaseConfigSource } from './ConfigSource'
+import { BaseConnector, RetryPolicy } from './BaseConnector'
 import { ConfigData, ConfigValue } from '../types'
 import * as fs from 'fs'
 import * as path from 'path'
@@ -9,19 +9,21 @@ interface EnvSourceOptions {
   useProcessEnv?: boolean
   prefix?: string
   lowerCaseKeys?: boolean
+  retryPolicy?: Partial<RetryPolicy>
+  loadTimeoutMs?: number
 }
 
-export class EnvSource extends BaseConfigSource {
+export class EnvSource extends BaseConnector {
   readonly type = 'env'
   readonly priority: number
   readonly name: string
 
+  protected readonly sourceName = 'Env'
+
   private options: EnvSourceOptions
-  private data: ConfigData = {}
-  private loaded = false
 
   constructor(name: string, priority: number, options: EnvSourceOptions = {}) {
-    super()
+    super(options.retryPolicy, options.loadTimeoutMs)
     this.name = name
     this.priority = priority
     this.options = {
@@ -29,6 +31,10 @@ export class EnvSource extends BaseConfigSource {
       lowerCaseKeys: true,
       ...options,
     }
+  }
+
+  protected async initClient(): Promise<void> {
+    return Promise.resolve()
   }
 
   private parseValue(value: string): ConfigValue {
@@ -62,21 +68,8 @@ export class EnvSource extends BaseConfigSource {
     return normalized.replace(/_/g, '.')
   }
 
-  private flattenData(obj: Record<string, unknown>, prefix = ''): ConfigData {
-    const result: ConfigData = {}
-    for (const [key, value] of Object.entries(obj)) {
-      const fullKey = prefix ? `${prefix}.${key}` : key
-      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
-        Object.assign(result, this.flattenData(value as Record<string, unknown>, fullKey))
-      } else {
-        result[fullKey] = value as ConfigValue
-      }
-    }
-    return result
-  }
-
-  async load(): Promise<ConfigData> {
-    this.data = {}
+  protected async fetchConfig(): Promise<Record<string, ConfigValue>> {
+    const flatResult: Record<string, ConfigValue> = {}
 
     if (this.options.filePath) {
       const resolvedPath = path.resolve(this.options.filePath)
@@ -87,7 +80,7 @@ export class EnvSource extends BaseConfigSource {
         for (const [key, value] of Object.entries(parsed)) {
           const normalized = this.normalizeKey(key)
           if (normalized) {
-            this.setNestedValue(this.data, normalized, this.parseValue(value))
+            flatResult[normalized] = this.parseValue(value)
           }
         }
       }
@@ -97,27 +90,15 @@ export class EnvSource extends BaseConfigSource {
       for (const [key, value] of Object.entries(process.env)) {
         const normalized = this.normalizeKey(key)
         if (normalized && value !== undefined) {
-          this.setNestedValue(this.data, normalized, this.parseValue(value))
+          flatResult[normalized] = this.parseValue(value)
         }
       }
     }
 
-    this.loaded = true
-    return this.flattenData(this.data as Record<string, unknown>)
+    return flatResult
   }
 
-  async get(key: string): Promise<ConfigValue | undefined> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return this.getNestedValue(this.data, key)
-  }
-
-  async set(key: string, value: ConfigValue): Promise<void> {
-    if (!this.loaded) {
-      await this.load()
-    }
-
+  protected async writeConfig(key: string, value: ConfigValue): Promise<void> {
     this.setNestedValue(this.data, key, value)
 
     if (this.options.filePath) {
@@ -147,11 +128,7 @@ export class EnvSource extends BaseConfigSource {
     }
   }
 
-  async delete(key: string): Promise<void> {
-    if (!this.loaded) {
-      await this.load()
-    }
-
+  protected async deleteConfig(key: string): Promise<void> {
     const parts = key.split('.')
     let target = this.data
     for (let i = 0; i < parts.length - 1; i++) {
@@ -173,12 +150,5 @@ export class EnvSource extends BaseConfigSource {
         fs.writeFileSync(resolvedPath, lines.join('\n'))
       }
     }
-  }
-
-  async listKeys(): Promise<string[]> {
-    if (!this.loaded) {
-      await this.load()
-    }
-    return Object.keys(this.flattenData(this.data as Record<string, unknown>))
   }
 }
