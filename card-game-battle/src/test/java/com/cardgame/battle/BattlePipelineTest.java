@@ -3,7 +3,7 @@ package com.cardgame.battle.pipeline;
 import com.cardgame.battle.engine.BuffSystem;
 import com.cardgame.battle.engine.EffectProcessor;
 import com.cardgame.battle.engine.TimelineEngine;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.TestDataBuilder;
 import com.cardgame.common.config.GameConfig;
 import com.cardgame.common.entity.Enemy;
@@ -42,7 +42,7 @@ class BattlePipelineTest {
     private EffectProcessor effectProcessor;
 
     @Mock
-    private com.cardgame.replay.service.BattleLogService battleLogService;
+    private com.cardgame.common.service.BattleLogService battleLogService;
 
     private BattlePipeline pipeline;
     private BattleContext context;
@@ -96,7 +96,7 @@ class BattlePipelineTest {
     @Test
     @DisplayName("PreTurnPhase - should process player turn start")
     void preTurnPhase_ShouldProcessPlayerTurnStart() throws Exception {
-        var timelineEntry = com.cardgame.battle.entity.TimelineEntry.builder()
+        var timelineEntry = com.cardgame.common.entity.TimelineEntry.builder()
                 .characterId(player.getPlayerId())
                 .isPlayer(true)
                 .speed(10)
@@ -119,7 +119,7 @@ class BattlePipelineTest {
     @Test
     @DisplayName("PreTurnPhase - stunned player should skip turn")
     void preTurnPhase_StunnedPlayer_ShouldSkipTurn() throws Exception {
-        var timelineEntry = com.cardgame.battle.entity.TimelineEntry.builder()
+        var timelineEntry = com.cardgame.common.entity.TimelineEntry.builder()
                 .characterId(player.getPlayerId())
                 .isPlayer(true)
                 .speed(10)
@@ -142,7 +142,7 @@ class BattlePipelineTest {
     @Test
     @DisplayName("PostActionPhase - should process turn end")
     void postActionPhase_ShouldProcessTurnEnd() throws Exception {
-        var timelineEntry = com.cardgame.battle.entity.TimelineEntry.builder()
+        var timelineEntry = com.cardgame.common.entity.TimelineEntry.builder()
                 .characterId(player.getPlayerId())
                 .isPlayer(true)
                 .speed(10)
@@ -208,7 +208,7 @@ class BattlePipelineTest {
     @Test
     @DisplayName("PostTurnCleanupPhase - should cleanup after turn")
     void postTurnCleanupPhase_ShouldCleanupAfterTurn() throws Exception {
-        var timelineEntry = com.cardgame.battle.entity.TimelineEntry.builder()
+        var timelineEntry = com.cardgame.common.entity.TimelineEntry.builder()
                 .characterId(player.getPlayerId())
                 .isPlayer(true)
                 .speed(10)
@@ -229,12 +229,12 @@ class BattlePipelineTest {
     @Test
     @DisplayName("Full pipeline execution - should execute all phases in order")
     void fullPipeline_ShouldExecuteAllPhases() throws Exception {
-        var playerEntry = com.cardgame.battle.entity.TimelineEntry.builder()
+        var playerEntry = com.cardgame.common.entity.TimelineEntry.builder()
                 .characterId(player.getPlayerId())
                 .isPlayer(true)
                 .speed(10)
                 .build();
-        var enemyEntry = com.cardgame.battle.entity.TimelineEntry.builder()
+        var enemyEntry = com.cardgame.common.entity.TimelineEntry.builder()
                 .characterId(enemy.getId())
                 .isPlayer(false)
                 .speed(8)
@@ -291,7 +291,7 @@ class BattlePipelineTest {
     @DisplayName("Death character - should skip in PreTurnPhase")
     void deadCharacter_ShouldSkipInPreTurnPhase() throws Exception {
         player.setCurrentHp(0);
-        var timelineEntry = com.cardgame.battle.entity.TimelineEntry.builder()
+        var timelineEntry = com.cardgame.common.entity.TimelineEntry.builder()
                 .characterId(player.getPlayerId())
                 .isPlayer(true)
                 .speed(10)

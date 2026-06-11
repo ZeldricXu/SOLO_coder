@@ -85,4 +85,11 @@ public interface BattleLogMapper {
                     typeHandler = com.cardgame.save.handler.JsonTypeHandler.class)
     })
     List<java.util.Map<String, Object>> findVictoryStatsForAnalysis(@Param("limit") int limit);
+
+    @Delete("DELETE FROM battle_logs WHERE log_timestamp < #{cutoffTimestamp}")
+    int deleteOldBattleLogs(@Param("cutoffTimestamp") long cutoffTimestamp);
+
+    @Update("UPDATE battle_logs SET is_boss_battle = #{isBossBattle}, sampling_level = #{samplingLevel}, " +
+            "log_timestamp = #{logTimestamp} WHERE battle_log_id = #{battleLogId}")
+    void updateSamplingInfo(BattleLog log);
 }

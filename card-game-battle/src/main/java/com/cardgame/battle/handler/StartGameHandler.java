@@ -1,6 +1,6 @@
 package com.cardgame.battle.handler;
 
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.battle.engine.BattleEngine;
 import com.cardgame.battle.service.BattleSyncService;
 import com.cardgame.common.entity.Enemy;

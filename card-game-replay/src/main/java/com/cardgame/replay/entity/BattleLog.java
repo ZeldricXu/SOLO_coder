@@ -1,6 +1,6 @@
 package com.cardgame.replay.entity;
 
-import com.cardgame.battle.entity.BattleAction;
+import com.cardgame.common.entity.BattleAction;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;
 import com.cardgame.common.enums.BattleStatus;
@@ -44,6 +44,9 @@ public class BattleLog {
     @Builder.Default
     private Map<String, Object> stats = new HashMap<>();
     private String version;
+    private boolean isBossBattle;
+    private String samplingLevel;
+    private long logTimestamp;
 
     public void addAction(BattleAction action) {
         actions.add(action);
@@ -83,7 +86,7 @@ public class BattleLog {
             if (action.isPlayerAction() && "PLAY_CARD".equals(action.getActionType())) {
                 cardsPlayed++;
                 if (action.getCardUsed() != null) {
-                    String cardId = action.getCardUsed().getTemplateId();
+                    String cardId = action.getCardUsed().getCardTemplateId();
                     cardUsage.put(cardId, cardUsage.getOrDefault(cardId, 0) + 1);
                 }
             }

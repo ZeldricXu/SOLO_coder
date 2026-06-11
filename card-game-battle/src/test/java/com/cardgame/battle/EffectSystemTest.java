@@ -1,8 +1,8 @@
 package com.cardgame.battle.effects;
 
 import com.cardgame.battle.engine.BuffSystem;
-import com.cardgame.battle.entity.BattleAction;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleAction;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.TestDataBuilder;
 import com.cardgame.common.entity.*;
 import com.cardgame.common.enums.BattleStatus;

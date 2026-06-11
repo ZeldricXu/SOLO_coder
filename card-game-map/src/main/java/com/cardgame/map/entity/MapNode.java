@@ -32,6 +32,8 @@ public class MapNode {
     private String shopId;
     private int goldReward;
     private int cardRewardCount;
+    private String targetNodeId;
+    private int targetFloor;
 
     public boolean canMoveTo(MapNode nextNode) {
         return nextNodeIds.contains(nextNode.getNodeId()) && nextNode.isAccessible();

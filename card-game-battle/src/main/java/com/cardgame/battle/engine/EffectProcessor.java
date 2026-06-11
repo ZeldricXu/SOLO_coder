@@ -2,8 +2,8 @@ package com.cardgame.battle.engine;
 
 import com.cardgame.battle.effects.EffectFactory;
 import com.cardgame.battle.effects.IEffect;
-import com.cardgame.battle.entity.BattleAction;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleAction;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.entity.Effect;
 import com.cardgame.common.entity.GameCharacter;
 import com.cardgame.common.entity.Player;

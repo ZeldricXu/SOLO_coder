@@ -1,6 +1,6 @@
 package com.cardgame.battle.pipeline;
 
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j

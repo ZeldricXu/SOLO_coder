@@ -1,7 +1,5 @@
-package com.cardgame.battle.entity;
+package com.cardgame.common.entity;
 
-import com.cardgame.common.entity.Enemy;
-import com.cardgame.common.entity.Player;
 import com.cardgame.common.enums.BattleStatus;
 import com.cardgame.common.enums.BuffType;
 import lombok.AllArgsConstructor;
@@ -61,16 +59,16 @@ public class BattleContext {
         return null;
     }
 
-    public com.cardgame.common.entity.GameCharacter getCharacter(String characterId) {
+    public GameCharacter getCharacter(String characterId) {
         return characterMap.get(characterId);
     }
 
     public List<Player> getAlivePlayers() {
-        return players.stream().filter(com.cardgame.common.entity.GameCharacter::isAlive).toList();
+        return players.stream().filter(GameCharacter::isAlive).toList();
     }
 
     public List<Enemy> getAliveEnemies() {
-        return enemies.stream().filter(com.cardgame.common.entity.GameCharacter::isAlive).toList();
+        return enemies.stream().filter(GameCharacter::isAlive).toList();
     }
 
     public boolean isPlayerTurn() {
@@ -110,8 +108,8 @@ public class BattleContext {
                 .build();
     }
 
-    public int calculateDamage(com.cardgame.common.entity.GameCharacter attacker,
-                              com.cardgame.common.entity.GameCharacter target,
+    public int calculateDamage(GameCharacter attacker,
+                              GameCharacter target,
                               int baseDamage) {
         int damage = baseDamage;
 
@@ -143,7 +141,7 @@ public class BattleContext {
         return Math.max(0, damage);
     }
 
-    public int calculateBlock(com.cardgame.common.entity.GameCharacter character, int baseBlock) {
+    public int calculateBlock(GameCharacter character, int baseBlock) {
         int block = baseBlock;
 
         int dexterity = character.getBuffStacks(BuffType.DEXTERITY.name());

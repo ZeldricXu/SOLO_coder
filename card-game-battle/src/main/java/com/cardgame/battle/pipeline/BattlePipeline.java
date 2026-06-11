@@ -3,12 +3,12 @@ package com.cardgame.battle.pipeline;
 import com.cardgame.battle.engine.BuffSystem;
 import com.cardgame.battle.engine.EffectProcessor;
 import com.cardgame.battle.engine.TimelineEngine;
-import com.cardgame.battle.entity.BattleAction;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleAction;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.config.GameConfig;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.deck.DeckManager;
-import com.cardgame.replay.service.BattleLogService;
+import com.cardgame.common.service.BattleLogService;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.function.BiConsumer;

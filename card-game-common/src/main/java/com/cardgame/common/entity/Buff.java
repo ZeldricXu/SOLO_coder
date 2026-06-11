@@ -16,6 +16,7 @@ public class Buff {
     private int duration;
     private String sourceId;
     private boolean isDebuff;
+    private String instanceId;
 
     public boolean isExpired() {
         return duration <= 0 && stacks <= 0;

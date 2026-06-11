@@ -113,7 +113,7 @@ public class BehaviorTreeFactory {
         }
 
         @Override
-        public NodeStatus execute(Enemy enemy, com.cardgame.battle.entity.BattleContext context) {
+        public NodeStatus execute(Enemy enemy, com.cardgame.common.entity.BattleContext context) {
             return context.getAlivePlayers().size() >= minCount ? NodeStatus.SUCCESS : NodeStatus.FAILURE;
         }
     }

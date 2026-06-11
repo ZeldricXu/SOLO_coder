@@ -9,5 +9,6 @@ public enum NodeType {
     EVENT,
     CHEST,
     START,
-    TREASURE
+    TREASURE,
+    PORTAL
 }

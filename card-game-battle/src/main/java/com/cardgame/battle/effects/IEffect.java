@@ -1,7 +1,7 @@
 package com.cardgame.battle.effects;
 
-import com.cardgame.battle.entity.BattleAction;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleAction;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.entity.Effect;
 import com.cardgame.common.entity.GameCharacter;
 

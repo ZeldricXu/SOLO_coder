@@ -1,6 +1,6 @@
 package com.cardgame.ai.tree;
 
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;
 

@@ -1,6 +1,6 @@
 package com.cardgame.battle.engine;
 
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.TestDataBuilder;
 import com.cardgame.common.entity.Buff;
 import com.cardgame.common.entity.Enemy;

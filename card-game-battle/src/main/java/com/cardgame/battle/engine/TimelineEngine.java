@@ -1,7 +1,7 @@
 package com.cardgame.battle.engine;
 
-import com.cardgame.battle.entity.BattleContext;
-import com.cardgame.battle.entity.TimelineEntry;
+import com.cardgame.common.entity.BattleContext;
+import com.cardgame.common.entity.TimelineEntry;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.GameCharacter;
 import com.cardgame.common.entity.Player;

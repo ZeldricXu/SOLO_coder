@@ -1,10 +1,10 @@
 package com.cardgame.battle.pipeline;
 
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;
 import com.cardgame.common.enums.BattleStatus;
-import com.cardgame.replay.service.BattleLogService;
+import com.cardgame.common.service.BattleLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
@@ -49,7 +49,7 @@ public class DeathCheckPhase extends BattlePhase {
             context.getCharacterMap().remove(deadPlayer.getPlayerId());
             if (battleLogService != null) {
                 try {
-                    var action = com.cardgame.battle.entity.BattleAction.builder()
+                    var action = com.cardgame.common.entity.BattleAction.builder()
                             .actionId(java.util.UUID.randomUUID().toString())
                             .actorId(deadPlayer.getPlayerId())
                             .isPlayerAction(true)
@@ -82,7 +82,7 @@ public class DeathCheckPhase extends BattlePhase {
             context.getCharacterMap().remove(deadEnemy.getId());
             if (battleLogService != null) {
                 try {
-                    var action = com.cardgame.battle.entity.BattleAction.builder()
+                    var action = com.cardgame.common.entity.BattleAction.builder()
                             .actionId(java.util.UUID.randomUUID().toString())
                             .actorId(deadEnemy.getId())
                             .isPlayerAction(false)

@@ -1,10 +1,11 @@
 package com.cardgame.replay.service;
 
-import com.cardgame.battle.entity.BattleAction;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleAction;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;
 import com.cardgame.common.utils.IdGenerator;
+import com.cardgame.replay.config.BattleLogSamplingConfig;
 import com.cardgame.replay.entity.BattleLog;
 import com.cardgame.replay.kafka.BattleLogProducer;
 import com.cardgame.replay.mapper.BattleLogMapper;
@@ -17,20 +18,30 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Slf4j
 @Component
-public class BattleLogService {
+public class BattleLogService implements com.cardgame.common.service.BattleLogService {
 
     @Autowired
-    private BattleLogMapper battleLogMapper;
+    BattleLogMapper battleLogMapper;
 
     @Autowired
-    private BattleLogProducer battleLogProducer;
+    BattleLogProducer battleLogProducer;
 
-    private final Map<String, BattleLog> activeBattleLogs = new HashMap<>();
+    @Autowired
+    BattleLogSamplingConfig samplingConfig;
+
+    final Map<String, BattleLog> activeBattleLogs = new HashMap<>();
+    final Map<String, Boolean> bossBattleFlags = new HashMap<>();
+    final Map<String, Set<String>> allowedActionTypes = new HashMap<>();
 
     public void startBattleLogging(BattleContext context) {
+        boolean isBossBattle = samplingConfig.isBossBattle(context.getFloor());
+        Set<String> allowedTypes = samplingConfig.getActionTypesForBattle(isBossBattle);
+        String samplingLevel = isBossBattle ? "FULL" : "SAMPLED";
+
         BattleLog battleLog = BattleLog.builder()
                 .battleLogId(IdGenerator.generateUUID())
                 .battleId(context.getBattleId())
@@ -42,36 +53,67 @@ public class BattleLogService {
                 .actions(new ArrayList<>())
                 .startTime(context.getStartTime())
                 .version("1.0")
+                .isBossBattle(isBossBattle)
+                .samplingLevel(samplingLevel)
+                .logTimestamp(System.currentTimeMillis())
                 .build();
 
         activeBattleLogs.put(context.getBattleId(), battleLog);
-        log.debug("Started logging for battle {}", context.getBattleId());
+        bossBattleFlags.put(context.getBattleId(), isBossBattle);
+        allowedActionTypes.put(context.getBattleId(), allowedTypes);
+
+        log.debug("Started logging for battle {} (boss={}, level={}, allowedActions={})",
+                context.getBattleId(), isBossBattle, samplingLevel, allowedTypes.size());
     }
 
     public void logAction(String battleId, BattleAction action) {
         BattleLog battleLog = activeBattleLogs.get(battleId);
-        if (battleLog != null) {
-            battleLog.addAction(action);
+        if (battleLog == null || action == null) {
+            return;
         }
+
+        Set<String> allowedTypes = allowedActionTypes.get(battleId);
+        if (allowedTypes != null && !allowedTypes.contains(action.getActionType())) {
+            log.trace("Action {} filtered out by sampling for battle {}",
+                    action.getActionType(), battleId);
+            return;
+        }
+
+        battleLog.addAction(action);
     }
 
     @Transactional
-    public BattleLog endBattleLogging(String battleId, BattleContext context) {
+    public void endBattleLogging(String battleId, BattleContext context) {
         BattleLog battleLog = activeBattleLogs.remove(battleId);
         if (battleLog == null) {
-            return null;
+            return;
         }
+
+        bossBattleFlags.remove(battleId);
+        allowedActionTypes.remove(battleId);
 
         battleLog.setResult(context.getStatus());
         battleLog.setEndTime(context.getEndTime());
         battleLog.calculateStats();
 
+        int originalActionCount = battleLog.getActions().size();
+        int sampledActionCount = originalActionCount;
+        if (!battleLog.isBossBattle()) {
+            sampledActionCount = (int) (originalActionCount * 0.3);
+        }
+
+        battleLog.getStats().put("originalActionCount", originalActionCount);
+        battleLog.getStats().put("sampledActionCount", battleLog.getActions().size());
+        battleLog.getStats().put("samplingReductionPct",
+                100 - (battleLog.getActions().size() * 100.0 / Math.max(1, originalActionCount)));
+
         battleLogProducer.sendBattleLogAsync(battleId, battleLog);
 
-        log.info("Ended logging for battle {}: {}, {} turns, {} actions",
-                battleId, battleLog.getResult(), battleLog.getTotalTurns(), battleLog.getActions().size());
-
-        return battleLog;
+        log.info("Ended logging for battle {}: {}, {} turns, {} actions (sampled={}, level={}, reduction={}%)",
+                battleId, battleLog.getResult(), battleLog.getTotalTurns(),
+                originalActionCount, battleLog.getActions().size(),
+                battleLog.getSamplingLevel(),
+                battleLog.getStats().get("samplingReductionPct"));
     }
 
     @Transactional

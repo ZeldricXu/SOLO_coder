@@ -2,8 +2,8 @@ package com.cardgame.ai;
 
 import com.cardgame.ai.tree.BehaviorNode;
 import com.cardgame.ai.tree.BehaviorTreeFactory;
-import com.cardgame.battle.entity.BattleAction;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleAction;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;
 import com.cardgame.common.enums.BuffType;

@@ -58,12 +58,15 @@ public class MessageDispatcher {
             return;
         }
 
+        final MessageHandler finalHandler = handler;
+        final PlayerSession finalSession = session;
+        final GameMessage finalMessage = message;
         executorService.submit(() -> {
             try {
-                handler.handle(session, message);
+                finalHandler.handle(finalSession, finalMessage);
             } catch (Exception e) {
-                log.error("Error handling message type: {}", message.getType(), e);
-                sendError(session, message, 500, "Internal server error: " + e.getMessage());
+                log.error("Error handling message type: {}", finalMessage.getType(), e);
+                sendError(finalSession, finalMessage, 500, "Internal server error: " + e.getMessage());
             }
         });
     }

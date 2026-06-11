@@ -40,6 +40,7 @@ public class MapGenerator {
 
         generateNodes(map, random);
         connectNodes(map, random);
+        fixDeadEnds(map, random);
         setupStartAndBoss(map);
 
         log.info("Generated map {} for room {} with seed {}, {} floors", 
@@ -132,6 +133,119 @@ public class MapGenerator {
                 }
             }
         }
+    }
+
+    private void fixDeadEnds(GameMap map, SeededRandom random) {
+        int deadEndCount = 0;
+        int portalCount = 0;
+
+        for (int floor = 0; floor < map.getMaxFloors() - 1; floor++) {
+            List<MapNode> floorNodes = map.getNodesAtFloor(floor);
+
+            for (MapNode node : floorNodes) {
+                if (node.getNextNodeIds().isEmpty()) {
+                    deadEndCount++;
+                    MapNode portalNode = addPortalNode(map, node, random);
+                    portalCount++;
+                    log.debug("Fixed dead end at floor {} col {}: added portal to {}", 
+                            floor, node.getColumn(), portalNode.getFloor());
+                } else if (!canReachBoss(map, node, new java.util.HashSet<>())) {
+                    deadEndCount++;
+                    MapNode portalNode = addPortalNode(map, node, random);
+                    portalCount++;
+                    log.debug("Fixed unreachable path at floor {} col {}: added portal to {}", 
+                            floor, node.getColumn(), portalNode.getFloor());
+                }
+            }
+        }
+
+        if (deadEndCount > 0) {
+            log.info("Fixed {} dead ends by adding {} portal nodes", deadEndCount, portalCount);
+        }
+    }
+
+    private MapNode addPortalNode(GameMap map, MapNode deadEndNode, SeededRandom random) {
+        int targetFloor = findNextBossFloor(deadEndNode.getFloor(), map.getMaxFloors());
+        if (targetFloor <= deadEndNode.getFloor()) {
+            targetFloor = Math.min(deadEndNode.getFloor() + 3, map.getMaxFloors() - 1);
+        }
+
+        List<MapNode> targetFloorNodes = map.getNodesAtFloor(targetFloor);
+        if (targetFloorNodes == null || targetFloorNodes.isEmpty()) {
+            if (targetFloor < map.getMaxFloors() - 1) {
+                targetFloor = findNextBossFloor(targetFloor + 1, map.getMaxFloors());
+                targetFloorNodes = map.getNodesAtFloor(targetFloor);
+            }
+            if (targetFloorNodes == null || targetFloorNodes.isEmpty()) {
+                targetFloor = map.getMaxFloors() - 1;
+                targetFloorNodes = map.getNodesAtFloor(targetFloor);
+            }
+        }
+
+        MapNode targetNode = targetFloorNodes.get(random.nextInt(targetFloorNodes.size()));
+
+        MapNode portalNode = MapNode.builder()
+                .nodeId(IdGenerator.generateUUID())
+                .nodeType(NodeType.PORTAL)
+                .floor(deadEndNode.getFloor())
+                .column(deadEndNode.getColumn() + 1000)
+                .x(deadEndNode.getX() + 50)
+                .y(deadEndNode.getY())
+                .nextNodeIds(new ArrayList<>(java.util.Collections.singletonList(targetNode.getNodeId())))
+                .prevNodeIds(new ArrayList<>(java.util.Collections.singletonList(deadEndNode.getNodeId())))
+                .visited(false)
+                .current(false)
+                .accessible(false)
+                .goldReward(0)
+                .cardRewardCount(0)
+                .targetNodeId(targetNode.getNodeId())
+                .targetFloor(targetFloor)
+                .build();
+
+        deadEndNode.getNextNodeIds().add(portalNode.getNodeId());
+        targetNode.getPrevNodeIds().add(portalNode.getNodeId());
+
+        map.getNodeMap().put(portalNode.getNodeId(), portalNode);
+
+        List<MapNode> currentFloorNodes = map.getNodesAtFloor(deadEndNode.getFloor());
+        if (currentFloorNodes != null) {
+            currentFloorNodes.add(portalNode);
+        }
+
+        return portalNode;
+    }
+
+    private boolean canReachBoss(GameMap map, MapNode currentNode, java.util.Set<String> visited) {
+        if (visited.contains(currentNode.getNodeId())) {
+            return false;
+        }
+        visited.add(currentNode.getNodeId());
+
+        if (currentNode.getNodeType() == NodeType.BOSS) {
+            return true;
+        }
+
+        if (currentNode.getNextNodeIds() == null || currentNode.getNextNodeIds().isEmpty()) {
+            return false;
+        }
+
+        for (String nextId : currentNode.getNextNodeIds()) {
+            MapNode nextNode = map.getNode(nextId);
+            if (nextNode != null && canReachBoss(map, nextNode, visited)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private int findNextBossFloor(int currentFloor, int maxFloors) {
+        for (int floor = currentFloor + 1; floor < maxFloors; floor++) {
+            if (isBossFloor(floor, maxFloors)) {
+                return floor;
+            }
+        }
+        return maxFloors - 1;
     }
 
     private MapNode createNode(NodeType type, int floor, int col, int totalCols) {

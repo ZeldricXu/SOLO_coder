@@ -2,8 +2,8 @@ package com.cardgame.battle.pipeline;
 
 import com.cardgame.battle.engine.BuffSystem;
 import com.cardgame.battle.engine.TimelineEngine;
-import com.cardgame.battle.entity.BattleContext;
-import com.cardgame.battle.entity.TimelineEntry;
+import com.cardgame.common.entity.BattleContext;
+import com.cardgame.common.entity.TimelineEntry;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.GameCharacter;
 import com.cardgame.common.entity.Player;
@@ -56,7 +56,7 @@ public class PostTurnCleanupPhase extends BattlePhase {
         }
 
         timelineEngine.advanceToNextActor(context);
-        context.setCurrentActor(null);
+        context.setCurrentActorId(null);
 
         fireNext(context);
     }

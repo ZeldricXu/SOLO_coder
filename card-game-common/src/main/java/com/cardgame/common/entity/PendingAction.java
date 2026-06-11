@@ -1,4 +1,4 @@
-package com.cardgame.battle.entity;
+package com.cardgame.common.entity;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;

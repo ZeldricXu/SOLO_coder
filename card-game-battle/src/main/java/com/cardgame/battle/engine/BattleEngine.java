@@ -1,8 +1,8 @@
 package com.cardgame.battle.engine;
 
-import com.cardgame.battle.entity.BattleAction;
-import com.cardgame.battle.entity.BattleContext;
-import com.cardgame.battle.entity.TimelineEntry;
+import com.cardgame.common.entity.BattleAction;
+import com.cardgame.common.entity.BattleContext;
+import com.cardgame.common.entity.TimelineEntry;
 import com.cardgame.battle.pipeline.BattlePipeline;
 import com.cardgame.battle.pipeline.DeathCheckPhase;
 import com.cardgame.battle.pipeline.PostTurnCleanupPhase;
@@ -11,6 +11,7 @@ import com.cardgame.common.entity.Card;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;
 import com.cardgame.common.enums.BattleStatus;
+import com.cardgame.common.service.BattleLogService;
 import com.cardgame.common.utils.IdGenerator;
 import com.cardgame.deck.DeckManager;
 import lombok.extern.slf4j.Slf4j;
@@ -49,7 +50,7 @@ public class BattleEngine {
     private com.cardgame.ai.EnemyAIService enemyAIService;
 
     @Autowired(required = false)
-    private com.cardgame.replay.service.BattleLogService battleLogService;
+    private BattleLogService battleLogService;
 
     public BattleContext startBattle(String roomId, int floor, List<Player> players, List<Enemy> enemies) {
         String battleId = IdGenerator.generateBattleId();

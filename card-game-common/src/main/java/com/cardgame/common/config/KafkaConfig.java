@@ -11,4 +11,9 @@ public class KafkaConfig {
     private int producerBatchSize = 16384;
     private int producerLingerMs = 5;
     private String groupId = "cardgame_replay_group";
+    private int topicRetentionHours = 168;
+    private long topicRetentionBytes = 10737418240L;
+    private int topicSegmentBytes = 1073741824;
+    private boolean topicCleanupDelete = true;
+    private boolean topicCleanupCompact = false;
 }

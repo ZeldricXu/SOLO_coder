@@ -2,7 +2,7 @@ package com.cardgame.ai;
 
 import com.cardgame.ai.tree.BehaviorNode;
 import com.cardgame.ai.tree.BehaviorTreeFactory;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.TestDataBuilder;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;

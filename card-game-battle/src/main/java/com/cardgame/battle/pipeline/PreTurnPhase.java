@@ -2,7 +2,7 @@ package com.cardgame.battle.pipeline;
 
 import com.cardgame.battle.engine.BuffSystem;
 import com.cardgame.battle.engine.TimelineEngine;
-import com.cardgame.battle.entity.BattleContext;
+import com.cardgame.common.entity.BattleContext;
 import com.cardgame.common.config.GameConfig;
 import com.cardgame.common.entity.Enemy;
 import com.cardgame.common.entity.Player;
@@ -72,7 +72,7 @@ public class PreTurnPhase extends BattlePhase {
             return;
         }
 
-        context.setCurrentActor(currentActor.getCharacterId());
+        context.setCurrentActorId(currentActor.getCharacterId());
         fireNext(context);
     }
 
