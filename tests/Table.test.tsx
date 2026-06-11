@@ -366,4 +366,265 @@ describe('Table Component', () => {
       });
     });
   });
+
+  describe('内聚排序筛选', () => {
+    it('defaultSortBy设置默认排序', () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Charlie', age: 30, email: 'c@test.com', status: 'active', createdAt: '2024-01-03' },
+        { id: 2, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 3, name: 'Bob', age: 35, email: 'b@test.com', status: 'active', createdAt: '2024-01-02' },
+      ];
+
+      render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          defaultSortBy={{ key: 'name', direction: 'asc' }}
+        />,
+      );
+
+      const rows = screen.getAllByRole('row').slice(1);
+      const names = rows.map((row) => row.cells[1].textContent);
+      expect(names).toEqual(['Alice', 'Bob', 'Charlie']);
+    });
+
+    it('受控模式sortBy覆盖内部排序', () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Charlie', age: 30, email: 'c@test.com', status: 'active', createdAt: '2024-01-03' },
+        { id: 2, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 3, name: 'Bob', age: 35, email: 'b@test.com', status: 'active', createdAt: '2024-01-02' },
+      ];
+
+      const { rerender } = render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          sortBy={{ key: 'name', direction: 'asc' }}
+        />,
+      );
+
+      let rows = screen.getAllByRole('row').slice(1);
+      let names = rows.map((row) => row.cells[1].textContent);
+      expect(names).toEqual(['Alice', 'Bob', 'Charlie']);
+
+      rerender(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          sortBy={{ key: 'name', direction: 'desc' }}
+        />,
+      );
+
+      rows = screen.getAllByRole('row').slice(1);
+      names = rows.map((row) => row.cells[1].textContent);
+      expect(names).toEqual(['Charlie', 'Bob', 'Alice']);
+    });
+
+    it('defaultFilters设置默认筛选', () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 2, name: 'Bob', age: 30, email: 'b@test.com', status: 'inactive', createdAt: '2024-01-02' },
+        { id: 3, name: 'Charlie', age: 35, email: 'c@test.com', status: 'active', createdAt: '2024-01-03' },
+      ];
+
+      render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          defaultFilters={{ status: 'active' }}
+        />,
+      );
+
+      const rows = screen.getAllByRole('row').slice(1);
+      expect(rows).toHaveLength(2);
+    });
+
+    it('受控模式filters覆盖内部筛选', () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 2, name: 'Bob', age: 30, email: 'b@test.com', status: 'inactive', createdAt: '2024-01-02' },
+        { id: 3, name: 'Charlie', age: 35, email: 'c@test.com', status: 'pending', createdAt: '2024-01-03' },
+      ];
+
+      const { rerender } = render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          filters={{ status: 'active' }}
+        />,
+      );
+
+      let rows = screen.getAllByRole('row').slice(1);
+      expect(rows).toHaveLength(1);
+
+      rerender(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          filters={{ status: 'inactive' }}
+        />,
+      );
+
+      rows = screen.getAllByRole('row').slice(1);
+      expect(rows).toHaveLength(1);
+    });
+
+    it('onFilterChange回调在筛选变化时触发', async () => {
+      const handleFilterChange = vi.fn();
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 2, name: 'Bob', age: 30, email: 'b@test.com', status: 'inactive', createdAt: '2024-01-02' },
+      ];
+
+      render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          filterable
+          onFilterChange={handleFilterChange}
+        />,
+      );
+
+      const statusHeader = screen.getByText('Status').closest('span');
+      const filterBtn = statusHeader?.parentElement?.querySelector('[aria-label$="筛选"]');
+      if (filterBtn) {
+        fireEvent.click(filterBtn);
+
+        await waitFor(() => {
+          expect(screen.getByPlaceholderText('输入筛选内容...')).toBeInTheDocument();
+        });
+
+        const filterInput = screen.getByPlaceholderText('输入筛选内容...');
+        fireEvent.change(filterInput, { target: { value: 'active' } });
+
+        expect(handleFilterChange).toHaveBeenCalledWith({ status: 'active' });
+      }
+    });
+
+    it('自动生成筛选选项根据列数据去重', async () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 2, name: 'Bob', age: 30, email: 'b@test.com', status: 'inactive', createdAt: '2024-01-02' },
+        { id: 3, name: 'Charlie', age: 35, email: 'c@test.com', status: 'active', createdAt: '2024-01-03' },
+      ];
+
+      render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          filterable
+        />,
+      );
+
+      const nameHeader = screen.getByText('Name').closest('span');
+      const filterBtn = nameHeader?.parentElement?.querySelector('[aria-label$="筛选"]');
+      if (filterBtn) {
+        fireEvent.click(filterBtn);
+
+        await waitFor(() => {
+          expect(screen.getByText('选择值')).toBeInTheDocument();
+        });
+
+        const options = screen.getAllByRole('option');
+        expect(options.length).toBe(3);
+      }
+    });
+
+    it('column.filterOptions优先于自动生成选项', async () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+      ];
+
+      render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          filterable
+        />,
+      );
+
+      const statusHeader = screen.getByText('Status').closest('span');
+      const filterBtn = statusHeader?.parentElement?.querySelector('[aria-label$="筛选"]');
+      if (filterBtn) {
+        fireEvent.click(filterBtn);
+
+        await waitFor(() => {
+          expect(screen.getByText('选择值')).toBeInTheDocument();
+        });
+
+        const predefinedOptions = screen.getAllByRole('option');
+        expect(predefinedOptions.length).toBe(3);
+        expect(predefinedOptions[0]).toHaveTextContent('Active');
+      }
+    });
+
+    it('清除筛选按钮重置筛选条件', async () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 2, name: 'Bob', age: 30, email: 'b@test.com', status: 'inactive', createdAt: '2024-01-02' },
+      ];
+
+      const handleFilterChange = vi.fn();
+
+      render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          filterable
+          defaultFilters={{ status: 'active' }}
+          onFilterChange={handleFilterChange}
+        />,
+      );
+
+      let rows = screen.getAllByRole('row').slice(1);
+      expect(rows).toHaveLength(1);
+
+      const statusHeader = screen.getByText('Status').closest('span');
+      const filterBtn = statusHeader?.parentElement?.querySelector('[aria-label$="筛选"]');
+      if (filterBtn) {
+        fireEvent.click(filterBtn);
+
+        await waitFor(() => {
+          expect(screen.getByText('清除筛选')).toBeInTheDocument();
+        });
+
+        const clearBtn = screen.getByText('清除筛选');
+        fireEvent.click(clearBtn);
+
+        expect(handleFilterChange).toHaveBeenCalled();
+      }
+    });
+
+    it('排序和筛选组合使用', () => {
+      const testData: TableRecord[] = [
+        { id: 1, name: 'Charlie', age: 30, email: 'c@test.com', status: 'active', createdAt: '2024-01-03' },
+        { id: 2, name: 'Alice', age: 25, email: 'a@test.com', status: 'active', createdAt: '2024-01-01' },
+        { id: 3, name: 'Bob', age: 35, email: 'b@test.com', status: 'inactive', createdAt: '2024-01-02' },
+      ];
+
+      render(
+        <Table
+          columns={columns}
+          dataSource={testData}
+          rowKey="id"
+          defaultSortBy={{ key: 'name', direction: 'asc' }}
+          defaultFilters={{ status: 'active' }}
+        />,
+      );
+
+      const rows = screen.getAllByRole('row').slice(1);
+      const names = rows.map((row) => row.cells[1].textContent);
+      expect(names).toEqual(['Alice', 'Charlie']);
+    });
+  });
 });

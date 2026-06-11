@@ -7,6 +7,7 @@ import React, {
 } from 'react';
 import type { TableProps, SortState, FilterState, Column } from './types';
 import { cn } from '@utils/cn';
+import { useControllableState } from '@hooks/useControllableState';
 import { generateId, useEscapeKey } from '@a11y';
 import { Pagination } from './Pagination';
 import styles from './Table.module.css';
@@ -65,6 +66,10 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
     hoverable = true,
     sortable = true,
     filterable = true,
+    sortBy,
+    defaultSortBy = null,
+    filters,
+    defaultFilters = {},
     pagination = false,
     onPageChange,
     onSortChange,
@@ -77,8 +82,6 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
   ref: React.ForwardedRef<HTMLDivElement>,
 ) {
   const tableId = generateId('table');
-  const [sortState, setSortState] = useState<SortState | null>(null);
-  const [filterState, setFilterState] = useState<FilterState>({});
   const [filterDropdownKey, setFilterDropdownKey] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(
     typeof pagination === 'object' ? pagination.currentPage : 1,
@@ -89,6 +92,18 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
   const filterDropdownRef = useRef<HTMLDivElement>(null);
   const selectAllCheckboxRef = useRef<HTMLInputElement>(null);
 
+  const [sortState, setSortState] = useControllableState<SortState | null>(
+    sortBy,
+    defaultSortBy,
+    onSortChange,
+  );
+
+  const [filterState, setFilterState] = useControllableState<FilterState>(
+    filters,
+    defaultFilters,
+    onFilterChange,
+  );
+
   const getRowKey = useCallback(
     (record: T, index: number): string | number => {
       if (typeof rowKey === 'function') {
@@ -98,6 +113,33 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
     },
     [rowKey],
   );
+
+  const autoFilterOptions = useMemo(() => {
+    const options: Record<string, Array<{ label: string; value: string }>> = {};
+
+    columns.forEach((column) => {
+      if (column.filterable !== false && filterable && !column.filterOptions) {
+        const colKey = String(column.key);
+        const dataIndex = column.dataIndex ?? (colKey as keyof T);
+        const uniqueValues = new Set<string>();
+
+        dataSource.forEach((record) => {
+          const value = record[dataIndex];
+          if (value !== undefined && value !== null && value !== '') {
+            uniqueValues.add(String(value));
+          }
+        });
+
+        if (uniqueValues.size > 0) {
+          options[colKey] = Array.from(uniqueValues)
+            .sort()
+            .map((val) => ({ label: val, value: val }));
+        }
+      }
+    });
+
+    return options;
+  }, [columns, dataSource, filterable]);
 
   const handleSort = useCallback(
     (key: string) => {
@@ -114,11 +156,10 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
         } else {
           newSort = { key, direction: 'asc' };
         }
-        onSortChange?.(newSort);
         return newSort;
       });
     },
-    [sortable, onSortChange],
+    [sortable, setSortState],
   );
 
   const handleFilter = useCallback(
@@ -130,12 +171,11 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
         } else {
           newFilters[key] = value;
         }
-        onFilterChange?.(newFilters);
         return newFilters;
       });
       setFilterDropdownKey(null);
     },
-    [onFilterChange],
+    [setFilterState],
   );
 
   const handlePageChange = useCallback(
@@ -210,7 +250,12 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
         if (!column) return true;
         const dataIndex = column.dataIndex ?? (key as keyof T);
         const cellValue = record[dataIndex];
-        return String(cellValue).toLowerCase().includes(String(filterValue).toLowerCase());
+        const cellStr = String(cellValue);
+        const filterStr = String(filterValue);
+        if (column.filterOptions) {
+          return cellStr === filterStr;
+        }
+        return cellStr.toLowerCase().includes(filterStr.toLowerCase());
       }),
     );
   }, [sortedData, filterState, columns]);
@@ -290,6 +335,7 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
                   filterState[colKey] !== undefined && filterState[colKey] !== '';
                 const showSort = sortable && column.sortable !== false;
                 const showFilter = filterable && column.filterable !== false;
+                const columnFilterOptions = column.filterOptions ?? autoFilterOptions[colKey];
 
                 return (
                   <th
@@ -364,14 +410,19 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
                                 autoFocus
                                 aria-label={`${column.title}筛选输入`}
                               />
-                              {column.filterOptions ? (
-                                <div style={{ marginTop: 'var(--spacing-xs)' }}>
-                                  {column.filterOptions.map((opt) => (
+                              {columnFilterOptions && columnFilterOptions.length > 0 ? (
+                                <div className={styles.filterOptionsContainer}>
+                                  <div className={styles.filterOptionsTitle}>选择值</div>
+                                  {columnFilterOptions.map((opt) => (
                                     <div
                                       key={String(opt.value)}
-                                      className={styles.filterOption}
+                                      className={cn(
+                                        styles.filterOption,
+                                        filterState[colKey] === opt.value && styles.filterOptionActive,
+                                      )}
                                       onClick={() => handleFilter(colKey, opt.value)}
                                       role="option"
+                                      aria-selected={filterState[colKey] === opt.value}
                                     >
                                       {opt.label}
                                     </div>
@@ -383,15 +434,7 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
                                   e.stopPropagation();
                                   handleFilter(colKey, undefined);
                                 }}
-                                style={{
-                                  marginTop: 'var(--spacing-xs)',
-                                  padding: 'var(--spacing-xs) var(--spacing-sm)',
-                                  background: 'transparent',
-                                  border: 'none',
-                                  cursor: 'pointer',
-                                  color: 'var(--color-text-secondary)',
-                                  fontSize: 'var(--font-size-sm)',
-                                }}
+                                className={styles.clearFilterBtn}
                               >
                                 清除筛选
                               </button>

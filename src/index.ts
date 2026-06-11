@@ -10,6 +10,9 @@ export type { SelectProps, SelectOption } from './components/Select';
 export { Checkbox, CheckboxGroup } from './components/Checkbox';
 export type { CheckboxProps, CheckboxGroupProps, CheckboxOption } from './components/Checkbox';
 
+export { Tag } from './components/Tag';
+export type { TagProps } from './components/Tag';
+
 export { Radio, RadioGroup } from './components/Radio';
 export type { RadioProps, RadioGroupProps, RadioOption } from './components/Radio';
 
@@ -40,9 +43,7 @@ export type { DropdownProps, DropdownMenuItem, MenuItemType } from './components
 export { Tabs, TabPane } from './components/Tabs';
 export type { TabsProps, TabPaneProps, TabItem } from './components/Tabs';
 
-export { ThemeProvider, useTheme, useTokens } from './theme/ThemeContext';
-export { lightTheme } from './theme/tokens/light';
-export { darkTheme } from './theme/tokens/dark';
+export { ThemeProvider, useTheme, useTokens, lightTokens, darkTokens } from './theme';
 export type { Theme, DesignTokens, ColorTokens, SpacingTokens, RadiusTokens, ShadowTokens, FontTokens } from './theme/types';
 
 export {

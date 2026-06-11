@@ -10,15 +10,17 @@ export interface SelectOption {
 export interface SelectProps extends ComponentBaseProps {
   options: SelectOption[];
   size?: 'sm' | 'md' | 'lg';
-  value?: string;
-  defaultValue?: string;
+  value?: string | string[];
+  defaultValue?: string | string[];
   placeholder?: string;
-  onChange?: (value: string, option: SelectOption | null) => void;
+  onChange?: (value: string | string[], option: SelectOption | SelectOption[] | null) => void;
   error?: string | boolean;
   required?: boolean;
   label?: string;
   helperText?: string;
   disabled?: boolean;
   clearable?: boolean;
+  multi?: boolean;
+  maxTagCount?: number;
   className?: string;
 }

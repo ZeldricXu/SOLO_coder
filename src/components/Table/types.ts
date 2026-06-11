@@ -39,6 +39,10 @@ export interface TableProps<T> {
   hoverable?: boolean;
   sortable?: boolean;
   filterable?: boolean;
+  sortBy?: SortState | null;
+  defaultSortBy?: SortState | null;
+  filters?: FilterState;
+  defaultFilters?: FilterState;
   pagination?: PaginationState | boolean;
   onPageChange?: (page: number, pageSize: number) => void;
   onSortChange?: (sort: SortState | null) => void;

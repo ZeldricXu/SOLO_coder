@@ -407,4 +407,83 @@ describe('Modal Component', () => {
       expect(screen.queryByRole('button', { name: /取消/i })).not.toBeInTheDocument();
     });
   });
+
+  describe('无障碍键盘操作 - 焦点管理', () => {
+    it('打开时焦点自动锁定在Modal内部', () => {
+      render(
+        <Modal open title="焦点测试" onClose={vi.fn()}>
+          <Button>内部按钮</Button>
+        </Modal>,
+      );
+
+      const dialog = screen.getByRole('dialog');
+      const innerButton = screen.getByRole('button', { name: '内部按钮' });
+
+      const activeElement = document.activeElement;
+      expect(dialog.contains(activeElement)).toBe(true);
+    });
+
+    it('Tab在Modal内循环', () => {
+      render(
+        <Modal open title="Tab循环测试" onClose={vi.fn()}>
+          <Button>第一个按钮</Button>
+          <Button>第二个按钮</Button>
+        </Modal>,
+      );
+
+      const buttons = screen.getAllByRole('button');
+      const lastFocusable = buttons[buttons.length - 1];
+      const firstFocusable = buttons.find(
+        (btn) => btn.textContent !== '关闭' && btn.textContent !== '第二个按钮',
+      );
+
+      lastFocusable.focus();
+      fireEvent.keyDown(document, { key: 'Tab' });
+
+      const dialog = screen.getByRole('dialog');
+      expect(dialog.contains(document.activeElement)).toBe(true);
+    });
+
+    it('Escape键关闭弹窗', () => {
+      const handleClose = vi.fn();
+      render(<Modal open title="Escape测试" onClose={handleClose}>内容</Modal>);
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(handleClose).toHaveBeenCalledTimes(1);
+    });
+
+    it('escapable=false时Escape不关闭', () => {
+      const handleClose = vi.fn();
+      render(
+        <Modal open title="不可Escape" onClose={handleClose} escapable={false}>
+          内容
+        </Modal>,
+      );
+
+      fireEvent.keyDown(document, { key: 'Escape' });
+      expect(handleClose).not.toHaveBeenCalled();
+    });
+
+    it('关闭后焦点恢复到之前的元素', () => {
+      const handleClose = vi.fn();
+      const { rerender } = render(
+        <>
+          <Button>外部按钮</Button>
+          <Modal open title="焦点恢复" onClose={handleClose}>内容</Modal>
+        </>,
+      );
+
+      const outerButton = screen.getByRole('button', { name: '外部按钮' });
+      outerButton.focus();
+
+      rerender(
+        <>
+          <Button>外部按钮</Button>
+          <Modal open={false} title="焦点恢复" onClose={handleClose}>内容</Modal>
+        </>,
+      );
+
+      expect(document.activeElement).toBe(outerButton);
+    });
+  });
 });

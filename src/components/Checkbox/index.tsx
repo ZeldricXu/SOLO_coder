@@ -102,6 +102,7 @@ export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(
       error = false,
       className,
       value,
+      children,
       ...props
     },
     ref,

@@ -162,3 +162,45 @@
   color: var(--color-text-tertiary);
   font-size: var(--font-size-sm);
 }
+
+.multiTrigger {
+  height: auto;
+  min-height: 40px;
+  padding-top: var(--spacing-xs);
+  padding-bottom: var(--spacing-xs);
+}
+
+.sm.multiTrigger {
+  min-height: 32px;
+}
+
+.lg.multiTrigger {
+  min-height: 48px;
+}
+
+.tagsContainer {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-xs);
+  align-items: center;
+  min-width: 0;
+}
+
+.tag {
+  flex-shrink: 0;
+}
+
+.selectAllRow {
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--spacing-xs);
+}
+
+.multiOption {
+  padding-left: var(--spacing-sm);
+}
+
+.multiOption :global(.checkbox) {
+  margin-right: var(--spacing-sm);
+}

@@ -353,5 +353,71 @@ describe('Toast Component', () => {
         expect(toast).toHaveAttribute('aria-live', 'assertive');
       });
     });
+
+    it('Toast出现时aria-live区域播报通知内容', async () => {
+      let toastApi: ReturnType<typeof useToast> | null = null;
+
+      render(
+        <ToastProvider>
+          <TestComponent onReady={(api) => (toastApi = api)} />
+        </ToastProvider>,
+      );
+
+      act(() => {
+        toastApi?.toast(createToastOptions({ message: '测试通知播报' }));
+      });
+
+      await waitFor(() => {
+        const liveRegion = document.querySelector('[aria-live="polite"]');
+        expect(liveRegion).toBeInTheDocument();
+        expect(liveRegion?.textContent).toContain('通知');
+      });
+    });
+
+    it('多个Toast时aria-live区域更新播报数量', async () => {
+      let toastApi: ReturnType<typeof useToast> | null = null;
+
+      render(
+        <ToastProvider>
+          <TestComponent onReady={(api) => (toastApi = api)} />
+        </ToastProvider>,
+      );
+
+      act(() => {
+        toastApi?.toast(createToastOptions({ message: '通知1' }));
+        toastApi?.toast(createToastOptions({ message: '通知2' }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('2条通知')).toBeInTheDocument();
+      });
+    });
+
+    it('Toast全部关闭后aria-live区域清空', async () => {
+      let toastApi: ReturnType<typeof useToast> | null = null;
+
+      render(
+        <ToastProvider>
+          <TestComponent onReady={(api) => (toastApi = api)} />
+        </ToastProvider>,
+      );
+
+      act(() => {
+        toastApi?.toast(createToastOptions({ id: 't1', message: '通知1', duration: Infinity }));
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText('通知1')).toBeInTheDocument();
+      });
+
+      act(() => {
+        toastApi?.dismissAll();
+      });
+
+      await waitFor(() => {
+        const liveRegion = document.querySelector('[aria-live]');
+        expect(liveRegion?.textContent).toBe('');
+      }, { timeout: 2000 });
+    });
   });
 });

@@ -245,4 +245,67 @@ describe('Button Component', () => {
       expect(document.querySelector('.spinner')).not.toBeInTheDocument();
     });
   });
+
+  describe('无障碍键盘操作', () => {
+    it('focus时按Enter触发onClick', () => {
+      const handleClick = vi.fn();
+      const props = createButtonProps({ onClick: handleClick });
+      render(<Button {...props} />);
+
+      const button = screen.getByRole('button');
+      button.focus();
+      fireEvent.keyDown(button, { key: 'Enter' });
+
+      expect(handleClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('focus时按Space触发onClick', () => {
+      const handleClick = vi.fn();
+      const props = createButtonProps({ onClick: handleClick });
+      render(<Button {...props} />);
+
+      const button = screen.getByRole('button');
+      button.focus();
+      fireEvent.keyDown(button, { key: ' ' });
+
+      expect(handleClick).toHaveBeenCalledTimes(1);
+    });
+
+    it('focus时按其他键不触发onClick', () => {
+      const handleClick = vi.fn();
+      const props = createButtonProps({ onClick: handleClick });
+      render(<Button {...props} />);
+
+      const button = screen.getByRole('button');
+      button.focus();
+      fireEvent.keyDown(button, { key: 'Tab' });
+      fireEvent.keyDown(button, { key: 'a' });
+
+      expect(handleClick).not.toHaveBeenCalled();
+    });
+
+    it('disabled时Enter/Space不触发onClick', () => {
+      const handleClick = vi.fn();
+      const props = createButtonProps({ disabled: true, onClick: handleClick });
+      render(<Button {...props} />);
+
+      const button = screen.getByRole('button');
+      fireEvent.keyDown(button, { key: 'Enter' });
+      fireEvent.keyDown(button, { key: ' ' });
+
+      expect(handleClick).not.toHaveBeenCalled();
+    });
+
+    it('loading时Enter/Space不触发onClick', () => {
+      const handleClick = vi.fn();
+      const props = createButtonProps({ loading: true, onClick: handleClick });
+      render(<Button {...props} />);
+
+      const button = screen.getByRole('button');
+      fireEvent.keyDown(button, { key: 'Enter' });
+      fireEvent.keyDown(button, { key: ' ' });
+
+      expect(handleClick).not.toHaveBeenCalled();
+    });
+  });
 });
