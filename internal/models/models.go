@@ -178,3 +178,27 @@ const (
 	ConflictKeepTheirs ConflictResolution = "keep_theirs"
 	ConflictMerge      ConflictResolution = "merge"
 )
+
+type NodePreview struct {
+	NoteID    uint     `json:"note_id"`
+	Title     string   `json:"title"`
+	Content   string   `json:"content"`
+	Tags      []string `json:"tags"`
+	WordCount int      `json:"word_count"`
+	LinkCount int      `json:"link_count"`
+	Path      string   `json:"path"`
+}
+
+type LayoutType string
+
+const (
+	LayoutForce        LayoutType = "force"
+	LayoutCircular     LayoutType = "circular"
+	LayoutHierarchical LayoutType = "hierarchical"
+)
+
+type GraphAction struct {
+	Type   string                 `json:"type"`
+	NodeID uint                   `json:"node_id"`
+	Data   map[string]interface{} `json:"data"`
+}

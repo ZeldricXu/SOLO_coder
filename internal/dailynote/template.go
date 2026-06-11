@@ -4,17 +4,20 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/solocoder/knowledgebase/internal/config"
+	"github.com/solocoder/knowledgebase/internal/db"
 	"github.com/solocoder/knowledgebase/internal/models"
 	"github.com/solocoder/knowledgebase/pkg/utils"
 )
 
 type TemplateManager struct {
-	cfg         *config.Config
-	resolver    *VariableResolver
-	builtinTpls map[string]*models.Template
+	cfg          *config.Config
+	resolver     *VariableResolver
+	builtinTpls  map[string]*models.Template
+	scriptEngine *ScriptTemplateEngine
 }
 
 func NewTemplateManager(cfg *config.Config) *TemplateManager {
@@ -25,6 +28,12 @@ func NewTemplateManager(cfg *config.Config) *TemplateManager {
 	}
 	tm.registerBuiltinTemplates()
 	return tm
+}
+
+func (tm *TemplateManager) SetScriptEngine(database *db.Database, cfg *config.Config) {
+	if database != nil && cfg != nil {
+		tm.scriptEngine = NewScriptTemplateEngine(database, cfg)
+	}
 }
 
 func (tm *TemplateManager) registerBuiltinTemplates() {
@@ -406,12 +415,56 @@ func (tm *TemplateManager) RenderTemplate(id string, variables map[string]string
 }
 
 func (tm *TemplateManager) RenderContent(content string, variables map[string]string) (string, error) {
+	if strings.Contains(content, "<%=") || strings.Contains(content, "<%") {
+		if tm.scriptEngine != nil {
+			return tm.scriptEngine.Render(content, variables)
+		}
+	}
+
 	resolver := NewVariableResolver()
 	if variables != nil {
 		resolver.SetCustom(variables)
 	}
 
 	return resolver.Resolve(content)
+}
+
+func (tm *TemplateManager) RenderScriptTemplate(content string, ctx *TemplateContext) (string, error) {
+	if tm.scriptEngine == nil {
+		return "", os.ErrInvalid
+	}
+	tm.scriptEngine.InjectContext(ctx)
+	return tm.scriptEngine.Render(content, ctx.Custom)
+}
+
+func (tm *TemplateManager) GetContext() *TemplateContext {
+	if tm.scriptEngine == nil {
+		now := time.Now()
+		weekdays := []string{"星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六"}
+		return &TemplateContext{
+			Notes: NotesContext{
+				Recent: []RecentNote{},
+				ByTag:  map[string]int{},
+			},
+			Tags: TagsContext{
+				All:   []TagInfo{},
+				Cloud: []TagCloudItem{},
+			},
+			RecentFiles: []RecentNote{},
+			Date: DateContext{
+				Now:       now.Format("2006-01-02"),
+				Yesterday: now.AddDate(0, 0, -1).Format("2006-01-02"),
+				Tomorrow:  now.AddDate(0, 0, 1).Format("2006-01-02"),
+				Weekday:   weekdays[now.Weekday()],
+				Year:      now.Format("2006"),
+				Month:     now.Format("01"),
+				Day:       now.Format("02"),
+			},
+			Custom:  map[string]string{},
+			Weather: "晴",
+		}
+	}
+	return tm.scriptEngine.BuildContext()
 }
 
 func (tm *TemplateManager) SetVariable(name, value string) {

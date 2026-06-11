@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 )
 
+const AppVersion = "2.0.0"
+
 type Config struct {
 	VaultPath     string `json:"vault_path"`
 	DBPath        string `json:"db_path"`
@@ -15,9 +17,15 @@ type Config struct {
 	DailyNotePath string `json:"daily_note_path"`
 
 	Search struct {
-		BM25K1 float64 `json:"bm25_k1"`
-		BM25B  float64 `json:"bm25_b"`
-		UseCJK bool    `json:"use_cjk"`
+		BM25K1          float64 `json:"bm25_k1"`
+		BM25B           float64 `json:"bm25_b"`
+		UseCJK          bool    `json:"use_cjk"`
+		EnableSemantic  bool    `json:"enable_semantic"`
+		OllamaBaseURL   string  `json:"ollama_base_url"`
+		EmbeddingModel  string  `json:"embedding_model"`
+		VectorIndexPath string  `json:"vector_index_path"`
+		BM25Weight      float64 `json:"bm25_weight"`
+		VectorWeight    float64 `json:"vector_weight"`
 	} `json:"search"`
 
 	Graph struct {
@@ -109,6 +117,25 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Search.UseCJK == false {
 		c.Search.UseCJK = true
+	}
+	if !c.Search.EnableSemantic {
+		c.Search.EnableSemantic = true
+	}
+	if c.Search.OllamaBaseURL == "" {
+		c.Search.OllamaBaseURL = "http://localhost:11434"
+	}
+	if c.Search.EmbeddingModel == "" {
+		c.Search.EmbeddingModel = "bge-small-zh-v1.5"
+	}
+	if c.Search.VectorIndexPath == "" {
+		home, _ := os.UserHomeDir()
+		c.Search.VectorIndexPath = filepath.Join(home, ".knowledgebase", "vectors.json")
+	}
+	if c.Search.BM25Weight == 0 {
+		c.Search.BM25Weight = 0.6
+	}
+	if c.Search.VectorWeight == 0 {
+		c.Search.VectorWeight = 0.4
 	}
 	if c.Graph.NodeMinSize == 0 {
 		c.Graph.NodeMinSize = 10

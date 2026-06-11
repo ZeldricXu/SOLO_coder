@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -32,6 +33,7 @@ type Server struct {
 	db           *db.Database
 	markdown     *markdown.MarkdownParser
 	search       *search.SearchEngine
+	hybridEngine *search.HybridSearchEngine
 	watcher      *fsnotify.Watcher
 	tagManager   *tags.TagManager
 	folderMgr    *tags.FolderManager
@@ -40,6 +42,7 @@ type Server struct {
 	dailyNote    *dailynote.DailyNoteManager
 	pluginMgr    *plugin.PluginManager
 	graph        *graph.Graph
+	graphInter   *graph.GraphInteraction
 	editor       *editor.Editor
 	webDir       string
 
@@ -63,26 +66,37 @@ func New(cfg *config.Config) (*Server, error) {
 	dailyNoteMgr := dailynote.NewDailyNoteManager(cfg, database)
 	pluginMgr := plugin.NewPluginManager(cfg, database, searchEngine, tagMgr)
 	graphEngine := graph.New(cfg)
+	graphInteraction := graph.NewGraphInteraction(graphEngine, database, cfg)
 	editorEngine := editor.New(database, mdParser, cfg)
 
 	webDir := resolveWebDir()
 
+	var hybridEngine *search.HybridSearchEngine
+	if cfg.Search.EnableSemantic {
+		embeddingClient := search.NewEmbeddingClient(cfg.Search.OllamaBaseURL, cfg.Search.EmbeddingModel)
+		vectorIndex := search.NewVectorIndex(cfg.Search.VectorIndexPath)
+		hybridEngine = search.NewHybridSearchEngine(searchEngine, embeddingClient, vectorIndex)
+		hybridEngine.SetWeights(cfg.Search.BM25Weight, cfg.Search.VectorWeight)
+	}
+
 	srv := &Server{
-		cfg:        cfg,
-		db:         database,
-		markdown:   mdParser,
-		search:     searchEngine,
-		watcher:    watcher,
-		tagManager: tagMgr,
-		folderMgr:  folderMgr,
-		filterMgr:  filterMgr,
-		exporter:   exporter,
-		dailyNote:  dailyNoteMgr,
-		pluginMgr:  pluginMgr,
-		graph:      graphEngine,
-		editor:     editorEngine,
-		webDir:     webDir,
-		clients:    make(map[*websocket.Conn]bool),
+		cfg:          cfg,
+		db:           database,
+		markdown:     mdParser,
+		search:       searchEngine,
+		hybridEngine: hybridEngine,
+		watcher:      watcher,
+		tagManager:   tagMgr,
+		folderMgr:    folderMgr,
+		filterMgr:    filterMgr,
+		exporter:     exporter,
+		dailyNote:    dailyNoteMgr,
+		pluginMgr:    pluginMgr,
+		graph:        graphEngine,
+		graphInter:   graphInteraction,
+		editor:       editorEngine,
+		webDir:       webDir,
+		clients:      make(map[*websocket.Conn]bool),
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  1024,
 			WriteBufferSize: 1024,
@@ -128,6 +142,9 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Stop() {
+	if s.hybridEngine != nil {
+		s.hybridEngine.StopBackgroundIndexing()
+	}
 	s.watcher.Stop()
 	s.pluginMgr.Shutdown()
 	s.db.Close()
@@ -143,6 +160,9 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/notes/content", s.handleNoteContent)
 	mux.HandleFunc("/api/notes/backlinks", s.handleBacklinks)
 
+	mux.HandleFunc("/api/search/semantic/status", s.handleSemanticStatus)
+	mux.HandleFunc("/api/search/semantic/reindex", s.handleReindexVectors)
+
 	mux.HandleFunc("/api/tags", s.handleTags)
 	mux.HandleFunc("/api/tags/", s.handleTag)
 	mux.HandleFunc("/api/tags/autocomplete", s.handleTagAutocomplete)
@@ -151,12 +171,17 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 	mux.HandleFunc("/api/graph", s.handleGraph)
 	mux.HandleFunc("/api/graph/layout", s.handleGraphLayout)
+	mux.HandleFunc("/api/graph/node/", s.handleGraphNode)
+	mux.HandleFunc("/api/graph/action", s.handleGraphAction)
 
 	mux.HandleFunc("/api/export", s.handleExport)
 
 	mux.HandleFunc("/api/daily/today", s.handleDailyToday)
 	mux.HandleFunc("/api/daily/", s.handleDailyNote)
 	mux.HandleFunc("/api/templates", s.handleTemplates)
+	mux.HandleFunc("/api/templates/context", s.handleTemplateContext)
+	mux.HandleFunc("/api/templates/render", s.handleRenderTemplate)
+	mux.HandleFunc("/api/templates/preview", s.handleTemplatePreview)
 	mux.HandleFunc("/api/todos", s.handleTodos)
 
 	mux.HandleFunc("/api/plugins", s.handlePlugins)
@@ -247,7 +272,11 @@ func (s *Server) handleNote(w http.ResponseWriter, r *http.Request) {
 		}
 		s.db.SaveNote(note)
 
-		s.search.IndexNote(note.ID, note.Title, req.Content)
+		if s.hybridEngine != nil {
+			s.hybridEngine.IndexNoteWithVector(note.ID, note.Title, req.Content)
+		} else {
+			s.search.IndexNote(note.ID, note.Title, req.Content)
+		}
 
 		links := []models.Link{}
 		for _, l := range result.Links {
@@ -317,7 +346,16 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		EnableFuzzy: true,
 	}
 
-	results, total, err := s.search.Search(sq)
+	var results []models.SearchResult
+	var total int
+	var err error
+
+	if s.hybridEngine != nil {
+		results, total, err = s.hybridEngine.Search(sq)
+	} else {
+		results, total, err = s.search.Search(sq)
+	}
+
 	if err != nil {
 		s.errorResponse(w, err)
 		return
@@ -328,6 +366,53 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		"total":   total,
 		"page":    page,
 		"pages":   (total + pageSize - 1) / pageSize,
+	})
+}
+
+func (s *Server) handleSemanticStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	enabled := s.hybridEngine != nil
+	ollamaAvailable := false
+	var total, completed int
+	var running bool
+
+	if enabled {
+		ollamaAvailable = s.hybridEngine.IsOllamaAvailable()
+		total, completed, running = s.hybridEngine.GetIndexingProgress()
+	}
+
+	s.jsonResponse(w, map[string]interface{}{
+		"enabled":          enabled,
+		"ollama_available": ollamaAvailable,
+		"indexing_progress": map[string]interface{}{
+			"total":     total,
+			"completed": completed,
+			"running":   running,
+		},
+	})
+}
+
+func (s *Server) handleReindexVectors(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.hybridEngine == nil {
+		s.errorResponse(w, fmt.Errorf("semantic search is not enabled"))
+		return
+	}
+
+	s.hybridEngine.StopBackgroundIndexing()
+	s.hybridEngine.StartBackgroundIndexing(s.db)
+
+	s.jsonResponse(w, map[string]interface{}{
+		"status":  "reindexing_started",
+		"message": "Background vector reindexing has been initiated",
 	})
 }
 
@@ -432,9 +517,141 @@ func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGraphLayout(w http.ResponseWriter, r *http.Request) {
+	if r.Method == "POST" {
+		var req struct {
+			Type   string             `json:"type"`
+			Config *graph.LayoutConfig `json:"config"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			s.errorResponse(w, err)
+			return
+		}
+
+		cfg := req.Config
+		if cfg == nil {
+			cfg = graph.DefaultLayoutConfig()
+		}
+
+		switch models.LayoutType(req.Type) {
+		case models.LayoutCircular:
+			s.graph.CircularLayout(cfg)
+		case models.LayoutHierarchical:
+			s.graph.HierarchicalLayout(cfg)
+		default:
+			s.graph.Layout(cfg)
+		}
+
+		data := s.graph.ToGraphData()
+		s.jsonResponse(w, data)
+		return
+	}
+
 	s.graph.Layout(nil)
 	data := s.graph.ToGraphData()
 	s.jsonResponse(w, data)
+}
+
+func (s *Server) handleGraphNode(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path[len("/api/graph/node/"):]
+	parts := strings.SplitN(path, "/", 3)
+
+	if len(parts) < 2 || parts[1] != "preview" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	id, err := strconv.Atoi(parts[0])
+	if err != nil {
+		s.errorResponse(w, fmt.Errorf("invalid node id"))
+		return
+	}
+
+	preview, err := s.graphInter.GetNodePreview(uint(id))
+	if err != nil {
+		s.errorResponse(w, err)
+		return
+	}
+	s.jsonResponse(w, preview)
+}
+
+func (s *Server) handleGraphAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var action models.GraphAction
+	if err := json.NewDecoder(r.Body).Decode(&action); err != nil {
+		s.errorResponse(w, err)
+		return
+	}
+
+	switch action.Type {
+	case "addLink":
+		targetID, ok := action.Data["target_id"].(float64)
+		if !ok {
+			s.errorResponse(w, fmt.Errorf("target_id is required"))
+			return
+		}
+		if err := s.graphInter.AddLink(action.NodeID, uint(targetID)); err != nil {
+			s.errorResponse(w, err)
+			return
+		}
+		s.jsonResponse(w, map[string]string{"status": "ok"})
+
+	case "removeLink":
+		targetID, ok := action.Data["target_id"].(float64)
+		if !ok {
+			s.errorResponse(w, fmt.Errorf("target_id is required"))
+			return
+		}
+		if err := s.graphInter.RemoveLink(action.NodeID, uint(targetID)); err != nil {
+			s.errorResponse(w, err)
+			return
+		}
+		s.jsonResponse(w, map[string]string{"status": "ok"})
+
+	case "rename":
+		newTitle, ok := action.Data["new_title"].(string)
+		if !ok {
+			s.errorResponse(w, fmt.Errorf("new_title is required"))
+			return
+		}
+		if err := s.graphInter.RenameNode(action.NodeID, newTitle); err != nil {
+			s.errorResponse(w, err)
+			return
+		}
+		s.jsonResponse(w, map[string]string{"status": "ok"})
+
+	case "delete":
+		if err := s.graphInter.DeleteNode(action.NodeID); err != nil {
+			s.errorResponse(w, err)
+			return
+		}
+		s.jsonResponse(w, map[string]string{"status": "ok"})
+
+	case "createSummary":
+		rawIDs, ok := action.Data["node_ids"].([]interface{})
+		if !ok {
+			s.errorResponse(w, fmt.Errorf("node_ids is required"))
+			return
+		}
+		var nodeIDs []uint
+		for _, raw := range rawIDs {
+			if id, ok := raw.(float64); ok {
+				nodeIDs = append(nodeIDs, uint(id))
+			}
+		}
+		note, err := s.graphInter.CreateSummaryFromNodes(nodeIDs)
+		if err != nil {
+			s.errorResponse(w, err)
+			return
+		}
+		s.jsonResponse(w, note)
+
+	default:
+		s.errorResponse(w, fmt.Errorf("unknown action type: %s", action.Type))
+	}
 }
 
 func (s *Server) handleExport(w http.ResponseWriter, r *http.Request) {
@@ -506,6 +723,75 @@ func (s *Server) handleTemplates(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.jsonResponse(w, templates)
+}
+
+func (s *Server) handleTemplateContext(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	ctx := s.dailyNote.GetTemplateManager().GetContext()
+	s.jsonResponse(w, ctx)
+}
+
+func (s *Server) handleRenderTemplate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Content   string            `json:"content"`
+		Variables map[string]string `json:"variables"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, err)
+		return
+	}
+
+	result, err := s.dailyNote.GetTemplateManager().RenderContent(req.Content, req.Variables)
+	if err != nil {
+		s.errorResponse(w, err)
+		return
+	}
+
+	s.jsonResponse(w, map[string]string{"result": result})
+}
+
+func (s *Server) handleTemplatePreview(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		TemplateID string `json:"template_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.errorResponse(w, err)
+		return
+	}
+
+	tpl, err := s.dailyNote.GetTemplateManager().GetTemplate(req.TemplateID)
+	if err != nil {
+		s.errorResponse(w, err)
+		return
+	}
+
+	ctx := s.dailyNote.GetTemplateManager().GetContext()
+	result, err := s.dailyNote.GetTemplateManager().RenderScriptTemplate(tpl.Content, ctx)
+	if err != nil {
+		result, err = s.dailyNote.GetTemplateManager().RenderContent(tpl.Content, nil)
+		if err != nil {
+			s.errorResponse(w, err)
+			return
+		}
+	}
+
+	s.jsonResponse(w, map[string]interface{}{
+		"template_id": req.TemplateID,
+		"result":      result,
+	})
 }
 
 func (s *Server) handleTodos(w http.ResponseWriter, r *http.Request) {

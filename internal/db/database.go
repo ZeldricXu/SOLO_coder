@@ -119,6 +119,10 @@ func (db *Database) migrate() error {
 		}
 	}
 
+	if err := db.RunMigrations(); err != nil {
+		return fmt.Errorf("schema migration failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -278,6 +282,33 @@ func (db *Database) SaveLinks(sourceID uint, links []models.Link) error {
 		}
 	}
 	return nil
+}
+
+func (db *Database) AddLink(link *models.Link) error {
+	_, err := db.Exec(`
+		INSERT INTO links (source_id, target_id, source_path, target_path, anchor_text, line_num)
+		VALUES (?, ?, ?, ?, ?, ?)
+	`, link.SourceID, link.TargetID, link.SourcePath, link.TargetPath,
+		link.AnchorText, link.LineNum)
+	return err
+}
+
+func (db *Database) DeleteLink(sourceID, targetID uint) error {
+	_, err := db.Exec("DELETE FROM links WHERE source_id=? AND target_id=?", sourceID, targetID)
+	return err
+}
+
+func (db *Database) DeleteNoteByID(id uint) error {
+	_, err := db.Exec("DELETE FROM links WHERE source_id=? OR target_id=?", id, id)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("DELETE FROM note_tags WHERE note_id=?", id)
+	if err != nil {
+		return err
+	}
+	_, err = db.Exec("DELETE FROM notes WHERE id=?", id)
+	return err
 }
 
 func (db *Database) GetLinks() ([]models.Link, error) {

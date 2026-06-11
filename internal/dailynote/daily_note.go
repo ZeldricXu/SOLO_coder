@@ -38,6 +38,7 @@ func NewDailyNoteManager(cfg *config.Config, database *db.Database) *DailyNoteMa
 		dateFormat:      "2006-01-02",
 		notePath:        cfg.DailyNotePath,
 	}
+	dnm.templateManager.SetScriptEngine(database, cfg)
 	return dnm
 }
 

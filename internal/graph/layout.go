@@ -1,8 +1,10 @@
 package graph
 
 import (
+	"container/list"
 	"math"
 	"math/rand"
+	"sort"
 )
 
 type LayoutConfig struct {
@@ -411,4 +413,158 @@ func (g *Graph) Step(config *LayoutConfig, temp float64) float64 {
 	}
 
 	return temp * config.CoolingRate
+}
+
+func (g *Graph) CircularLayout(config *LayoutConfig) {
+	if config == nil {
+		config = DefaultLayoutConfig()
+	}
+
+	if len(g.Nodes) == 0 {
+		return
+	}
+
+	centerX := config.CenterX
+	centerY := config.CenterY
+	mainRadius := math.Min(config.Width, config.Height) * 0.4
+
+	sorted := make([]*GraphNode, 0, len(g.Nodes))
+	for _, node := range g.Nodes {
+		sorted = append(sorted, node)
+	}
+	sort.Slice(sorted, func(i, j int) bool {
+		return sorted[i].InDegree > sorted[j].InDegree
+	})
+
+	var orphans []*GraphNode
+	var nonOrphans []*GraphNode
+	for _, node := range sorted {
+		if node.IsOrphan {
+			orphans = append(orphans, node)
+		} else {
+			nonOrphans = append(nonOrphans, node)
+		}
+	}
+
+	n := len(nonOrphans)
+	for i, node := range nonOrphans {
+		angle := 2 * math.Pi * float64(i) / float64(n)
+		node.X = centerX + mainRadius*math.Cos(angle)
+		node.Y = centerY + mainRadius*math.Sin(angle)
+		node.Vx = 0
+		node.Vy = 0
+	}
+
+	smallRadius := mainRadius * 0.2
+	orphanCount := len(orphans)
+	for i, node := range orphans {
+		angle := 2 * math.Pi * float64(i) / float64(orphanCount)
+		node.X = centerX + smallRadius*math.Cos(angle)
+		node.Y = centerY + smallRadius*math.Sin(angle)
+		node.Vx = 0
+		node.Vy = 0
+	}
+}
+
+func (g *Graph) HierarchicalLayout(config *LayoutConfig) {
+	if config == nil {
+		config = DefaultLayoutConfig()
+	}
+
+	if len(g.Nodes) == 0 {
+		return
+	}
+
+	inDegree := make(map[uint]int)
+	for _, edge := range g.Edges {
+		inDegree[edge.Target]++
+	}
+
+	level := make(map[uint]int)
+	visited := make(map[uint]bool)
+
+	var roots []*GraphNode
+	var orphans []*GraphNode
+	for _, node := range g.Nodes {
+		if inDegree[node.ID] == 0 && !node.IsOrphan {
+			roots = append(roots, node)
+			level[node.ID] = 0
+			visited[node.ID] = true
+		}
+		if node.IsOrphan {
+			orphans = append(orphans, node)
+		}
+	}
+
+	adj := make(map[uint][]uint)
+	for _, edge := range g.Edges {
+		adj[edge.Source] = append(adj[edge.Source], edge.Target)
+	}
+
+	queue := list.New()
+	for _, root := range roots {
+		queue.PushBack(root.ID)
+	}
+
+	for queue.Len() > 0 {
+		front := queue.Front()
+		current := front.Value.(uint)
+		queue.Remove(front)
+
+		for _, neighbor := range adj[current] {
+			if visited[neighbor] {
+				continue
+			}
+			visited[neighbor] = true
+			level[neighbor] = level[current] + 1
+			queue.PushBack(neighbor)
+		}
+	}
+
+	maxLevel := 0
+	for _, node := range g.Nodes {
+		if !node.IsOrphan && visited[node.ID] {
+			if level[node.ID] > maxLevel {
+				maxLevel = level[node.ID]
+			}
+		}
+	}
+
+	for _, node := range orphans {
+		maxLevel++
+		level[node.ID] = maxLevel
+		visited[node.ID] = true
+		break
+	}
+	for i, node := range orphans {
+		if i == 0 {
+			continue
+		}
+		level[node.ID] = maxLevel
+		visited[node.ID] = true
+	}
+
+	levelNodes := make(map[int][]*GraphNode)
+	for _, node := range g.Nodes {
+		l := level[node.ID]
+		levelNodes[l] = append(levelNodes[l], node)
+	}
+
+	centerX := config.CenterX
+	layerHeight := config.Height / float64(maxLevel+1)
+
+	for l := 0; l <= maxLevel; l++ {
+		nodes := levelNodes[l]
+		n := len(nodes)
+		if n == 0 {
+			continue
+		}
+		spacing := config.Width / float64(n+1)
+		for i, node := range nodes {
+			node.X = centerX - config.Width/2 + spacing*float64(i+1)
+			node.Y = float64(l) * layerHeight + layerHeight/2
+			node.Vx = 0
+			node.Vy = 0
+		}
+	}
 }
