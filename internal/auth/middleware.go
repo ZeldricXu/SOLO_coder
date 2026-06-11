@@ -146,6 +146,40 @@ func BuildMiddlewareChainWithCustomProviders(policy *models.AuthPolicy, validKey
 	return chain, nil
 }
 
+func (c *MiddlewareChain) ComposeOnion() OnionMiddleware {
+	c.sortByPriority()
+
+	onionMiddlewares := make([]OnionMiddleware, len(c.middlewares))
+	for i, mw := range c.middlewares {
+		onionMiddlewares[i] = ToOnionMiddleware(mw)
+	}
+	return Compose(onionMiddlewares...)
+}
+
+func (c *MiddlewareChain) WithOrder(order []int) *MiddlewareChain {
+	c.sortByPriority()
+
+	if len(order) != len(c.middlewares) {
+		return &MiddlewareChain{
+			middlewares: append([]Middleware{}, c.middlewares...),
+			sorted:      true,
+		}
+	}
+
+	reordered := make([]Middleware, len(c.middlewares))
+	for i, idx := range order {
+		if idx < 0 || idx >= len(c.middlewares) {
+			reordered[i] = c.middlewares[i]
+			continue
+		}
+		reordered[i] = c.middlewares[idx]
+	}
+	return &MiddlewareChain{
+		middlewares: reordered,
+		sorted:      true,
+	}
+}
+
 func buildCustomProviderMiddleware(customConfig *models.CustomProviderConfig, validKeys map[string]string, optional bool, priority int, customProviderConfigs map[string]interface{}) (Middleware, error) {
 	if customConfig == nil {
 		return nil, nil

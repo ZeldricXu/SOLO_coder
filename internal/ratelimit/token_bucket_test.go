@@ -268,13 +268,13 @@ func TestSlidingWindow_NormalPath(t *testing.T) {
 		key := "test-sliding-window-normal"
 
 		for i := 0; i < int(limit); i++ {
-			allowed, remaining, lim, _ := sw.Allow(context.Background(), key, limit, window)
+			allowed, remaining, lim, _ := sw.Check(context.Background(), key, limit, window)
 			assert.True(t, allowed, "request %d should be allowed", i)
 			assert.Equal(t, limit, lim)
 			assert.Equal(t, limit-int64(i)-1, remaining)
 		}
 
-		allowed, remaining, _, _ := sw.Allow(context.Background(), key, limit, window)
+		allowed, remaining, _, _ := sw.Check(context.Background(), key, limit, window)
 		assert.False(t, allowed, "request over limit should be rejected")
 		assert.Equal(t, int64(0), remaining)
 	})

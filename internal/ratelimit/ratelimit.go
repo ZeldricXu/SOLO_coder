@@ -10,17 +10,18 @@ import (
 )
 
 type Manager struct {
-	store             interface{}
-	keyBuilder        *KeyBuilder
-	tokenBucket       *TokenBucket
-	slidingWindow     *SlidingWindow
-	concurrency       *Concurrency
-	mu                sync.Mutex
-	releaseFuncs      map[string][]func()
-	adaptiveManagers  map[string]*AdaptiveManager
-	adaptiveMu        sync.RWMutex
-	policies          map[string]*models.RateLimitPolicy
-	policiesMu        sync.RWMutex
+	store            interface{}
+	keyBuilder       *KeyBuilder
+	tokenBucket      *TokenBucket
+	slidingWindow    *SlidingWindow
+	concurrency      *Concurrency
+	limiters         map[models.RateLimitAlgorithm]RateLimiter
+	mu               sync.Mutex
+	releaseFuncs     map[string][]func()
+	adaptiveManagers map[string]*AdaptiveManager
+	adaptiveMu       sync.RWMutex
+	policies         map[string]*models.RateLimitPolicy
+	policiesMu       sync.RWMutex
 }
 
 type Store interface {
@@ -31,12 +32,21 @@ type Store interface {
 
 func NewManager(redisClient RedisClient) *Manager {
 	store := NewRedisStore(redisClient)
+	tb := NewTokenBucket(store)
+	sw := NewSlidingWindow(store)
+	cc := NewConcurrency(store)
+
 	return &Manager{
-		store:            store,
-		keyBuilder:       NewKeyBuilder(),
-		tokenBucket:      NewTokenBucket(store),
-		slidingWindow:    NewSlidingWindow(store),
-		concurrency:      NewConcurrency(store),
+		store:         store,
+		keyBuilder:    NewKeyBuilder(),
+		tokenBucket:   tb,
+		slidingWindow: sw,
+		concurrency:   cc,
+		limiters: map[models.RateLimitAlgorithm]RateLimiter{
+			models.AlgorithmTokenBucket:  tb,
+			models.AlgorithmSlidingWindow: sw,
+			models.AlgorithmConcurrency:  cc,
+		},
 		releaseFuncs:     make(map[string][]func()),
 		adaptiveManagers: make(map[string]*AdaptiveManager),
 		policies:         make(map[string]*models.RateLimitPolicy),
@@ -44,12 +54,21 @@ func NewManager(redisClient RedisClient) *Manager {
 }
 
 func NewManagerWithStore(store Store) *Manager {
+	tb := NewTokenBucket(store)
+	sw := NewSlidingWindow(store)
+	cc := NewConcurrency(store)
+
 	return &Manager{
-		store:            store,
-		keyBuilder:       NewKeyBuilder(),
-		tokenBucket:      NewTokenBucket(store),
-		slidingWindow:    NewSlidingWindow(store),
-		concurrency:      NewConcurrency(store),
+		store:         store,
+		keyBuilder:    NewKeyBuilder(),
+		tokenBucket:   tb,
+		slidingWindow: sw,
+		concurrency:   cc,
+		limiters: map[models.RateLimitAlgorithm]RateLimiter{
+			models.AlgorithmTokenBucket:  tb,
+			models.AlgorithmSlidingWindow: sw,
+			models.AlgorithmConcurrency:  cc,
+		},
 		releaseFuncs:     make(map[string][]func()),
 		adaptiveManagers: make(map[string]*AdaptiveManager),
 		policies:         make(map[string]*models.RateLimitPolicy),
@@ -228,7 +247,7 @@ func (m *Manager) applySlidingWindow(ctx *models.GatewayContext, policy *models.
 		window = time.Minute
 	}
 
-	allowed, remaining, limitVal, resetAfter := m.slidingWindow.Allow(ctx, key, limit, window)
+	allowed, remaining, limitVal, resetAfter := m.slidingWindow.Check(ctx, key, limit, window)
 
 	result := &models.RateLimitResult{
 		Allowed:    allowed,
@@ -275,6 +294,17 @@ func (m *Manager) applyConcurrency(ctx *models.GatewayContext, policy *models.Ra
 	}
 
 	return result, nil
+}
+
+func (m *Manager) ApplyWithInterface(ctx context.Context, algorithm models.RateLimitAlgorithm, key string, opts LimitOptions) (*LimitResult, error) {
+	limiter, ok := m.limiters[algorithm]
+	if !ok {
+		limiter, ok = m.limiters[models.AlgorithmTokenBucket]
+		if !ok {
+			return &LimitResult{Allowed: true, Remaining: opts.Limit, Limit: opts.Limit}, nil
+		}
+	}
+	return limiter.Allow(ctx, key, opts)
 }
 
 func (m *Manager) Release(requestID string) {
@@ -402,4 +432,10 @@ func (m *Manager) getEffectiveLimit(policy *models.RateLimitPolicy, rule models.
 	return adaptiveLimit
 }
 
+func (m *Manager) GetLimiter(algorithm models.RateLimitAlgorithm) RateLimiter {
+	return m.limiters[algorithm]
+}
 
+func (m *Manager) RegisterLimiter(algorithm models.RateLimitAlgorithm, limiter RateLimiter) {
+	m.limiters[algorithm] = limiter
+}

@@ -13,16 +13,16 @@ type memoryTokenBucket struct {
 }
 
 type MemoryStore struct {
-	tokenBuckets map[string]*memoryTokenBucket
-	slidingWindows map[string][]int64
+	tokenBuckets    map[string]*memoryTokenBucket
+	slidingWindows  map[string][]int64
 	concurrencySlots map[string]map[string]int64
-	mu             sync.Mutex
+	mu              sync.Mutex
 }
 
 func NewMemoryStore() *MemoryStore {
 	return &MemoryStore{
-		tokenBuckets:   make(map[string]*memoryTokenBucket),
-		slidingWindows: make(map[string][]int64),
+		tokenBuckets:    make(map[string]*memoryTokenBucket),
+		slidingWindows:  make(map[string][]int64),
 		concurrencySlots: make(map[string]map[string]int64),
 	}
 }
@@ -34,7 +34,7 @@ func (m *MemoryStore) TokenBucketTake(ctx context.Context, key string, capacity,
 	tb, exists := m.tokenBuckets[key]
 	if !exists {
 		tb = &memoryTokenBucket{
-			tokens: capacity,
+			tokens:     capacity,
 			lastRefill: time.Now().UnixMilli(),
 		}
 		m.tokenBuckets[key] = tb
@@ -47,7 +47,7 @@ func (m *MemoryStore) TokenBucketTake(ctx context.Context, key string, capacity,
 	refillAmount := (elapsed / windowMs) * refillRate
 
 	if refillAmount > 0 {
-		tb.tokens = min(capacity, tb.tokens + refillAmount)
+		tb.tokens = min(capacity, tb.tokens+refillAmount)
 		tb.lastRefill += (elapsed / windowMs) * windowMs
 	}
 
@@ -68,8 +68,8 @@ func (m *MemoryStore) TokenBucketTake(ctx context.Context, key string, capacity,
 
 	return &TokenBucketResult{
 		Allowed:    allowed,
-		Remaining: remaining,
-		Limit:     capacity,
+		Remaining:  remaining,
+		Limit:      capacity,
 		ResetAfter: time.Duration(resetAfter) * time.Millisecond,
 	}, nil
 }
@@ -118,8 +118,8 @@ func (m *MemoryStore) SlidingWindowAllow(ctx context.Context, key string, limit 
 
 	return &SlidingWindowResult{
 		Allowed:    allowed,
-		Remaining: remaining,
-		Limit:     limit,
+		Remaining:  remaining,
+		Limit:      limit,
 		ResetAfter: time.Duration(resetAfter) * time.Millisecond,
 	}, nil
 }
@@ -163,9 +163,58 @@ func (m *MemoryStore) ConcurrencyAcquire(ctx context.Context, key string, maxCon
 
 	return &ConcurrencyAcquireResult{
 		Allowed:     allowed,
-		Remaining: remaining,
-		Limit:     maxConcurrent,
+		Remaining:   remaining,
+		Limit:       maxConcurrent,
 		ReleaseFunc: releaseFunc,
+	}, nil
+}
+
+func (m *MemoryStore) Allow(ctx context.Context, key string, opts LimitOptions) (*LimitResult, error) {
+	if opts.MaxConcurrent > 0 {
+		return m.allowConcurrency(ctx, key, opts)
+	}
+	if opts.Capacity > 0 || opts.RefillRate > 0 {
+		return m.allowTokenBucket(ctx, key, opts)
+	}
+	return m.allowSlidingWindow(ctx, key, opts)
+}
+
+func (m *MemoryStore) allowTokenBucket(ctx context.Context, key string, opts LimitOptions) (*LimitResult, error) {
+	result, err := m.TokenBucketTake(ctx, key, opts.Capacity, opts.RefillRate, opts.Window)
+	if err != nil {
+		return &LimitResult{Allowed: true, Remaining: opts.Capacity, Limit: opts.Capacity}, nil
+	}
+	return &LimitResult{
+		Allowed:    result.Allowed,
+		Remaining:  result.Remaining,
+		Limit:      result.Limit,
+		ResetAfter: result.ResetAfter,
+	}, nil
+}
+
+func (m *MemoryStore) allowSlidingWindow(ctx context.Context, key string, opts LimitOptions) (*LimitResult, error) {
+	result, err := m.SlidingWindowAllow(ctx, key, opts.Limit, opts.Window)
+	if err != nil {
+		return &LimitResult{Allowed: true, Remaining: opts.Limit, Limit: opts.Limit}, nil
+	}
+	return &LimitResult{
+		Allowed:    result.Allowed,
+		Remaining:  result.Remaining,
+		Limit:      result.Limit,
+		ResetAfter: result.ResetAfter,
+	}, nil
+}
+
+func (m *MemoryStore) allowConcurrency(ctx context.Context, key string, opts LimitOptions) (*LimitResult, error) {
+	result, err := m.ConcurrencyAcquire(ctx, key, opts.MaxConcurrent, "", 5*time.Minute)
+	if err != nil {
+		return &LimitResult{Allowed: true, Remaining: opts.MaxConcurrent - 1, Limit: opts.MaxConcurrent, ReleaseFunc: func() {}}, nil
+	}
+	return &LimitResult{
+		Allowed:     result.Allowed,
+		Remaining:   result.Remaining,
+		Limit:       result.Limit,
+		ReleaseFunc: result.ReleaseFunc,
 	}, nil
 }
 
