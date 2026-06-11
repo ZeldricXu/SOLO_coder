@@ -87,6 +87,19 @@ class EnvSource extends ConfigSource_1.BaseConfigSource {
         }
         return normalized.replace(/_/g, '.');
     }
+    flattenData(obj, prefix = '') {
+        const result = {};
+        for (const [key, value] of Object.entries(obj)) {
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                Object.assign(result, this.flattenData(value, fullKey));
+            }
+            else {
+                result[fullKey] = value;
+            }
+        }
+        return result;
+    }
     async load() {
         this.data = {};
         if (this.options.filePath) {
@@ -111,7 +124,7 @@ class EnvSource extends ConfigSource_1.BaseConfigSource {
             }
         }
         this.loaded = true;
-        return this.data;
+        return this.flattenData(this.data);
     }
     async get(key) {
         if (!this.loaded) {
@@ -174,7 +187,7 @@ class EnvSource extends ConfigSource_1.BaseConfigSource {
         if (!this.loaded) {
             await this.load();
         }
-        return Object.keys(this.data);
+        return Object.keys(this.flattenData(this.data));
     }
 }
 exports.EnvSource = EnvSource;

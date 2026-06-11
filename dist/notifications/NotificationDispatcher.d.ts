@@ -1,4 +1,4 @@
-import { NotificationConfig, NotificationMessage } from '../types';
+import { NotificationConfig, NotificationMessage, AuditEvent } from '../types';
 export interface NotificationChannel {
     readonly type: string;
     send(message: NotificationMessage): Promise<{
@@ -47,6 +47,45 @@ export declare class CustomWebhookChannel implements NotificationChannel {
     }>;
     private buildPayload;
 }
+export declare class KafkaChannel implements NotificationChannel {
+    readonly type = "kafka";
+    private brokers;
+    private topic;
+    private clientId;
+    private auth?;
+    constructor(config: {
+        brokers: string;
+        topic: string;
+        clientId?: string;
+        auth?: {
+            mechanism: string;
+            username: string;
+            password: string;
+        };
+    });
+    send(message: NotificationMessage): Promise<{
+        success: boolean;
+        error?: string;
+    }>;
+}
+export declare class ElasticsearchChannel implements NotificationChannel {
+    readonly type = "elasticsearch";
+    private nodeUrl;
+    private index;
+    private auth?;
+    constructor(config: {
+        nodeUrl: string;
+        index: string;
+        auth?: {
+            username: string;
+            password: string;
+        };
+    });
+    send(message: NotificationMessage): Promise<{
+        success: boolean;
+        error?: string;
+    }>;
+}
 export declare class NotificationDispatcher {
     private channels;
     constructor(configs?: NotificationConfig[]);
@@ -66,4 +105,5 @@ export declare class NotificationDispatcher {
         id: string;
         type: string;
     }[];
+    static buildAuditEvent(message: NotificationMessage): AuditEvent;
 }

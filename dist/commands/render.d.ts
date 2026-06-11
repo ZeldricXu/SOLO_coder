@@ -18,6 +18,7 @@ export default class RenderCommand extends Command {
         dryRun: import("@oclif/core/lib/interfaces").BooleanFlag<boolean>;
         json: import("@oclif/core/lib/interfaces").BooleanFlag<boolean>;
         verbose: import("@oclif/core/lib/interfaces").BooleanFlag<boolean>;
+        templateEngine: import("@oclif/core/lib/interfaces").OptionFlag<string, import("@oclif/core/lib/interfaces").CustomOptions>;
     };
     run(): Promise<void>;
     private readStdin;

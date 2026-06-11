@@ -103,6 +103,19 @@ class GitTracker {
         }
         return paths;
     }
+    flattenData(obj, prefix = '') {
+        const result = {};
+        for (const [key, value] of Object.entries(obj)) {
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                Object.assign(result, this.flattenData(value, fullKey));
+            }
+            else {
+                result[fullKey] = value;
+            }
+        }
+        return result;
+    }
     async loadEnvironmentSnapshot(environment, commitHash) {
         if (commitHash) {
             return this.loadSnapshotAtCommit(environment, commitHash);
@@ -111,7 +124,8 @@ class GitTracker {
         if (!fs.existsSync(filePath))
             return null;
         try {
-            return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            const raw = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            return this.flattenData(raw);
         }
         catch {
             return null;

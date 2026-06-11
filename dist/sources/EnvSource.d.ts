@@ -16,6 +16,7 @@ export declare class EnvSource extends BaseConfigSource {
     constructor(name: string, priority: number, options?: EnvSourceOptions);
     private parseValue;
     private normalizeKey;
+    private flattenData;
     load(): Promise<ConfigData>;
     get(key: string): Promise<ConfigValue | undefined>;
     set(key: string, value: ConfigValue): Promise<void>;

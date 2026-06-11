@@ -1,4 +1,4 @@
-import { ConfigData, DiffItem, DiffReport, DiffType } from '../types';
+import { ConfigData, DiffItem, DiffReport, DiffType, CascadeDiffReport } from '../types';
 export declare class DiffEngine {
     compare(dataA: ConfigData, dataB: ConfigData, environmentA: string, environmentB: string): DiffReport;
     private traverseAndCompare;
@@ -18,4 +18,10 @@ export declare class DiffEngine {
         criticalDiffs: DiffItem[];
         ignoredDiffs: DiffItem[];
     };
+    cascadeCompare(environmentsData: Map<string, ConfigData>): CascadeDiffReport;
+    formatCascadeDiff(report: CascadeDiffReport, useColors?: boolean): string;
+    private collectFlatKeys;
+    private getNestedValue;
+    private valuesEqual;
+    private determineCascadeStatus;
 }

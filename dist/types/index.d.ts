@@ -96,7 +96,7 @@ export interface SyncResult {
     verified: boolean;
 }
 export interface NotificationConfig {
-    type: 'slack' | 'email' | 'webhook';
+    type: 'slack' | 'email' | 'webhook' | 'kafka' | 'elasticsearch';
     config: Record<string, unknown>;
 }
 export interface NotificationMessage {
@@ -106,6 +106,17 @@ export interface NotificationMessage {
     operator: string;
     environment: string;
     timestamp: number;
+}
+export interface AuditEvent {
+    timestamp: string;
+    operator: string;
+    sourceEnvironment: string;
+    targetEnvironment?: string;
+    changedKeys: string[];
+    beforeHash: string;
+    afterHash: string;
+    eventType: 'config.change' | 'config.sync' | 'config.rotate' | 'config.validate';
+    metadata?: Record<string, unknown>;
 }
 export interface GitCommitRecord {
     hash: string;
@@ -120,6 +131,30 @@ export interface KeyHistoryEntry {
     author: string;
     message: string;
     value: ConfigValue;
+}
+export type CascadeDriftStatus = 'consistent' | 'drift-risk' | 'changed';
+export interface CascadeDiffRow {
+    key: string;
+    transitions: {
+        fromEnv: string;
+        toEnv: string;
+        type: DiffType | 'unchanged';
+        before?: ConfigValue;
+        after?: ConfigValue;
+        changePercent?: number;
+    }[];
+    status: CascadeDriftStatus;
+}
+export interface CascadeDiffReport {
+    environmentChain: string[];
+    rows: CascadeDiffRow[];
+    summary: {
+        totalKeys: number;
+        consistent: number;
+        driftRisk: number;
+        changed: number;
+    };
+    timestamp: number;
 }
 export interface AppConfig {
     projectRoot: string;

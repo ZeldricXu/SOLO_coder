@@ -13,6 +13,7 @@ exports.formatDuration = formatDuration;
 exports.formatTimestamp = formatTimestamp;
 exports.truncate = truncate;
 exports.formatKeyValueTable = formatKeyValueTable;
+exports.formatCascadeDiffReport = formatCascadeDiffReport;
 const chalk_1 = __importDefault(require("chalk"));
 const Table = require("cli-table3");
 function formatValidationReport(report, useColors = true) {
@@ -153,5 +154,10 @@ function formatKeyValueTable(rows, useColors = true) {
     catch {
         return rows.map((r) => `${r.key}: ${r.value}`).join('\n');
     }
+}
+function formatCascadeDiffReport(report, useColors = true) {
+    const { DiffEngine } = require('../engine/DiffEngine');
+    const engine = new DiffEngine();
+    return engine.formatCascadeDiff(report, useColors);
 }
 //# sourceMappingURL=formatters.js.map

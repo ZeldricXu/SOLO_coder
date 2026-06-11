@@ -4,7 +4,7 @@ export default class DiffCommand extends Command {
     static aliases: string[];
     static args: {
         envA: import("@oclif/core/lib/interfaces").Arg<string, Record<string, unknown>>;
-        envB: import("@oclif/core/lib/interfaces").Arg<string, Record<string, unknown>>;
+        envB: import("@oclif/core/lib/interfaces").Arg<string | undefined, Record<string, unknown>>;
     };
     static flags: {
         config: import("@oclif/core/lib/interfaces").OptionFlag<string | undefined, import("@oclif/core/lib/interfaces").CustomOptions>;
@@ -16,6 +16,9 @@ export default class DiffCommand extends Command {
         noHistory: import("@oclif/core/lib/interfaces").BooleanFlag<boolean>;
         output: import("@oclif/core/lib/interfaces").OptionFlag<string | undefined, import("@oclif/core/lib/interfaces").CustomOptions>;
         failOnDrift: import("@oclif/core/lib/interfaces").BooleanFlag<boolean>;
+        cascade: import("@oclif/core/lib/interfaces").BooleanFlag<boolean>;
     };
     run(): Promise<void>;
+    private runCascade;
+    private runStandard;
 }

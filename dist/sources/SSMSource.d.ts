@@ -23,6 +23,7 @@ export declare class SSMSource extends BaseConfigSource {
     private denormalizeKey;
     private convertValue;
     private valueToString;
+    private flattenData;
     load(): Promise<ConfigData>;
     get(key: string): Promise<ConfigValue | undefined>;
     set(key: string, value: ConfigValue): Promise<void>;

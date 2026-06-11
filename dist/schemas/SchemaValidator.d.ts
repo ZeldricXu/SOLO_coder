@@ -24,6 +24,7 @@ export declare class SchemaValidator {
     private indexFields;
     private buildSchema;
     private buildFieldSchema;
+    private unflattenData;
     validate(data: ConfigData, environment: string): ValidationReport;
     validateValue(key: string, value: ConfigValue, environment: string): ValidationError | null;
     private getActualValue;

@@ -1,4 +1,4 @@
-import { NotificationConfig, NotificationMessage, DiffItem } from '../types'
+import { NotificationConfig, NotificationMessage, DiffItem, AuditEvent } from '../types'
 import dayjs from 'dayjs'
 import * as crypto from 'crypto'
 
@@ -321,6 +321,98 @@ export class CustomWebhookChannel implements NotificationChannel {
   }
 }
 
+export class KafkaChannel implements NotificationChannel {
+  readonly type = 'kafka'
+  private brokers: string
+  private topic: string
+  private clientId: string
+  private auth?: { mechanism: string; username: string; password: string }
+
+  constructor(config: { brokers: string; topic: string; clientId?: string; auth?: { mechanism: string; username: string; password: string } }) {
+    this.brokers = config.brokers || process.env.KAFKA_BROKERS || ''
+    this.topic = config.topic || process.env.KAFKA_TOPIC || ''
+    this.clientId = config.clientId || process.env.KAFKA_CLIENT_ID || 'config-flow'
+    this.auth = config.auth || (process.env.KAFKA_SASL_USERNAME && process.env.KAFKA_SASL_PASSWORD
+      ? { mechanism: 'plain', username: process.env.KAFKA_SASL_USERNAME, password: process.env.KAFKA_SASL_PASSWORD }
+      : undefined)
+  }
+
+  async send(message: NotificationMessage): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { Kafka } = await import('kafkajs')
+
+      const kafkaConfig: Record<string, unknown> = {
+        clientId: this.clientId,
+        brokers: this.brokers.split(','),
+      }
+
+      if (this.auth) {
+        kafkaConfig.sasl = {
+          mechanism: this.auth.mechanism,
+          username: this.auth.username,
+          password: this.auth.password,
+        }
+      }
+
+      const kafka = new Kafka(kafkaConfig as any)
+      const producer = kafka.producer()
+
+      await producer.connect()
+
+      const auditEvent = NotificationDispatcher.buildAuditEvent(message)
+
+      await producer.send({
+        topic: this.topic,
+        messages: [{ value: JSON.stringify(auditEvent) }],
+      })
+
+      await producer.disconnect()
+
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  }
+}
+
+export class ElasticsearchChannel implements NotificationChannel {
+  readonly type = 'elasticsearch'
+  private nodeUrl: string
+  private index: string
+  private auth?: { username: string; password: string }
+
+  constructor(config: { nodeUrl: string; index: string; auth?: { username: string; password: string } }) {
+    this.nodeUrl = config.nodeUrl || process.env.ES_NODE_URL || ''
+    this.index = config.index || process.env.ES_INDEX || ''
+    this.auth = config.auth || (process.env.ES_USERNAME && process.env.ES_PASSWORD
+      ? { username: process.env.ES_USERNAME, password: process.env.ES_PASSWORD }
+      : undefined)
+  }
+
+  async send(message: NotificationMessage): Promise<{ success: boolean; error?: string }> {
+    try {
+      const { default: axios } = await import('axios')
+
+      const auditEvent = NotificationDispatcher.buildAuditEvent(message)
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+
+      if (this.auth) {
+        const credentials = Buffer.from(`${this.auth.username}:${this.auth.password}`).toString('base64')
+        headers['Authorization'] = `Basic ${credentials}`
+      }
+
+      await axios.post(`${this.nodeUrl}/${this.index}/_doc`, auditEvent, { headers })
+
+      return { success: true }
+    } catch (error) {
+      return { success: false, error: (error as Error).message }
+    }
+  }
+}
+
 export class NotificationDispatcher {
   private channels: Map<string, NotificationChannel> = new Map()
 
@@ -342,6 +434,12 @@ export class NotificationDispatcher {
         break
       case 'webhook':
         this.channels.set(id, new CustomWebhookChannel(config.config as any))
+        break
+      case 'kafka':
+        this.channels.set(id, new KafkaChannel(config.config as any))
+        break
+      case 'elasticsearch':
+        this.channels.set(id, new ElasticsearchChannel(config.config as any))
         break
       default:
         throw new Error(`Unsupported notification type: ${config.type}`)
@@ -405,5 +503,30 @@ export class NotificationDispatcher {
       result.push({ id, type: channel.type })
     }
     return result
+  }
+
+  static buildAuditEvent(message: NotificationMessage): AuditEvent {
+    const beforeValues = message.changes.filter(c => c.before !== undefined).map(c => c.before)
+    const afterValues = message.changes.filter(c => c.after !== undefined).map(c => c.after)
+
+    const beforeHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(beforeValues))
+      .digest('hex')
+
+    const afterHash = crypto
+      .createHash('sha256')
+      .update(JSON.stringify(afterValues))
+      .digest('hex')
+
+    return {
+      timestamp: new Date(message.timestamp).toISOString(),
+      operator: message.operator,
+      sourceEnvironment: message.environment,
+      changedKeys: message.changes.map(c => c.path),
+      beforeHash,
+      afterHash,
+      eventType: 'config.change',
+    }
   }
 }

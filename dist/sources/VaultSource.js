@@ -90,9 +90,9 @@ class VaultSource extends ConfigSource_1.BaseConfigSource {
         try {
             const result = await this.client.read(this.options.path);
             const rawData = result?.data?.data || result?.data || {};
-            this.data = this.flattenData(rawData);
+            this.data = rawData;
             this.loaded = true;
-            return this.data;
+            return this.flattenData(rawData);
         }
         catch (error) {
             throw new Error(`Failed to load from Vault: ${error.message}`);
@@ -159,7 +159,7 @@ class VaultSource extends ConfigSource_1.BaseConfigSource {
         if (!this.loaded) {
             await this.load();
         }
-        return Object.keys(this.data);
+        return Object.keys(this.flattenData(this.data));
     }
 }
 exports.VaultSource = VaultSource;

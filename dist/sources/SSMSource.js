@@ -102,6 +102,19 @@ class SSMSource extends ConfigSource_1.BaseConfigSource {
             return value;
         return JSON.stringify(value);
     }
+    flattenData(obj, prefix = '') {
+        const result = {};
+        for (const [key, value] of Object.entries(obj)) {
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                Object.assign(result, this.flattenData(value, fullKey));
+            }
+            else {
+                result[fullKey] = value;
+            }
+        }
+        return result;
+    }
     async load() {
         await this.initClient();
         try {
@@ -130,7 +143,7 @@ class SSMSource extends ConfigSource_1.BaseConfigSource {
                 nextToken = response.NextToken;
             } while (nextToken);
             this.loaded = true;
-            return this.data;
+            return this.flattenData(this.data);
         }
         catch (error) {
             throw new Error(`Failed to load from SSM: ${error.message}`);
@@ -186,7 +199,7 @@ class SSMSource extends ConfigSource_1.BaseConfigSource {
         if (!this.loaded) {
             await this.load();
         }
-        return Object.keys(this.data);
+        return Object.keys(this.flattenData(this.data));
     }
 }
 exports.SSMSource = SSMSource;

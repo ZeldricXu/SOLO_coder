@@ -149,8 +149,21 @@ class DefaultSource extends ConfigSource_1.BaseConfigSource {
         this.priority = priority;
         this.data = options.defaults || {};
     }
+    flattenData(obj, prefix = '') {
+        const result = {};
+        for (const [key, value] of Object.entries(obj)) {
+            const fullKey = prefix ? `${prefix}.${key}` : key;
+            if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+                Object.assign(result, this.flattenData(value, fullKey));
+            }
+            else {
+                result[fullKey] = value;
+            }
+        }
+        return result;
+    }
     async load() {
-        return { ...this.data };
+        return this.flattenData(this.data);
     }
     async get(key) {
         return this.getNestedValue(this.data, key);
@@ -170,7 +183,7 @@ class DefaultSource extends ConfigSource_1.BaseConfigSource {
         delete target[parts[parts.length - 1]];
     }
     async listKeys() {
-        return Object.keys(this.data);
+        return Object.keys(this.flattenData(this.data));
     }
 }
 //# sourceMappingURL=ConfigManager.js.map

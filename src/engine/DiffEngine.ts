@@ -1,5 +1,6 @@
-import { ConfigData, ConfigValue, DiffItem, DiffReport, DiffType } from '../types'
+import { ConfigData, ConfigValue, DiffItem, DiffReport, DiffType, CascadeDiffReport, CascadeDiffRow, CascadeDriftStatus } from '../types'
 import chalk from 'chalk'
+import Table = require('cli-table3')
 
 export class DiffEngine {
   compare(dataA: ConfigData, dataB: ConfigData, environmentA: string, environmentB: string): DiffReport {
@@ -214,5 +215,228 @@ export class DiffEngine {
       criticalDiffs,
       ignoredDiffs,
     }
+  }
+
+  cascadeCompare(environmentsData: Map<string, ConfigData>): CascadeDiffReport {
+    const envNames = Array.from(environmentsData.keys())
+    const allData = Array.from(environmentsData.values())
+
+    const allKeys = new Set<string>()
+    for (const data of allData) {
+      this.collectFlatKeys(data, '', allKeys)
+    }
+
+    const pairs: [string, string][] = []
+    for (let i = 0; i < envNames.length - 1; i++) {
+      pairs.push([envNames[i], envNames[i + 1]])
+    }
+
+    const rows: CascadeDiffRow[] = []
+    let consistent = 0
+    let driftRisk = 0
+    let changed = 0
+
+    for (const key of Array.from(allKeys).sort()) {
+      const transitions: CascadeDiffRow['transitions'] = []
+      const changeTypes: (DiffType | 'unchanged')[] = []
+
+      for (const [fromEnv, toEnv] of pairs) {
+        const dataA = environmentsData.get(fromEnv)!
+        const dataB = environmentsData.get(toEnv)!
+        const valA = this.getNestedValue(dataA, key)
+        const valB = this.getNestedValue(dataB, key)
+
+        if (valA === undefined && valB === undefined) {
+          changeTypes.push('unchanged')
+          transitions.push({ fromEnv, toEnv, type: 'unchanged' })
+        } else if (valA === undefined && valB !== undefined) {
+          changeTypes.push('added')
+          transitions.push({ fromEnv, toEnv, type: 'added', after: valB })
+        } else if (valA !== undefined && valB === undefined) {
+          changeTypes.push('removed')
+          transitions.push({ fromEnv, toEnv, type: 'removed', before: valA })
+        } else if (this.valuesEqual(valA!, valB!)) {
+          changeTypes.push('unchanged')
+          transitions.push({ fromEnv, toEnv, type: 'unchanged', before: valA, after: valB })
+        } else {
+          changeTypes.push('changed')
+          transitions.push({
+            fromEnv, toEnv, type: 'changed',
+            before: valA, after: valB,
+            changePercent: this.calculateChangePercent(valA, valB),
+          })
+        }
+      }
+
+      const firstEnv = envNames[0]
+      const lastEnv = envNames[envNames.length - 1]
+      const firstValue = this.getNestedValue(environmentsData.get(firstEnv)!, key)
+      const lastValue = this.getNestedValue(environmentsData.get(lastEnv)!, key)
+
+      const status = this.determineCascadeStatus(changeTypes, firstValue, lastValue)
+      if (status === 'consistent') consistent++
+      else if (status === 'drift-risk') driftRisk++
+      else changed++
+
+      rows.push({ key, transitions, status })
+    }
+
+    return {
+      environmentChain: envNames,
+      rows,
+      summary: {
+        totalKeys: allKeys.size,
+        consistent,
+        driftRisk,
+        changed,
+      },
+      timestamp: Date.now(),
+    }
+  }
+
+  formatCascadeDiff(report: CascadeDiffReport, useColors = true): string {
+    const lines: string[] = []
+
+    const chain = report.environmentChain.join(' → ')
+    lines.push(`Cascade Diff: ${chain}`)
+    lines.push(
+      `Consistent: ${report.summary.consistent} | Drift-Risk: ${report.summary.driftRisk} | Changed: ${report.summary.changed}`,
+    )
+    lines.push('')
+
+    if (report.rows.length === 0) {
+      lines.push(useColors ? chalk.green('No keys found across environments.') : 'No keys found across environments.')
+      return lines.join('\n')
+    }
+
+    const transitionHeaders = report.environmentChain.slice(0, -1).map((_, i) => {
+      const from = report.environmentChain[i]
+      const to = report.environmentChain[i + 1]
+      return `${from}→${to}`
+    })
+
+    const head = useColors
+      ? [chalk.cyan('Key'), ...transitionHeaders.map((h) => chalk.cyan(h)), chalk.cyan('Status')]
+      : ['Key', ...transitionHeaders, 'Status']
+
+    try {
+      const colWidths = [30, ...transitionHeaders.map(() => 35), 15]
+      const table = new Table({
+        head,
+        colWidths,
+        wordWrap: true,
+      })
+
+      for (const row of report.rows) {
+        const transitionCells = row.transitions.map((t) => {
+          let cell = ''
+          if (t.type === 'unchanged') {
+            cell = '—'
+          } else if (t.type === 'added') {
+            cell = `+ ${this.formatValue(t.after)}`
+          } else if (t.type === 'removed') {
+            cell = `- ${this.formatValue(t.before)}`
+          } else {
+            cell = `~ ${this.formatValue(t.before)} → ${this.formatValue(t.after)}`
+            if (t.changePercent !== undefined) {
+              cell += ` (${t.changePercent > 0 ? '+' : ''}${t.changePercent}%)`
+            }
+          }
+          return cell
+        })
+
+        const statusLabel = row.status.toUpperCase()
+        let statusCell: string
+        if (useColors) {
+          const colorFn = row.status === 'consistent' ? chalk.green : row.status === 'drift-risk' ? chalk.red : chalk.yellow
+          statusCell = colorFn(statusLabel)
+        } else {
+          statusCell = statusLabel
+        }
+
+        table.push([row.key, ...transitionCells, statusCell])
+      }
+
+      lines.push(table.toString())
+    } catch {
+      for (const row of report.rows) {
+        const transitionsStr = row.transitions.map((t) => {
+          if (t.type === 'unchanged') return '—'
+          if (t.type === 'added') return `+ ${this.formatValue(t.after)}`
+          if (t.type === 'removed') return `- ${this.formatValue(t.before)}`
+          return `~ ${this.formatValue(t.before)} → ${this.formatValue(t.after)}`
+        }).join(' | ')
+        lines.push(`${row.key} | ${transitionsStr} | ${row.status.toUpperCase()}`)
+      }
+    }
+
+    return lines.join('\n')
+  }
+
+  private collectFlatKeys(data: ConfigData, prefix: string, keys: Set<string>): void {
+    for (const [k, v] of Object.entries(data)) {
+      const fullKey = prefix ? `${prefix}.${k}` : k
+      if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+        this.collectFlatKeys(v as ConfigData, fullKey, keys)
+      } else {
+        keys.add(fullKey)
+      }
+    }
+  }
+
+  private getNestedValue(data: ConfigData, dottedKey: string): ConfigValue | undefined {
+    const parts = dottedKey.split('.')
+    let current: ConfigValue = data
+    for (const part of parts) {
+      if (current === null || current === undefined || typeof current !== 'object' || Array.isArray(current)) {
+        return undefined
+      }
+      current = (current as ConfigData)[part]
+    }
+    return current
+  }
+
+  private valuesEqual(a: ConfigValue | undefined, b: ConfigValue | undefined): boolean {
+    if (a === undefined && b === undefined) return true
+    if (a === undefined || b === undefined) return false
+    if (a === b) return true
+    if (a === null || b === null) return false
+    if (typeof a !== typeof b) return false
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) return false
+      return a.every((v, i) => this.valuesEqual(v, b[i]))
+    }
+    if (typeof a === 'object' && typeof b === 'object') {
+      const aObj = a as ConfigData
+      const bObj = b as ConfigData
+      const aKeys = Object.keys(aObj)
+      const bKeys = Object.keys(bObj)
+      if (aKeys.length !== bKeys.length) return false
+      return aKeys.every((k) => this.valuesEqual(aObj[k], bObj[k]))
+    }
+    return false
+  }
+
+  private determineCascadeStatus(
+    changeTypes: (DiffType | 'unchanged')[],
+    firstValue: ConfigValue | undefined,
+    lastValue: ConfigValue | undefined,
+  ): CascadeDriftStatus {
+    const hasChange = changeTypes.some((t) => t !== 'unchanged')
+    if (!hasChange) return 'consistent'
+
+    const revertedToOriginal = this.valuesEqual(firstValue, lastValue)
+    if (revertedToOriginal) return 'drift-risk'
+
+    const hasLaterUnchanged = changeTypes.some((t, i) => {
+      if (t === 'unchanged') return false
+      for (let j = i + 1; j < changeTypes.length; j++) {
+        if (changeTypes[j] === 'unchanged') return true
+      }
+      return false
+    })
+    if (hasLaterUnchanged) return 'drift-risk'
+
+    return 'changed'
   }
 }

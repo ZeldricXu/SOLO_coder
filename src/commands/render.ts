@@ -1,6 +1,7 @@
 import { Command, Flags, Args } from '@oclif/core'
 import { loadContext } from './env/list'
 import { TemplateRenderer, RenderResult } from '../renderer/TemplateRenderer'
+import { createTemplateEngine, SUPPORTED_ENGINES } from '../renderer'
 import * as fs from 'fs'
 import * as path from 'path'
 import chalk from 'chalk'
@@ -26,12 +27,14 @@ export default class RenderCommand extends Command {
     dryRun: Flags.boolean({ char: 'n', description: 'Render to stdout only' }),
     json: Flags.boolean({ description: 'Output results as JSON' }),
     verbose: Flags.boolean({ char: 'v', description: 'Verbose output' }),
+    templateEngine: Flags.string({ char: 'e', description: 'Template engine: handlebars|go-template|jinja2', options: SUPPORTED_ENGINES, default: 'handlebars' }),
   }
 
   async run(): Promise<void> {
     const { args, flags } = await this.parse(RenderCommand)
     const ctx = await loadContext(flags.config)
 
+    const engine = createTemplateEngine(flags.templateEngine)
     const renderer = new TemplateRenderer()
 
     if (flags.templatesDir) {
@@ -47,9 +50,9 @@ export default class RenderCommand extends Command {
     if (flags.listHelpers) {
       const helpers = renderer.getRegisteredHelpers()
       if (flags.json) {
-        this.log(JSON.stringify(helpers, null, 2))
+        this.log(JSON.stringify({ engine: engine.name, helpers }, null, 2))
       } else {
-        this.log('Available Handlebars helpers:')
+        this.log(`Available helpers (${engine.name} engine):`)
         for (const h of helpers.sort()) this.log(`  - ${h}`)
       }
       return
@@ -81,7 +84,8 @@ export default class RenderCommand extends Command {
         if (!env) continue
         const context = await env.loadAll()
         const mergedContext = this.applyDataOverrides(context, flags.data || [])
-        const result = renderer.renderString(templateStr, mergedContext, envName)
+        const fullContext = { ...mergedContext, _meta: { environment: envName, renderedAt: new Date().toISOString() } }
+        const result = engine.render(templateStr, fullContext)
         results.push({ environment: envName, ...result })
       }
 
@@ -137,7 +141,7 @@ export default class RenderCommand extends Command {
 
           if (flags.dryRun) {
             const content = fs.readFileSync(tplFullPath, 'utf-8')
-            const result = renderer.renderString(content, mergedContext, envName)
+            const result = engine.render(content, mergedContext)
             allResults.push({
               outputPath: outputFile,
               content: result.content,
@@ -169,7 +173,7 @@ export default class RenderCommand extends Command {
 
         if (flags.dryRun) {
           const content = fs.existsSync(absTemplate) ? fs.readFileSync(absTemplate, 'utf-8') : absTemplate
-          const result = renderer.renderString(content, mergedContext, envName)
+          const result = engine.render(content, mergedContext)
           allResults.push({
             outputPath: outputFile,
             content: result.content,

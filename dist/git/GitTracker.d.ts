@@ -19,6 +19,7 @@ export declare class GitTracker {
     private formatAuthor;
     saveEnvironmentSnapshot(environment: string, data: ConfigData): string;
     saveAllSnapshots(snapshot: FileSnapshot): string[];
+    private flattenData;
     loadEnvironmentSnapshot(environment: string, commitHash?: string): Promise<ConfigData | null>;
     private loadSnapshotAtCommit;
     commitChanges(message: string, options?: CommitOptions): Promise<GitCommitRecord | null>;

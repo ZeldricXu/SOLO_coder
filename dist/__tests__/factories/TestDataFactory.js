@@ -145,7 +145,7 @@ function createDevEnvContent() {
         DB_PORT: '5432',
         DB_NAME: 'myapp_dev',
         DB_PASSWORD: 'dev_pass',
-        LOG_LEVEL: 'debug',
+        LOGLEVEL: 'debug',
     });
 }
 function createSchemaConfig(overrides = {}) {

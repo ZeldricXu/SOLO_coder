@@ -142,9 +142,9 @@ class ConfigMapSource extends ConfigSource_1.BaseConfigSource {
             const response = await this.k8sApi.readNamespacedConfigMap(this.options.name, this.options.namespace);
             const cmData = response.body?.data || {};
             const parsed = this.parseConfigMapData(cmData);
-            this.data = this.flattenData(parsed);
+            this.data = parsed;
             this.loaded = true;
-            return this.data;
+            return this.flattenData(parsed);
         }
         catch (error) {
             if (error.response?.statusCode === 404) {
@@ -267,7 +267,7 @@ class ConfigMapSource extends ConfigSource_1.BaseConfigSource {
         if (!this.loaded) {
             await this.load();
         }
-        return Object.keys(this.data);
+        return Object.keys(this.flattenData(this.data));
     }
 }
 exports.ConfigMapSource = ConfigMapSource;

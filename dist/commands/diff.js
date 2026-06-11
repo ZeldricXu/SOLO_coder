@@ -47,8 +47,8 @@ class DiffCommand extends core_1.Command {
     static description = 'Show configuration differences between two environments';
     static aliases = ['compare', 'drift'];
     static args = {
-        envA: core_1.Args.string({ description: 'First environment name', required: true }),
-        envB: core_1.Args.string({ description: 'Second environment name', required: true }),
+        envA: core_1.Args.string({ description: 'First environment name (or comma-separated chain with --cascade)', required: true }),
+        envB: core_1.Args.string({ description: 'Second environment name', required: false }),
     };
     static flags = {
         config: core_1.Flags.string({ char: 'c', description: 'Path to config file' }),
@@ -60,20 +60,71 @@ class DiffCommand extends core_1.Command {
         noHistory: core_1.Flags.boolean({ description: 'Do not record diff history' }),
         output: core_1.Flags.string({ char: 'o', description: 'Write diff to file' }),
         failOnDrift: core_1.Flags.boolean({ description: 'Exit with error code if drift detected' }),
+        cascade: core_1.Flags.boolean({ description: 'Cascade mode: compare environments in chain' }),
     };
     async run() {
         const { args, flags } = await this.parse(DiffCommand);
         const ctx = await (0, list_1.loadContext)(flags.config);
-        const envA = ctx.configManager.getEnvironment(args.envA);
-        const envB = ctx.configManager.getEnvironment(args.envB);
+        if (flags.cascade) {
+            await this.runCascade(args.envA, ctx, flags);
+        }
+        else {
+            if (!args.envB)
+                this.error('Second environment is required in non-cascade mode. Provide envB or use --cascade.');
+            await this.runStandard(args.envA, args.envB, ctx, flags);
+        }
+    }
+    async runCascade(envChain, ctx, flags) {
+        const envNames = envChain.split(',').map((s) => s.trim()).filter(Boolean);
+        if (envNames.length < 2)
+            this.error('Cascade mode requires at least 2 environments (comma-separated), e.g., dev,staging,prod');
+        const envsData = new Map();
+        for (const name of envNames) {
+            const env = ctx.configManager.getEnvironment(name);
+            if (!env)
+                this.error(`Environment not found: ${name}`);
+            const data = await env.loadAll();
+            envsData.set(name, data);
+        }
+        const diffEngine = new DiffEngine_1.DiffEngine();
+        const report = diffEngine.cascadeCompare(envsData);
+        let output;
+        if (flags.json) {
+            output = JSON.stringify(report, null, 2);
+        }
+        else {
+            output = (0, formatters_1.formatCascadeDiffReport)(report, !flags.noColor);
+        }
+        this.log(output);
+        if (flags.output) {
+            fs.writeFileSync(flags.output, output);
+            if (!flags.json) {
+                this.log(`\n${chalk_1.default.blue('ℹ')} Cascade diff written to: ${flags.output}`);
+            }
+        }
+        if (!flags.json) {
+            if (report.summary.driftRisk > 0 || report.summary.changed > 0) {
+                this.log(`\n${chalk_1.default.yellow('⚠')} Cascade drift: ${report.summary.driftRisk} drift-risk, ${report.summary.changed} changed`);
+            }
+            else {
+                this.log(`\n${chalk_1.default.green('✓')} All keys consistent across cascade chain`);
+            }
+        }
+        if (flags.failOnDrift && (report.summary.driftRisk > 0 || report.summary.changed > 0)) {
+            this.exit(1);
+        }
+    }
+    async runStandard(envAName, envBName, ctx, flags) {
+        const envA = ctx.configManager.getEnvironment(envAName);
+        const envB = ctx.configManager.getEnvironment(envBName);
         if (!envA)
-            this.error(`Environment not found: ${args.envA}`);
+            this.error(`Environment not found: ${envAName}`);
         if (!envB)
-            this.error(`Environment not found: ${args.envB}`);
+            this.error(`Environment not found: ${envBName}`);
         const dataA = await envA.loadAll();
         const dataB = await envB.loadAll();
         const diffEngine = new DiffEngine_1.DiffEngine();
-        const report = diffEngine.compare(dataA, dataB, args.envA, args.envB);
+        const report = diffEngine.compare(dataA, dataB, envAName, envBName);
         if (flags.type) {
             report.diffs = diffEngine.filterDiffs(report.diffs, { type: flags.type });
         }
@@ -116,7 +167,7 @@ class DiffCommand extends core_1.Command {
                 this.log(`\n${chalk_1.default.yellow('⚠')} Drift detected: ${report.diffs.length} difference(s)`);
             }
             else {
-                this.log(`\n${chalk_1.default.green('✓')} No drift detected between ${args.envA} and ${args.envB}`);
+                this.log(`\n${chalk_1.default.green('✓')} No drift detected between ${envAName} and ${envBName}`);
             }
             if (flags.ignore && flags.ignore.length > 0) {
                 this.log(`${chalk_1.default.blue('ℹ')} Ignored patterns: ${flags.ignore.join(', ')}`);

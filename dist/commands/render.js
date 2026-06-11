@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const core_1 = require("@oclif/core");
 const list_1 = require("./env/list");
 const TemplateRenderer_1 = require("../renderer/TemplateRenderer");
+const renderer_1 = require("../renderer");
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const chalk_1 = __importDefault(require("chalk"));
@@ -61,10 +62,12 @@ class RenderCommand extends core_1.Command {
         dryRun: core_1.Flags.boolean({ char: 'n', description: 'Render to stdout only' }),
         json: core_1.Flags.boolean({ description: 'Output results as JSON' }),
         verbose: core_1.Flags.boolean({ char: 'v', description: 'Verbose output' }),
+        templateEngine: core_1.Flags.string({ char: 'e', description: 'Template engine: handlebars|go-template|jinja2', options: renderer_1.SUPPORTED_ENGINES, default: 'handlebars' }),
     };
     async run() {
         const { args, flags } = await this.parse(RenderCommand);
         const ctx = await (0, list_1.loadContext)(flags.config);
+        const engine = (0, renderer_1.createTemplateEngine)(flags.templateEngine);
         const renderer = new TemplateRenderer_1.TemplateRenderer();
         if (flags.templatesDir) {
             const absDir = path.resolve(flags.templatesDir);
@@ -78,10 +81,10 @@ class RenderCommand extends core_1.Command {
         if (flags.listHelpers) {
             const helpers = renderer.getRegisteredHelpers();
             if (flags.json) {
-                this.log(JSON.stringify(helpers, null, 2));
+                this.log(JSON.stringify({ engine: engine.name, helpers }, null, 2));
             }
             else {
-                this.log('Available Handlebars helpers:');
+                this.log(`Available helpers (${engine.name} engine):`);
                 for (const h of helpers.sort())
                     this.log(`  - ${h}`);
             }
@@ -115,7 +118,8 @@ class RenderCommand extends core_1.Command {
                     continue;
                 const context = await env.loadAll();
                 const mergedContext = this.applyDataOverrides(context, flags.data || []);
-                const result = renderer.renderString(templateStr, mergedContext, envName);
+                const fullContext = { ...mergedContext, _meta: { environment: envName, renderedAt: new Date().toISOString() } };
+                const result = engine.render(templateStr, fullContext);
                 results.push({ environment: envName, ...result });
             }
             if (flags.json) {
@@ -166,7 +170,7 @@ class RenderCommand extends core_1.Command {
                     }
                     if (flags.dryRun) {
                         const content = fs.readFileSync(tplFullPath, 'utf-8');
-                        const result = renderer.renderString(content, mergedContext, envName);
+                        const result = engine.render(content, mergedContext);
                         allResults.push({
                             outputPath: outputFile,
                             content: result.content,
@@ -200,7 +204,7 @@ class RenderCommand extends core_1.Command {
                 }
                 if (flags.dryRun) {
                     const content = fs.existsSync(absTemplate) ? fs.readFileSync(absTemplate, 'utf-8') : absTemplate;
-                    const result = renderer.renderString(content, mergedContext, envName);
+                    const result = engine.render(content, mergedContext);
                     allResults.push({
                         outputPath: outputFile,
                         content: result.content,

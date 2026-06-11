@@ -1,4 +1,4 @@
-import { ValidationReport, ValidationError, DiffReport, DiffItem } from '../types';
+import { ValidationReport, ValidationError, DiffReport, DiffItem, CascadeDiffReport } from '../types';
 export declare function formatValidationReport(report: ValidationReport, useColors?: boolean): string;
 export declare function formatValidationErrors(errors: ValidationError[], useColors?: boolean): string;
 export declare function formatDiffReport(report: DiffReport, useColors?: boolean): string;
@@ -12,3 +12,4 @@ export declare function formatKeyValueTable(rows: {
     key: string;
     value: string;
 }[], useColors?: boolean): string;
+export declare function formatCascadeDiffReport(report: CascadeDiffReport, useColors?: boolean): string;

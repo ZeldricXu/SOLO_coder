@@ -1,4 +1,4 @@
-import { ValidationReport, ValidationError, DiffReport, DiffItem } from '../types'
+import { ValidationReport, ValidationError, DiffReport, DiffItem, CascadeDiffReport } from '../types'
 import chalk from 'chalk'
 import Table = require('cli-table3')
 
@@ -154,4 +154,10 @@ export function formatKeyValueTable(rows: { key: string; value: string }[], useC
   } catch {
     return rows.map((r) => `${r.key}: ${r.value}`).join('\n')
   }
+}
+
+export function formatCascadeDiffReport(report: CascadeDiffReport, useColors = true): string {
+  const { DiffEngine } = require('../engine/DiffEngine')
+  const engine = new DiffEngine()
+  return engine.formatCascadeDiff(report, useColors)
 }

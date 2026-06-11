@@ -36,7 +36,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NotificationDispatcher = exports.CustomWebhookChannel = exports.EmailChannel = exports.SlackWebhookChannel = void 0;
+exports.NotificationDispatcher = exports.ElasticsearchChannel = exports.KafkaChannel = exports.CustomWebhookChannel = exports.EmailChannel = exports.SlackWebhookChannel = void 0;
 const dayjs_1 = __importDefault(require("dayjs"));
 const crypto = __importStar(require("crypto"));
 class SlackWebhookChannel {
@@ -314,6 +314,83 @@ class CustomWebhookChannel {
     }
 }
 exports.CustomWebhookChannel = CustomWebhookChannel;
+class KafkaChannel {
+    type = 'kafka';
+    brokers;
+    topic;
+    clientId;
+    auth;
+    constructor(config) {
+        this.brokers = config.brokers || process.env.KAFKA_BROKERS || '';
+        this.topic = config.topic || process.env.KAFKA_TOPIC || '';
+        this.clientId = config.clientId || process.env.KAFKA_CLIENT_ID || 'config-flow';
+        this.auth = config.auth || (process.env.KAFKA_SASL_USERNAME && process.env.KAFKA_SASL_PASSWORD
+            ? { mechanism: 'plain', username: process.env.KAFKA_SASL_USERNAME, password: process.env.KAFKA_SASL_PASSWORD }
+            : undefined);
+    }
+    async send(message) {
+        try {
+            const { Kafka } = await Promise.resolve().then(() => __importStar(require('kafkajs')));
+            const kafkaConfig = {
+                clientId: this.clientId,
+                brokers: this.brokers.split(','),
+            };
+            if (this.auth) {
+                kafkaConfig.sasl = {
+                    mechanism: this.auth.mechanism,
+                    username: this.auth.username,
+                    password: this.auth.password,
+                };
+            }
+            const kafka = new Kafka(kafkaConfig);
+            const producer = kafka.producer();
+            await producer.connect();
+            const auditEvent = NotificationDispatcher.buildAuditEvent(message);
+            await producer.send({
+                topic: this.topic,
+                messages: [{ value: JSON.stringify(auditEvent) }],
+            });
+            await producer.disconnect();
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+}
+exports.KafkaChannel = KafkaChannel;
+class ElasticsearchChannel {
+    type = 'elasticsearch';
+    nodeUrl;
+    index;
+    auth;
+    constructor(config) {
+        this.nodeUrl = config.nodeUrl || process.env.ES_NODE_URL || '';
+        this.index = config.index || process.env.ES_INDEX || '';
+        this.auth = config.auth || (process.env.ES_USERNAME && process.env.ES_PASSWORD
+            ? { username: process.env.ES_USERNAME, password: process.env.ES_PASSWORD }
+            : undefined);
+    }
+    async send(message) {
+        try {
+            const { default: axios } = await Promise.resolve().then(() => __importStar(require('axios')));
+            const auditEvent = NotificationDispatcher.buildAuditEvent(message);
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            if (this.auth) {
+                const credentials = Buffer.from(`${this.auth.username}:${this.auth.password}`).toString('base64');
+                headers['Authorization'] = `Basic ${credentials}`;
+            }
+            await axios.post(`${this.nodeUrl}/${this.index}/_doc`, auditEvent, { headers });
+            return { success: true };
+        }
+        catch (error) {
+            return { success: false, error: error.message };
+        }
+    }
+}
+exports.ElasticsearchChannel = ElasticsearchChannel;
 class NotificationDispatcher {
     channels = new Map();
     constructor(configs = []) {
@@ -332,6 +409,12 @@ class NotificationDispatcher {
                 break;
             case 'webhook':
                 this.channels.set(id, new CustomWebhookChannel(config.config));
+                break;
+            case 'kafka':
+                this.channels.set(id, new KafkaChannel(config.config));
+                break;
+            case 'elasticsearch':
+                this.channels.set(id, new ElasticsearchChannel(config.config));
                 break;
             default:
                 throw new Error(`Unsupported notification type: ${config.type}`);
@@ -385,6 +468,27 @@ class NotificationDispatcher {
             result.push({ id, type: channel.type });
         }
         return result;
+    }
+    static buildAuditEvent(message) {
+        const beforeValues = message.changes.filter(c => c.before !== undefined).map(c => c.before);
+        const afterValues = message.changes.filter(c => c.after !== undefined).map(c => c.after);
+        const beforeHash = crypto
+            .createHash('sha256')
+            .update(JSON.stringify(beforeValues))
+            .digest('hex');
+        const afterHash = crypto
+            .createHash('sha256')
+            .update(JSON.stringify(afterValues))
+            .digest('hex');
+        return {
+            timestamp: new Date(message.timestamp).toISOString(),
+            operator: message.operator,
+            sourceEnvironment: message.environment,
+            changedKeys: message.changes.map(c => c.path),
+            beforeHash,
+            afterHash,
+            eventType: 'config.change',
+        };
     }
 }
 exports.NotificationDispatcher = NotificationDispatcher;
