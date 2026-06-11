@@ -34,7 +34,9 @@
       "@utils/*": ["src/utils/*"],
       "@theme/*": ["src/theme/*"],
       "@types/*": ["src/types/*"],
-      "@a11y/*": ["src/a11y/*"]
+      "@a11y/*": ["src/a11y/*"],
+      "@validation": ["src/validation/index.ts"],
+      "@validation/*": ["src/validation/*"]
     }
   },
   "include": ["src/**/*", "tests/**/*", "stories/**/*"],

@@ -40,7 +40,7 @@
 }
 
 .inputWrapper.error:focus-within {
-  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.5);
+  box-shadow: 0 0 0 3px var(--color-error-focus);
 }
 
 .inputWrapper.disabled {

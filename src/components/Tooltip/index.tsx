@@ -131,7 +131,16 @@ export const Tooltip = forwardRef<HTMLDivElement, TooltipProps>(
           >
             {content}
             {arrow ? (
-              <FloatingArrow ref={arrowRef} context={context} className={cn(styles.arrow, styles[`arrow${placement.charAt(0).toUpperCase() + placement.slice(1).replace(/-/g, '')] ?? ''])} />
+              <FloatingArrow
+                ref={arrowRef}
+                context={context}
+                className={cn(
+                  styles.arrow,
+                  styles[
+                    `arrow${placement.charAt(0).toUpperCase()}${placement.slice(1).replace(/-/g, '')}`
+                  ] ?? '',
+                )}
+              />
             ) : null}
           </div>
           </FloatingPortal>

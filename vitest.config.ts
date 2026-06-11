@@ -13,6 +13,7 @@ export default defineConfig({
       '@theme': path.resolve(__dirname, './src/theme'),
       '@types': path.resolve(__dirname, './src/types'),
       '@a11y': path.resolve(__dirname, './src/a11y'),
+      '@validation': path.resolve(__dirname, './src/validation'),
     },
   },
   test: {

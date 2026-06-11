@@ -40,7 +40,7 @@ const preview: Preview = {
     (Story, context) => {
       const theme = context.globals.theme || 'light';
       return (
-        <ThemeProvider defaultTheme={theme}>
+        <ThemeProvider defaultMode={theme}>
           <ToastProvider>
             <div style={{ padding: '2rem' }}>
               <Story />

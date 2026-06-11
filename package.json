@@ -16,89 +16,101 @@
     ".": {
       "types": "./dist/types/index.d.ts",
       "import": "./dist/esm/index.js",
-      "require": "./dist/cjs/index.js"
+      "require": "./dist/cjs/index.cjs"
     },
     "./theme": {
       "types": "./dist/types/theme/index.d.ts",
       "import": "./dist/esm/theme/index.js",
-      "require": "./dist/cjs/theme/index.js"
+      "require": "./dist/cjs/theme/index.cjs"
+    },
+    "./validation": {
+      "types": "./dist/types/validation/index.d.ts",
+      "import": "./dist/esm/validation/index.js",
+      "require": "./dist/cjs/validation/index.cjs"
     },
     "./Button": {
       "types": "./dist/types/components/Button/index.d.ts",
       "import": "./dist/esm/components/Button/index.js",
-      "require": "./dist/cjs/components/Button/index.js"
+      "require": "./dist/cjs/components/Button/index.cjs"
     },
     "./Input": {
       "types": "./dist/types/components/Input/index.d.ts",
       "import": "./dist/esm/components/Input/index.js",
-      "require": "./dist/cjs/components/Input/index.js"
+      "require": "./dist/cjs/components/Input/index.cjs"
     },
     "./Select": {
       "types": "./dist/types/components/Select/index.d.ts",
       "import": "./dist/esm/components/Select/index.js",
-      "require": "./dist/cjs/components/Select/index.js"
+      "require": "./dist/cjs/components/Select/index.cjs"
     },
     "./Checkbox": {
       "types": "./dist/types/components/Checkbox/index.d.ts",
       "import": "./dist/esm/components/Checkbox/index.js",
-      "require": "./dist/cjs/components/Checkbox/index.js"
+      "require": "./dist/cjs/components/Checkbox/index.cjs"
+    },
+    "./Tag": {
+      "types": "./dist/types/components/Tag/index.d.ts",
+      "import": "./dist/esm/components/Tag/index.js",
+      "require": "./dist/cjs/components/Tag/index.cjs"
     },
     "./Radio": {
       "types": "./dist/types/components/Radio/index.d.ts",
       "import": "./dist/esm/components/Radio/index.js",
-      "require": "./dist/cjs/components/Radio/index.js"
+      "require": "./dist/cjs/components/Radio/index.cjs"
     },
     "./Switch": {
       "types": "./dist/types/components/Switch/index.d.ts",
       "import": "./dist/esm/components/Switch/index.js",
-      "require": "./dist/cjs/components/Switch/index.js"
+      "require": "./dist/cjs/components/Switch/index.cjs"
     },
     "./Toast": {
       "types": "./dist/types/components/Toast/index.d.ts",
       "import": "./dist/esm/components/Toast/index.js",
-      "require": "./dist/cjs/components/Toast/index.js"
+      "require": "./dist/cjs/components/Toast/index.cjs"
     },
     "./Tooltip": {
       "types": "./dist/types/components/Tooltip/index.d.ts",
       "import": "./dist/esm/components/Tooltip/index.js",
-      "require": "./dist/cjs/components/Tooltip/index.js"
+      "require": "./dist/cjs/components/Tooltip/index.cjs"
     },
     "./Form": {
       "types": "./dist/types/components/Form/index.d.ts",
       "import": "./dist/esm/components/Form/index.js",
-      "require": "./dist/cjs/components/Form/index.js"
+      "require": "./dist/cjs/components/Form/index.cjs"
     },
     "./Table": {
       "types": "./dist/types/components/Table/index.d.ts",
       "import": "./dist/esm/components/Table/index.js",
-      "require": "./dist/cjs/components/Table/index.js"
+      "require": "./dist/cjs/components/Table/index.cjs"
     },
     "./Modal": {
       "types": "./dist/types/components/Modal/index.d.ts",
       "import": "./dist/esm/components/Modal/index.js",
-      "require": "./dist/cjs/components/Modal/index.js"
+      "require": "./dist/cjs/components/Modal/index.cjs"
     },
     "./Drawer": {
       "types": "./dist/types/components/Drawer/index.d.ts",
       "import": "./dist/esm/components/Drawer/index.js",
-      "require": "./dist/cjs/components/Drawer/index.js"
+      "require": "./dist/cjs/components/Drawer/index.cjs"
     },
     "./Dropdown": {
       "types": "./dist/types/components/Dropdown/index.d.ts",
       "import": "./dist/esm/components/Dropdown/index.js",
-      "require": "./dist/cjs/components/Dropdown/index.js"
+      "require": "./dist/cjs/components/Dropdown/index.cjs"
     },
     "./Tabs": {
       "types": "./dist/types/components/Tabs/index.d.ts",
       "import": "./dist/esm/components/Tabs/index.js",
-      "require": "./dist/cjs/components/Tabs/index.js"
+      "require": "./dist/cjs/components/Tabs/index.cjs"
     }
   },
   "bin": {
     "df1-57-tokens": "./dist/cjs/cli/index.js"
   },
   "scripts": {
-    "build": "rollup -c",
+    "build": "rollup -c && tsc --emitDeclarationOnly --outDir dist/types",
+    "build:js": "rollup -c",
+    "build:types": "tsc --emitDeclarationOnly --outDir dist/types",
     "build:watch": "rollup -c --watch",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -124,6 +136,7 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@rollup/plugin-alias": "^6.0.0",
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-typescript": "^11.1.6",

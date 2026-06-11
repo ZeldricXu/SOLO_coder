@@ -25,8 +25,8 @@ export type { ToastProps, ToastOptions, ToastPosition, ToastType } from './compo
 export { Tooltip } from './components/Tooltip';
 export type { TooltipProps, TooltipPlacement, TooltipTrigger } from './components/Tooltip';
 
-export { Form, FormField, FormItem, useForm, useFormContext, useWatch } from './components/Form';
-export type { FormProps, FormFieldProps, FormItemProps } from './components/Form';
+export { Form, FormField, FormItem, useForm, useFormContext, useWatch, useValidationEngine } from './components/Form';
+export type { FormProps, FormFieldProps, FormItemProps, FieldSchema, ValidationResult } from './components/Form';
 
 export { Table, Pagination } from './components/Table';
 export type { TableProps, TableColumn, PaginationProps, SortOrder, FilterConfig } from './components/Table';
@@ -44,7 +44,7 @@ export { Tabs, TabPane } from './components/Tabs';
 export type { TabsProps, TabPaneProps, TabItem } from './components/Tabs';
 
 export { ThemeProvider, useTheme, useTokens, lightTokens, darkTokens } from './theme';
-export type { Theme, DesignTokens, ColorTokens, SpacingTokens, RadiusTokens, ShadowTokens, FontTokens } from './theme/types';
+export type { DesignTokens, ColorTokens, SpacingTokens, RadiusTokens, ShadowTokens, TypographyTokens } from '@types';
 
 export {
   getButtonAriaProps,
@@ -71,5 +71,8 @@ export { useControllableState } from './hooks/useControllableState';
 export { useBoolean } from './hooks/useBoolean';
 
 export { cn } from './utils/cn';
+
+export { ValidationEngine, createValidationEngine } from './validation';
+export type { ValidationRule, ValidationRuleType, CustomValidator, FieldSchema as ValidationFieldSchema, FieldError, ValidationResult as EngineValidationResult } from './validation';
 
 import './theme/variables.css';

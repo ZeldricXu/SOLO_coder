@@ -4,8 +4,23 @@ import typescript from '@rollup/plugin-typescript';
 import peerDepsExternal from 'rollup-plugin-peer-deps-external';
 import postcss from 'rollup-plugin-postcss';
 import dts from 'rollup-plugin-dts';
+import alias from '@rollup/plugin-alias';
 import { readdirSync, statSync } from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const aliasEntries = [
+  { find: '@', replacement: path.resolve(__dirname, 'src') },
+  { find: '@components', replacement: path.resolve(__dirname, 'src/components') },
+  { find: '@hooks', replacement: path.resolve(__dirname, 'src/hooks') },
+  { find: '@utils', replacement: path.resolve(__dirname, 'src/utils') },
+  { find: '@theme', replacement: path.resolve(__dirname, 'src/theme') },
+  { find: '@types', replacement: path.resolve(__dirname, 'src/types') },
+  { find: '@a11y', replacement: path.resolve(__dirname, 'src/a11y') },
+  { find: '@validation', replacement: path.resolve(__dirname, 'src/validation') },
+];
 
 const getComponentEntries = (dir) => {
   const entries = {};
@@ -14,9 +29,16 @@ const getComponentEntries = (dir) => {
   items.forEach((item) => {
     const fullPath = path.join(dir, item);
     if (statSync(fullPath).isDirectory()) {
-      const indexPath = path.join(fullPath, 'index.tsx');
-      if (statSync(indexPath).isFile()) {
-        entries[item] = indexPath;
+      const indexFiles = ['index.tsx', 'index.ts'];
+      for (const indexFile of indexFiles) {
+        const indexPath = path.join(fullPath, indexFile);
+        try {
+          if (statSync(indexPath).isFile()) {
+            entries[item] = indexPath;
+            break;
+          }
+        } catch {
+        }
       }
     }
   });
@@ -30,11 +52,23 @@ const componentEntries = getComponentEntries(componentsDir);
 const allEntries = {
   index: 'src/index.ts',
   theme: 'src/theme/index.ts',
+  validation: 'src/validation/index.ts',
   'cli/index': 'src/cli/index.ts',
   ...componentEntries,
 };
 
-const plugins = [
+const externalDeps = [
+  'react',
+  'react-dom',
+  /^react-hook-form/,
+  /^@hookform\/resolvers/,
+  /^zod/,
+  /^@floating-ui\/react/,
+  /^clsx/,
+];
+
+const sharedPlugins = [
+  alias({ entries: aliasEntries }),
   peerDepsExternal(),
   resolve(),
   commonjs(),
@@ -42,9 +76,11 @@ const plugins = [
     tsconfig: './tsconfig.json',
     declaration: false,
     declarationMap: false,
+    outDir: undefined,
+    declarationDir: undefined,
   }),
   postcss({
-    extract: 'styles.css',
+    extract: true,
     modules: true,
     autoModules: true,
     minimize: true,
@@ -60,9 +96,10 @@ const esmConfig = {
     sourcemap: true,
     preserveModules: true,
     preserveModulesRoot: 'src',
+    entryFileNames: '[name].js',
   },
-  plugins,
-  external: ['react', 'react-dom', /^react-hook-form/, /^@hookform\/resolvers/, /^zod/, /^@floating-ui\/react/, /^clsx/],
+  plugins: sharedPlugins,
+  external: externalDeps,
 };
 
 const cjsConfig = {
@@ -74,9 +111,10 @@ const cjsConfig = {
     preserveModules: true,
     preserveModulesRoot: 'src',
     exports: 'named',
+    entryFileNames: '[name].cjs',
   },
-  plugins,
-  external: ['react', 'react-dom', /^react-hook-form/, /^@hookform\/resolvers/, /^zod/, /^@floating-ui\/react/, /^clsx/],
+  plugins: sharedPlugins,
+  external: externalDeps,
 };
 
 const dtsConfig = {
@@ -86,8 +124,18 @@ const dtsConfig = {
     format: 'esm',
     preserveModules: true,
     preserveModulesRoot: 'src',
+    entryFileNames: '[name].d.ts',
   },
-  plugins: [dts()],
+  plugins: [
+    alias({ entries: aliasEntries }),
+    dts({
+      tsconfig: './tsconfig.json',
+      compilerOptions: {
+        outDir: undefined,
+        declarationDir: undefined,
+      },
+    }),
+  ],
 };
 
-export default [esmConfig, cjsConfig, dtsConfig];
+export default [esmConfig, cjsConfig];

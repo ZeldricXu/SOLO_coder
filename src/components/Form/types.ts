@@ -6,6 +6,7 @@ import type {
   RegisterOptions,
 } from 'react-hook-form';
 import type { ZodSchema, ZodTypeDef } from 'zod';
+import type { FieldSchema } from '@validation';
 
 export interface FormProps<T extends FieldValues> extends React.FormHTMLAttributes<HTMLFormElement> {
   form: UseFormReturn<T>;
@@ -13,6 +14,7 @@ export interface FormProps<T extends FieldValues> extends React.FormHTMLAttribut
   children: React.ReactNode;
   schema?: ZodSchema<T, ZodTypeDef, unknown>;
   showErrorOnSubmit?: boolean;
+  fieldSchemas?: FieldSchema[];
 }
 
 export interface FormFieldProps<T extends FieldValues> {
