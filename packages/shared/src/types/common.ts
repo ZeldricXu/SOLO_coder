@@ -33,20 +33,20 @@ export interface HyperParameter {
   type: 'string' | 'number' | 'boolean' | 'json';
 }
 
-export interface LineageNode {
+export interface SimpleLineageNode {
   id: string;
   type: 'experiment' | 'model' | 'dataset' | 'feature_set';
   name: string;
   metadata?: Record<string, unknown>;
 }
 
-export interface LineageEdge {
+export interface SimpleLineageEdge {
   source: string;
   target: string;
   relation: 'parent' | 'child' | 'uses' | 'produces';
 }
 
 export interface LineageGraph {
-  nodes: LineageNode[];
-  edges: LineageEdge[];
+  nodes: SimpleLineageNode[];
+  edges: SimpleLineageEdge[];
 }

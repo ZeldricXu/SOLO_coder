@@ -104,31 +104,40 @@ model Experiment {
 }
 
 model ExperimentRun {
-  id             String          @id @default(uuid())
-  experimentId   String
-  experiment     Experiment      @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-  name           String
-  status         String          @default("running") // running | completed | failed | killed
-  startTime      DateTime        @default(now())
-  endTime        DateTime?
-  durationMs     BigInt?
-  artifactPaths  String[]        @default([])
-  modelVersionId String?
-  datasetVersion String?
-  parentRunId    String?
-  childRunIds    String[]        @default([])
-  notes          String?
-  tags           String[]        @default([])
-  sourceType     String?         // git | notebook | script | manual
-  sourceUri      String?
-  sourceCommit   String?
-  sourceEntry    String?
+  id                String              @id @default(uuid())
+  experimentId      String
+  experiment        Experiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  name              String
+  description       String?
+  status            String              @default("running") // running | completed | failed | killed | archived
+  startTime         DateTime            @default(now())
+  endTime           DateTime?
+  durationMs        BigInt?
+  artifactPaths     String[]            @default([])
+  modelVersionId    String?
+  datasetVersion    String?
+  parentExperimentId String?
+  parentRunId       String?
+  variantType       String?             // baseline | variant | finetune
+  childRunIds       String[]            @default([])
+  notes             String?
+  tags              String[]            @default([])
+  sourceType        String?             // git | notebook | script | manual
+  sourceUri         String?
+  sourceCommit      String?
+  sourceEntry       String?
+  metricsJson       Json                @default("{}")
+  hyperparametersJson Json              @default("{}")
+  metadata          Json                @default("{}")
+  checkpoints       Json                @default("[]")
+  artifacts         Json                @default("{}")
 
-  hyperParameters RunHyperParameter[]
-  metrics         RunMetric[]
+  hyperParameters   RunHyperParameter[]
+  metrics           RunMetric[]
 
   @@index([experimentId, startTime])
   @@index([status])
+  @@index([parentExperimentId])
   @@index([parentRunId])
 }
 
@@ -175,6 +184,7 @@ model FeatureSet {
   createdAt        DateTime            @default(now())
   updatedAt        DateTime            @updatedAt
   versions         FeatureSetVersion[]
+  vectorIndexes    VectorIndex[]
   latestVersionId  String?
 
   @@index([projectId])
@@ -415,22 +425,23 @@ model InferenceMetrics {
 
 // ==================== 模型流水线 ====================
 model ModelPipeline {
-  id            String         @id @default(uuid())
+  id            String            @id @default(uuid())
   name          String
   description   String?
   projectId     String
   ownerId       String
   team          String
-  status        String         @default("draft") // draft | active | archived
+  status        String            @default("draft") // draft | active | archived
   steps         PipelineStep[]
+  executions    PipelineExecution[]
   entryPoint    String
   outputStep    String
-  tags          String[]       @default([])
-  metadata      Json           @default("{}")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  tags          String[]          @default([])
+  metadata      Json              @default("{}")
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
   lastRunAt     DateTime?
-  runCount      Int            @default(0)
+  runCount      Int               @default(0)
   avgLatencyMs  Float?
   successRate   Float?
 
@@ -467,37 +478,47 @@ model PipelineStep {
 
 // ==================== 实验继承链 ====================
 model LineageEdge {
-  id           String   @id @default(uuid())
-  sourceRunId  String
-  targetRunId  String
-  type         String   // parent_child | baseline | derived
-  relationship String   // direct | baseline | variant
-  metricDeltas Json     @default("{}")
-  createdAt    DateTime @default(now())
+  id                 String   @id @default(uuid())
+  sourceExperimentId String?
+  sourceRunId        String?
+  targetExperimentId String?
+  targetRunId        String
+  type               String   // parent_child | baseline_variant | variant_finetune
+  relationship       String   // direct | baseline | derived
+  notes              String?
+  metricDeltas       Json     @default("{}")
+  createdAt          DateTime @default(now())
 
+  @@index([sourceExperimentId])
   @@index([sourceRunId])
+  @@index([targetExperimentId])
   @@index([targetRunId])
-  @@unique([sourceRunId, targetRunId, type])
+  @@unique([sourceExperimentId, targetExperimentId, type])
 }
 
 // ==================== 向量索引与搜索 ====================
 model VectorIndex {
-  id            String           @id @default(uuid())
-  featureSetId  String
-  featureSet    FeatureSet       @relation(fields: [featureSetId], references: [id], onDelete: Cascade)
-  featureName   String
-  config        Json
-  status        String           @default("building") // building | ready | failed | updating
-  size          Int              @default(0)
-  dimension     Int
-  memoryUsageBytes BigInt        @default(0)
-  buildProgress Float?
-  lastBuildTime DateTime?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  id               String           @id @default(uuid())
+  featureSetId     String
+  featureSet       FeatureSet       @relation(fields: [featureSetId], references: [id], onDelete: Cascade)
+  featureName      String
+  featureVersion   String?
+  config           Json
+  similarityMetric String           @default("cosine")
+  status           String           @default("building") // building | ready | failed | updating
+  size             Int              @default(0)
+  dimension        Int
+  memoryUsageBytes BigInt           @default(0)
+  buildProgress    Float?
+  lastBuildTime    DateTime?
+  queryCount       Int              @default(0)
+  avgQueryTimeMs   Float?
+  lastQueriedAt    DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
 
   @@index([featureSetId, status])
-  @@unique([featureSetId, featureName])
+  @@unique([featureSetId, featureName, featureVersion])
 }
 
 model VectorRecord {
@@ -507,9 +528,54 @@ model VectorRecord {
   entityKey     String
   vector        Unsupported("vector")?
   features      Json       @default("{}")
+  metadata      Json       @default("{}")
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
 
   @@index([indexId, entityKey])
   @@unique([indexId, entityKey])
+}
+
+// ==================== 流水线执行日志 ====================
+model PipelineExecution {
+  id            String           @id @default(uuid())
+  pipelineId    String
+  pipeline      ModelPipeline    @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  requestId     String?
+  status        String           // running | completed | failed | timed_out
+  inputs        Json
+  outputs       Json?
+  stepOutputs   Json             @default("{}")
+  latencyMs     Int?
+  startedAt     DateTime         @default(now())
+  completedAt   DateTime?
+  error         String?
+  errorStepId   String?
+  retryCount    Int              @default(0)
+  metadata      Json             @default("{}")
+  steps         PipelineStepExecution[]
+
+  @@index([pipelineId, status, startedAt])
+  @@index([requestId])
+}
+
+model PipelineStepExecution {
+  id              String            @id @default(uuid())
+  executionId     String
+  execution       PipelineExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  stepId          String
+  stepName        String
+  modelId         String?
+  status          String            // pending | running | completed | failed | skipped
+  inputs          Json
+  outputs         Json?
+  latencyMs       Int?
+  startedAt       DateTime?
+  completedAt     DateTime?
+  error           String?
+  retryCount      Int               @default(0)
+  metadata        Json              @default("{}")
+
+  @@index([executionId, status])
+  @@index([stepId, status])
 }

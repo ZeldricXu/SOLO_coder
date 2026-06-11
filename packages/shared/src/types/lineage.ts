@@ -1,4 +1,18 @@
-import type { ExperimentRun, MetricValue, HyperParameter } from './experiment';
+export interface MetricDelta {
+  metricName: string;
+  parentValue: number;
+  currentValue: number;
+  absoluteChange: number;
+  relativeChange: number;
+  isImprovement: boolean;
+}
+
+export interface HyperParameterDelta {
+  name: string;
+  parentValue: unknown;
+  currentValue: unknown;
+  changed: boolean;
+}
 
 export interface ExperimentLineageNode {
   experimentId: string;
@@ -10,37 +24,25 @@ export interface ExperimentLineageNode {
   metricDeltas: Record<string, MetricDelta>;
   hyperParameterDeltas: Record<string, HyperParameterDelta>;
   createdAt: number;
-  status: 'running' | 'completed' | 'failed' | 'killed';
+  status: string;
   tags: string[];
   notes?: string;
   depth: number;
-  direction: 'up' | 'down' | 'current';
+  direction: 'current' | 'up' | 'down';
   hasParent: boolean;
   hasChildren: boolean;
+  metrics?: Record<string, number>;
+  hyperParameters?: Record<string, unknown>;
 }
 
-export interface MetricDelta {
-  metricName: string;
-  currentValue: number;
-  parentValue: number;
-  absoluteChange: number;
-  relativeChange: number;
-  percentageChange: number;
-  isImprovement: boolean;
-  improvementDirection: 'higher' | 'lower';
-  statisticalSignificance?: {
-    pValue: number;
-    isSignificant: boolean;
-    confidenceInterval: [number, number];
-  };
-}
-
-export interface HyperParameterDelta {
-  paramName: string;
-  currentValue: unknown;
-  parentValue: unknown;
-  changed: boolean;
-  changeType: 'added' | 'removed' | 'modified';
+export interface LineageEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: 'parent_child' | 'baseline_variant' | 'variant_finetune';
+  relationship: 'direct' | 'baseline' | 'derived';
+  metricDeltas: Record<string, MetricDelta>;
+  hyperParamDeltas?: Record<string, HyperParameterDelta>;
 }
 
 export interface ExperimentEvolutionTree {
@@ -52,94 +54,90 @@ export interface ExperimentEvolutionTree {
   totalRuns: number;
   bestPerformer?: {
     runId: string;
-    experimentName: string;
-    primaryMetric: string;
-    primaryMetricValue: number;
+    metricName: string;
+    value: number;
+    improvement: number;
   };
   generationSummary: LineageGenerationSummary[];
-}
-
-export interface LineageEdge {
-  id: string;
-  source: string;
-  target: string;
-  type: 'parent_child' | 'baseline' | 'derived';
-  metricDeltas: Record<string, MetricDelta>;
-  relationship: 'direct' | 'baseline' | 'variant';
 }
 
 export interface LineageGenerationSummary {
   generation: number;
   runCount: number;
-  avgImprovement: Record<string, number>;
-  bestRunId?: string;
   primaryMetricValue?: number;
+  bestRunId?: string;
+  avgImprovement?: number;
 }
 
 export interface LineageQueryRequest {
-  experimentId?: string;
   runId?: string;
+  experimentId?: string;
   depth?: number;
   direction?: 'up' | 'down' | 'both';
-  includeMetrics?: string[];
+  includeMetrics?: boolean;
   primaryMetric?: string;
   improvementDirection?: 'higher' | 'lower';
 }
 
 export interface LineageCompareRequest {
   runIds: string[];
-  primaryMetric?: string;
-  improvementDirection?: 'higher' | 'lower';
-  includeAllMetrics?: boolean;
+  metrics?: string[];
+  includeHyperParameters?: boolean;
 }
 
 export interface LineageCompareResponse {
-  runs: {
-    runId: string;
-    experimentId: string;
-    experimentName: string;
-    runName: string;
-    metrics: Record<string, number>;
-    hyperParameters: Record<string, unknown>;
-    baselineDelta?: Record<string, MetricDelta>;
+  runIds: string[];
+  metrics: {
+    name: string;
+    values: Record<string, number>;
+    best: { runId: string; value: number };
   }[];
-  bestRunId?: string;
-  primaryMetric?: string;
-  comparisonMatrix: Record<string, Record<string, Record<string, MetricDelta>>>;
+  hyperParameters: {
+    name: string;
+    values: Record<string, unknown>;
+    changed: boolean;
+  }[];
+  relationships: {
+    from: string;
+    to: string;
+    type: string;
+  }[];
 }
 
-export interface ExperimentPromoteRequest {
-  sourceRunId: string;
-  targetExperimentId: string;
-  newRunName?: string;
-  inheritMetrics?: boolean;
-  inheritHyperParameters?: boolean;
-  note?: string;
+export interface LineageStats {
+  totalNodes: number;
+  totalEdges: number;
+  maxDepth: number;
+  avgBranchingFactor: number;
+  longestPath: string[];
 }
 
 export interface ExperimentForkRequest {
   sourceRunId: string;
-  newExperimentName: string;
-  newRunName?: string;
+  name: string;
   description?: string;
   hyperParameterOverrides?: Record<string, unknown>;
-  projectId?: string;
-  ownerId?: string;
-  team?: string;
+  tags?: string[];
+  notes?: string;
 }
 
 export interface RunForkResult {
-  newExperimentId: string;
   newRunId: string;
-  parentRunId: string;
-  baselineRunId: string;
+  newExperimentId: string;
+  sourceRunId: string;
+  inheritedHyperParameters: Record<string, unknown>;
+  overriddenHyperParameters: Record<string, unknown>;
 }
 
-export interface LineageStats {
-  totalLineageChains: number;
-  maxChainDepth: number;
-  avgImprovementPerGeneration: Record<string, number>;
-  mostForkedRunId?: string;
-  forkCount: number;
-  successRate: number;
+export interface ExperimentCreateWithParentRequest {
+  name: string;
+  description?: string;
+  projectId: string;
+  ownerId: string;
+  team?: string;
+  parentExperimentId: string;
+  parentRunId?: string;
+  variantType: 'baseline' | 'variant' | 'finetune';
+  tags?: string[];
+  metadata?: Record<string, unknown>;
 }
