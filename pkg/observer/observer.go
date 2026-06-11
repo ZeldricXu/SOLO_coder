@@ -82,10 +82,13 @@ func (db *DelayBuffer) ObserverCount() int {
 }
 
 type Manager struct {
-	buffers   map[common.RoomID]*DelayBuffer
-	delaySec  int
-	mu        sync.RWMutex
-	onMessage func(common.UserID, *protocol.Message)
+	buffers    map[common.RoomID]*DelayBuffer
+	delaySec   int
+	mu         sync.RWMutex
+	onMessage  func(common.UserID, *protocol.Message)
+	runningMu  sync.Mutex
+	running    bool
+	stopCh     chan struct{}
 }
 
 func NewManager(delaySec int) *Manager {
@@ -139,14 +142,42 @@ func (m *Manager) RemoveObserver(roomID common.RoomID, userID common.UserID) {
 }
 
 func (m *Manager) StartDrainLoop() {
+	m.runningMu.Lock()
+	if m.running {
+		m.runningMu.Unlock()
+		return
+	}
+	m.running = true
+	m.stopCh = make(chan struct{})
+	stop := m.stopCh
+	m.runningMu.Unlock()
+
 	go func() {
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			m.drainAll()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ticker.C:
+				m.drainAll()
+			}
 		}
 	}()
+}
+
+func (m *Manager) StopDrainLoop() {
+	m.runningMu.Lock()
+	defer m.runningMu.Unlock()
+	if !m.running {
+		return
+	}
+	m.running = false
+	if m.stopCh != nil {
+		close(m.stopCh)
+		m.stopCh = nil
+	}
 }
 
 func (m *Manager) drainAll() {

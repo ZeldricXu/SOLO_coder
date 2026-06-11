@@ -1,0 +1,77 @@
+---
+# ============================================================
+# Headless Service — required for StatefulSet stable network IDs
+#   Pod DNS:  gameroom-{0..N-1}.gameroom-headless.gaming.svc.cluster.local
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: gameroom-headless
+  namespace: gaming
+  labels:
+    app: gameroom
+spec:
+  type: ClusterIP
+  clusterIP: None          # HEADLESS — no virtual VIP, direct Pod DNS
+  publishNotReadyAddresses: false
+  selector:
+    app: gameroom
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: ws
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+---
+# ============================================================
+# ClusterIP Service — for internal consumers and Ingress routing
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: gameroom
+  namespace: gaming
+  labels:
+    app: gameroom
+spec:
+  type: ClusterIP
+  selector:
+    app: gameroom
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+    - name: ws
+      port: 8081
+      targetPort: 8081
+      protocol: TCP
+---
+# ============================================================
+# Metrics Service — Prometheus scrapes /metrics on port 8080
+# ============================================================
+apiVersion: v1
+kind: Service
+metadata:
+  name: gameroom-metrics
+  namespace: gaming
+  labels:
+    app: gameroom
+    prometheus.io/scrape: "true"
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: gameroom
+  ports:
+    - name: metrics
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

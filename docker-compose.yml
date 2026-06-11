@@ -1,0 +1,148 @@
+---
+# ============================================================
+# Local development docker-compose for Game Room Engine
+#   - MongoDB 7  (persistent storage via local volume)
+#   - Redis 7    (persistent storage via local volume)
+#   - mongo-seed : indexes + test accounts (run-once init job)
+#   - gameroom   : game service (built from ./Dockerfile, hot-reload disabled)
+#
+# Usage:
+#   cp .env.example .env        # customize local env
+#   docker compose up -d        # start services
+#   docker compose logs -f app  # follow app logs
+#   docker compose down         # shutdown
+# ============================================================
+
+name: gameroom
+
+services:
+  # ---------------- MongoDB ----------------
+  mongo:
+    image: mongo:7.0.11-alpine
+    container_name: gameroom-mongo
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_DATABASE: gameroom
+      TZ: Asia/Shanghai
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+      - ./scripts/mongo-init.js:/docker-entrypoint-initdb.d/mongo-init.js:ro
+    command: >
+      mongod
+      --wiredTigerCacheSizeGB 1
+      --logappend
+      --slowms 200
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.stats().ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - backend
+
+  # ---------------- Redis ----------------
+  redis:
+    image: redis:7.2.5-alpine
+    container_name: gameroom-redis
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Shanghai
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --auto-aof-rewrite-percentage 100
+      --auto-aof-rewrite-min-size 64mb
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    networks:
+      - backend
+
+  # ---------------- Mongo Seed (test accounts & indexes) ----------------
+  mongo-seed:
+    image: mongo:7.0.11-alpine
+    container_name: gameroom-mongo-seed
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Shanghai
+    volumes:
+      - ./scripts/mongo-seed.js:/seed.js:ro
+    command: >
+      sh -c "
+        mongosh --host mongo:27017 --quiet gameroom /seed.js
+        && echo '[mongo-seed] Done'
+      "
+    networks:
+      - backend
+    restart: "no"
+
+  # ---------------- Game Room Service ----------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        APP_VERSION: local-dev
+        COMMIT_SHA: docker-compose
+        BUILD_TIME: build-time
+    image: gameroom:local
+    container_name: gameroom-app
+    restart: unless-stopped
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo-seed:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Shanghai
+      APP_ENV: development
+      MONGO_URI: mongodb://mongo:27017
+      REDIS_ADDR: redis:6379
+    ports:
+      - "8080:8080"
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    networks:
+      - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+
+volumes:
+  mongo_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  backend:
+    name: gameroom_default
+    driver: bridge

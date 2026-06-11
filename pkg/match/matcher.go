@@ -297,19 +297,24 @@ func (m *Matcher) PoolSize(gameType common.GameType) int {
 	return len(m.pools[gameType])
 }
 
-func (m *Matcher) StartTicker(gameTypes []common.GameType, interval time.Duration) {
+func (m *Matcher) StartTicker(gameTypes []common.GameType, interval time.Duration, shutdownCh <-chan struct{}) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			for _, gt := range gameTypes {
-				results := m.TryMatch(gt)
-				for _, r := range results {
-					select {
-					case m.notifyCh <- r:
-					default:
-						common.LogWarn("match notify channel full, dropping result for %s", gt)
+		for {
+			select {
+			case <-shutdownCh:
+				return
+			case <-ticker.C:
+				for _, gt := range gameTypes {
+					results := m.TryMatch(gt)
+					for _, r := range results {
+						select {
+						case m.notifyCh <- r:
+						default:
+							common.LogWarn("match notify channel full, dropping result for %s", gt)
+						}
 					}
 				}
 			}

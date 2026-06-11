@@ -16,6 +16,7 @@ type Service struct {
 
 	mu            sync.RWMutex
 	running       bool
+	shutdownCh    chan struct{}
 }
 
 type RobotFactory struct {
@@ -100,6 +101,7 @@ func (s *Service) Start() {
 		return
 	}
 	s.running = true
+	s.shutdownCh = make(chan struct{})
 	gameTypes := make([]common.GameType, 0, len(s.matchers))
 	for gt := range s.matchers {
 		gameTypes = append(gameTypes, gt)
@@ -108,9 +110,23 @@ func (s *Service) Start() {
 
 	go s.processMatchResults(gameTypes)
 	for _, gt := range gameTypes {
-		s.matchers[gt].StartTicker([]common.GameType{gt}, 2*time.Second)
+		s.matchers[gt].StartTicker([]common.GameType{gt}, 2*time.Second, s.shutdownCh)
 	}
 	common.LogInfo("match service started")
+}
+
+func (s *Service) Stop() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.running {
+		return
+	}
+	s.running = false
+	if s.shutdownCh != nil {
+		close(s.shutdownCh)
+		s.shutdownCh = nil
+	}
+	common.LogInfo("match service stopped")
 }
 
 func (s *Service) processMatchResults(gameTypes []common.GameType) {

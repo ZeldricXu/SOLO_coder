@@ -383,19 +383,24 @@ func (rm *RankedMatcher) TotalPoolSize(gameType common.GameType) int {
 	return total
 }
 
-func (rm *RankedMatcher) StartTicker(gameTypes []common.GameType, interval time.Duration) {
+func (rm *RankedMatcher) StartTicker(gameTypes []common.GameType, interval time.Duration, shutdownCh <-chan struct{}) {
 	go func() {
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		for range ticker.C {
-			for _, gt := range gameTypes {
-				results := rm.TryMatch(gt)
-				for _, r := range results {
-					select {
-					case rm.matcher.notifyCh <- r:
-					default:
-						common.LogWarn("ranked match notify channel full, dropping result for %s", gt)
+		for {
+			select {
+			case <-shutdownCh:
+				return
+			case <-ticker.C:
+				for _, gt := range gameTypes {
+					results := rm.TryMatch(gt)
+					for _, r := range results {
+						select {
+						case rm.matcher.notifyCh <- r:
+						default:
+							common.LogWarn("ranked match notify channel full, dropping result for %s", gt)
+						}
 					}
 				}
 			}

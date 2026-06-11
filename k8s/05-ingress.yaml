@@ -1,0 +1,86 @@
+---
+# ============================================================
+# Ingress (Ingress Nginx) — routes HTTP + WebSocket traffic.
+# Key annotation: nginx.org/websocket-services so Nginx enables
+# the Upgrade / Connection: upgrade header passthrough.
+#
+# Long timeouts are critical for WebSocket — otherwise Nginx
+# closes idle WS at 60s by default.
+# ============================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: gameroom-ingress
+  namespace: gaming
+  annotations:
+    # ---- WebSocket support ----
+    nginx.org/websocket-services: "gameroom"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "15"
+
+    # ---- Buffering / Upgrade ----
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-buffers-number: "4"
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "16k"
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/websocket-services: "gameroom"
+
+    # ---- Session affinity (sticky session) ----
+    # Because rooms live in-memory on a specific Pod, WS/HTTP
+    # for a given room must hit the same Pod.
+    nginx.ingress.kubernetes.io/affinity: "cookie"
+    nginx.ingress.kubernetes.io/session-cookie-name: "GR_SESSION"
+    nginx.ingress.kubernetes.io/session-cookie-expires: "86400"
+    nginx.ingress.kubernetes.io/session-cookie-max-age: "86400"
+    nginx.ingress.kubernetes.io/session-cookie-path: "/"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$arg_room_id"
+
+    # ---- TLS ----
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+
+    # ---- General ----
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+spec:
+  ingressClassName: nginx
+  # tls:
+  #   - hosts:
+  #       - game.example.com
+  #       - ws.game.example.com
+  #     secretName: gameroom-tls
+  rules:
+    - host: game.example.com
+      http:
+        paths:
+          # REST API
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: gameroom
+                port: { number: 8080 }
+          # Health / version / metrics
+          - path: /health
+            pathType: Exact
+            backend:
+              service:
+                name: gameroom
+                port: { number: 8080 }
+          - path: /version
+            pathType: Exact
+            backend:
+              service:
+                name: gameroom
+                port: { number: 8080 }
+    - host: ws.game.example.com
+      http:
+        paths:
+          # WebSocket — separate hostname for WSS clarity
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: gameroom
+                port: { number: 8080 }

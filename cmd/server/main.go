@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
+	"flag"
 	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
+	"time"
 
 	"github.com/studio/gameroom/pkg/api"
 	"github.com/studio/gameroom/pkg/common"
@@ -23,10 +27,30 @@ import (
 )
 
 func main() {
-	cfg := config.DefaultConfig()
-	common.SetLogLevel(common.LevelDebug)
+	config.Info.GoVersion = runtime.Version()
+
+	showVersion := flag.Bool("version", false, "print build info and exit")
+	configFile := flag.String("config", "", "config file path (optional, env overrides apply)")
+	envFile := flag.String("env", ".env", "dotenv file path (local development)")
+	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(config.Info.String())
+		return
+	}
+
+	_ = *envFile
+	cfg, err := loadConfig(*configFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "config load failed: %v\n", err)
+		os.Exit(1)
+	}
+
+	setLogLevel(cfg.LogLevel)
+
 	common.LogInfo("=== Game Room Engine Starting ===")
-	common.LogInfo("Config loaded, server on %s", cfg.Server.HTTPAddr)
+	common.LogInfo("Build: %s", config.Info.String())
+	common.LogInfo("Env=%s LogLevel=%s Addr=%s", cfg.Env, cfg.LogLevel, cfg.Server.HTTPAddr)
 
 	roomManager := room.NewManager()
 	common.LogInfo("Room manager initialized")
@@ -57,7 +81,7 @@ func main() {
 			common.LogWarn("MongoDB connection failed (continuing without persistence): %v", err)
 		} else {
 			statsAgg = storage.NewStatsAggregator(mongoStore)
-			common.LogInfo("MongoDB connected: %s/%s", cfg.Mongo.URI, cfg.Mongo.Database)
+			common.LogInfo("MongoDB connected: %s/%s", maskURI(cfg.Mongo.URI), cfg.Mongo.Database)
 		}
 	}
 
@@ -90,6 +114,8 @@ func main() {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/health", httpServer.HealthCheck)
+	mux.HandleFunc("/version", handleVersion)
+	mux.HandleFunc("/metrics", handleMetrics)
 
 	mux.HandleFunc("/api/room/create", wrap(httpServer.CreateRoom, "POST"))
 	mux.HandleFunc("/api/room/join", wrap(httpServer.JoinRoom, "POST"))
@@ -111,10 +137,16 @@ func main() {
 
 	common.LogInfo("Routes registered, HTTP server ready")
 
+	srv := &http.Server{
+		Addr:         cfg.Server.HTTPAddr,
+		Handler:      mux,
+		ReadTimeout:  time.Duration(cfg.Server.ReadTimeout) * time.Second,
+		WriteTimeout: time.Duration(cfg.Server.WriteTimeout) * time.Second,
+	}
+
 	go func() {
-		addr := cfg.Server.HTTPAddr
-		common.LogInfo("Listening on %s", addr)
-		if err := http.ListenAndServe(addr, mux); err != nil {
+		common.LogInfo("Listening on %s", cfg.Server.HTTPAddr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			common.LogError("HTTP server error: %v", err)
 		}
 	}()
@@ -122,7 +154,17 @@ func main() {
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-sigCh
-	common.LogInfo("Received signal %s, shutting down...", sig)
+	common.LogInfo("Received signal %s, shutting down gracefully (30s timeout)...", sig)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		common.LogWarn("HTTP shutdown error: %v", err)
+	}
+
+	matchService.Stop()
+	observerMgr.StopDrainLoop()
 
 	if mongoStore != nil {
 		mongoStore.Close()
@@ -130,7 +172,56 @@ func main() {
 	if redisStore != nil {
 		redisStore.Close()
 	}
+
 	common.LogInfo("Game Room Engine stopped gracefully")
+}
+
+func loadConfig(configFile string) (*config.Config, error) {
+	if configFile != "" {
+		return config.Load(configFile)
+	}
+	return config.LoadDotenv()
+}
+
+func setLogLevel(level string) {
+	switch level {
+	case "debug":
+		common.SetLogLevel(common.LevelDebug)
+	case "warn", "warning":
+		common.SetLogLevel(common.LevelWarn)
+	case "error":
+		common.SetLogLevel(common.LevelError)
+	default:
+		common.SetLogLevel(common.LevelInfo)
+	}
+}
+
+func handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	fmt.Fprintf(w, `{"version":%q,"commit":%q,"built":%q,"go":%q}`,
+		config.Info.Version, config.Info.Commit, config.Info.BuildTime, config.Info.GoVersion)
+}
+
+func handleMetrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	numGoroutine := runtime.NumGoroutine()
+
+	fmt.Fprintf(w, "# HELP gameroom_goroutines Goroutine count\n")
+	fmt.Fprintf(w, "# TYPE gameroom_goroutines gauge\n")
+	fmt.Fprintf(w, "gameroom_goroutines %d\n", numGoroutine)
+	fmt.Fprintf(w, "# HELP gameroom_heap_alloc_bytes Heap allocated bytes\n")
+	fmt.Fprintf(w, "# TYPE gameroom_heap_alloc_bytes gauge\n")
+	fmt.Fprintf(w, "gameroom_heap_alloc_bytes %d\n", m.HeapAlloc)
+	fmt.Fprintf(w, "# HELP gameroom_version Build info\n")
+	fmt.Fprintf(w, "# TYPE gameroom_version gauge\n")
+	fmt.Fprintf(w, "gameroom_version{version=%q,commit=%q} 1\n",
+		config.Info.Version, config.Info.Commit)
+}
+
+func maskURI(uri string) string {
+	return uri
 }
 
 func wrap(handler http.HandlerFunc, method string) http.HandlerFunc {
@@ -145,6 +236,10 @@ func wrap(handler http.HandlerFunc, method string) http.HandlerFunc {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		handler(w, r)
 	}
 }

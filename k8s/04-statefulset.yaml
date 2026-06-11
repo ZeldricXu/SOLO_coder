@@ -1,0 +1,153 @@
+---
+# ============================================================
+# StatefulSet — Game Room Engine (rooms in memory = stateful)
+#
+# Why StatefulSet instead of Deployment:
+#   - Rooms live in the Pod's memory; a player routed to a
+#     different Pod won't find their room.
+#   - Stable Pod hostnames let us use client-side sticky
+#     routing or a room→pod locator service later.
+# ============================================================
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: gameroom
+  namespace: gaming
+  labels:
+    app: gameroom
+spec:
+  serviceName: gameroom-headless   # Headless service for stable DNS
+  replicas: 3
+  podManagementPolicy: Parallel    # don't serialize pod startup
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 0
+  selector:
+    matchLabels:
+      app: gameroom
+  template:
+    metadata:
+      labels:
+        app: gameroom
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      terminationGracePeriodSeconds: 60  # allow 60s for graceful ws drain
+      serviceAccountName: gameroom
+      affinity:
+        # Spread across nodes and AZs — no two pods on the same node
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector: { matchLabels: { app: gameroom } }
+            - weight: 80
+              podAffinityTerm:
+                topologyKey: topology.kubernetes.io/zone
+                labelSelector: { matchLabels: { app: gameroom } }
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gameroom
+          image: harbor.example.com/gaming/gameroom:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: ws
+              containerPort: 8081
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: gameroom-config
+            - secretRef:
+                name: gameroom-secrets
+          env:
+            # Useful for logging / per-pod sticky routing
+            - name: POD_NAME
+              valueFrom:
+                fieldRef: { fieldPath: metadata.name }
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef: { fieldPath: metadata.namespace }
+            - name: POD_IP
+              valueFrom:
+                fieldRef: { fieldPath: status.podIP }
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef: { fieldPath: spec.nodeName }
+          resources:
+            requests:
+              cpu: "1"
+              memory: 2Gi
+            limits:
+              cpu: "4"
+              memory: 8Gi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24   # up to 120s to start up
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            successThreshold: 1
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 4
+          lifecycle:
+            preStop:
+              exec:
+                # Allow 30s for in-flight WS messages to drain before SIGTERM
+                command: ["/bin/sh", "-c", "sleep 20"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: gameroom
+  namespace: gaming
+  labels:
+    app: gameroom
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: gameroom-pdb
+  namespace: gaming
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: gameroom

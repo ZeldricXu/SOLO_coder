@@ -1,0 +1,71 @@
+---
+# ============================================================
+# HorizontalPodAutoscaler (autoscaling/v2) — dual metric:
+#   1. CPU utilization (built-in)
+#   2. WebSocket connections per Pod (custom metric via
+#      prometheus-adapter → gameroom_ws_connections per pod)
+#
+# Prerequisites:
+#   - metrics-server
+#   - prometheus-adapter mapping "gameroom_ws_connections"
+#     from Prometheus query:
+#       sum(rate(gameroom_ws_connections[2m])) by (pod)
+# ============================================================
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: gameroom-hpa
+  namespace: gaming
+  labels:
+    app: gameroom
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: StatefulSet
+    name: gameroom
+  minReplicas: 3
+  maxReplicas: 20
+
+  # Give 3 minutes for warm-up before allowing another scale-up
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Pods
+          value: 2            # add at most 2 pods at a time
+          periodSeconds: 60
+        - type: Percent
+          value: 50           # or 50% of current, whichever is smaller
+          periodSeconds: 60
+      selectPolicy: Min
+    scaleDown:
+      stabilizationWindowSeconds: 300   # 5min to avoid thrash; in-mem rooms hate churn
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 120
+        - type: Percent
+          value: 10
+          periodSeconds: 120
+      selectPolicy: Min
+
+  metrics:
+    # Metric 1 — CPU (resource metric, auto-available via metrics-server)
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60     # user's requirement: CPU ≤ 60%
+
+    # Metric 2 — WebSocket connections (custom metric via prometheus-adapter)
+    #   Example Prometheus rule:
+    #     - record: gameroom_ws_connections_per_pod
+    #       expr: sum(gameroom_websocket_connections) by (pod)
+    - type: Pods
+      pods:
+        metric:
+          name: gameroom_ws_connections_per_pod
+        target:
+          type: AverageValue
+          averageValue: "3000"        # scale out when avg WS/pod > 3000

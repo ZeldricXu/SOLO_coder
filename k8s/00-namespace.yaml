@@ -1,0 +1,22 @@
+---
+# ============================================================
+# Game Room Engine — Kubernetes Manifests
+#   Service is STATEFUL (rooms live in memory, cannot be
+#   randomly load-balanced between Pods), therefore we use:
+#     - StatefulSet with stable pod network IDs
+#     - Headless Service for stable DNS
+#
+# Environment variables are injected via ConfigMap + Secret.
+# Apply:
+#   kubectl apply -f k8s/namespace.yaml
+#   kubectl apply -f k8s/
+# ============================================================
+
+---
+# Namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: gaming
+  labels:
+    name: gaming

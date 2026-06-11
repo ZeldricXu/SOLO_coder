@@ -1,0 +1,40 @@
+# Build artifacts
+bin/
+dist/
+*.out
+*.exe
+
+# Test
+coverage.out
+coverage.html
+.coverage/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# VCS
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Local dev
+.env
+.env.local
+docker-compose.override.yml
+*.log
+logs/
+
+# Documentation (optional, keep READMEs small)
+docs/
+*.md
+!CHANGELOG.md
+
+# Drone/CI
+.drone.yml
+.kube/
+deploy/
