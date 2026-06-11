@@ -101,7 +101,7 @@ fn coverage_trend_chart(data: &[CoverageTrend]) -> Markup {
                     }
                 }
                 @for i in 0..=5 {
-                    let y = padding as f64 + (i as f64 / 5.0) * chart_height as f64;
+                    @let y = padding as f64 + (i as f64 / 5.0) * chart_height as f64;
                     line x1=(padding) y1=(y) x2=(width - padding) y2=(y) stroke="#334155" stroke-width="1" stroke-dasharray="4,4";
                     text x=(padding - 10) y=(y + 4) text-anchor="end" fill="#64748B" font-size="10" {
                         (format!("{:.0}%", 100.0 - i as f64 * 20.0))
@@ -117,7 +117,7 @@ fn coverage_trend_chart(data: &[CoverageTrend]) -> Markup {
                 }
                 @for (i, item) in data.iter().enumerate() {
                     @if i % 5 == 0 || i == data.len() - 1 {
-                        let x = padding as f64 + (i as f64 / (data.len() as f64 - 1.0)) * chart_width as f64;
+                        @let x = padding as f64 + (i as f64 / (data.len() as f64 - 1.0)) * chart_width as f64;
                         text x=(x) y=(height - 15) text-anchor="middle" fill="#64748B" font-size="10" {
                             (item.date.split('-').skip(1).collect::<Vec<_>>().join("/"))
                         }
@@ -157,17 +157,17 @@ fn response_time_chart(data: &[ResponseTimeTrend]) -> Markup {
                     }
                 }
                 @for i in 0..=5 {
-                    let y = padding as f64 + (i as f64 / 5.0) * chart_height as f64;
-                    let value = max_value - (i as f64 / 5.0) * max_value;
+                    @let y = padding as f64 + (i as f64 / 5.0) * chart_height as f64;
+                    @let value = max_value - (i as f64 / 5.0) * max_value;
                     line x1=(padding) y1=(y) x2=(width - padding) y2=(y) stroke="#334155" stroke-width="1" stroke-dasharray="4,4";
                     text x=(padding - 10) y=(y + 4) text-anchor="end" fill="#64748B" font-size="10" {
                         (format!("{:.0}h", value))
                     }
                 }
                 @for (i, item) in data.iter().enumerate() {
-                    let x = padding as f64 + i as f64 * (bar_width + gap) + gap / 2.0;
-                    let bar_height = (item.avg_response_hours / max_value) * chart_height as f64;
-                    let y = padding as f64 + chart_height as f64 - bar_height;
+                    @let x = padding as f64 + i as f64 * (bar_width + gap) + gap / 2.0;
+                    @let bar_height = (item.avg_response_hours / max_value) * chart_height as f64;
+                    @let y = padding as f64 + chart_height as f64 - bar_height;
                     rect x=(x) y=(y) width=(bar_width) height=(bar_height) rx="4" fill="url(#barGradient)" class="chart-bar" {
                         title { (format!("{}: {:.1} 小时", item.date, item.avg_response_hours)) }
                     }
@@ -200,12 +200,12 @@ fn heatmap_chart(data: &[HeatmapData]) -> Markup {
                 div class="text-xs text-[#64748B] pb-2 font-medium text-center" { "问题数" }
                 div class="text-xs text-[#64748B] pb-2 font-medium text-center" { "密度" }
                 @for item in data {
-                    let intensity = (item.density_score / max_density).min(1.0);
-                    let r = (16.0 + intensity * 239.0) as u32;
-                    let g = (185.0 - intensity * 90.0) as u32;
-                    let b = (129.0 - intensity * 85.0) as u32;
-                    let bg_color = format!("rgba({}, {}, {}, 0.3)", r, g, b);
-                    let border_color = format!("rgba({}, {}, {}, 0.5)", r, g, b);
+                    @let intensity = (item.density_score / max_density).min(1.0);
+                    @let r = (16.0 + intensity * 239.0) as u32;
+                    @let g = (185.0 - intensity * 90.0) as u32;
+                    @let b = (129.0 - intensity * 85.0) as u32;
+                    @let bg_color = format!("rgba({}, {}, {}, 0.3)", r, g, b);
+                    @let border_color = format!("rgba({}, {}, {}, 0.5)", r, g, b);
                     div class="flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-white/5 transition-colors" style={"background: " (bg_color) "; border-left: 3px solid " (border_color) ";"} {
                         span class="text-[#94A3B8] text-sm font-mono truncate" title=(item.file_path) {
                             (item.file_path)

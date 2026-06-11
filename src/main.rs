@@ -22,14 +22,18 @@ use code_review_platform::providers::{
     MinioClient, RedisClient, SlackClient,
 };
 use code_review_platform::repositories::{
-    AiReviewRepository, ChecklistRepository, CommentRepository, IssueRepository,
-    MergeRequestRepository, NotificationRepository, RepoRepository, StatsRepository,
-    UserRepository,
+    AiReviewRepository, AiRuleRepository, AttachmentRepository, ChecklistRepository,
+    CommentRepository, IssueRepository, MergeRequestRepository, NotificationRepository,
+    RepoRepository, StatsRepository, UserRepository,
 };
 use code_review_platform::services::{
-    AiReviewService, AuthService, ChecklistService, CommentService, DiffService, IssueService,
-    MergeRequestService, NotificationService, PermissionRepository, PermissionService,
-    RepoService, StatsService, UserService, WebhookService,
+    AiReviewService, AiRuleService, AttachmentService, AuthService, ChecklistService,
+    CommentService, DiffService, IssueService, MergeRequestService, NotificationService,
+    OrgStatsService, PermissionRepository, PermissionService, RepoService, StatsService,
+    UserService, WebhookService,
+};
+use code_review_platform::handlers::{
+    configure_ai_rule_routes, configure_attachment_routes,
 };
 use code_review_platform::utils::DiffParser;
 
@@ -50,6 +54,9 @@ pub struct AppState {
     pub checklist_service: ChecklistService<PermissionRepository>,
     pub issue_service: IssueService,
     pub ai_review_service: AiReviewService,
+    pub ai_rule_service: AiRuleService,
+    pub org_stats_service: OrgStatsService,
+    pub attachment_service: AttachmentService,
     pub stats_service: StatsService,
     pub notification_service: NotificationService,
     pub diff_parser: DiffParser,
@@ -167,6 +174,8 @@ async fn main() -> anyhow::Result<()> {
     let checklist_repo = ChecklistRepository::new(db_pool.clone());
     let issue_repo = IssueRepository::new(db_pool.clone());
     let ai_review_repo = AiReviewRepository::new(db_pool.clone());
+    let ai_rule_repo = AiRuleRepository::new(db_pool.clone());
+    let attachment_repo = AttachmentRepository::new(db_pool.clone());
     let notification_repo = NotificationRepository::new(db_pool.clone());
     let stats_repo = StatsRepository::new(db_pool.clone());
 
@@ -239,6 +248,19 @@ async fn main() -> anyhow::Result<()> {
         minio_client.clone(),
         Arc::new(GitHubProvider::new("")),
     );
+    let ai_rule_service = AiRuleService::new(
+        ai_rule_repo.clone(),
+        permission_service.clone(),
+    );
+    let org_stats_service = OrgStatsService::new(
+        stats_repo.clone(),
+        permission_service.clone(),
+    );
+    let attachment_service = AttachmentService::new(
+        attachment_repo.clone(),
+        minio_client.clone(),
+        permission_service.clone(),
+    );
 
     info!("Initializing application state...");
 
@@ -258,6 +280,9 @@ async fn main() -> anyhow::Result<()> {
         checklist_service: checklist_service.clone(),
         issue_service: issue_service.clone(),
         ai_review_service: ai_review_service.clone(),
+        ai_rule_service: ai_rule_service.clone(),
+        org_stats_service: org_stats_service.clone(),
+        attachment_service: attachment_service.clone(),
         stats_service: stats_service.clone(),
         notification_service: notification_service.clone(),
         diff_parser: diff_parser.clone(),
@@ -329,6 +354,9 @@ async fn main() -> anyhow::Result<()> {
             .app_data(web::Data::new(app_state.checklist_service.clone()))
             .app_data(web::Data::new(app_state.issue_service.clone()))
             .app_data(web::Data::new(app_state.ai_review_service.clone()))
+            .app_data(web::Data::new(app_state.ai_rule_service.clone()))
+            .app_data(web::Data::new(app_state.org_stats_service.clone()))
+            .app_data(web::Data::new(app_state.attachment_service.clone()))
             .app_data(web::Data::new(app_state.stats_service.clone()))
             .app_data(web::Data::new(app_state.notification_service.clone()))
             .app_data(web::Data::new(app_state.diff_parser.clone()))
@@ -352,6 +380,8 @@ async fn main() -> anyhow::Result<()> {
             .configure(configure_merge_request_routes)
             .configure(configure_admin_routes)
             .configure(configure_ai_review_routes)
+            .configure(configure_ai_rule_routes)
+            .configure(configure_attachment_routes)
             .configure(configure_checklist_routes)
             .configure(configure_comment_routes)
             .configure(configure_issue_routes)

@@ -316,7 +316,7 @@ fn issue_type_trend_chart(trend: &IssueTypeTrendCompare) -> Markup {
                     }
                 }
 
-                if !trend.periods.is_empty() {
+                @if !trend.periods.is_empty() {
                     div class="flex items-center justify-center gap-4 text-xs text-[#64748B] pt-4 border-t border-[#334155]" {
                         span { "上一期: " (trend.periods.get(0).unwrap_or(&String::new())) }
                         span { "→" }

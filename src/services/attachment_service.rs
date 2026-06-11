@@ -158,7 +158,7 @@ impl AttachmentService {
         let uuid = Uuid::new_v4();
         let sanitized = Self::sanitize_filename(file_name);
         format!(
-            "attachments/{}/{}/{}_{}",
+            "attachments/{}/{}/{}/{}_{}",
             organization_id, year, month, uuid, sanitized
         )
     }
