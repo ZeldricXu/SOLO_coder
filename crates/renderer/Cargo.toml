@@ -23,6 +23,7 @@ ordered-float = { workspace = true }
 js-sys = { workspace = true }
 stroke-engine = { path = "../stroke-engine" }
 geometry = { path = "../geometry" }
+crdt = { path = "../crdt" }
 
 [features]
 default = []

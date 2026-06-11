@@ -6,9 +6,10 @@ use std::hash::{Hash, Hasher};
 
 use geometry::{
     Point, Rect, Size, Transform2D, Color, FillRule, LineCap, LineJoin, StrokeOptions,
-    BlendMode,
+    BlendMode, ToolRegistry,
 };
 use stroke_engine::Stroke;
+use crdt::WasmYrsBoard;
 
 use lyon::math::{Point as LyonPoint};
 use lyon::path::Path;
@@ -59,6 +60,7 @@ fn to_lyon_line_join(join: LineJoin) -> LyonLineJoin {
 // Viewport 视口管理
 // ==========================================
 
+/// @deprecated Use CanvasFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Viewport {
@@ -263,8 +265,10 @@ struct LayerData {
     parent_id: Option<Uuid>,
     children: Vec<Uuid>,
     dirty: bool,
+    dirty_element_regions: Vec<Rect>,
 }
 
+/// @deprecated Use CanvasFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayerTree {
@@ -636,9 +640,72 @@ impl LayerTree {
         for key in &self.dirty_layers {
             if let Some(layer) = self.layers.get_mut(key) {
                 layer.dirty = false;
+                layer.dirty_element_regions.clear();
             }
         }
         self.dirty_layers.clear();
+    }
+
+    pub fn mark_element_dirty(&mut self, element_id: &str, layer_id: &str, bounds: &Rect) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(layer_id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.dirty_element_regions.push(*bounds);
+                self.dirty_layers.insert(key);
+                return true;
+            }
+        }
+        let _ = element_id;
+        false
+    }
+
+    pub fn mark_elements_dirty(&mut self, elements: Vec<JsValue>) -> bool {
+        let mut any_success = false;
+        for val in &elements {
+            if let Some(json_str) = val.as_string() {
+                if let Ok(arr) = serde_json::from_str::<Vec<serde_json::Value>>(&json_str) {
+                    for item in &arr {
+                        let element_id = item.get("element_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let layer_id = item.get("layer_id").and_then(|v| v.as_str()).unwrap_or("");
+                        let bounds = item.get("bounds");
+                        if let (Ok(uuid), Some(b)) = (Uuid::parse_str(layer_id), bounds) {
+                            let x = b.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let y = b.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let w = b.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            let h = b.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                            if w > 0.0 && h > 0.0 {
+                                let key = hash_uuid(&uuid);
+                                if let Some(layer) = self.layers.get_mut(&key) {
+                                    layer.dirty_element_regions.push(Rect::new(x, y, w, h));
+                                    self.dirty_layers.insert(key);
+                                    any_success = true;
+                                }
+                            }
+                        }
+                        let _ = element_id;
+                    }
+                }
+            }
+        }
+        any_success
+    }
+
+    pub fn get_element_dirty_regions(&self, layer_id: &str) -> Vec<Rect> {
+        Uuid::parse_str(layer_id).ok()
+            .and_then(|u| self.layers.get(&hash_uuid(&u)))
+            .map(|l| l.dirty_element_regions.clone())
+            .unwrap_or_default()
+    }
+
+    pub fn clear_element_dirty(&mut self, layer_id: &str) -> bool {
+        if let Ok(uuid) = Uuid::parse_str(layer_id) {
+            let key = hash_uuid(&uuid);
+            if let Some(layer) = self.layers.get_mut(&key) {
+                layer.dirty_element_regions.clear();
+                return true;
+            }
+        }
+        false
     }
 
     pub fn hit_test(&self, world_point: &Point) -> Option<String> {
@@ -705,6 +772,7 @@ impl LayerTree {
             parent_id: None,
             children: Vec::new(),
             dirty: true,
+            dirty_element_regions: Vec::new(),
         };
 
         let key = hash_uuid(&id);
@@ -732,8 +800,45 @@ impl LayerTree {
 
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ElementDirtyEntry {
+    element_id: String,
+    layer_id: String,
+    bounds: Rect,
+}
+
+#[wasm_bindgen]
+impl ElementDirtyEntry {
+    #[wasm_bindgen(constructor)]
+    pub fn new(element_id: &str, layer_id: &str, bounds: &Rect) -> Self {
+        Self {
+            element_id: element_id.to_string(),
+            layer_id: layer_id.to_string(),
+            bounds: *bounds,
+        }
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn element_id(&self) -> String {
+        self.element_id.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn layer_id(&self) -> String {
+        self.layer_id.clone()
+    }
+
+    #[wasm_bindgen(getter)]
+    pub fn bounds(&self) -> Rect {
+        self.bounds
+    }
+}
+
+/// @deprecated Use CanvasFacade instead
+#[wasm_bindgen]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DirtyRectManager {
     dirty_regions: Vec<Rect>,
+    element_entries: Vec<ElementDirtyEntry>,
     max_regions: usize,
     merge_threshold: f64,
 }
@@ -744,6 +849,7 @@ impl DirtyRectManager {
     pub fn new() -> Self {
         Self {
             dirty_regions: Vec::new(),
+            element_entries: Vec::new(),
             max_regions: 64,
             merge_threshold: 0.3,
         }
@@ -752,6 +858,7 @@ impl DirtyRectManager {
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             dirty_regions: Vec::with_capacity(capacity),
+            element_entries: Vec::new(),
             max_regions: 64,
             merge_threshold: 0.3,
         }
@@ -936,6 +1043,31 @@ impl DirtyRectManager {
         let optimized = geometry::optimize_rects(&self.dirty_regions, self.merge_threshold);
         self.dirty_regions = optimized;
     }
+
+    pub fn add_element_region(&mut self, element_id: &str, layer_id: &str, bounds: &Rect) {
+        if bounds.width <= 0.0 || bounds.height <= 0.0 {
+            return;
+        }
+        self.element_entries.push(ElementDirtyEntry::new(element_id, layer_id, bounds));
+        self.add_rect(bounds);
+    }
+
+    pub fn get_element_dirty_entries(&self) -> Vec<ElementDirtyEntry> {
+        self.element_entries.clone()
+    }
+
+    pub fn element_entry_count(&self) -> usize {
+        self.element_entries.len()
+    }
+
+    pub fn clear_element_entries(&mut self) {
+        self.element_entries.clear();
+    }
+
+    pub fn clear_all(&mut self) {
+        self.dirty_regions.clear();
+        self.element_entries.clear();
+    }
 }
 
 // ==========================================
@@ -947,6 +1079,7 @@ struct LyonVertex {
     pos: LyonPoint,
 }
 
+/// @deprecated Use CanvasFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Vertex {
@@ -964,6 +1097,7 @@ impl Vertex {
     }
 }
 
+/// @deprecated Use CanvasFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeshData {
@@ -1010,6 +1144,7 @@ impl MeshData {
     }
 }
 
+/// @deprecated Use CanvasFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PathBuilder {
@@ -1220,6 +1355,7 @@ impl PathBuilder {
     }
 }
 
+/// @deprecated Use CanvasFacade instead
 #[wasm_bindgen]
 pub struct Rasterizer {
     fill_tessellator: Option<FillTessellator>,
@@ -1496,6 +1632,7 @@ impl Rasterizer {
 // 渲染上下文 / Renderer 主入口
 // ==========================================
 
+/// @deprecated Use CanvasFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RenderContext {
@@ -1578,17 +1715,48 @@ impl RenderContext {
         false
     }
 
+    pub fn mark_element_dirty(&mut self, layer_id: &str, element_id: &str, element_bounds: &Rect) -> bool {
+        if let Some(transform) = self.layer_tree.get_layer_transform(layer_id) {
+            let world_bounds_poly = transform.transform_rect(element_bounds);
+            let world_bounds = world_bounds_poly.bounding_box();
+            let screen_bounds = self.viewport.world_rect_to_screen(&world_bounds);
+            self.dirty_manager.add_element_region(element_id, layer_id, &screen_bounds.inflate(2.0));
+            self.layer_tree.mark_element_dirty(element_id, layer_id, element_bounds);
+            return true;
+        }
+        false
+    }
+
+    pub fn mark_layer_dirty(&mut self, layer_id: &str) -> bool {
+        self.layer_tree.mark_layer_dirty(layer_id)
+    }
+
     pub fn needs_redraw(&self) -> bool {
         self.dirty_manager.is_dirty() || self.layer_tree.has_dirty_layers()
     }
 
     pub fn begin_frame(&mut self) {
+        let layer_ids = self.layer_tree.get_all_layers_sorted();
+        for id_js in &layer_ids {
+            if let Some(id_str) = id_js.as_string() {
+                let element_regions = self.layer_tree.get_element_dirty_regions(&id_str);
+                for bounds in &element_regions {
+                    if let Some(transform) = self.layer_tree.get_layer_transform(&id_str) {
+                        let world_bounds_poly = transform.transform_rect(bounds);
+                        let world_bounds = world_bounds_poly.bounding_box();
+                        let screen_bounds = self.viewport.world_rect_to_screen(&world_bounds);
+                        self.dirty_manager.add_rect(&screen_bounds.inflate(2.0));
+                    }
+                }
+            }
+        }
+
         self.dirty_manager.clip_to_viewport(&self.viewport);
         self.dirty_manager.optimize();
     }
 
     pub fn end_frame(&mut self) {
-        self.dirty_manager.clear();
+        self.dirty_manager.clear_all();
         self.layer_tree.clear_dirty();
     }
 
@@ -1669,6 +1837,7 @@ impl RenderContext {
 // Artboard 画板（用于多页 PDF 导出）
 // ==========================================
 
+/// @deprecated Use ExportFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Artboard {
@@ -1788,6 +1957,7 @@ impl Artboard {
 // SVGExport SVG 导出器
 // ==========================================
 
+/// @deprecated Use ExportFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone)]
 pub struct SVGExport;
@@ -1959,6 +2129,7 @@ impl Default for SVGExport {
 // PDFExport PDF 导出器（矢量路径导出）
 // ==========================================
 
+/// @deprecated Use ExportFacade instead
 #[wasm_bindgen]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PDFExport {
@@ -2064,6 +2235,426 @@ impl PDFExport {
 }
 
 impl Default for PDFExport {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ==========================================
+// CanvasFacade 渲染统一入口
+// ==========================================
+
+#[wasm_bindgen]
+pub struct CanvasFacade {
+    context: RenderContext,
+    rasterizer: Rasterizer,
+    tool_registry: ToolRegistry,
+}
+
+#[wasm_bindgen]
+impl CanvasFacade {
+    #[wasm_bindgen(constructor)]
+    pub fn new(width: f64, height: f64) -> Self {
+        Self {
+            context: RenderContext::new(width, height),
+            rasterizer: Rasterizer::new(),
+            tool_registry: ToolRegistry::new(),
+        }
+    }
+
+    pub fn pan(&mut self, dx: f64, dy: f64) {
+        self.context.pan(dx, dy);
+    }
+
+    pub fn zoom(&mut self, factor: f64, cx: f64, cy: f64) {
+        self.context.zoom(factor, Some(Point::new(cx, cy)));
+    }
+
+    pub fn zoom_at(&mut self, sx: f64, sy: f64, factor: f64) {
+        self.context.zoom_at(sx, sy, factor);
+    }
+
+    pub fn reset_view(&mut self) {
+        self.context.reset_view();
+    }
+
+    pub fn fit_to_content(&mut self, padding: f64) {
+        self.context.fit_to_content(padding);
+    }
+
+    pub fn set_dpr(&mut self, dpr: f64) {
+        self.context.set_dpr(dpr);
+    }
+
+    pub fn resize(&mut self, width: f64, height: f64) {
+        self.context.resize(width, height);
+    }
+
+    pub fn get_viewport_json(&self) -> String {
+        serde_json::to_string(&self.context.viewport).unwrap_or_default()
+    }
+
+    pub fn screen_to_world(&self, x: f64, y: f64) -> Point {
+        self.context.screen_to_world(x, y)
+    }
+
+    pub fn world_to_screen(&self, x: f64, y: f64) -> Point {
+        self.context.world_to_screen(x, y)
+    }
+
+    pub fn create_shape_layer(&mut self, name: &str) -> String {
+        self.context.layer_tree.create_shape_layer(name)
+    }
+
+    pub fn create_stroke_layer(&mut self, name: &str) -> String {
+        self.context.layer_tree.create_stroke_layer(name)
+    }
+
+    pub fn create_image_layer(&mut self, name: &str) -> String {
+        self.context.layer_tree.create_image_layer(name)
+    }
+
+    pub fn create_group_layer(&mut self, name: &str) -> String {
+        self.context.layer_tree.create_group_layer(name)
+    }
+
+    pub fn create_text_layer(&mut self, name: &str) -> String {
+        self.context.layer_tree.create_text_layer(name)
+    }
+
+    pub fn create_arrow_layer(&mut self, name: &str) -> String {
+        self.context.layer_tree.create_arrow_layer(name)
+    }
+
+    pub fn create_richtext_layer(&mut self, name: &str) -> String {
+        self.context.layer_tree.create_richtext_layer(name)
+    }
+
+    pub fn remove_layer(&mut self, id: &str) -> bool {
+        self.context.layer_tree.remove_layer(id)
+    }
+
+    pub fn set_layer_visible(&mut self, id: &str, visible: bool) -> bool {
+        self.context.layer_tree.set_layer_visible(id, visible)
+    }
+
+    pub fn set_layer_opacity(&mut self, id: &str, opacity: f64) -> bool {
+        self.context.layer_tree.set_layer_opacity(id, opacity)
+    }
+
+    pub fn set_layer_bounds(&mut self, id: &str, x: f64, y: f64, w: f64, h: f64) -> bool {
+        self.context.layer_tree.set_layer_bounds(id, &Rect::new(x, y, w, h))
+    }
+
+    pub fn move_layer_up(&mut self, id: &str) -> bool {
+        self.context.layer_tree.move_layer_up(id)
+    }
+
+    pub fn move_layer_down(&mut self, id: &str) -> bool {
+        self.context.layer_tree.move_layer_down(id)
+    }
+
+    pub fn get_layers_json(&self) -> String {
+        serde_json::to_string(&self.context.layer_tree).unwrap_or_default()
+    }
+
+    pub fn mark_element_dirty(&mut self, layer_id: &str, _element_id: &str, x: f64, y: f64, w: f64, h: f64) {
+        self.context.dirty_manager.add_rect(&Rect::new(x, y, w, h));
+        let key = Uuid::parse_str(layer_id).ok().map(|u| hash_uuid(&u));
+        if let Some(k) = key {
+            if let Some(layer) = self.context.layer_tree.layers.get_mut(&k) {
+                layer.dirty = true;
+            }
+            self.context.layer_tree.dirty_layers.insert(k);
+        }
+    }
+
+    pub fn mark_layer_dirty(&mut self, id: &str) -> bool {
+        self.context.layer_tree.mark_layer_dirty(id)
+    }
+
+    pub fn mark_all_dirty(&mut self) {
+        self.context.mark_all_dirty();
+    }
+
+    pub fn needs_redraw(&self) -> bool {
+        self.context.needs_redraw()
+    }
+
+    pub fn begin_frame(&mut self) {
+        self.context.begin_frame();
+    }
+
+    pub fn end_frame(&mut self) {
+        self.context.end_frame();
+    }
+
+    pub fn get_dirty_regions_json(&self) -> String {
+        serde_json::to_string(&self.context.dirty_manager.get_regions()).unwrap_or_default()
+    }
+
+    pub fn hit_test(&self, sx: f64, sy: f64) -> Option<String> {
+        self.context.hit_test(sx, sy)
+    }
+
+    pub fn tessellate_rect(&mut self, x: f64, y: f64, w: f64, h: f64, fill: bool) -> MeshData {
+        let rect = Rect::new(x, y, w, h);
+        if fill {
+            self.rasterizer.tessellate_rect_fill(&rect, FillRule::NonZero)
+        } else {
+            self.rasterizer.tessellate_rect_stroke(&rect, &StrokeOptions::new(1.0))
+        }
+    }
+
+    pub fn tessellate_circle(&mut self, cx: f64, cy: f64, r: f64, fill: bool) -> MeshData {
+        if fill {
+            self.rasterizer.tessellate_circle_fill(cx, cy, r, FillRule::NonZero)
+        } else {
+            self.rasterizer.tessellate_circle_stroke(cx, cy, r, &StrokeOptions::new(1.0))
+        }
+    }
+
+    pub fn tessellate_ellipse(&mut self, cx: f64, cy: f64, rx: f64, ry: f64, fill: bool) -> MeshData {
+        let mut pb = PathBuilder::new();
+        pb.ellipse(cx, cy, rx, ry);
+        if fill {
+            self.rasterizer.tessellate_fill(&pb, FillRule::NonZero, 0.1)
+        } else {
+            self.rasterizer.tessellate_stroke(&pb, &StrokeOptions::new(1.0), 0.1)
+        }
+    }
+
+    pub fn tessellate_star(&mut self, cx: f64, cy: f64, outer_r: f64, inner_r: f64, points: u32, rotation: f64, fill: bool) -> MeshData {
+        if fill {
+            self.rasterizer.tessellate_star_fill(cx, cy, outer_r, inner_r, points, rotation, FillRule::NonZero)
+        } else {
+            self.rasterizer.tessellate_star_stroke(cx, cy, outer_r, inner_r, points, rotation, &StrokeOptions::new(1.0))
+        }
+    }
+
+    pub fn tessellate_arrow(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, head_size: f64, double: bool, fill: bool) -> MeshData {
+        if fill {
+            self.rasterizer.tessellate_arrow_fill(x1, y1, x2, y2, head_size, double, FillRule::NonZero)
+        } else {
+            self.rasterizer.tessellate_arrow_stroke(x1, y1, x2, y2, head_size, double, &StrokeOptions::new(1.0))
+        }
+    }
+
+    pub fn tessellate_line(&mut self, x1: f64, y1: f64, x2: f64, y2: f64, width: f64) -> MeshData {
+        self.rasterizer.tessellate_line(x1, y1, x2, y2, &StrokeOptions::new(width))
+    }
+
+    pub fn to_json(&self) -> String {
+        self.context.to_json()
+    }
+
+    pub fn from_json(json: &str, _width: f64, _height: f64) -> Option<CanvasFacade> {
+        RenderContext::from_json(json).map(|ctx| CanvasFacade {
+            context: ctx,
+            rasterizer: Rasterizer::new(),
+            tool_registry: ToolRegistry::new(),
+        })
+    }
+}
+
+// ==========================================
+// SyncFacade 协同统一入口
+// ==========================================
+
+#[wasm_bindgen]
+pub struct SyncFacade {
+    doc: WasmYrsBoard,
+}
+
+#[wasm_bindgen]
+impl SyncFacade {
+    #[wasm_bindgen(constructor)]
+    pub fn new(document_id: &str, user_id: &str, username: &str) -> Self {
+        Self {
+            doc: WasmYrsBoard::new(
+                document_id.to_string(),
+                user_id.to_string(),
+                username.to_string(),
+            ),
+        }
+    }
+
+    pub fn add_shape(&mut self, shape_type: &str, x: f64, y: f64, w: f64, h: f64, props_json: Option<String>) -> String {
+        self.doc.add_shape(shape_type.to_string(), x, y, w, h, props_json)
+            .unwrap_or_default()
+    }
+
+    pub fn add_stroke(&mut self, points_json: &str, style_json: Option<String>) -> String {
+        self.doc.add_stroke(points_json.to_string(), style_json)
+            .unwrap_or_default()
+    }
+
+    pub fn add_text(&mut self, x: f64, y: f64, content: &str, props_json: Option<String>) -> String {
+        self.doc.add_text(content.to_string(), x, y, props_json)
+            .unwrap_or_default()
+    }
+
+    pub fn update_element(&mut self, id: &str, props_json: Option<String>) -> bool {
+        self.doc.update_block(id.to_string(), None, props_json).is_some()
+    }
+
+    pub fn delete_element(&mut self, id: &str) -> bool {
+        self.doc.delete_element(id.to_string()).is_ok()
+    }
+
+    pub fn move_element(&mut self, id: &str, x: f64, y: f64) -> bool {
+        self.doc.update_shape(id.to_string(), Some(x), Some(y), None, None, None).is_ok()
+    }
+
+    pub fn encode_update(&mut self) -> Vec<u8> {
+        self.doc.encode_update_v1()
+    }
+
+    pub fn apply_update(&mut self, data: &[u8]) -> bool {
+        self.doc.apply_update(data)
+    }
+
+    pub fn encode_state_vector(&self) -> Vec<u8> {
+        self.doc.encode_state_vector_v1()
+    }
+
+    pub fn encode_diff(&self, sv: &[u8]) -> Vec<u8> {
+        self.doc.encode_diff_v1(sv)
+    }
+
+    pub fn can_undo(&self) -> bool {
+        self.doc.can_undo()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        self.doc.can_redo()
+    }
+
+    pub fn undo(&mut self) -> Option<String> {
+        self.doc.undo().map(|op| op.json())
+    }
+
+    pub fn redo(&mut self) -> Option<String> {
+        self.doc.redo().map(|op| op.json())
+    }
+
+    pub fn get_blocks_json(&self) -> String {
+        self.doc.to_json()
+    }
+
+    pub fn get_block_json(&self, id: &str) -> Option<String> {
+        self.doc.get_block(id.to_string())
+            .and_then(|b| serde_json::to_string(&b).ok())
+    }
+
+    pub fn to_json(&self) -> String {
+        self.doc.to_json()
+    }
+
+    pub fn from_json(json: &str, doc_id: &str, user_id: &str, username: &str) -> Option<SyncFacade> {
+        WasmYrsBoard::from_json(
+            json.to_string(),
+            doc_id.to_string(),
+            user_id.to_string(),
+            username.to_string(),
+        ).ok().map(|doc| SyncFacade { doc })
+    }
+
+    pub fn site_id(&self) -> String {
+        self.doc.site_id()
+    }
+
+    pub fn document_id(&self) -> String {
+        self.doc.document_id()
+    }
+}
+
+// ==========================================
+// ExportFacade 导出统一入口
+// ==========================================
+
+#[wasm_bindgen]
+pub struct ExportFacade {
+    svg_export: SVGExport,
+    pdf_export: PDFExport,
+}
+
+#[wasm_bindgen]
+impl ExportFacade {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Self {
+        Self {
+            svg_export: SVGExport::new(),
+            pdf_export: PDFExport::new(),
+        }
+    }
+
+    pub fn export_svg(&self, layers_json: &str, viewport_json: &str) -> String {
+        let layers: LayerTree = match serde_json::from_str(layers_json) {
+            Ok(l) => l,
+            Err(_) => return String::new(),
+        };
+        let viewport: Viewport = match serde_json::from_str(viewport_json) {
+            Ok(v) => v,
+            Err(_) => return String::new(),
+        };
+        self.svg_export.to_svg_string(&layers, &viewport)
+    }
+
+    pub fn add_artboard(&mut self, name: &str, x: f64, y: f64, w: f64, h: f64) -> String {
+        let artboard = Artboard::new(name, x, y, w, h);
+        let id = artboard.id();
+        self.pdf_export.add_artboard(&artboard);
+        id
+    }
+
+    pub fn remove_artboard(&mut self, id: &str) -> bool {
+        self.pdf_export.remove_artboard(id)
+    }
+
+    pub fn set_pdf_meta(&mut self, title: &str, author: &str, subject: &str) {
+        self.pdf_export.set_title(title);
+        self.pdf_export.set_author(author);
+        self.pdf_export.set_subject(subject);
+    }
+
+    pub fn get_artboard_ids(&self) -> Vec<JsValue> {
+        self.pdf_export.get_artboard_ids()
+    }
+
+    pub fn generate_page_descriptions(&self, layers_json: &str) -> Vec<JsValue> {
+        let layers: LayerTree = match serde_json::from_str(layers_json) {
+            Ok(l) => l,
+            Err(_) => return Vec::new(),
+        };
+        self.pdf_export.generate_page_descriptions(&layers)
+    }
+
+    pub fn compute_content_bounds(&self, layers_json: &str) -> String {
+        let layers: LayerTree = match serde_json::from_str(layers_json) {
+            Ok(l) => l,
+            Err(_) => return String::new(),
+        };
+        let mut all_bounds: Vec<Rect> = Vec::new();
+        for id_js in layers.get_all_layers_sorted() {
+            if let Some(id_str) = id_js.as_string() {
+                if let (Some(bounds), Some(transform)) = (
+                    layers.get_layer_bounds(&id_str),
+                    layers.get_layer_transform(&id_str),
+                ) {
+                    let world_bounds_poly = transform.transform_rect(&bounds);
+                    all_bounds.push(world_bounds_poly.bounding_box());
+                }
+            }
+        }
+        match geometry::merge_rects(&all_bounds) {
+            Some(r) => serde_json::json!({"x": r.x, "y": r.y, "width": r.width, "height": r.height}).to_string(),
+            None => String::new(),
+        }
+    }
+}
+
+impl Default for ExportFacade {
     fn default() -> Self {
         Self::new()
     }
