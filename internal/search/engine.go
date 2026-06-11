@@ -45,7 +45,7 @@ func NewSearchEngine(database *db.Database, cfg *config.Config) *SearchEngine {
 	}
 
 	return &SearchEngine{
-		indexer:     NewIndexer(database, cfg.Search.UseCJK),
+		indexer:     NewIndexer(database, cfg),
 		scorer:      NewBM25Scorer(bm25Config),
 		highlighter: DefaultHighlighter(),
 		db:          database,

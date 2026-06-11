@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -18,31 +17,18 @@ type HTMLExporter struct {
 	parser *markdown.MarkdownParser
 }
 
-type TOCEntry struct {
-	Level   int
-	Title   string
-	ID      string
-	Children []*TOCEntry
-}
-
 func (e *HTMLExporter) Export(notes []*models.Note, opts ExportOptions) error {
-	if len(notes) == 1 {
-		return e.exportSingle(notes[0], opts)
-	}
-	return e.exportMultiple(notes, opts)
+	return fmt.Errorf("legacy Export() not supported, use Render(ctx) instead")
 }
 
-func (e *HTMLExporter) exportSingle(note *models.Note, opts ExportOptions) error {
-	content, err := e.loadNoteContent(note)
-	if err != nil {
-		return err
+func (e *HTMLExporter) Render(ctx *ExportContext) error {
+	if len(ctx.Notes) == 1 {
+		return e.ExportSingle(ctx, ctx.Notes[0], ctx.Options)
 	}
+	return e.ExportMultiple(ctx, ctx.Options)
+}
 
-	result, err := e.parser.Parse(content, note.Path)
-	if err != nil {
-		return err
-	}
-
+func (e *HTMLExporter) ExportSingle(ctx *ExportContext, pn *ProcessedNote, opts ExportOptions) error {
 	css := e.defaultCSS()
 	if opts.CSSPath != "" {
 		customCSS, err := os.ReadFile(opts.CSSPath)
@@ -51,21 +37,21 @@ func (e *HTMLExporter) exportSingle(note *models.Note, opts ExportOptions) error
 		}
 	}
 
-	variables := e.buildVariables(note, opts)
+	variables := ctx.MergeVariables(pn.Variables)
 
 	var tocHTML string
 	if opts.IncludeTOC {
-		toc := e.extractTOC(result.HTML)
-		tocHTML = e.renderTOC(toc)
+		tocEntries := toPointerEntries(pn.TOC)
+		tocHTML = e.renderTOC(tocEntries)
 	}
 
-	htmlContent := e.wrapHTML(note.Title, result.HTML, css, tocHTML, variables)
+	htmlContent := e.wrapHTML(pn.Title, pn.HTMLContent, css, tocHTML, variables)
 	htmlContent = applyVariables(htmlContent, variables)
 
 	return os.WriteFile(opts.OutputPath, []byte(htmlContent), 0644)
 }
 
-func (e *HTMLExporter) exportMultiple(notes []*models.Note, opts ExportOptions) error {
+func (e *HTMLExporter) ExportMultiple(ctx *ExportContext, opts ExportOptions) error {
 	if err := os.MkdirAll(opts.OutputPath, 0755); err != nil {
 		return err
 	}
@@ -86,46 +72,31 @@ func (e *HTMLExporter) exportMultiple(notes []*models.Note, opts ExportOptions) 
 		return err
 	}
 
-	noteMap := make(map[string]*models.Note)
-	for _, note := range notes {
-		noteMap[note.Path] = note
-	}
+	for _, pn := range ctx.Notes {
+		variables := ctx.MergeVariables(pn.Variables)
 
-	for _, note := range notes {
-		variables := e.buildVariables(note, opts)
-
-		content, err := e.loadNoteContent(note)
-		if err != nil {
-			return err
-		}
-
-		result, err := e.parser.Parse(content, note.Path)
-		if err != nil {
-			return err
-		}
-
-		html := e.convertWikiLinks(result.HTML, note.Path, noteMap)
-		html = e.convertImagePaths(html, note.Path, "assets")
+		html := ctx.ConvertWikiLinks(pn.Slug, pn.HTMLContent, "site")
+		html = ctx.ConvertAssetPaths(html, "assets")
 
 		var tocHTML string
 		if opts.IncludeTOC {
-			toc := e.extractTOC(html)
-			tocHTML = e.renderTOC(toc)
+			tocEntries := toPointerEntries(pn.TOC)
+			tocHTML = e.renderTOC(tocEntries)
 		}
 
-		fullHTML := e.wrapHTML(note.Title, html, css, tocHTML, variables)
+		fullHTML := e.wrapHTML(pn.Title, html, css, tocHTML, variables)
 		fullHTML = applyVariables(fullHTML, variables)
 
-		outPath := filepath.Join(opts.OutputPath, noteToHTMLPath(note.Path))
+		outPath := filepath.Join(opts.OutputPath, noteToHTMLPath(pn.Note.Path))
 		if err := os.WriteFile(outPath, []byte(fullHTML), 0644); err != nil {
 			return err
 		}
 	}
 
-	return e.generateIndexHTML(notes, opts)
+	return e.generateIndexHTML(ctx, opts)
 }
 
-func (e *HTMLExporter) generateIndexHTML(notes []*models.Note, opts ExportOptions) error {
+func (e *HTMLExporter) generateIndexHTML(ctx *ExportContext, opts ExportOptions) error {
 	css := e.defaultCSS()
 	if opts.CSSPath != "" {
 		customCSS, err := os.ReadFile(opts.CSSPath)
@@ -134,6 +105,8 @@ func (e *HTMLExporter) generateIndexHTML(notes []*models.Note, opts ExportOption
 		}
 	}
 
+	notes := make([]*ProcessedNote, len(ctx.Notes))
+	copy(notes, ctx.Notes)
 	sort.Slice(notes, func(i, j int) bool {
 		return notes[i].Title < notes[j].Title
 	})
@@ -143,9 +116,9 @@ func (e *HTMLExporter) generateIndexHTML(notes []*models.Note, opts ExportOption
 	indexContent.WriteString(`<h1>笔记索引</h1>`)
 	indexContent.WriteString(`<ul class="index-list">`)
 
-	for _, note := range notes {
-		htmlPath := noteToHTMLPath(note.Path)
-		indexContent.WriteString(fmt.Sprintf(`<li><a href="%s">%s</a></li>`, htmlPath, note.Title))
+	for _, pn := range notes {
+		htmlPath := noteToHTMLPath(pn.Note.Path)
+		indexContent.WriteString(fmt.Sprintf(`<li><a href="%s">%s</a></li>`, htmlPath, pn.Title))
 	}
 
 	indexContent.WriteString(`</ul>`)
@@ -165,27 +138,12 @@ func (e *HTMLExporter) generateIndexHTML(notes []*models.Note, opts ExportOption
 	return os.WriteFile(indexPath, []byte(html), 0644)
 }
 
-func (e *HTMLExporter) loadNoteContent(note *models.Note) (string, error) {
-	fullPath := filepath.Join(e.cfg.VaultPath, note.Path)
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", err
+func toPointerEntries(entries []TOCEntry) []*TOCEntry {
+	result := make([]*TOCEntry, len(entries))
+	for i := range entries {
+		result[i] = &entries[i]
 	}
-	return string(content), nil
-}
-
-func (e *HTMLExporter) buildVariables(note *models.Note, opts ExportOptions) map[string]string {
-	variables := map[string]string{
-		"Title":      note.Title,
-		"NotePath":   note.Path,
-		"CreatedAt":  note.CreatedAt.Format("2006-01-02"),
-		"UpdatedAt":  note.UpdatedAt.Format("2006-01-02"),
-		"WordCount":  fmt.Sprintf("%d", note.WordCount),
-	}
-	for k, v := range opts.Variables {
-		variables[k] = v
-	}
-	return variables
+	return result
 }
 
 func (e *HTMLExporter) wrapHTML(title, content, css, toc string, variables map[string]string) string {
@@ -208,26 +166,6 @@ func (e *HTMLExporter) wrapHTML(title, content, css, toc string, variables map[s
     </div>
 </body>
 </html>`, title, css, toc, content)
-}
-
-func (e *HTMLExporter) extractTOC(html string) []*TOCEntry {
-	re := regexp.MustCompile(`<h([1-6])\s+id="([^"]*)"[^>]*>([^<]+)</h[1-6]>`)
-	matches := re.FindAllStringSubmatch(html, -1)
-
-	var entries []*TOCEntry
-	for _, match := range matches {
-		level := int(match[1][0] - '0')
-		id := match[2]
-		title := match[3]
-
-		entries = append(entries, &TOCEntry{
-			Level: level,
-			Title: title,
-			ID:    id,
-		})
-	}
-
-	return entries
 }
 
 func (e *HTMLExporter) renderTOC(entries []*TOCEntry) string {
@@ -254,61 +192,6 @@ func (e *HTMLExporter) renderTOC(entries []*TOCEntry) string {
 	sb.WriteString(`</nav>`)
 
 	return sb.String()
-}
-
-func (e *HTMLExporter) convertWikiLinks(html string, sourcePath string, noteMap map[string]*models.Note) string {
-	re := regexp.MustCompile(`<a[^>]*class="wiki-link"[^>]*data-target="([^"]*)"[^>]*>([^<]*)</a>`)
-
-	return re.ReplaceAllStringFunc(html, func(match string) string {
-		matches := re.FindStringSubmatch(match)
-		if len(matches) < 3 {
-			return match
-		}
-
-		target := matches[1]
-		display := matches[2]
-
-		var targetPath string
-		for path := range noteMap {
-			base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-			if strings.EqualFold(base, target) || strings.EqualFold(strings.TrimSuffix(target, filepath.Ext(target)), base) {
-				targetPath = path
-				break
-			}
-		}
-
-		if targetPath != "" {
-			href := noteToHTMLPath(targetPath)
-			return fmt.Sprintf(`<a href="%s" class="wiki-link">%s</a>`, href, display)
-		}
-
-		return fmt.Sprintf(`<span class="wiki-link broken">%s</span>`, display)
-	})
-}
-
-func (e *HTMLExporter) convertImagePaths(html, notePath, assetDir string) string {
-	re := regexp.MustCompile(`<img[^>]*src="([^"]*)"[^>]*>`)
-
-	return re.ReplaceAllStringFunc(html, func(match string) string {
-		matches := re.FindStringSubmatch(match)
-		if len(matches) < 2 {
-			return match
-		}
-
-		src := matches[1]
-		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") || strings.HasPrefix(src, "data:") {
-			return match
-		}
-
-		noteDir := filepath.Dir(notePath)
-		imgPath := filepath.Join(noteDir, src)
-		imgPath = filepath.Clean(imgPath)
-
-		newSrc := filepath.Join(assetDir, imgPath)
-		newSrc = filepath.ToSlash(newSrc)
-
-		return strings.Replace(match, src, newSrc, 1)
-	})
 }
 
 func (e *HTMLExporter) defaultCSS() string {

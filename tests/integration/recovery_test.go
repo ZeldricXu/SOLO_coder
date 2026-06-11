@@ -45,17 +45,23 @@ func runIndexCorruptionRecovery(t *testing.T) {
 		t.Fatalf("failed to create vault dir: %v", err)
 	}
 
-	baselineTotal, baselineFirstTitle, database, engine, scanner := step1_EstablishHealthBaseline(t, vaultPath, cfg)
+	baselineTotal, baselineFirstTitle, database, _, scanner := step1_EstablishHealthBaseline(t, vaultPath, cfg)
 
-	baselineIndexCount := step2_SimulateIndexCorruption(t, database)
+	baselineIndexCount := step2_SimulateIndexCorruption(t, database, cfg)
 
-	step3_VerifyCorruptedSearchBehavior(t, engine)
+	// 关键：损坏后创建新的 SearchEngine 实例（模拟应用重启后发现损坏）
+	corruptedEngine := search.NewSearchEngine(database, cfg)
 
-	step4_RebuildIndexFromFiles(t, database, cfg, vaultPath, engine, scanner)
+	step3_VerifyCorruptedSearchBehavior(t, corruptedEngine)
 
-	step5_VerifySearchRecovery(t, engine, database, baselineTotal, baselineFirstTitle, baselineIndexCount)
+	step4_RebuildIndexFromFiles(t, database, cfg, vaultPath, scanner)
 
-	step6_EdgeCase_PartialVaultCorruption(t, vaultPath, cfg, database, engine, scanner)
+	// 重建后也创建新的实例（模拟重启后加载重建好的索引）
+	recoveredEngine := search.NewSearchEngine(database, cfg)
+
+	step5_VerifySearchRecovery(t, recoveredEngine, database, baselineTotal, baselineFirstTitle, baselineIndexCount)
+
+	step6_EdgeCase_PartialVaultCorruption(t, vaultPath, cfg, database, scanner)
 }
 
 func step1_EstablishHealthBaseline(t *testing.T, vaultPath string, cfg *config.Config) (int, string, *db.Database, *search.SearchEngine, *fsnotify.Scanner) {
@@ -131,14 +137,20 @@ func step1_EstablishHealthBaseline(t *testing.T, vaultPath string, cfg *config.C
 	}
 
 	t.Logf("基线结果：total=%d, 第一条结果标题/路径=%q", baselineTotal, baselineFirstTitle)
+
+	// 关键：将基线索引刷到磁盘，这样后续步骤可以正确检测/破坏磁盘索引
+	if err := engine.GetIndexer().FlushDiskIndex(); err != nil {
+		t.Logf("警告：刷基线索引到磁盘失败：%v", err)
+	}
+
 	t.Log("步骤 1 完成：健康基线建立成功")
 
 	return baselineTotal, baselineFirstTitle, database, engine, scanner
 }
 
-func step2_SimulateIndexCorruption(t *testing.T, database *db.Database) int {
+func step2_SimulateIndexCorruption(t *testing.T, database *db.Database, cfg *config.Config) int {
 	t.Helper()
-	t.Log("步骤 2：模拟索引损坏（级别 B - DROP TABLE search_index）...")
+	t.Log("步骤 2：模拟索引损坏（级别 C - 同时破坏 SQLite 表和磁盘索引）...")
 
 	var baselineIndexCount int
 	err := database.QueryRow("SELECT COUNT(*) FROM search_index").Scan(&baselineIndexCount)
@@ -154,7 +166,25 @@ func step2_SimulateIndexCorruption(t *testing.T, database *db.Database) int {
 	testutil.AssertNoError(t, err, "验证表是否存在失败")
 	testutil.AssertEqual(t, 0, tableCount, "search_index 表应已被删除")
 
-	t.Logf("步骤 2 完成：search_index 表已删除（基线索引行数=%d）", baselineIndexCount)
+	// 同时破坏磁盘索引文件（4个 .dat 文件 + wal.dat）
+	indexPath := cfg.Search.IndexPath
+	t.Logf("破坏磁盘索引目录：%s", indexPath)
+	if indexPath != "" {
+		if _, err := os.Stat(indexPath); err == nil {
+			dataFiles := []string{"terms.dat", "postings.dat", "docs.dat", "wal.dat"}
+			for _, f := range dataFiles {
+				fp := filepath.Join(indexPath, f)
+				if _, err := os.Stat(fp); err == nil {
+					if err := os.Remove(fp); err != nil {
+						t.Logf("已删除：%s（err=%v）", fp, err)
+					}
+				}
+			}
+			t.Log("磁盘索引文件已删除")
+		}
+	}
+
+	t.Logf("步骤 2 完成：SQLite 表已删除 + 磁盘索引已删除（基线索引行数=%d）", baselineIndexCount)
 	return baselineIndexCount
 }
 
@@ -203,11 +233,11 @@ func step3_VerifyCorruptedSearchBehavior(t *testing.T, engine *search.SearchEngi
 	t.Log("步骤 3 完成：损坏后搜索行为符合预期（不崩溃）")
 }
 
-func step4_RebuildIndexFromFiles(t *testing.T, database *db.Database, cfg *config.Config, vaultPath string, engine *search.SearchEngine, scanner *fsnotify.Scanner) {
+func step4_RebuildIndexFromFiles(t *testing.T, database *db.Database, cfg *config.Config, vaultPath string, scanner *fsnotify.Scanner) {
 	t.Helper()
 	t.Log("步骤 4：检测到损坏后执行重建策略...")
 
-	err := RebuildIndexFromFiles(database, cfg, vaultPath, engine, scanner)
+	err := RebuildIndexFromFiles(database, cfg, vaultPath, scanner)
 	testutil.AssertNoError(t, err, "重建索引失败")
 
 	var tableCount int
@@ -296,7 +326,7 @@ func step5_VerifySearchRecovery(t *testing.T, engine *search.SearchEngine, datab
 	t.Log("步骤 5 完成：搜索恢复验证通过")
 }
 
-func step6_EdgeCase_PartialVaultCorruption(t *testing.T, vaultPath string, cfg *config.Config, database *db.Database, engine *search.SearchEngine, scanner *fsnotify.Scanner) {
+func step6_EdgeCase_PartialVaultCorruption(t *testing.T, vaultPath string, cfg *config.Config, database *db.Database, scanner *fsnotify.Scanner) {
 	t.Helper()
 	t.Log("步骤 6：边缘异常 - 仓库文件部分损坏（删除 2 篇原始 .md 文件）...")
 
@@ -317,11 +347,15 @@ func step6_EdgeCase_PartialVaultCorruption(t *testing.T, vaultPath string, cfg *
 		testutil.AssertNoError(t, err, "删除文件失败：%s", fullPath)
 		deletedPaths[i] = relPath
 	}
+
 	t.Logf("已删除 2 篇原始文件：%v", deletedPaths)
 
 	t.Log("在部分文件缺失的情况下再次重建索引...")
-	err = RebuildIndexFromFiles(database, cfg, vaultPath, engine, scanner)
+	err = RebuildIndexFromFiles(database, cfg, vaultPath, scanner)
 	testutil.AssertNoError(t, err, "部分文件缺失时重建索引不应返回 error")
+
+	// 重建后创建新的 engine 验证
+	finalEngine := search.NewSearchEngine(database, cfg)
 
 	var remainingNoteCount int
 	err = database.QueryRow("SELECT COUNT(*) FROM notes").Scan(&remainingNoteCount)
@@ -337,7 +371,7 @@ func step6_EdgeCase_PartialVaultCorruption(t *testing.T, vaultPath string, cfg *
 		t.Logf("notes 表未同步删除，实际可用笔记数约为 %d", expectedRemaining)
 	}
 
-	totalDocCount, err := engine.GetIndexer().GetTotalDocCount()
+	totalDocCount, err := finalEngine.GetIndexer().GetTotalDocCount()
 	testutil.AssertNoError(t, err, "GetTotalDocCount 失败")
 	t.Logf("重建后总文档数：%d（预期约 %d）", totalDocCount, actualRemaining)
 	testutil.AssertTrue(t, totalDocCount >= expectedRemaining-2 && totalDocCount <= recoveryNoteCount,
@@ -350,7 +384,7 @@ func step6_EdgeCase_PartialVaultCorruption(t *testing.T, vaultPath string, cfg *
 		PageSize:    20,
 		EnableFuzzy: false,
 	}
-	results, total, err := engine.Search(recoveryQuery)
+	results, total, err := finalEngine.Search(recoveryQuery)
 	testutil.AssertNoError(t, err, "部分损坏后搜索 \"性能\" 失败")
 	testutil.AssertTrue(t, total > 0, "部分损坏后搜索 \"性能\" 应仍有结果，实际 total=%d", total)
 	testutil.AssertTrue(t, len(results) > 0, "部分损坏后搜索 \"性能\" 应返回结果 > 0 条", len(results))
@@ -364,7 +398,7 @@ func step6_EdgeCase_PartialVaultCorruption(t *testing.T, vaultPath string, cfg *
 			PageSize:    20,
 			EnableFuzzy: false,
 		}
-		_, queryTotal, queryErr := engine.Search(q)
+		_, queryTotal, queryErr := finalEngine.Search(q)
 		testutil.AssertNoError(t, queryErr, "部分损坏后搜索 %q 失败", query)
 		testutil.AssertTrue(t, queryTotal > 0, "部分损坏后搜索 %q 应 total > 0，实际 total=%d", query, queryTotal)
 	}
@@ -372,7 +406,7 @@ func step6_EdgeCase_PartialVaultCorruption(t *testing.T, vaultPath string, cfg *
 	t.Log("步骤 6 完成：部分仓库文件损坏的边缘场景验证通过")
 }
 
-func RebuildIndexFromFiles(database *db.Database, cfg *config.Config, vaultPath string, engine *search.SearchEngine, scanner *fsnotify.Scanner) error {
+func RebuildIndexFromFiles(database *db.Database, cfg *config.Config, vaultPath string, scanner *fsnotify.Scanner) error {
 	tableExists := false
 	rows, err := database.Query("PRAGMA table_info(search_index)")
 	if err == nil {
@@ -415,6 +449,9 @@ func RebuildIndexFromFiles(database *db.Database, cfg *config.Config, vaultPath 
 		return fmt.Errorf("rescan all files failed: %w", err)
 	}
 
+	// 创建新的 SearchEngine 实例（避免用旧的，因为磁盘索引可能被删除过）
+	engine := search.NewSearchEngine(database, cfg)
+
 	notes, err := database.GetAllNotes()
 	if err != nil {
 		return fmt.Errorf("get all notes for re-index failed: %w", err)
@@ -438,6 +475,14 @@ func RebuildIndexFromFiles(database *db.Database, cfg *config.Config, vaultPath 
 		if indexErr := engine.IndexNote(note.ID, note.Title, string(content)); indexErr != nil {
 			continue
 		}
+	}
+
+	// 关键：把内存索引刷到磁盘，这样新创建的 SearchEngine 实例也能读到
+	if flushErr := engine.GetIndexer().FlushDiskIndex(); flushErr != nil {
+		return fmt.Errorf("flush disk index failed: %w", flushErr)
+	}
+	if closeErr := engine.GetIndexer().CloseDiskIndex(); closeErr != nil {
+		return fmt.Errorf("close disk index failed: %w", closeErr)
 	}
 
 	return nil

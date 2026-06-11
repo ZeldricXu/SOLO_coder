@@ -6,14 +6,16 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/solocoder/knowledgebase/internal/config"
 	"github.com/solocoder/knowledgebase/internal/db"
 	"github.com/solocoder/knowledgebase/internal/models"
 	"github.com/solocoder/knowledgebase/pkg/segment"
 )
 
 type Indexer struct {
-	db      *db.Database
-	useCJK  bool
+	db        *db.Database
+	useCJK    bool
+	diskIndex *DiskInvertedIndex
 }
 
 type TermPosting struct {
@@ -22,10 +24,25 @@ type TermPosting struct {
 	Positions []int
 }
 
-func NewIndexer(db *db.Database, useCJK bool) *Indexer {
+func NewIndexer(database *db.Database, cfg *config.Config) *Indexer {
+	indexPath := cfg.Search.IndexPath
+	if indexPath == "" {
+		indexPath = cfg.IndexPath
+	}
+
+	diskIdx, err := NewDiskInvertedIndex(indexPath)
+	if err != nil {
+		fmt.Printf("Warning: failed to create disk index: %v, falling back to SQLite only\n", err)
+		return &Indexer{
+			db:     database,
+			useCJK: cfg.Search.UseCJK,
+		}
+	}
+
 	return &Indexer{
-		db:     db,
-		useCJK: useCJK,
+		db:        database,
+		useCJK:    cfg.Search.UseCJK,
+		diskIndex: diskIdx,
 	}
 }
 
@@ -50,14 +67,58 @@ func (idx *Indexer) IndexNote(noteID uint, title, content string) error {
 		}
 	}
 
+	if idx.diskIndex != nil {
+		diskPostings := make(map[string]MemTermPosting)
+		for term, positions := range termMap {
+			diskPostings[term] = MemTermPosting{
+				Frequency: len(positions),
+				Positions: positions,
+			}
+		}
+
+		if err := idx.diskIndex.IndexNote(noteID, diskPostings); err != nil {
+			fmt.Printf("Warning: disk index note failed: %v\n", err)
+		}
+	}
+
 	return nil
 }
 
 func (idx *Indexer) DeleteNoteIndex(noteID uint) error {
-	return idx.db.ClearSearchIndex(noteID)
+	if err := idx.db.ClearSearchIndex(noteID); err != nil {
+		return err
+	}
+
+	if idx.diskIndex != nil {
+		if err := idx.diskIndex.DeleteNote(noteID); err != nil {
+			fmt.Printf("Warning: disk delete note failed: %v\n", err)
+		}
+	}
+
+	return nil
 }
 
 func (idx *Indexer) GetPostings(term string) ([]TermPosting, error) {
+	if idx.diskIndex != nil {
+		records, err := idx.diskIndex.GetPostings(term)
+		if err == nil {
+			postings := make([]TermPosting, len(records))
+			for i, r := range records {
+				postings[i] = TermPosting{
+					NoteID:    r.NoteID,
+					Frequency: r.Frequency,
+					Positions: r.Positions,
+				}
+			}
+			return postings, nil
+		}
+		fmt.Printf("Warning: disk get postings failed, falling back to SQLite: %v\n", err)
+	}
+
+	return idx.getPostingsFromDB(term)
+}
+
+func (idx *Indexer) getPostingsFromDB(term string) ([]TermPosting, error) {
 	results, err := idx.db.SearchByTerm(strings.ToLower(term))
 	if err != nil {
 		return nil, err
@@ -77,8 +138,24 @@ func (idx *Indexer) GetPostings(term string) ([]TermPosting, error) {
 
 func (idx *Indexer) GetDocFrequencies(terms []string) (map[string]int, error) {
 	df := make(map[string]int)
+
+	if idx.diskIndex != nil {
+		allOk := true
+		for _, term := range terms {
+			freq, err := idx.diskIndex.GetDocFrequency(term)
+			if err != nil {
+				allOk = false
+				break
+			}
+			df[strings.ToLower(term)] = freq
+		}
+		if allOk {
+			return df, nil
+		}
+	}
+
 	for _, term := range terms {
-		postings, err := idx.GetPostings(term)
+		postings, err := idx.getPostingsFromDB(term)
 		if err != nil {
 			return nil, err
 		}
@@ -88,15 +165,27 @@ func (idx *Indexer) GetDocFrequencies(terms []string) (map[string]int, error) {
 }
 
 func (idx *Indexer) GetAllDocLengths() (map[uint]int, error) {
+	if idx.diskIndex != nil {
+		lengths, err := idx.diskIndex.GetDocLengths()
+		if err == nil && len(lengths) > 0 {
+			return lengths, nil
+		}
+	}
 	return idx.db.GetDocLengths()
 }
 
 func (idx *Indexer) GetTotalDocCount() (int, error) {
+	if idx.diskIndex != nil {
+		count := idx.diskIndex.GetTotalDocCount()
+		if count > 0 {
+			return count, nil
+		}
+	}
 	return idx.db.GetTotalDocCount()
 }
 
 func (idx *Indexer) FuzzySearch(query string, threshold float64) ([]struct {
-	Term      string
+	Term       string
 	Similarity float64
 }, error) {
 	queryLower := strings.ToLower(query)
@@ -106,7 +195,7 @@ func (idx *Indexer) FuzzySearch(query string, threshold float64) ([]struct {
 	}
 
 	var results []struct {
-		Term      string
+		Term       string
 		Similarity float64
 	}
 
@@ -114,7 +203,7 @@ func (idx *Indexer) FuzzySearch(query string, threshold float64) ([]struct {
 		sim := segment.FuzzyMatch(term, queryLower)
 		if sim >= threshold {
 			results = append(results, struct {
-				Term      string
+				Term       string
 				Similarity float64
 			}{term, sim})
 		}
@@ -128,6 +217,13 @@ func (idx *Indexer) FuzzySearch(query string, threshold float64) ([]struct {
 }
 
 func (idx *Indexer) getAllTerms() ([]string, error) {
+	if idx.diskIndex != nil {
+		terms, err := idx.diskIndex.GetAllTerms()
+		if err == nil && len(terms) > 0 {
+			return terms, nil
+		}
+	}
+
 	rows, err := idx.db.Query("SELECT DISTINCT term FROM search_index")
 	if err != nil {
 		return nil, err
@@ -146,6 +242,13 @@ func (idx *Indexer) getAllTerms() ([]string, error) {
 }
 
 func (idx *Indexer) GetNoteTerms(noteID uint) (map[string]int, error) {
+	if idx.diskIndex != nil {
+		terms, err := idx.diskIndex.GetNoteTerms(noteID)
+		if err == nil {
+			return terms, nil
+		}
+	}
+
 	rows, err := idx.db.Query(`
 		SELECT term, frequency FROM search_index WHERE note_id = ?
 	`, noteID)
@@ -167,6 +270,18 @@ func (idx *Indexer) GetNoteTerms(noteID uint) (map[string]int, error) {
 }
 
 func (idx *Indexer) GetTermPositions(noteID uint, term string) ([]int, error) {
+	if idx.diskIndex != nil {
+		postings, err := idx.diskIndex.GetPostings(term)
+		if err == nil {
+			for _, p := range postings {
+				if p.NoteID == noteID {
+					return p.Positions, nil
+				}
+			}
+			return []int{}, nil
+		}
+	}
+
 	var posData []byte
 	err := idx.db.QueryRow(`
 		SELECT positions FROM search_index WHERE note_id = ? AND term = ?
@@ -190,4 +305,18 @@ func (idx *Indexer) GetNoteByPath(path string) (*models.Note, error) {
 
 func (idx *Indexer) GetAllNotes() ([]*models.Note, error) {
 	return idx.db.GetAllNotes()
+}
+
+func (idx *Indexer) FlushDiskIndex() error {
+	if idx.diskIndex != nil {
+		return idx.diskIndex.Flush()
+	}
+	return nil
+}
+
+func (idx *Indexer) CloseDiskIndex() error {
+	if idx.diskIndex != nil {
+		return idx.diskIndex.Close()
+	}
+	return nil
 }

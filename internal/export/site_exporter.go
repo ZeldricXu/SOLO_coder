@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -12,7 +11,6 @@ import (
 	"github.com/solocoder/knowledgebase/internal/db"
 	"github.com/solocoder/knowledgebase/internal/markdown"
 	"github.com/solocoder/knowledgebase/internal/models"
-	"github.com/solocoder/knowledgebase/pkg/utils"
 )
 
 type SiteExporter struct {
@@ -21,48 +19,20 @@ type SiteExporter struct {
 	parser *markdown.MarkdownParser
 }
 
-type SiteNote struct {
-	Note     *models.Note
-	HTML     string
-	Slug     string
-	Tags     []string
-	Path     string
-}
-
-type TagInfo struct {
-	Name  string
-	Slug  string
-	Notes []*SiteNote
-	Color string
-}
-
-type FolderNode struct {
-	Name     string
-	Path     string
-	Notes    []*SiteNote
-	Children map[string]*FolderNode
-}
-
 func (e *SiteExporter) Export(notes []*models.Note, opts ExportOptions) error {
+	return fmt.Errorf("legacy Export() not supported, use Render(ctx) instead")
+}
+
+func (e *SiteExporter) Render(ctx *ExportContext) error {
+	opts := ctx.Options
 	if err := os.MkdirAll(opts.OutputPath, 0755); err != nil {
 		return err
 	}
 
-	siteNotes, err := e.prepareSiteNotes(notes)
-	if err != nil {
-		return err
-	}
+	tags := ctx.Tags
+	folderTree := ctx.RootFolder()
 
-	noteMap := make(map[string]*SiteNote)
-	for _, sn := range siteNotes {
-		noteMap[sn.Slug] = sn
-	}
-
-	tags, tagMap := e.buildTagIndex(siteNotes)
-
-	folderTree := e.buildFolderTree(siteNotes)
-
-	if err := e.copyAssets(opts.OutputPath); err != nil {
+	if err := e.copyAssetsFromCtx(ctx, opts.OutputPath); err != nil {
 		return err
 	}
 
@@ -74,158 +44,35 @@ func (e *SiteExporter) Export(notes []*models.Note, opts ExportOptions) error {
 		return err
 	}
 
-	sidebarHTML := e.renderSidebar(siteNotes, tags, folderTree)
+	sidebarHTML := e.renderSidebar(ctx, tags, folderTree)
 
-	for _, sn := range siteNotes {
-		html := e.convertWikiLinksToHTML(sn.HTML, noteMap)
-		html = e.convertImagePathsForSite(html, sn.Path)
+	for _, pn := range ctx.Notes {
+		html := ctx.ConvertWikiLinks(pn.Slug, pn.HTMLContent, "site")
+		html = ctx.ConvertAssetPaths(html, "assets")
 
-		variables := e.buildSiteVariables(sn.Note, opts)
+		variables := ctx.MergeVariables(pn.Variables)
 
-		pageHTML := e.wrapSitePage(sn.Note.Title, html, sidebarHTML, "note", variables, opts)
+		pageHTML := e.wrapSitePage(pn.Title, html, sidebarHTML, "note", variables, opts)
 		pageHTML = applyVariables(pageHTML, variables)
 
-		outPath := filepath.Join(opts.OutputPath, sn.Slug+".html")
+		outPath := filepath.Join(opts.OutputPath, pn.Slug+".html")
 		if err := os.WriteFile(outPath, []byte(pageHTML), 0644); err != nil {
 			return err
 		}
 	}
 
-	if err := e.generateHomePage(siteNotes, tags, sidebarHTML, opts); err != nil {
+	if err := e.generateHomePage(ctx, tags, sidebarHTML, opts); err != nil {
 		return err
 	}
 
-	if err := e.generateTagPages(tags, tagMap, sidebarHTML, opts); err != nil {
+	if err := e.generateTagPages(ctx, tags, sidebarHTML, opts); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (e *SiteExporter) prepareSiteNotes(notes []*models.Note) ([]*SiteNote, error) {
-	var siteNotes []*SiteNote
-
-	for _, note := range notes {
-		content, err := e.loadNoteContent(note)
-		if err != nil {
-			return nil, err
-		}
-
-		result, err := e.parser.Parse(content, note.Path)
-		if err != nil {
-			return nil, err
-		}
-
-		if err := e.loadNoteTags(note); err != nil {
-			return nil, err
-		}
-
-		tagNames := make([]string, 0, len(note.Tags))
-		for _, tag := range note.Tags {
-			tagNames = append(tagNames, tag.Name)
-		}
-
-		sn := &SiteNote{
-			Note: note,
-			HTML: result.HTML,
-			Slug: generateSlug(note.Path),
-			Tags: tagNames,
-			Path: note.Path,
-		}
-		siteNotes = append(siteNotes, sn)
-	}
-
-	sort.Slice(siteNotes, func(i, j int) bool {
-		return siteNotes[i].Note.Title < siteNotes[j].Note.Title
-	})
-
-	return siteNotes, nil
-}
-
-func (e *SiteExporter) loadNoteContent(note *models.Note) (string, error) {
-	fullPath := note.Path
-	if !filepath.IsAbs(fullPath) {
-		fullPath = filepath.Join(e.cfg.VaultPath, note.Path)
-	}
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-func (e *SiteExporter) loadNoteTags(note *models.Note) error {
-	noteWithTags, err := e.db.GetNoteByID(note.ID)
-	if err != nil {
-		return err
-	}
-	note.Tags = noteWithTags.Tags
-	return nil
-}
-
-func (e *SiteExporter) buildTagIndex(notes []*SiteNote) ([]*TagInfo, map[string]*TagInfo) {
-	tagMap := make(map[string]*TagInfo)
-
-	for _, sn := range notes {
-		for _, tagName := range sn.Tags {
-			slug := utils.Slugify(tagName)
-			if _, ok := tagMap[slug]; !ok {
-				tagMap[slug] = &TagInfo{
-					Name: tagName,
-					Slug: slug,
-				}
-			}
-			tagMap[slug].Notes = append(tagMap[slug].Notes, sn)
-		}
-	}
-
-	tags := make([]*TagInfo, 0, len(tagMap))
-	for _, tag := range tagMap {
-		tags = append(tags, tag)
-	}
-
-	sort.Slice(tags, func(i, j int) bool {
-		return tags[i].Name < tags[j].Name
-	})
-
-	return tags, tagMap
-}
-
-func (e *SiteExporter) buildFolderTree(notes []*SiteNote) *FolderNode {
-	root := &FolderNode{
-		Name:     "/",
-		Path:     "",
-		Children: make(map[string]*FolderNode),
-	}
-
-	for _, sn := range notes {
-		dir := filepath.Dir(sn.Path)
-		if dir == "." {
-			root.Notes = append(root.Notes, sn)
-			continue
-		}
-
-		parts := strings.Split(dir, string(filepath.Separator))
-		current := root
-
-		for _, part := range parts {
-			if _, ok := current.Children[part]; !ok {
-				current.Children[part] = &FolderNode{
-					Name:     part,
-					Path:     filepath.Join(current.Path, part),
-					Children: make(map[string]*FolderNode),
-				}
-			}
-			current = current.Children[part]
-		}
-
-		current.Notes = append(current.Notes, sn)
-	}
-
-	return root
-}
-
-func (e *SiteExporter) copyAssets(outputPath string) error {
+func (e *SiteExporter) copyAssetsFromCtx(ctx *ExportContext, outputPath string) error {
 	assetDir := filepath.Join(outputPath, "assets")
 	if err := os.MkdirAll(assetDir, 0755); err != nil {
 		return err
@@ -348,7 +195,7 @@ func (e *SiteExporter) generateJS(outputPath string) error {
 	return os.WriteFile(filepath.Join(jsDir, "site.js"), []byte(jsContent), 0644)
 }
 
-func (e *SiteExporter) renderSidebar(notes []*SiteNote, tags []*TagInfo, folderTree *FolderNode) string {
+func (e *SiteExporter) renderSidebar(ctx *ExportContext, tags []TagSummary, folderTree *FolderNode) string {
 	var sb strings.Builder
 
 	sb.WriteString(`<aside class="sidebar">`)
@@ -378,7 +225,7 @@ func (e *SiteExporter) renderSidebar(notes []*SiteNote, tags []*TagInfo, folderT
 	for _, tag := range tags {
 		sb.WriteString(fmt.Sprintf(
 			`<li class="tag-item"><a href="tag-%s.html"><span class="tag-dot" style="background-color: %s;"></span>%s <span class="tag-count">%d</span></a></li>`,
-			tag.Slug, "#6366f1", tag.Name, len(tag.Notes),
+			tag.Slug, tag.Color, tag.Name, tag.Count,
 		))
 	}
 	sb.WriteString(`</ul>`)
@@ -415,10 +262,10 @@ func (e *SiteExporter) renderFolderTree(node *FolderNode) string {
 		sb.WriteString(`</div>`)
 		sb.WriteString(`<ul class="folder-content">`)
 
-		for _, sn := range node.Notes {
+		for _, pn := range node.Notes {
 			sb.WriteString(fmt.Sprintf(
 				`<li class="note-item"><a href="%s.html">📄 %s</a></li>`,
-				sn.Slug, sn.Note.Title,
+				pn.Slug, pn.Title,
 			))
 		}
 
@@ -429,10 +276,10 @@ func (e *SiteExporter) renderFolderTree(node *FolderNode) string {
 		sb.WriteString(`</ul>`)
 		sb.WriteString(`</li>`)
 	} else if node.Path == "" {
-		for _, sn := range node.Notes {
+		for _, pn := range node.Notes {
 			sb.WriteString(fmt.Sprintf(
 				`<li class="note-item"><a href="%s.html">📄 %s</a></li>`,
-				sn.Slug, sn.Note.Title,
+				pn.Slug, pn.Title,
 			))
 		}
 
@@ -455,10 +302,10 @@ func (e *SiteExporter) renderSubFolder(node *FolderNode) string {
 	sb.WriteString(`</div>`)
 	sb.WriteString(`<ul class="folder-content">`)
 
-	for _, sn := range node.Notes {
+	for _, pn := range node.Notes {
 		sb.WriteString(fmt.Sprintf(
 			`<li class="note-item"><a href="%s.html">📄 %s</a></li>`,
-			sn.Slug, sn.Note.Title,
+			pn.Slug, pn.Title,
 		))
 	}
 
@@ -478,84 +325,6 @@ func (e *SiteExporter) renderSubFolder(node *FolderNode) string {
 	sb.WriteString(`</li>`)
 
 	return sb.String()
-}
-
-func (e *SiteExporter) convertWikiLinksToHTML(html string, noteMap map[string]*SiteNote) string {
-	re := regexpWikiLink()
-
-	return re.ReplaceAllStringFunc(html, func(match string) string {
-		matches := re.FindStringSubmatch(match)
-		if len(matches) < 3 {
-			return match
-		}
-
-		target := matches[1]
-		display := matches[2]
-
-		targetSlug := utils.Slugify(target)
-
-		if sn, ok := noteMap[targetSlug]; ok {
-			return fmt.Sprintf(`<a href="%s.html" class="wiki-link">%s</a>`, sn.Slug, display)
-		}
-
-		return fmt.Sprintf(`<span class="wiki-link broken" title="笔记不存在">%s</span>`, display)
-	})
-}
-
-func regexpWikiLink() *regexp.Regexp {
-	return regexpWikiLinkCached
-}
-
-var regexpWikiLinkCached = func() *regexp.Regexp {
-	re, _ := regexp.Compile(`<a[^>]*class="wiki-link"[^>]*data-target="([^"]*)"[^>]*>([^<]*)</a>`)
-	return re
-}()
-
-func (e *SiteExporter) convertImagePathsForSite(html, notePath string) string {
-	re := regexpImg()
-
-	return re.ReplaceAllStringFunc(html, func(match string) string {
-		matches := re.FindStringSubmatch(match)
-		if len(matches) < 2 {
-			return match
-		}
-
-		src := matches[1]
-		if strings.HasPrefix(src, "http://") || strings.HasPrefix(src, "https://") || strings.HasPrefix(src, "data:") {
-			return match
-		}
-
-		noteDir := filepath.Dir(notePath)
-		imgPath := filepath.Join(noteDir, src)
-		imgPath = filepath.Clean(imgPath)
-
-		newSrc := "assets/" + filepath.ToSlash(imgPath)
-
-		return strings.Replace(match, src, newSrc, 1)
-	})
-}
-
-func regexpImg() *regexp.Regexp {
-	return regexpImgCached
-}
-
-var regexpImgCached = func() *regexp.Regexp {
-	re, _ := regexp.Compile(`<img[^>]*src="([^"]*)"[^>]*>`)
-	return re
-}()
-
-func (e *SiteExporter) buildSiteVariables(note *models.Note, opts ExportOptions) map[string]string {
-	variables := map[string]string{
-		"Title":     note.Title,
-		"NotePath":  note.Path,
-		"CreatedAt": note.CreatedAt.Format("2006-01-02"),
-		"UpdatedAt": note.UpdatedAt.Format("2006-01-02"),
-		"WordCount": fmt.Sprintf("%d", note.WordCount),
-	}
-	for k, v := range opts.Variables {
-		variables[k] = v
-	}
-	return variables
 }
 
 func (e *SiteExporter) wrapSitePage(title, content, sidebar, pageType string, variables map[string]string, opts ExportOptions) string {
@@ -583,22 +352,22 @@ func (e *SiteExporter) wrapSitePage(title, content, sidebar, pageType string, va
 </html>`, title, pageType, sidebar, content)
 }
 
-func (e *SiteExporter) generateHomePage(notes []*SiteNote, tags []*TagInfo, sidebar string, opts ExportOptions) error {
+func (e *SiteExporter) generateHomePage(ctx *ExportContext, tags []TagSummary, sidebar string, opts ExportOptions) error {
 	var content strings.Builder
 
 	content.WriteString(`<div class="home-page">`)
 	content.WriteString(`<header class="home-header">`)
 	content.WriteString(`<h1>📚 知识文库</h1>`)
 	content.WriteString(fmt.Sprintf(`<p class="home-stats">共 <strong>%d</strong> 篇笔记 · <strong>%d</strong> 个标签</p>`,
-		len(notes), len(tags)))
+		len(ctx.Notes), len(tags)))
 	content.WriteString(`</header>`)
 
 	content.WriteString(`<section class="home-section">`)
 	content.WriteString(`<h2>📝 最新笔记</h2>`)
 	content.WriteString(`<ul class="note-grid">`)
 
-	sortedNotes := make([]*SiteNote, len(notes))
-	copy(sortedNotes, notes)
+	sortedNotes := make([]*ProcessedNote, len(ctx.Notes))
+	copy(sortedNotes, ctx.Notes)
 	sort.Slice(sortedNotes, func(i, j int) bool {
 		return sortedNotes[i].Note.UpdatedAt.After(sortedNotes[j].Note.UpdatedAt)
 	})
@@ -609,7 +378,7 @@ func (e *SiteExporter) generateHomePage(notes []*SiteNote, tags []*TagInfo, side
 	}
 
 	for i := 0; i < recentCount; i++ {
-		sn := sortedNotes[i]
+		pn := sortedNotes[i]
 		content.WriteString(fmt.Sprintf(`
 			<li class="note-card">
 				<a href="%s.html">
@@ -620,9 +389,9 @@ func (e *SiteExporter) generateHomePage(notes []*SiteNote, tags []*TagInfo, side
 					</div>
 				</a>
 			</li>`,
-			sn.Slug, sn.Note.Title,
-			sn.Note.UpdatedAt.Format("2006-01-02"),
-			sn.Note.WordCount,
+			pn.Slug, pn.Title,
+			pn.Note.UpdatedAt.Format("2006-01-02"),
+			pn.Note.WordCount,
 		))
 	}
 
@@ -634,13 +403,13 @@ func (e *SiteExporter) generateHomePage(notes []*SiteNote, tags []*TagInfo, side
 	content.WriteString(`<div class="tag-cloud">`)
 
 	for _, tag := range tags {
-		size := 100 + len(tag.Notes)*10
+		size := 100 + tag.Count*10
 		if size > 200 {
 			size = 200
 		}
 		content.WriteString(fmt.Sprintf(
 			`<a href="tag-%s.html" class="tag-cloud-item" style="font-size: %d%%;">%s <span class="tag-count">(%d)</span></a>`,
-			tag.Slug, size, tag.Name, len(tag.Notes),
+			tag.Slug, size, tag.Name, tag.Count,
 		))
 	}
 
@@ -663,18 +432,18 @@ func (e *SiteExporter) generateHomePage(notes []*SiteNote, tags []*TagInfo, side
 	return os.WriteFile(indexPath, []byte(html), 0644)
 }
 
-func (e *SiteExporter) generateTagPages(tags []*TagInfo, tagMap map[string]*TagInfo, sidebar string, opts ExportOptions) error {
+func (e *SiteExporter) generateTagPages(ctx *ExportContext, tags []TagSummary, sidebar string, opts ExportOptions) error {
 	for _, tag := range tags {
 		var content strings.Builder
 
 		content.WriteString(`<div class="tag-page">`)
 		content.WriteString(fmt.Sprintf(`<header class="tag-header">`))
 		content.WriteString(fmt.Sprintf(`<h1><span class="tag-dot-large"></span> #%s</h1>`, tag.Name))
-		content.WriteString(fmt.Sprintf(`<p>共 %d 篇笔记</p>`, len(tag.Notes)))
+		content.WriteString(fmt.Sprintf(`<p>共 %d 篇笔记</p>`, tag.Count))
 		content.WriteString(`</header>`)
 
 		content.WriteString(`<ul class="note-list">`)
-		for _, sn := range tag.Notes {
+		for _, pn := range tag.Notes {
 			content.WriteString(fmt.Sprintf(`
 				<li class="note-list-item">
 					<a href="%s.html">
@@ -685,9 +454,9 @@ func (e *SiteExporter) generateTagPages(tags []*TagInfo, tagMap map[string]*TagI
 						</div>
 					</a>
 				</li>`,
-				sn.Slug, sn.Note.Title,
-				sn.Note.UpdatedAt.Format("2006-01-02"),
-				sn.Note.WordCount,
+				pn.Slug, pn.Title,
+				pn.Note.UpdatedAt.Format("2006-01-02"),
+				pn.Note.WordCount,
 			))
 		}
 		content.WriteString(`</ul>`)
@@ -996,6 +765,10 @@ body {
 
 .markdown-body h3 {
     font-size: 1.25em;
+}
+
+.markdown-body h4 {
+    font-size: 1em;
 }
 
 .markdown-body p {

@@ -24,6 +24,8 @@ func newTestConfig(t *testing.T) *config.Config {
 	cfg.DBPath = filepath.Join(tmpDir, "test.db")
 	cfg.VaultPath = tmpDir
 	cfg.Search.UseCJK = false
+	cfg.Search.IndexPath = filepath.Join(tmpDir, "index")
+	cfg.IndexPath = filepath.Join(tmpDir, "index")
 	return cfg
 }
 

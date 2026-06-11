@@ -20,31 +20,60 @@ const (
 )
 
 type Watcher struct {
-	cfg         *config.Config
-	db          *db.Database
-	scanner     *Scanner
-	resolver    *ConflictResolver
-	watcher     *watcher.Watcher
-	eventChan   chan *models.FileEvent
-	eventBuffer map[string]*models.FileEvent
-	bufferMu    sync.Mutex
-	debounceTimer *time.Timer
-	stopChan    chan struct{}
-	running     bool
-	mu          sync.RWMutex
-	onEvent     func([]*models.FileEvent)
+	cfg      *config.Config
+	db       *db.Database
+	scanner  *Scanner
+	resolver *ConflictResolver
+	watcher  *watcher.Watcher
+	stopChan chan struct{}
+	running  bool
+	mu       sync.RWMutex
+	onEvent  func([]*models.FileEvent)
+	session  *WatchSession
 }
 
 func NewWatcher(cfg *config.Config, database *db.Database) *Watcher {
-	return &Watcher{
-		cfg:         cfg,
-		db:          database,
-		scanner:     NewScanner(cfg, database),
-		resolver:    NewConflictResolver(cfg.VaultPath),
-		eventChan:   make(chan *models.FileEvent, 100),
-		eventBuffer: make(map[string]*models.FileEvent),
-		stopChan:    make(chan struct{}),
+	session := NewWatchSession(cfg.VaultPath, debounceDelay)
+	w := &Watcher{
+		cfg:      cfg,
+		db:       database,
+		scanner:  NewScanner(cfg, database),
+		resolver: NewConflictResolver(cfg.VaultPath),
+		stopChan: make(chan struct{}),
+		session:  session,
 	}
+
+	session.OnChange = func(diff *SnapshotDiff) error {
+		var events []*models.FileEvent
+
+		for _, path := range diff.Added {
+			ev := w.handleCreateFromSession(path)
+			if ev != nil {
+				events = append(events, ev)
+			}
+		}
+
+		for _, path := range diff.Modified {
+			ev := w.handleModifyFromSession(path)
+			if ev != nil {
+				events = append(events, ev)
+			}
+		}
+
+		for _, path := range diff.Deleted {
+			ev := w.handleDeleteFromSession(path)
+			if ev != nil {
+				events = append(events, ev)
+			}
+		}
+
+		if w.onEvent != nil && len(events) > 0 {
+			w.onEvent(events)
+		}
+		return nil
+	}
+
+	return w
 }
 
 func (w *Watcher) SetOnEvent(fn func([]*models.FileEvent)) {
@@ -74,7 +103,6 @@ func (w *Watcher) Start() error {
 	}
 
 	go w.eventLoop()
-	go w.processLoop()
 
 	startErr := make(chan error, 1)
 	go func() {
@@ -89,6 +117,7 @@ func (w *Watcher) Start() error {
 	case <-time.After(300 * time.Millisecond):
 	}
 
+	w.session.Start()
 	w.running = true
 	return nil
 }
@@ -103,11 +132,95 @@ func (w *Watcher) Stop() {
 
 	close(w.stopChan)
 	w.watcher.Close()
+	w.session.Stop()
 	w.running = false
 }
 
 func (w *Watcher) InitialScan() (int, int, error) {
-	return w.scanner.ScanAll()
+	added, updated, err := w.scanner.ScanAll()
+	if err != nil {
+		return added, updated, err
+	}
+
+	files, err := w.collectBaseSnapshotFiles()
+	if err == nil {
+		w.session.TakeBaseSnapshotFromFiles(files)
+	}
+
+	return added, updated, nil
+}
+
+func (w *Watcher) collectBaseSnapshotFiles() (map[string]FileInfo, error) {
+	files := make(map[string]FileInfo)
+
+	err := filepath.Walk(w.cfg.VaultPath, func(path string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return nil
+		}
+
+		if info.IsDir() {
+			if w.isHiddenName(info.Name()) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		if w.isHiddenName(info.Name()) {
+			return nil
+		}
+
+		if !utils.IsMarkdownFile(path) {
+			return nil
+		}
+
+		realPath, err := w.resolveSymlinkForSnapshot(path, info)
+		if err != nil || realPath == "" {
+			return nil
+		}
+
+		content, readErr := os.ReadFile(realPath)
+		hash := ""
+		if readErr == nil {
+			hash = utils.Hash(string(content))
+		}
+
+		fi := FileInfo{
+			Path:       realPath,
+			ModTime:    info.ModTime(),
+			Size:       info.Size(),
+			Hash:       hash,
+			IsMarkdown: true,
+		}
+		files[realPath] = fi
+		return nil
+	})
+
+	return files, err
+}
+
+func (w *Watcher) resolveSymlinkForSnapshot(path string, info os.FileInfo) (string, error) {
+	if info.Mode()&os.ModeSymlink != 0 {
+		realPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", err
+		}
+		realInfo, err := os.Stat(realPath)
+		if err != nil {
+			return "", err
+		}
+		if realInfo.IsDir() {
+			return "", nil
+		}
+		if !utils.IsMarkdownFile(realPath) {
+			return "", nil
+		}
+		return realPath, nil
+	}
+	return path, nil
+}
+
+func (w *Watcher) isHiddenName(name string) bool {
+	return strings.HasPrefix(name, ".")
 }
 
 func (w *Watcher) eventLoop() {
@@ -136,120 +249,122 @@ func (w *Watcher) handleRawEvent(event *watcher.Event) {
 		return
 	}
 
-	var op models.FileOp
 	switch event.Op {
-	case watcher.Create, watcher.Move:
-		op = models.FileOpCreate
-	case watcher.Write:
-		op = models.FileOpModify
-	case watcher.Remove:
-		op = models.FileOpDelete
-	case watcher.Rename:
-		op = models.FileOpRename
-	default:
-		return
-	}
-
-	realPath := path
-	if op != models.FileOpDelete {
+	case watcher.Create, watcher.Move, watcher.Write:
+		realPath := path
 		resolved, err := w.resolveSymlink(path)
 		if err != nil || resolved == "" {
 			return
 		}
 		realPath = resolved
-	}
 
-	fileEvent := &models.FileEvent{
-		Path:      realPath,
-		Op:        op,
-		Timestamp: time.Now(),
-	}
-
-	w.bufferEvent(fileEvent)
-}
-
-func (w *Watcher) bufferEvent(event *models.FileEvent) {
-	w.bufferMu.Lock()
-	defer w.bufferMu.Unlock()
-
-	w.eventBuffer[event.Path] = event
-
-	if w.debounceTimer != nil {
-		w.debounceTimer.Stop()
-	}
-
-	w.debounceTimer = time.AfterFunc(debounceDelay, func() {
-		w.flushBuffer()
-	})
-}
-
-func (w *Watcher) flushBuffer() {
-	w.bufferMu.Lock()
-	events := make([]*models.FileEvent, 0, len(w.eventBuffer))
-	for _, e := range w.eventBuffer {
-		events = append(events, e)
-	}
-	w.eventBuffer = make(map[string]*models.FileEvent)
-	w.bufferMu.Unlock()
-
-	if len(events) > 0 {
-		w.processEvents(events)
-	}
-}
-
-func (w *Watcher) processLoop() {
-	for {
-		select {
-		case <-w.stopChan:
+		info, statErr := os.Stat(realPath)
+		if statErr != nil {
 			return
-		case event := <-w.eventChan:
-			w.bufferEvent(event)
 		}
+
+		content, readErr := os.ReadFile(realPath)
+		hash := ""
+		if readErr == nil {
+			hash = utils.Hash(string(content))
+		}
+
+		fi := FileInfo{
+			Path:       realPath,
+			ModTime:    info.ModTime(),
+			Size:       info.Size(),
+			Hash:       hash,
+			IsMarkdown: true,
+		}
+		w.session.HandleFileEvent(realPath, fi)
+
+	case watcher.Remove, watcher.Rename:
+		realPath := path
+		resolved, err := w.resolveSymlinkIfExists(path)
+		if err == nil && resolved != "" {
+			realPath = resolved
+		}
+		w.session.HandleFileDelete(realPath)
 	}
 }
 
-func (w *Watcher) processEvents(events []*models.FileEvent) {
-	var processed []*models.FileEvent
-
-	for _, event := range events {
-		result := w.processSingleEvent(event)
-		if result != nil {
-			processed = append(processed, result)
+func (w *Watcher) resolveSymlinkIfExists(path string) (string, error) {
+	info, err := os.Lstat(path)
+	if err != nil {
+		return path, nil
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		realPath, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return "", err
 		}
+		realInfo, err := os.Stat(realPath)
+		if err != nil {
+			return realPath, nil
+		}
+		if realInfo.IsDir() {
+			return "", nil
+		}
+		if !utils.IsMarkdownFile(realPath) {
+			return "", nil
+		}
+		return realPath, nil
 	}
-
-	if w.onEvent != nil && len(processed) > 0 {
-		w.onEvent(processed)
-	}
+	return path, nil
 }
 
-func (w *Watcher) processSingleEvent(event *models.FileEvent) *models.FileEvent {
-	switch event.Op {
-	case models.FileOpCreate, models.FileOpModify:
-		return w.handleCreateOrModify(event)
-	case models.FileOpDelete:
-		return w.handleDelete(event)
-	case models.FileOpRename:
-		return w.handleRename(event)
-	default:
+func (w *Watcher) handleCreateFromSession(path string) *models.FileEvent {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
-}
 
-func (w *Watcher) handleCreateOrModify(event *models.FileEvent) *models.FileEvent {
-	if _, err := os.Stat(event.Path); os.IsNotExist(err) {
-		return nil
-	}
-
-	content, err := os.ReadFile(event.Path)
+	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
 
 	hash := utils.Hash(string(content))
-	event.Hash = hash
 
-	existing, err := w.db.GetNoteByPath(event.Path)
+	existing, err := w.db.GetNoteByPath(path)
+	if err == nil && existing != nil {
+		if existing.Hash == hash {
+			return nil
+		}
+	}
+
+	note, changed, err := w.scanner.ScanSingle(path)
+	if err != nil || !changed {
+		return nil
+	}
+
+	_ = note
+	return &models.FileEvent{
+		Path:      path,
+		Op:        models.FileOpCreate,
+		Timestamp: time.Now(),
+		Hash:      hash,
+	}
+}
+
+func (w *Watcher) handleModifyFromSession(path string) *models.FileEvent {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	hash := utils.Hash(string(content))
+	event := &models.FileEvent{
+		Path:      path,
+		Op:        models.FileOpModify,
+		Timestamp: time.Now(),
+		Hash:      hash,
+	}
+
+	existing, err := w.db.GetNoteByPath(path)
 	if err == nil && existing != nil {
 		if existing.Hash == hash {
 			return nil
@@ -257,7 +372,7 @@ func (w *Watcher) handleCreateOrModify(event *models.FileEvent) *models.FileEven
 		event.OurHash = existing.Hash
 		event.TheirHash = hash
 
-		conflictInfo, hasConflict, err := w.resolver.DetectConflict(event.Path, existing.Hash)
+		conflictInfo, hasConflict, err := w.resolver.DetectConflict(path, existing.Hash)
 		if err == nil && hasConflict {
 			event.Conflict = true
 			event.OurHash = conflictInfo.OurHash
@@ -265,7 +380,7 @@ func (w *Watcher) handleCreateOrModify(event *models.FileEvent) *models.FileEven
 		}
 	}
 
-	note, changed, err := w.scanner.ScanSingle(event.Path)
+	note, changed, err := w.scanner.ScanSingle(path)
 	if err != nil || !changed {
 		return nil
 	}
@@ -274,21 +389,21 @@ func (w *Watcher) handleCreateOrModify(event *models.FileEvent) *models.FileEven
 	return event
 }
 
-func (w *Watcher) handleDelete(event *models.FileEvent) *models.FileEvent {
-	existing, err := w.db.GetNoteByPath(event.Path)
+func (w *Watcher) handleDeleteFromSession(path string) *models.FileEvent {
+	existing, err := w.db.GetNoteByPath(path)
 	if err != nil || existing == nil {
 		return nil
 	}
 
-	if err := w.db.DeleteNote(event.Path); err != nil {
+	if err := w.db.DeleteNote(path); err != nil {
 		return nil
 	}
 
-	return event
-}
-
-func (w *Watcher) handleRename(event *models.FileEvent) *models.FileEvent {
-	return event
+	return &models.FileEvent{
+		Path:      path,
+		Op:        models.FileOpDelete,
+		Timestamp: time.Now(),
+	}
 }
 
 func (w *Watcher) isHiddenPath(path string) bool {

@@ -33,23 +33,18 @@ var pageSizes = map[string]PDFPageSize{
 }
 
 func (e *PDFExporter) Export(notes []*models.Note, opts ExportOptions) error {
-	if len(notes) == 1 {
-		return e.exportSingle(notes[0], opts)
-	}
-	return e.exportMultiple(notes, opts)
+	return fmt.Errorf("legacy Export() not supported, use Render(ctx) instead")
 }
 
-func (e *PDFExporter) exportSingle(note *models.Note, opts ExportOptions) error {
-	htmlExporter := &HTMLExporter{cfg: e.cfg, parser: e.parser}
-	content, err := e.loadNoteContent(note)
-	if err != nil {
-		return err
+func (e *PDFExporter) Render(ctx *ExportContext) error {
+	if len(ctx.Notes) == 1 {
+		return e.exportSingle(ctx, ctx.Notes[0], ctx.Options)
 	}
+	return e.exportMultiple(ctx, ctx.Options)
+}
 
-	result, err := e.parser.Parse(content, note.Path)
-	if err != nil {
-		return err
-	}
+func (e *PDFExporter) exportSingle(ctx *ExportContext, pn *ProcessedNote, opts ExportOptions) error {
+	htmlExporter := &HTMLExporter{cfg: e.cfg, parser: e.parser}
 
 	css := e.pdfCSS(opts)
 	if opts.CSSPath != "" {
@@ -59,15 +54,15 @@ func (e *PDFExporter) exportSingle(note *models.Note, opts ExportOptions) error 
 		}
 	}
 
-	variables := e.buildVariables(note, opts)
+	variables := ctx.MergeVariables(pn.Variables)
 
 	var tocHTML string
 	if opts.IncludeTOC {
-		toc := htmlExporter.extractTOC(result.HTML)
-		tocHTML = htmlExporter.renderTOC(toc)
+		tocEntries := toPointerEntries(pn.TOC)
+		tocHTML = htmlExporter.renderTOC(tocEntries)
 	}
 
-	htmlContent := e.wrapPDFHTML(note.Title, result.HTML, css, tocHTML, variables, opts)
+	htmlContent := e.wrapPDFHTML(pn.Title, pn.HTMLContent, css, tocHTML, variables, opts)
 	htmlContent = applyVariables(htmlContent, variables)
 
 	tmpDir, err := os.MkdirTemp("", "pdf-export-*")
@@ -84,9 +79,7 @@ func (e *PDFExporter) exportSingle(note *models.Note, opts ExportOptions) error 
 	return e.convertHTMLToPDF(htmlPath, opts.OutputPath, opts)
 }
 
-func (e *PDFExporter) exportMultiple(notes []*models.Note, opts ExportOptions) error {
-	htmlExporter := &HTMLExporter{cfg: e.cfg, parser: e.parser}
-
+func (e *PDFExporter) exportMultiple(ctx *ExportContext, opts ExportOptions) error {
 	tmpDir, err := os.MkdirTemp("", "pdf-export-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir failed: %w", err)
@@ -101,37 +94,23 @@ func (e *PDFExporter) exportMultiple(notes []*models.Note, opts ExportOptions) e
 		return err
 	}
 
-	noteMap := make(map[string]*models.Note)
-	for _, note := range notes {
-		noteMap[note.Path] = note
-	}
-
 	var allContent strings.Builder
 	var allTitles []string
 
-	for i, note := range notes {
-		content, err := e.loadNoteContent(note)
-		if err != nil {
-			return err
-		}
-
-		result, err := e.parser.Parse(content, note.Path)
-		if err != nil {
-			return err
-		}
-
-		html := htmlExporter.convertWikiLinks(result.HTML, note.Path, noteMap)
-		html = htmlExporter.convertImagePaths(html, note.Path, "assets")
+	for i, pn := range ctx.Notes {
+		html := ctx.ConvertWikiLinks(pn.Slug, pn.HTMLContent, "pdf")
+		html = ctx.ConvertAssetPaths(html, "assets")
 
 		if i > 0 {
 			allContent.WriteString(`<div class="page-break"></div>`)
 		}
 
-		allContent.WriteString(fmt.Sprintf(`<section class="note-section" data-note="%s">`, note.Title))
+		allContent.WriteString(fmt.Sprintf(`<section class="note-section" id="note-%d" data-note="%s" data-slug="%s">`, i+1, pn.Title, pn.Slug))
+		allContent.WriteString(fmt.Sprintf(`<a id="%s"></a>`, pn.Slug))
 		allContent.WriteString(html)
 		allContent.WriteString(`</section>`)
 
-		allTitles = append(allTitles, note.Title)
+		allTitles = append(allTitles, pn.Title)
 	}
 
 	css := e.pdfCSS(opts)
@@ -143,18 +122,23 @@ func (e *PDFExporter) exportMultiple(notes []*models.Note, opts ExportOptions) e
 	}
 
 	title := "笔记导出"
-	if len(notes) == 1 {
-		title = notes[0].Title
-	} else if len(notes) > 1 {
-		title = fmt.Sprintf("%s 等 %d 篇笔记", notes[0].Title, len(notes))
+	if len(ctx.Notes) == 1 {
+		title = ctx.Notes[0].Title
+	} else if len(ctx.Notes) > 1 {
+		title = fmt.Sprintf("%s 等 %d 篇笔记", ctx.Notes[0].Title, len(ctx.Notes))
 	}
 
 	variables := map[string]string{
 		"Title": title,
-		"Count": fmt.Sprintf("%d", len(notes)),
+		"Count": fmt.Sprintf("%d", len(ctx.Notes)),
 	}
 	for k, v := range opts.Variables {
 		variables[k] = v
+	}
+	for k, v := range ctx.Variables {
+		if _, exists := variables[k]; !exists {
+			variables[k] = v
+		}
 	}
 
 	var tocHTML string
@@ -191,29 +175,6 @@ func (e *PDFExporter) renderNoteListTOC(titles []string) string {
 	sb.WriteString(`<div class="page-break"></div>`)
 
 	return sb.String()
-}
-
-func (e *PDFExporter) loadNoteContent(note *models.Note) (string, error) {
-	fullPath := filepath.Join(e.cfg.VaultPath, note.Path)
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-func (e *PDFExporter) buildVariables(note *models.Note, opts ExportOptions) map[string]string {
-	variables := map[string]string{
-		"Title":     note.Title,
-		"NotePath":  note.Path,
-		"CreatedAt": note.CreatedAt.Format("2006-01-02"),
-		"UpdatedAt": note.UpdatedAt.Format("2006-01-02"),
-		"WordCount": fmt.Sprintf("%d", note.WordCount),
-	}
-	for k, v := range opts.Variables {
-		variables[k] = v
-	}
-	return variables
 }
 
 func (e *PDFExporter) wrapPDFHTML(title, content, css, toc string, variables map[string]string, opts ExportOptions) string {

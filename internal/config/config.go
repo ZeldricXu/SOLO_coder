@@ -26,6 +26,7 @@ type Config struct {
 		VectorIndexPath string  `json:"vector_index_path"`
 		BM25Weight      float64 `json:"bm25_weight"`
 		VectorWeight    float64 `json:"vector_weight"`
+		IndexPath       string  `json:"index_path"`
 	} `json:"search"`
 
 	Graph struct {
@@ -136,6 +137,10 @@ func (c *Config) applyDefaults() {
 	}
 	if c.Search.VectorWeight == 0 {
 		c.Search.VectorWeight = 0.4
+	}
+	if c.Search.IndexPath == "" {
+		home, _ := os.UserHomeDir()
+		c.Search.IndexPath = filepath.Join(home, ".knowledgebase", "index")
 	}
 	if c.Graph.NodeMinSize == 0 {
 		c.Graph.NodeMinSize = 10

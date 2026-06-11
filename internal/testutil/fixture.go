@@ -21,6 +21,9 @@ func NewTestConfig(tempDir string) *config.Config {
 	cfg.PluginPath = filepath.Join(tempDir, "plugins")
 	cfg.TemplatePath = filepath.Join(tempDir, "templates")
 	cfg.DailyNotePath = filepath.Join(cfg.VaultPath, "Daily")
+	// 设置磁盘倒排索引的路径（避免测试之间共享全局路径）
+	cfg.Search.IndexPath = filepath.Join(tempDir, "search_disk_index")
+	cfg.Search.VectorIndexPath = filepath.Join(tempDir, "vectors.json")
 	return cfg
 }
 

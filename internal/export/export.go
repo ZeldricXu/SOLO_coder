@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/solocoder/knowledgebase/internal/config"
@@ -38,19 +39,26 @@ type Exporter interface {
 	Export(notes []*models.Note, opts ExportOptions) error
 }
 
+type ContextExporter interface {
+	Render(ctx *ExportContext) error
+}
+
 type ExportManager struct {
-	cfg      *config.Config
-	db       *db.Database
-	parser   *markdown.MarkdownParser
+	cfg       *config.Config
+	db        *db.Database
+	parser    *markdown.MarkdownParser
+	pipeline  *ExportPipeline
 	exporters map[ExportFormat]Exporter
 }
 
 func NewManager(cfg *config.Config, database *db.Database) *ExportManager {
 	parser := markdown.NewParser(cfg)
+	pipeline := NewExportPipeline(cfg, database, parser)
 	mgr := &ExportManager{
 		cfg:       cfg,
 		db:        database,
 		parser:    parser,
+		pipeline:  pipeline,
 		exporters: make(map[ExportFormat]Exporter),
 	}
 
@@ -78,6 +86,18 @@ func (m *ExportManager) Export(opts ExportOptions) error {
 
 	if err := os.MkdirAll(filepath.Dir(opts.OutputPath), 0755); err != nil {
 		return fmt.Errorf("create output directory failed: %w", err)
+	}
+
+	ctx, err := m.pipeline.BuildContext(notes, opts)
+	if err != nil {
+		return fmt.Errorf("build export context failed: %w", err)
+	}
+
+	if ctxExp, ok := exporter.(ContextExporter); ok {
+		if err := ctxExp.Render(ctx); err != nil {
+			return fmt.Errorf("export failed: %w", err)
+		}
+		return nil
 	}
 
 	if err := exporter.Export(notes, opts); err != nil {
@@ -144,34 +164,6 @@ func (m *ExportManager) matchFolders(notePath string, folders []string) bool {
 		}
 	}
 	return false
-}
-
-func (m *ExportManager) loadNoteContent(note *models.Note) (string, error) {
-	fullPath := note.Path
-	if !filepath.IsAbs(fullPath) {
-		fullPath = filepath.Join(m.cfg.VaultPath, note.Path)
-	}
-	content, err := os.ReadFile(fullPath)
-	if err != nil {
-		return "", err
-	}
-	return string(content), nil
-}
-
-func (m *ExportManager) renderNote(note *models.Note) (*markdown.ParseResult, error) {
-	content, err := m.loadNoteContent(note)
-	if err != nil {
-		return nil, err
-	}
-	return m.parser.Parse(content, note.Path)
-}
-
-type ExportContext struct {
-	Note     *models.Note
-	Content  string
-	HTML     string
-	Metadata map[string]interface{}
-	Variables map[string]string
 }
 
 func applyVariables(content string, variables map[string]string) string {
@@ -257,4 +249,22 @@ func generateSlug(path string) string {
 func noteToHTMLPath(notePath string) string {
 	slug := generateSlug(notePath)
 	return slug + ".html"
+}
+
+var regexpWikiLinkCached = func() *regexp.Regexp {
+	re, _ := regexp.Compile(`<a[^>]*class="wiki-link"[^>]*data-target="([^"]*)"[^>]*>([^<]*)</a>`)
+	return re
+}()
+
+func regexpWikiLink() *regexp.Regexp {
+	return regexpWikiLinkCached
+}
+
+var regexpImgCached = func() *regexp.Regexp {
+	re, _ := regexp.Compile(`<img[^>]*src="([^"]+)"[^>]*>`)
+	return re
+}()
+
+func regexpImg() *regexp.Regexp {
+	return regexpImgCached
 }
