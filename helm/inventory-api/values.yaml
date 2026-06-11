@@ -1,0 +1,120 @@
+replicaCount: 2
+
+image:
+  repository: harbor.example.com/inventory/inventory-api
+  tag: latest
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: inventory-api.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+resources: {}
+# resources:
+#   requests:
+#     cpu: 100m
+#     memory: 128Mi
+#   limits:
+#     cpu: 500m
+#     memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+env:
+  APP_ENV: production
+  LOG_LEVEL: info
+  WORKERS: "2"
+
+envFrom:
+  configMapRef:
+    name: ""
+  secretRef:
+    name: ""
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: 8000
+  initialDelaySeconds: 15
+  periodSeconds: 20
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/v1/health
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+initContainers:
+  - name: db-migration
+    image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+    command: ["alembic", "upgrade", "head"]
+    envFrom:
+      - configMapRef:
+          name: "{{ include \"inventory-api.fullname\" . }}"
+      - secretRef:
+          name: "{{ include \"inventory-api.fullname\" . }}"
+
+extraContainers: []
+
+volumes: []
+
+volumeMounts: []
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 25%
+    maxUnavailable: 25%
+
+configmap:
+  data:
+    APP_ENV: production
+    LOG_LEVEL: info
+    WORKERS: "2"
+
+secret:
+  data:
+    DATABASE_URL: "postgresql://user:password@postgres:5432/inventory"
+    REDIS_PASSWORD: ""
+    SECRET_KEY: "change-me-please"

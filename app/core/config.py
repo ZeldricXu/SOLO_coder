@@ -1,9 +1,26 @@
+from __future__ import annotations
+
+import os
 from typing import List
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _get_env_file() -> str:
+    deploy_env = os.getenv("DEPLOY_ENV", "development")
+    env_file_map = {
+        "development": "env/.env.development",
+        "staging": "env/.env.staging",
+        "production": "env/.env.production",
+    }
+    relative_path = env_file_map.get(deploy_env, "env/.env.development")
+    return os.path.join(_BASE_DIR, relative_path)
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(env_file=_get_env_file(), extra="ignore")
 
     APP_ENV: str = "development"
     APP_NAME: str = "Inventory Management Platform"
@@ -55,6 +72,8 @@ class Settings(BaseSettings):
     TELEGRAM_CHAT_ID: str = ""
 
     WEBHOOK_URL: str = ""
+
+    WORKERS: int = 2
 
     @property
     def redis_cluster_node_list(self) -> List[dict]:

@@ -21,10 +21,13 @@ wheels/
 MANIFEST
 
 .env
+.env.*
+!.env.example
 .venv
 venv/
 ENV/
-env/
+env/.env.*
+!env/.env.example
 
 .pytest_cache/
 .coverage
