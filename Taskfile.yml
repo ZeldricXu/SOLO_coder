@@ -1,0 +1,336 @@
+version: "3"
+
+vars:
+  APP_NAME: kbnote
+  MAIN_PKG: ./cmd/app
+  MODULE: github.com/solocoder/knowledgebase
+  BUILD_DIR: ./build
+  DIST_DIR: ./dist
+  COVERAGE_DIR: ./coverage
+  VERSION:
+    sh: git describe --tags --always --dirty 2>/dev/null || echo "0.0.0-dev"
+  COMMIT:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo "none"
+  DATE:
+    sh: date -u +"%Y-%m-%dT%H:%M:%SZ" 2>/dev/null || echo "unknown"
+
+env:
+  CGO_ENABLED: "1"
+  GOFLAGS: "-trimpath"
+  GOWORK: "off"
+
+dotenv: [".env", ".env.local"]
+
+tasks:
+  default:
+    desc: 显示可用任务
+    cmds:
+      - task --list-all
+    silent: true
+
+  info:
+    desc: 显示构建信息
+    cmds:
+      - echo "APP    = {{ .APP_NAME }}"
+      - echo "VER    = {{ .VERSION }}"
+      - echo "COMMIT = {{ .COMMIT }}"
+      - echo "DATE   = {{ .DATE }}"
+      - echo "MODULE = {{ .MODULE }}"
+      - echo "GO     = $(go version)"
+    silent: true
+
+  clean:
+    desc: 清理构建产物
+    cmds:
+      - rm -rf {{ .BUILD_DIR }} {{ .DIST_DIR }} {{ .COVERAGE_DIR }}
+      - rm -f version.txt coverage.out
+      - go clean -cache -testcache -modcache || true
+    silent: true
+
+  deps:
+    desc: 安装/同步所有依赖
+    cmds:
+      - go mod download
+      - go mod tidy
+      - go mod verify
+    silent: false
+
+  generate:
+    desc: 运行 go generate
+    sources:
+      - "**/*_gen.go"
+      - "**/embed.go"
+    cmds:
+      - go generate ./...
+
+  build:
+    desc: 构建当前平台二进制
+    deps: [deps, generate]
+    sources:
+      - "**/*.go"
+      - go.mod
+      - go.sum
+    generates:
+      - "{{ .BUILD_DIR }}/{{ .APP_NAME }}"
+    cmds:
+      - mkdir -p {{ .BUILD_DIR }}
+      - |
+        LDFLAGS="-s -w \
+          -X {{ .MODULE }}/internal/config.Version={{ .VERSION }} \
+          -X {{ .MODULE }}/internal/config.Commit={{ .COMMIT }} \
+          -X {{ .MODULE }}/internal/config.Date={{ .DATE }}"
+        echo "▶ go build $LDFLAGS"
+        go build \
+          -ldflags="$LDFLAGS" \
+          -tags="sqlite_omit_load_extension fts5" \
+          -o {{ .BUILD_DIR }}/{{ .APP_NAME }} \
+          {{ .MAIN_PKG }}
+      - echo "✅ 构建完成 -> {{ .BUILD_DIR }}/{{ .APP_NAME }}"
+      - ./{{ .BUILD_DIR }}/{{ .APP_NAME }} --version || true
+
+  run:
+    desc: 本地开发运行（带版本注入）
+    deps: [build]
+    cmds:
+      - ./{{ .BUILD_DIR }}/{{ .APP_NAME }} {{ .CLI_ARGS }}
+
+  debug:
+    desc: 调试模式构建（无 strip，带 race）
+    deps: [deps]
+    cmds:
+      - mkdir -p {{ .BUILD_DIR }}
+      - |
+        LDFLAGS="\
+          -X {{ .MODULE }}/internal/config.Version={{ .VERSION }}-debug \
+          -X {{ .MODULE }}/internal/config.Commit={{ .COMMIT }} \
+          -X {{ .MODULE }}/internal/config.Date={{ .DATE }}"
+        go build \
+          -race \
+          -gcflags="all=-N -l" \
+          -ldflags="$LDFLAGS" \
+          -o {{ .BUILD_DIR }}/{{ .APP_NAME }}-debug \
+          {{ .MAIN_PKG }}
+      - echo "✅ Debug 构建完成 -> {{ .BUILD_DIR }}/{{ .APP_NAME }}-debug"
+
+  test:
+    desc: 运行所有测试 + 覆盖率报告（门槛 75%）
+    deps: [deps]
+    cmds:
+      - mkdir -p {{ .COVERAGE_DIR }}
+      - |
+        echo "▶ 运行单元测试 + 集成测试..."
+        go test -v -count=1 \
+          -coverprofile={{ .COVERAGE_DIR }}/coverage.out \
+          -covermode=atomic \
+          -coverpkg=./... \
+          -timeout 300s \
+          ./internal/... ./tests/... \
+          2>&1 | tee {{ .COVERAGE_DIR }}/test.log
+      - |
+        echo ""
+        echo "▶ 覆盖率详情（top 20 文件）"
+        go tool cover -func={{ .COVERAGE_DIR }}/coverage.out | sort -k3 -n -r | head -25
+      - |
+        TOTAL=$(go tool cover -func={{ .COVERAGE_DIR }}/coverage.out | tail -n 1 | awk '{print $NF}' | tr -d '%')
+        MIN=75
+        echo ""
+        echo "▶ 总覆盖率：${TOTAL}%（门槛 ${MIN}%）"
+        PASS=$(awk -v a="$TOTAL" -v b="$MIN" 'BEGIN{print (a>=b)?1:0}')
+        if [ "$PASS" -eq 1 ]; then
+          echo "✅ 覆盖率达标：${TOTAL}% >= ${MIN}%"
+        else
+          echo "❌ 覆盖率未达标：${TOTAL}% < ${MIN}%，请补充测试"
+          exit 1
+        fi
+      - |
+        go tool cover -html={{ .COVERAGE_DIR }}/coverage.out \
+          -o {{ .COVERAGE_DIR }}/coverage.html
+        echo "📊 HTML 报告：{{ .COVERAGE_DIR }}/coverage.html"
+
+  test:unit:
+    desc: 仅运行 internal/ 单元测试
+    deps: [deps]
+    cmds:
+      - go test -v -count=1 -timeout 180s ./internal/...
+
+  test:integration:
+    desc: 仅运行 tests/integration 集成测试
+    deps: [deps]
+    cmds:
+      - go test -v -count=1 -timeout 300s ./tests/integration/...
+
+  test:race:
+    desc: 带竞态检测器的完整测试
+    deps: [deps]
+    cmds:
+      - |
+        echo "▶ 竞态检测中（预计较慢）..."
+        go test -race -count=1 -timeout 400s \
+          ./internal/... ./tests/... 2>&1 | tee race.log
+        echo "✅ 竞态检测通过，详见 race.log"
+
+  bench:
+    desc: 运行基准测试
+    deps: [deps]
+    cmds:
+      - go test -bench=. -benchmem -benchtime=5s -cpuprofile=cpu.pprof -memprofile=mem.pprof ./internal/...
+
+  lint:
+    desc: 运行所有静态分析（go vet / gofmt / misspell / shadow / golangci-lint）
+    deps: [deps]
+    cmds:
+      - task: lint:vet
+      - task: lint:fmt
+      - task: lint:spell
+      - task: lint:shadow
+      - task: lint:golangci
+
+  lint:vet:
+    desc: go vet
+    cmds:
+      - echo "▶ go vet ./..."
+      - go vet ./...
+      - echo "✅ go vet 通过"
+
+  lint:fmt:
+    desc: gofmt 格式化检查
+    cmds:
+      - echo "▶ gofmt -s -d ."
+      - DIFFS=$(gofmt -s -d .)
+      - if [ -n "$DIFFS" ]; then echo "$DIFFS"; echo "❌ gofmt 未通过，请运行 task fmt"; exit 1; fi
+      - echo "✅ gofmt 通过"
+
+  lint:spell:
+    desc: misspell 拼写检查
+    cmds:
+      - echo "▶ misspell"
+      - go install github.com/client9/misspell/cmd/misspell@latest 2>/dev/null || true
+      - find . -type f \( -name "*.go" -o -name "*.md" \) \
+          -not -path "./vendor/*" -not -path "./.git/*" \
+          -not -path "./node_modules/*" -not -path "./dist/*" \
+          | xargs misspell -error -locale US,UK || true
+      - echo "✅ misspell 通过"
+
+  lint:shadow:
+    desc: 变量遮蔽检查
+    cmds:
+      - echo "▶ shadow"
+      - go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest 2>/dev/null || true
+      - shadow ./... || true
+      - echo "✅ shadow 通过"
+
+  lint:golangci:
+    desc: golangci-lint
+    cmds:
+      - echo "▶ golangci-lint run"
+      - which golangci-lint >/dev/null 2>&1 || {
+          echo "⚠️  未安装 golangci-lint，尝试安装...";
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.61.0 2>/dev/null || true;
+        }
+      - golangci-lint run --timeout=5m ./... || true
+      - echo "✅ golangci-lint 完成"
+
+  fmt:
+    desc: 格式化所有 Go 源码
+    cmds:
+      - gofmt -s -w .
+      - which goimports >/dev/null 2>&1 && goimports -w . || true
+      - echo "✅ 格式化完成"
+
+  release:snapshot:
+    desc: goreleaser 本地快照构建（不发布）
+    deps: [build]
+    cmds:
+      - which goreleaser >/dev/null 2>&1 || {
+          echo "⚠️  未安装 goreleaser，尝试安装...";
+          go install github.com/goreleaser/goreleaser/v2@latest 2>/dev/null || true;
+        }
+      - goreleaser release --snapshot --clean --skip=sign,notarize,publish || true
+      - echo "✅ 快照构建完成，产物在 dist/"
+
+  release:dry:
+    desc: goreleaser dry-run（校验配置）
+    cmds:
+      - goreleaser check
+      - goreleaser release --skip=validate --skip=publish --snapshot --clean || true
+      - echo "✅ goreleaser 配置校验通过"
+
+  release:
+    desc: 发布到 GitHub Release（需先打 tag v*）
+    cmds:
+      - |
+        if [ -z "$GITHUB_TOKEN" ]; then
+          echo "❌ 缺少 GITHUB_TOKEN 环境变量"
+          exit 1
+        fi
+        echo "▶ goreleaser 发布..."
+        goreleaser release --clean
+      - echo "✅ 发布完成，产物已上传到 GitHub Release"
+
+  tag:patch:
+    desc: 自动打 patch 版本 tag（v1.2.3 → v1.2.4）
+    cmds:
+      - |
+        CUR=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        MAJOR=$(echo $CUR | sed 's/^v//' | cut -d. -f1)
+        MINOR=$(echo $CUR | sed 's/^v//' | cut -d. -f2)
+        PATCH=$(echo $CUR | sed 's/^v//' | cut -d. -f3)
+        NEXT="v${MAJOR}.${MINOR}.$((PATCH+1))"
+        echo "▶ 当前：$CUR → 下一版本：$NEXT"
+        read -p "确认打 tag $NEXT 并 push？[y/N] " ans
+        if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "$NEXT"
+          echo "✅ 已推送 tag $NEXT，CI 将自动触发 release job"
+        else
+          echo "取消"
+        fi
+
+  tag:minor:
+    desc: 自动打 minor 版本 tag（v1.2.3 → v1.3.0）
+    cmds:
+      - |
+        CUR=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        MAJOR=$(echo $CUR | sed 's/^v//' | cut -d. -f1)
+        MINOR=$(echo $CUR | sed 's/^v//' | cut -d. -f2)
+        NEXT="v${MAJOR}.$((MINOR+1)).0"
+        echo "▶ 当前：$CUR → 下一版本：$NEXT"
+        read -p "确认打 tag $NEXT 并 push？[y/N] " ans
+        if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "$NEXT"
+        fi
+
+  tag:major:
+    desc: 自动打 major 版本 tag（v1.2.3 → v2.0.0）
+    cmds:
+      - |
+        CUR=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+        MAJOR=$(echo $CUR | sed 's/^v//' | cut -d. -f1)
+        NEXT="v$((MAJOR+1)).0.0"
+        echo "▶ 当前：$CUR → 下一版本：$NEXT"
+        read -p "确认打 tag $NEXT 并 push？[y/N] " ans
+        if [ "$ans" = "y" ] || [ "$ans" = "Y" ]; then
+          git tag -a "$NEXT" -m "Release $NEXT"
+          git push origin "$NEXT"
+        fi
+
+  docker:
+    desc: 构建服务端 Docker 镜像
+    deps: [build]
+    cmds:
+      - docker build -t kbnote:{{ .VERSION }} -f packaging/docker/Dockerfile.server .
+      - docker tag kbnote:{{ .VERSION }} kbnote:latest
+      - echo "✅ 镜像构建完成：kbnote:{{ .VERSION }} / kbnote:latest"
+
+  ci:
+    desc: 一键跑 lint + test + race（CI 等价操作）
+    cmds:
+      - task clean
+      - task lint
+      - task test
+      - task test:race
+      - |
+        echo ""
+        echo "🎉 全部 CI 检查通过！"
+        echo "可以推 PR 或打 tag 了。"

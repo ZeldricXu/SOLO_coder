@@ -1,0 +1,351 @@
+project_name: kbnote
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+    - go generate ./...
+
+builds:
+  - id: kbnote
+    main: ./cmd/app
+    binary: kbnote
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    goarm:
+      - "7"
+    ignore:
+      - goos: darwin
+        goarch: arm
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    env:
+      - CGO_ENABLED=1
+    overrides:
+      - goos: linux
+        goarch: amd64
+        env:
+          - CC=x86_64-linux-gnu-gcc
+          - CXX=x86_64-linux-gnu-g++
+      - goos: linux
+        goarch: arm64
+        env:
+          - CC=aarch64-linux-gnu-gcc
+          - CXX=aarch64-linux-gnu-g++
+      - goos: darwin
+        goarch: amd64
+        env:
+          - CC=o64-clang
+          - CXX=o64-clang++
+      - goos: darwin
+        goarch: arm64
+        env:
+          - CC=aarch64-apple-darwin24-clang
+          - CXX=aarch64-apple-darwin24-clang++
+      - goos: windows
+        goarch: amd64
+        env:
+          - CC=x86_64-w64-mingw32-gcc
+          - CXX=x86_64-w64-mingw32-g++
+    flags:
+      - -trimpath
+      - -buildvcs=true
+    ldflags:
+      - -s
+      - -w
+      - -X github.com/solocoder/knowledgebase/internal/config.Version={{ .Version }}
+      - -X github.com/solocoder/knowledgebase/internal/config.Commit={{ .FullCommit }}
+      - -X github.com/solocoder/knowledgebase/internal/config.Date={{ .CommitDate }}
+    tags:
+      - sqlite_omit_load_extension
+      - fts5
+
+archives:
+  - id: archive
+    builds: [kbnote]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    format_overrides:
+      - goos: windows
+        format: zip
+      - goos: darwin
+        format: zip
+    files:
+      - LICENSE*
+      - README*
+      - CHANGELOG*
+      - docs/*.md
+      - examples/**/*
+
+checksum:
+  name_template: "checksums.txt"
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next.{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  use: github
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^ci:"
+      - "^chore:"
+  groups:
+    - title: Features
+      regexp: "^.*feat[(\\w)]*:+.*$"
+      order: 0
+    - title: Bug Fixes
+      regexp: "^.*fix[(\\w)]*:+.*$"
+      order: 1
+    - title: Performance
+      regexp: "^.*perf[(\\w)]*:+.*$"
+      order: 2
+    - title: Breaking Changes
+      regexp: "^.*breaking[(\\w)]*:+.*$"
+      order: 3
+    - title: Others
+      order: 999
+
+release:
+  github:
+    owner: solocoder
+    name: knowledgebase
+  prerelease: auto
+  mode: append
+  header: |
+    # KB Note {{ .Tag }} 发布
+
+    感谢所有贡献者！安装说明见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+
+  footer: |
+    ## SHA256 Checksums
+    ```
+    {{ range .Artifacts }}
+    {{- if eq .Type "Checksum" }}
+    {{ .Extra.Checksum }}
+    {{- end }}
+    {{- end }}
+    ```
+    ---
+    自动化构建 @ {{ .Now }}
+
+nfpms:
+  - id: deb
+    builds: [kbnote]
+    package_name: kbnote
+    file_name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
+    vendor: KB Note Project
+    homepage: https://github.com/solocoder/knowledgebase
+    maintainer: KB Note Team <kbnote@solocoder.dev>
+    description: |
+      本地优先的个人知识库桌面应用。
+      Markdown 编辑器 · 双向链接图谱 · 全文检索 · 标签文件夹 ·
+      文件监听 · 多格式导出 · 每日笔记 · 插件系统
+    license: MIT
+    formats:
+      - deb
+      - rpm
+      - apk
+      - archlinux
+    priority: optional
+    section: editors
+    bindir: /usr/bin
+    contents:
+      - src: packaging/linux/kbnote.desktop
+        dst: /usr/share/applications/kbnote.desktop
+      - src: packaging/linux/kbnote-mime.xml
+        dst: /usr/share/mime/packages/kbnote.xml
+      - src: packaging/icons/16x16.png
+        dst: /usr/share/icons/hicolor/16x16/apps/kbnote.png
+      - src: packaging/icons/32x32.png
+        dst: /usr/share/icons/hicolor/32x32/apps/kbnote.png
+      - src: packaging/icons/48x48.png
+        dst: /usr/share/icons/hicolor/48x48/apps/kbnote.png
+      - src: packaging/icons/64x64.png
+        dst: /usr/share/icons/hicolor/64x64/apps/kbnote.png
+      - src: packaging/icons/128x128.png
+        dst: /usr/share/icons/hicolor/128x128/apps/kbnote.png
+      - src: packaging/icons/256x256.png
+        dst: /usr/share/icons/hicolor/256x256/apps/kbnote.png
+      - src: packaging/icons/512x512.png
+        dst: /usr/share/icons/hicolor/512x512/apps/kbnote.png
+    scripts:
+      postinstall: packaging/linux/postinst.sh
+      preremove: packaging/linux/prerm.sh
+    deb:
+      lintian_overrides:
+        - statically-linked-binary
+        - changelog-file-missing-in-native-package
+        - embedded-library
+    rpm:
+      compression: lzma
+    apk:
+      signature:
+        key_name: "kb@note.dev"
+
+appimage:
+  - id: kbnote-appimage
+    builds: [kbnote]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}.AppImage
+    id: kbnote.AppDir
+    no_desktop_entry: false
+    section: editors
+    categories:
+      - Office
+      - Utility
+      - Productivity
+    icon: packaging/icons/512x512.png
+
+msi:
+  - id: kbnote-msi
+    builds: [kbnote]
+    name_template: >-
+      {{ .ProjectName }}-{{ .Version }}-{{ .Arch }}
+    vendor: KB Note Project
+    product_name: KB Note Desktop
+    upgrade_code: "B591E5A0-3F55-4B8A-9B7F-0A0D6C6C9F10"
+    files:
+      - matches:
+          - "{{ .ProjectName }}.exe"
+    short_name: kbnote
+    author: KB Note Team
+    comments: 本地优先的个人知识库桌面应用
+    contact: kbnote@solocoder.dev
+    description: |
+      本地优先的个人知识库桌面应用。
+      Markdown 编辑器 · 双向链接图谱 · 全文检索 · 标签文件夹。
+    add_to_path: true
+    shortcuts:
+      - name: KB Note
+        icon: packaging/windows/app.ico
+        executable: kbnote.exe
+        description: 启动 KB Note 桌面应用
+        desktop: true
+        start_menu: true
+    feature_tree:
+      - id: kbnote_core
+        title: KB Note
+        description: 核心组件
+        features:
+          - id: markdown_support
+            title: Markdown 编辑器
+            description: 所见即所得 + 源码模式双编辑器
+            allow_absent: false
+          - id: fulltext_search
+            title: 全文检索引擎
+            description: BM25 + 语义向量混合搜索
+            allow_absent: false
+    wxs_extra: |
+      <SetProperty Id="ARPHELPLINK" Value="https://github.com/solocoder/knowledgebase/issues" />
+      <SetProperty Id="ARPURLINFOABOUT" Value="https://github.com/solocoder/knowledgebase" />
+
+kos:
+  - id: macos-bundle
+    builds: [kbnote]
+    ids: [kbnote]
+    product_name: KB Note
+    bundle_id: dev.solocoder.kbnote
+    icon_path: packaging/macos/AppIcon.appiconset
+    name_template: >-
+      {{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}
+    replace: true
+    entitlements: packaging/macos/kbnote.entitlements
+    deep_sign: true
+    signature:
+      identity: "Developer ID Application"
+      notarize:
+        issuer_id: "${APPLE_ISSUER_ID}"
+        key_id: "${APPLE_KEY_ID}"
+        key: "${APPLE_API_KEY}"
+    info_plist:
+      CFBundleName: KB Note
+      CFBundleDisplayName: KB Note
+      CFBundleShortVersionString: "{{ .Version }}"
+      CFBundleVersion: "{{ .Version }}"
+      CFBundleExecutable: kbnote
+      CFBundleIdentifier: dev.solocoder.kbnote
+      CFBundlePackageType: APPL
+      CFBundleIconFile: AppIcon
+      NSHumanReadableCopyright: "© 2025 KB Note Project. MIT License."
+      NSHighResolutionCapable: true
+      NSSupportsAutomaticGraphicsSwitching: true
+      NSSupportsAutomaticTermination: true
+      NSSupportsSuddenTermination: true
+      LSApplicationCategoryType: public.app-category.productivity
+      LSMinimumSystemVersion: "12.0"
+      CFBundleDocumentTypes:
+        - CFBundleTypeName: Markdown Document
+          CFBundleTypeRole: Editor
+          LSHandlerRank: Owner
+          LSItemContentTypes:
+            - net.daringfireball.markdown
+            - public.plain-text
+          CFBundleTypeExtensions:
+            - md
+            - markdown
+            - txt
+    contents:
+      - src: packaging/macos/README.html
+        dst: Resources/README.html
+
+dockers:
+  - id: docker-server
+    image_templates:
+      - "ghcr.io/solocoder/kbnote:{{ .Version }}-server"
+      - "ghcr.io/solocoder/kbnote:latest-server"
+    dockerfile: packaging/docker/Dockerfile.server
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.created={{.Date}}"
+      - "--label=org.opencontainers.image.title={{.ProjectName}}"
+      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
+      - "--label=org.opencontainers.image.version={{.Version}}"
+    push_flags:
+      - "--tls-verify=false"
+
+brews:
+  - id: homebrew
+    name: kbnote
+    repository:
+      owner: solocoder
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_GITHUB_TOKEN }}"
+    directory: Formula
+    caveats: |
+      启动：
+        open /Applications/KB\\ Note.app
+      或命令行：
+        kbnote --help
+    homepage: "https://github.com/solocoder/knowledgebase"
+    description: "本地优先的个人知识库桌面应用（Markdown 编辑器 / 双向图谱 / 全文检索）"
+    license: "MIT"
+    test: |
+      system "#{bin}/kbnote --version"
+
+scoops:
+  - id: scoop
+    name: kbnote
+    repository:
+      owner: solocoder
+      name: scoop-bucket
+      token: "{{ .Env.SCOOP_GITHUB_TOKEN }}"
+    directory: bucket
+    homepage: "https://github.com/solocoder/knowledgebase"
+    description: "本地优先的个人知识库桌面应用（Markdown 编辑器 / 双向图谱 / 全文检索）"
+    license: "MIT"
+    checkver:
+      use: github
+
+publishers:
+  - name: update-version-file
+    cmd: |
+      sh -c 'echo "VERSION={{ .Version }}" > version.txt && echo "COMMIT={{ .FullCommit }}" >> version.txt'

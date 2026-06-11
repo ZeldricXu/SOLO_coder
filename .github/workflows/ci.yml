@@ -1,0 +1,423 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+    tags:
+      - "v*.*.*"
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.25"
+  NODE_VERSION: "20"
+  CGO_ENABLED: "1"
+  MIN_COVERAGE: "75"
+
+jobs:
+  lint:
+    name: Lint (golangci-lint / go vet / misspell)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            **/go.sum
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libsqlite3-dev \
+            build-essential \
+            xvfb \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-sync1 \
+            libxcb-xinerama0 \
+            libxcb-xkb1 \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            xauth \
+            x11-xkb-utils
+
+      - name: 安装 golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+          skip-pkg-cache: true
+          skip-build-cache: true
+
+      - name: 安装 misspell
+        run: go install github.com/client9/misspell/cmd/misspell@latest
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: misspell 检查
+        run: |
+          echo "=== misspell ==="
+          find . -type f \( -name "*.go" -o -name "*.md" \) \
+            -not -path "./vendor/*" \
+            -not -path "./.git/*" \
+            -not -path "./node_modules/*" \
+            -not -path "./dist/*" \
+            | xargs misspell -error -locale US,UK
+
+      - name: gofmt 检查
+        run: |
+          echo "=== gofmt ==="
+          diffs=$(gofmt -s -d .)
+          if [ -n "$diffs" ]; then
+            echo "❌ 以下文件未通过 gofmt 检查："
+            echo "$diffs"
+            exit 1
+          fi
+          echo "✅ gofmt 通过"
+
+      - name: 检查 go mod tidy
+        run: |
+          cp go.sum go.sum.bak
+          go mod tidy
+          if ! diff -q go.sum.bak go.sum >/dev/null 2>&1; then
+            echo "❌ go.sum 与 go mod tidy 结果不一致，请运行 go mod tidy"
+            diff go.sum.bak go.sum
+            exit 1
+          fi
+          echo "✅ go mod tidy 通过"
+
+      - name: 静态分析（shadow）
+        run: |
+          go install golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow@latest
+          shadow ./...
+
+  test:
+    name: Test ${{ matrix.os }} (${{ matrix.arch }})
+    needs: lint
+    runs-on: ${{ matrix.image }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: "linux"
+            arch: "amd64"
+            image: "ubuntu-latest"
+          - os: "darwin"
+            arch: "arm64"
+            image: "macos-15"
+          - os: "darwin"
+            arch: "amd64"
+            image: "macos-13"
+          - os: "windows"
+            arch: "amd64"
+            image: "windows-latest"
+
+    env:
+      GOOS: ${{ matrix.os }}
+      GOARCH: ${{ matrix.arch }}
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          check-latest: true
+          cache: true
+
+      - name: (Linux) 安装系统依赖 + Xvfb
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            libsqlite3-dev \
+            xvfb \
+            xauth \
+            libgl1-mesa-dev \
+            libegl1-mesa-dev \
+            libxkbcommon-x11-0 \
+            libxcb-icccm4 \
+            libxcb-image0 \
+            libxcb-keysyms1 \
+            libxcb-randr0 \
+            libxcb-render-util0 \
+            libxcb-shape0 \
+            libxcb-sync1 \
+            libxcb-xinerama0 \
+            libxcb-xkb1
+
+      - name: (macOS) 安装系统依赖
+        if: runner.os == 'macOS'
+        run: |
+          brew install sqlite pkg-config
+
+      - name: (Windows) 安装编译链
+        if: runner.os == 'Windows'
+        run: |
+          choco install --no-progress -y mingw sqlite
+          echo "CC=x86_64-w64-mingw32-gcc" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: 构建
+        run: go build -v ./...
+
+      - name: (Linux) 启动 Xvfb 做 GUI 测试
+        if: runner.os == 'Linux'
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 -ac +extension GLX +render -noreset &
+          sleep 2
+          echo "DISPLAY=:99.0" >> $GITHUB_ENV
+          echo "GDK_BACKEND=x11" >> $GITHUB_ENV
+          echo "QT_QPA_PLATFORM=offscreen" >> $GITHUB_ENV
+
+      - name: (Linux) 运行所有测试（含 SQLite 集成 + GUI）
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p coverage
+          go test -v -count=1 \
+            -coverprofile=coverage/coverage.out \
+            -covermode=atomic \
+            -coverpkg=./... \
+            -timeout 300s \
+            ./internal/... ./tests/...
+        env:
+          DISPLAY: :99.0
+          GDK_BACKEND: x11
+          QT_QPA_PLATFORM: offscreen
+
+      - name: (macOS) 运行测试
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p coverage
+          go test -v -count=1 \
+            -coverprofile=coverage/coverage.out \
+            -covermode=atomic \
+            -coverpkg=./... \
+            -timeout 300s \
+            ./internal/... ./tests/...
+
+      - name: (Windows) 运行测试
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path coverage -Force
+          go test -v -count=1 `
+            -coverprofile=coverage/coverage.out `
+            -covermode=atomic `
+            -coverpkg=./... `
+            -timeout 300s `
+            ./internal/... ./tests/...
+
+      - name: 汇总覆盖率
+        if: runner.os == 'Linux'
+        id: coverage
+        run: |
+          go tool cover -func=coverage/coverage.out | tee coverage/coverage.func
+          total=$(go tool cover -func=coverage/coverage.out | tail -n 1 | awk '{print $NF}' | tr -d '%')
+          echo "total_coverage=$total" >> $GITHUB_OUTPUT
+          echo "总覆盖率：${total}%"
+
+      - name: 覆盖率门槛校验
+        if: runner.os == 'Linux'
+        run: |
+          total="${{ steps.coverage.outputs.total_coverage }}"
+          min="${{ env.MIN_COVERAGE }}"
+          if [ -z "$total" ]; then
+            echo "❌ 无法读取覆盖率"
+            exit 1
+          fi
+          pass=$(awk -v a="$total" -v b="$min" 'BEGIN{print (a>=b)?1:0}')
+          if [ "$pass" -eq 1 ]; then
+            echo "✅ 覆盖率 ${total}% >= 门槛 ${min}%"
+          else
+            echo "❌ 覆盖率 ${total}% < 门槛 ${min}%，请补充测试"
+            exit 1
+          fi
+
+      - name: 上传覆盖率工件
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.os }}-${{ matrix.arch }}
+          path: coverage/
+          retention-days: 30
+
+      - name: 上传测试日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlog-${{ matrix.os }}-${{ matrix.arch }}
+          path: "*.log"
+          if-no-files-found: ignore
+          retention-days: 7
+
+  race:
+    name: Race Detector
+    needs: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential libsqlite3-dev xvfb libgl1-mesa-dev libegl1-mesa-dev
+
+      - name: 启动 Xvfb
+        run: |
+          Xvfb :99 -screen 0 1920x1080x24 &
+          sleep 2
+
+      - name: 竞态检测
+        run: |
+          go test -race -count=1 -timeout 400s ./internal/... ./tests/...
+        env:
+          DISPLAY: :99.0
+          QT_QPA_PLATFORM: offscreen
+
+  release:
+    name: Release & Publish
+    needs: [test, race]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: macos-14
+    permissions:
+      contents: write
+      packages: write
+      issues: write
+    timeout-minutes: 120
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          submodules: recursive
+
+      - name: 安装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: 安装多平台交叉编译链
+        run: |
+          brew install \
+            go-task \
+            mingw-w64 \
+            filosottile/musl-cross/musl-cross \
+            goreleaser \
+            wget \
+            curl
+
+      - name: macOS 签名环境
+        if: vars.MACOS_SIGN_ENABLED == 'true'
+        run: |
+          echo "${{ secrets.MACOS_P12_CERT }}" | base64 -d > /tmp/cert.p12
+          security create-keychain -p "${{ secrets.KEYCHAIN_PWD }}" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PWD }}" build.keychain
+          security import /tmp/cert.p12 -k build.keychain -P "${{ secrets.MACOS_CERT_PWD }}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${{ secrets.KEYCHAIN_PWD }}" build.keychain
+
+      - name: 登录 GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建打包资源目录
+        run: |
+          mkdir -p packaging/linux packaging/windows packaging/macos packaging/docker packaging/icons/16x16 packaging/icons/32x32 packaging/icons/48x48 packaging/icons/64x64 packaging/icons/128x128 packaging/icons/256x256 packaging/icons/512x512
+          echo "[Desktop Entry]" > packaging/linux/kbnote.desktop
+          cat >> packaging/linux/kbnote.desktop <<'EOF'
+          Type=Application
+          Name=KB Note
+          Comment=本地优先的个人知识库桌面应用
+          Exec=kbnote %U
+          Icon=kbnote
+          Terminal=false
+          Categories=Office;Productivity;Utility;
+          MimeType=text/markdown;text/plain;application/x-kbnote;
+          Keywords=markdown;knowledge;note;
+          StartupNotify=true
+          StartupWMClass=kbnote
+          EOF
+
+      - name: 运行 GoReleaser
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean --timeout 90m
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_ISSUER_ID: ${{ secrets.APPLE_ISSUER_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          HOMEBREW_TAP_GITHUB_TOKEN: ${{ secrets.HOMEBREW_TAP_GITHUB_TOKEN }}
+          SCOOP_GITHUB_TOKEN: ${{ secrets.SCOOP_GITHUB_TOKEN }}
+
+      - name: 上传发布日志
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-artifacts
+          path: dist/
+          retention-days: 90
+
+  notify:
+    name: 构建通知
+    needs: [lint, test, race, release]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 汇总
+        run: |
+          echo "CI 完成："
+          echo "  lint:   ${{ needs.lint.result }}"
+          echo "  test:   ${{ needs.test.result }}"
+          echo "  race:   ${{ needs.race.result }}"
+          echo "  release:${{ needs.release.result }}"

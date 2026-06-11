@@ -1,0 +1,166 @@
+# ============================================================
+# KB Note 配置文件 - 模板
+# ------------------------------------------------------------
+# 首次运行时自动复制到：
+#   Linux/macOS: ~/.config/kbnote/config.toml
+#   Windows:     %APPDATA%\kbnote\config.toml
+#
+# 使用自定义路径：
+#   kbnote --config /path/to/your/config.toml
+#
+# 修改后需重启应用生效，或在设置界面点击「重载配置」。
+# ============================================================
+
+# ============================================================
+# 【1】核心路径配置
+# ============================================================
+
+# 知识库目录（Markdown 文件的根路径）
+vault_path = "~/KnowledgeVault"
+
+# SQLite 数据库（笔记元数据、标签、文件夹、双向链接）
+db_path = "~/.local/share/kbnote/index.db"
+
+# 旧版 SQLite 搜索索引路径（保留用于向后兼容）
+index_path = "~/.local/share/kbnote/search_index"
+
+# 插件目录
+plugin_path = "~/.local/share/kbnote/plugins"
+
+# 笔记模板目录（每日笔记、会议、复盘、卡片等 EJS 模板）
+template_path = "~/.local/share/kbnote/templates"
+
+# 每日笔记目录（相对 vault_path 的子路径）
+daily_note_path = "~/KnowledgeVault/Daily"
+
+
+# ============================================================
+# 【2】全文检索
+# ============================================================
+
+[search]
+# BM25 参数（一般不用调）
+bm25_k1   = 1.5
+bm25_b    = 0.75
+
+# 中文分词（CJK = Chinese/Japanese/Korean）
+use_cjk   = true
+
+# 语义向量搜索（需本地 Ollama + bge-small-zh-v1.5 模型）
+enable_semantic  = true
+ollama_base_url  = "http://localhost:11434"
+embedding_model  = "bge-small-zh-v1.5"
+
+# 向量索引 JSON 文件路径
+vector_index_path = "~/.local/share/kbnote/vectors.json"
+
+# 混合排序权重（BM25 0.6 + 向量 0.4）
+bm25_weight       = 0.6
+vector_weight     = 0.4
+
+# 磁盘倒排索引目录（WAL+MemTable+B+树风格文件结构）
+index_path        = "~/.local/share/kbnote/disk_index"
+
+
+# ============================================================
+# 【3】双向链接图谱
+# ============================================================
+
+[graph]
+# 节点尺寸范围（像素）
+node_min_size      = 10
+node_max_size      = 50
+
+# 力学模拟参数
+repulsive_force    = 200   # 节点间斥力（越大越分散）
+attractive_force   = 5     # 边吸引力（越大越紧凑）
+
+
+# ============================================================
+# 【4】Markdown 编辑器
+# ============================================================
+
+[editor]
+# 默认模式：wysiwyg(所见即所得) / source(源码模式)
+default_mode       = "wysiwyg"
+
+# 自动保存
+auto_save          = true
+auto_save_interval = 30     # 秒
+
+# 字体（优先前几个不支持时依次回退）
+font_family        = "JetBrains Mono, Menlo, Consolas, monospace"
+font_size          = 15
+
+# 制表符宽度（空格数）
+tab_width          = 4
+
+# 行号 / 自动换行
+line_numbers       = true
+word_wrap          = true
+
+
+# ============================================================
+# 【5】主题配色
+# ============================================================
+
+[theme]
+# 主题预设：github-dark / github-light / dracula / solarized-dark / solarized-light / nord / monokai / tokyo-night
+name               = "github-dark"
+
+# 配色方案：dark / light / auto（跟随系统）
+color_scheme       = "dark"
+
+# 强调色（链接、选中、按钮主色）
+accent_color       = "#3b82f6"
+
+# 基础色（一般不用改）
+bg_color           = "#0d1117"
+text_color         = "#e6edf3"
+border_color       = "#30363d"
+sidebar_bg_color   = "#010409"
+sidebar_text_color = "#c9d1d9"
+
+
+# ============================================================
+# 【6】本地 API 服务（可选）
+# ============================================================
+
+[server]
+# 只绑定本地回环，不暴露到公网
+host               = "127.0.0.1"
+port               = 58765
+
+
+# ============================================================
+# 【7】UI 交互
+# ============================================================
+
+[ui]
+# 侧栏宽度（像素）
+sidebar_width      = 280
+
+# 启动时默认显示的面板：editor / graph / search / tags / calendar
+initial_view       = "editor"
+
+# 窗口尺寸
+window_width       = 1280
+window_height      = 820
+
+# 界面语言：zh-CN / en-US / ja-JP
+language           = "zh-CN"
+
+# 顶栏 / 状态栏
+show_status_bar    = true
+show_toolbar       = true
+
+
+# ============================================================
+# 说明
+# ============================================================
+#
+# - 所有路径支持 ~/ 代表用户主目录
+# - 相对路径会解析为相对于 kbnote 可执行文件的目录
+# - 修改配置后可用 kbnote --config 新路径 验证
+# - 每日备份建议：~/.local/share/kbnote/  整个目录
+#
