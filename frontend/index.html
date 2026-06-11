@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>城市交通流量三维可视化平台</title>
+    <link href="https://cdn.jsdelivr.net/npm/cesium@1.114.0/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="cesiumContainer"></div>
+
+    <div id="controlPanel" class="control-panel">
+        <div class="panel-header">
+            <h3>交通流量热力图</h3>
+            <button id="togglePanel" class="btn-toggle">-</button>
+        </div>
+
+        <div class="panel-content">
+            <div class="control-section">
+                <label>数据类型</label>
+                <select id="dataType">
+                    <option value="vehicle">车辆流量</option>
+                    <option value="pedestrian">人流量</option>
+                    <option value="congestion">拥堵指数</option>
+                </select>
+            </div>
+
+            <div class="control-section">
+                <label>车辆类型</label>
+                <select id="vehicleType">
+                    <option value="all">全部</option>
+                    <option value="car">小汽车</option>
+                    <option value="bus">公交车</option>
+                    <option value="truck">货车</option>
+                    <option value="motorcycle">摩托车</option>
+                </select>
+            </div>
+
+            <div class="control-section">
+                <label>时间轴</label>
+                <div class="time-controls">
+                    <button id="playBtn" class="btn">▶ 播放</button>
+                    <button id="pauseBtn" class="btn">⏸ 暂停</button>
+                    <button id="resetBtn" class="btn">⟲ 重置</button>
+                </div>
+                <input type="range" id="timeSlider" min="0" max="100" value="100">
+                <div class="time-display">
+                    <span id="currentTime">--:--:--</span>
+                    <span id="speedDisplay">1x</span>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <label>播放速度</label>
+                <select id="playSpeed">
+                    <option value="1">1x</option>
+                    <option value="2">2x</option>
+                    <option value="5">5x</option>
+                    <option value="10">10x</option>
+                </select>
+            </div>
+
+            <div class="control-section">
+                <label>图层控制</label>
+                <div class="layer-list">
+                    <label class="layer-item">
+                        <input type="checkbox" id="layerBuildings" checked> 建筑白模
+                    </label>
+                    <label class="layer-item">
+                        <input type="checkbox" id="layerRoads" checked> 道路网络
+                    </label>
+                    <label class="layer-item">
+                        <input type="checkbox" id="layerPOIs" checked> POI标注
+                    </label>
+                    <label class="layer-item">
+                        <input type="checkbox" id="layerHeatmap" checked> 热力图
+                    </label>
+                    <label class="layer-item">
+                        <input type="checkbox" id="layerSensors"> 传感器
+                    </label>
+                    <label class="layer-item">
+                        <input type="checkbox" id="layerPrediction"> 预测预警
+                    </label>
+                </div>
+            </div>
+
+            <div class="control-section">
+                <label>分析功能</label>
+                <div class="analysis-buttons">
+                    <button class="btn btn-analysis" data-mode="od">OD分析</button>
+                    <button class="btn btn-analysis" data-mode="congestion">拥堵溯源</button>
+                    <button class="btn btn-analysis" data-mode="signal">信号模拟</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="infoPanel" class="info-panel">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value" id="statVehicles">0</div>
+                <div class="stat-label">车流量(辆/h)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statPedestrians">0</div>
+                <div class="stat-label">人流量(人/h)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statCongestion">0</div>
+                <div class="stat-label">平均拥堵指数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="statSpeed">0</div>
+                <div class="stat-label">平均车速(km/h)</div>
+            </div>
+        </div>
+    </div>
+
+    <div id="legend" class="legend">
+        <div class="legend-title">热力图图例</div>
+        <div class="legend-gradient"></div>
+        <div class="legend-labels">
+            <span>低</span>
+            <span>高</span>
+        </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="loading-content">
+            <div class="spinner"></div>
+            <p>正在加载三维场景...</p>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/cesium@1.114.0/Build/Cesium/Cesium.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
