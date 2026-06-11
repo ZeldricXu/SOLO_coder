@@ -1,0 +1,5 @@
+# SPA 路由回退
+/*    /index.html   200
+
+# API 代理到信令服务器
+/api/*    http://localhost:8787/:splat    200

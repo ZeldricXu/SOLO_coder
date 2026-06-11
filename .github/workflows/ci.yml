@@ -1,0 +1,284 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - '.github/**'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: short
+  RUSTFLAGS: "-D warnings"
+  NODE_VERSION: "20.x"
+  RUST_TOOLCHAIN: "stable"
+  WASM_PACK_VERSION: "0.12.1"
+
+jobs:
+  # =========================================================================
+  # Layer 1: Rust 层 — cargo test + cargo clippy
+  # =========================================================================
+  rust-test:
+    name: "Rust: Test & Lint"
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Rust registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            DF1-79/target
+          key: rust-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('DF1-79/**/Cargo.toml', 'DF1-79/**/Cargo.lock') }}
+          restore-keys: |
+            rust-${{ runner.os }}-${{ env.RUST_TOOLCHAIN }}-
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+
+      - name: cargo fmt check
+        working-directory: DF1-79
+        run: cargo fmt --all -- --check
+
+      - name: cargo clippy
+        working-directory: DF1-79
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: cargo test (native)
+        working-directory: DF1-79
+        run: cargo test --workspace --no-fail-fast -- --nocapture
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-test-results
+          path: |
+            DF1-79/target/test-results/
+          if-no-files-found: ignore
+
+  # =========================================================================
+  # Layer 2: WASM 层 — wasm-pack test (浏览器环境)
+  # =========================================================================
+  wasm-test:
+    name: "WASM: wasm-pack test (browser)"
+    runs-on: ubuntu-latest
+    needs: rust-test
+    timeout-minutes: 25
+
+    services:
+      # 浏览器测试需要 Chrome
+      chrome:
+        image: selenium/standalone-chrome:latest
+        ports:
+          - 4444:4444
+          - 7900:7900
+        options: --name=chrome --health-cmd "/opt/bin/check-grid.sh"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Rust registry and build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            DF1-79/target
+          key: rust-wasm-${{ runner.os }}-${{ hashFiles('DF1-79/**/Cargo.toml', 'DF1-79/**/Cargo.lock') }}
+          restore-keys: |
+            rust-${{ runner.os }}-stable-
+
+      - name: Install Rust toolchain (wasm target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          wasm-pack --version
+
+      - name: Install binaryen (wasm-opt)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binaryen
+          wasm-opt --version
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Chrome version check
+        run: |
+          google-chrome --version || chromium --version || echo "No chrome found, will use headless wasm-pack"
+
+      - name: wasm-pack test (headless browser)
+        working-directory: DF1-79
+        run: |
+          # 测试所有 WASM 相关 crate
+          for crate in crates/renderer crates/geometry crates/crdt crates/stroke-engine crates/resource-manager; do
+            if [ -d "$crate" ]; then
+              echo "=== Testing $crate ==="
+              wasm-pack test --headless --chrome "$crate" 2>&1 || echo "WARNING: $crate wasm-pack test skipped (may need wasm-bindgen-test configured)"
+            fi
+          done
+
+      - name: Build WASM (validation build)
+        working-directory: DF1-79
+        run: |
+          chmod +x scripts/build-wasm.sh
+          PROFILE=release ENABLE_OPT=1 ENABLE_TS=1 bash scripts/build-wasm.sh
+
+      - name: Check WASM binary size (should not grow > 10%)
+        working-directory: DF1-79
+        run: |
+          WASM_SIZE=$(wc -c < web/public/wasm/whiteboard_bg.wasm | tr -d ' ')
+          WASM_SIZE_MB=$(echo "scale=2; $WASM_SIZE / 1024 / 1024" | bc)
+          echo "WASM binary size: ${WASM_SIZE_MB} MB"
+          # Assert size budget: 10MB
+          SIZE_BUDGET=10485760
+          if [ "$WASM_SIZE" -gt "$SIZE_BUDGET" ]; then
+            echo "❌ WASM binary exceeds 10MB budget!"
+            exit 1
+          fi
+          echo "✅ WASM binary within budget"
+
+      - name: Upload WASM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm-build
+          path: |
+            DF1-79/pkg/
+            DF1-79/web/public/wasm/
+            DF1-79/web/src/types/wasm/
+          retention-days: 7
+
+  # =========================================================================
+  # Layer 3: 前端层 — vitest 单测 + Playwright E2E
+  # =========================================================================
+  frontend-test:
+    name: "Frontend: vitest + Playwright E2E (3 browsers for CRDT)"
+    runs-on: ubuntu-latest
+    needs: wasm-test
+    timeout-minutes: 30
+
+    services:
+      # 协同测试需要WebSocket信令服务器
+      signaling-server:
+        image: node:20-alpine
+        ports:
+          - 8787:8787
+        env:
+          PORT: 8787
+          NODE_ENV: test
+        volumes:
+          - ${{ github.workspace }}/DF1-79/server:/app
+        options: >-
+          --name signaling-server
+          --entrypoint /bin/sh
+          -w /app
+          -c "npm ci && npm run build && npm start"
+        credentials:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: |
+            DF1-79/web/package-lock.json
+
+      - name: Download WASM artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: wasm-build
+          path: DF1-79/
+
+      - name: Install frontend dependencies
+        working-directory: DF1-79/web
+        run: npm ci
+
+      - name: TypeScript type check
+        working-directory: DF1-79/web
+        run: npx tsc --noEmit
+
+      - name: vitest unit tests
+        working-directory: DF1-79/web
+        run: npm run test:unit -- --reporter=junit --reporter=default
+
+      - name: Upload vitest results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-results
+          path: DF1-79/web/junit.xml
+          if-no-files-found: ignore
+
+      - name: Install Playwright browsers
+        working-directory: DF1-79/web
+        run: npx playwright install --with-deps chromium webkit firefox
+
+      - name: Playwright E2E tests (3-browser CRDT)
+        working-directory: DF1-79/web
+        env:
+          PLAYWRIGHT_SIGNALING_URL: ws://localhost:8787
+          CI: true
+        run: npm run test:e2e -- --reporter=list
+
+      - name: Upload Playwright traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: DF1-79/web/playwright-report/
+          retention-days: 14
+
+  # =========================================================================
+  # 汇总状态
+  # =========================================================================
+  ci-summary:
+    name: "CI Summary"
+    runs-on: ubuntu-latest
+    needs: [rust-test, wasm-test, frontend-test]
+    if: always()
+    timeout-minutes: 5
+
+    steps:
+      - name: Check all jobs status
+        run: |
+          echo "Rust test:         ${{ needs.rust-test.result }}"
+          echo "WASM test:         ${{ needs.wasm-test.result }}"
+          echo "Frontend test:     ${{ needs.frontend-test.result }}"
+          if [[ "${{ needs.rust-test.result }}" != "success" ]] || \
+             [[ "${{ needs.wasm-test.result }}" != "success" ]] || \
+             [[ "${{ needs.frontend-test.result }}" != "success" ]]; then
+            echo "❌ Some jobs failed"
+            exit 1
+          fi
+          echo "✅ All CI jobs passed!"

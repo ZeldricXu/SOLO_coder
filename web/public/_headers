@@ -1,0 +1,70 @@
+# ============================================================================
+# Cloudflare Pages CDN 缓存策略
+# ============================================================================
+
+# WASM 文件：内容哈希，长时间缓存
+/public/wasm/*.wasm
+  Cache-Control: public, max-age=31536000, immutable
+
+# Vite 打包后的 assets (带 hash)：长期缓存
+/assets/*.js
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.css
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.png
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.jpg
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.svg
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.webp
+  Cache-Control: public, max-age=31536000, immutable
+/assets/*.woff2
+  Cache-Control: public, max-age=31536000, immutable
+
+# 图片资源
+/public/images/*
+  Cache-Control: public, max-age=2592000
+
+# HTML：短时间缓存
+/*.html
+  Cache-Control: public, max-age=300, must-revalidate, stale-while-revalidate=86400
+
+/
+  Cache-Control: public, max-age=300, must-revalidate, stale-while-revalidate=86400
+
+# favicon
+/favicon.ico
+  Cache-Control: public, max-age=86400
+
+# robots.txt, manifest 等静态文件
+/robots.txt
+  Cache-Control: public, max-age=3600
+/site.webmanifest
+  Cache-Control: public, max-age=3600
+
+# gzip 预压缩的文件（由 CDN 根据 Accept-Encoding 选择）
+# 浏览器支持 Brotli 优先，否则回退到 gzip，最后是原始文件
+/*.gz
+  Cache-Control: public, max-age=31536000, immutable
+  Content-Encoding: gzip
+/*.br
+  Cache-Control: public, max-age=31536000, immutable
+  Content-Encoding: br
+
+# API 调用不缓存
+/api/*
+  Cache-Control: no-store, no-cache, must-revalidate
+  X-Robots-Tag: noindex
+
+# 默认兜底
+*
+  Cache-Control: public, max-age=60, stale-while-revalidate=300
+
+# 安全头
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Strict-Transport-Security: max-age=31536000; includeSubDomains

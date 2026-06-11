@@ -1,0 +1,119 @@
+name: Deploy to Cloudflare Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'DF1-79/web/**'
+      - 'DF1-79/crates/**'
+      - 'DF1-79/scripts/**'
+      - 'DF1-79/Cargo.toml'
+      - 'DF1-79/Cargo.lock'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "20.x"
+  RUST_TOOLCHAIN: "stable"
+
+jobs:
+  build:
+    name: "Build Production Bundle"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    outputs:
+      deployment-url: ${{ steps.deploy.outputs.url }}
+      preview-url: ${{ steps.preview.outputs.url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (wasm target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack + binaryen
+        run: |
+          curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+          sudo apt-get update && sudo apt-get install -y binaryen
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: DF1-79/web/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: DF1-79/web
+        run: npm ci
+
+      - name: Full production build (WASM + Vite)
+        working-directory: DF1-79
+        run: |
+          chmod +x scripts/build-all.sh
+          bash scripts/build-all.sh
+
+      - name: Verify build output
+        run: |
+          DIST_DIR="DF1-79/web/dist"
+          if [ ! -d "$DIST_DIR" ]; then
+            echo "❌ dist directory missing"
+            exit 1
+          fi
+          echo "Build output contents:"
+          ls -lhR "$DIST_DIR" | head -60
+
+      - name: Upload build artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: DF1-79/web/dist
+          name: production-build
+
+      # ---------- Cloudflare Pages: Production Deployment (main branch only) ----------
+      - name: Deploy to Cloudflare Pages (Production)
+        id: deploy
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: collaborative-whiteboard
+          directory: DF1-79/web/dist
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '3'
+
+      # ---------- Cloudflare Pages: Preview Deployment (PRs) ----------
+      - name: Deploy to Cloudflare Pages (Preview)
+        id: preview
+        if: github.event_name == 'pull_request'
+        uses: cloudflare/pages-action@v1
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          projectName: collaborative-whiteboard
+          directory: DF1-79/web/dist
+          branch: preview/pr-${{ github.event.pull_request.number }}
+          gitHubToken: ${{ secrets.GITHUB_TOKEN }}
+          wranglerVersion: '3'
+
+      - name: Comment PR with Preview URL
+        if: github.event_name == 'pull_request' && steps.preview.outputs.url
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `🚀 **Preview Deployment Ready!**\n\nURL: ${{ steps.preview.outputs.url }}\n\n---\n*This is an automated preview deployment for this PR.*`
+            })
