@@ -45,6 +45,7 @@ export const ToastContainer: React.FC<React.PropsWithChildren<ToastContainerProp
   const [toasts, setToasts] = useState<ToastState[]>([]);
   const [exitingIds, setExitingIds] = useState<Set<string>>(new Set());
   const timeoutsRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const mountedRef = useRef(true);
 
   const toast = useCallback(
     (options: ToastOptions): string => {
@@ -72,6 +73,7 @@ export const ToastContainer: React.FC<React.PropsWithChildren<ToastContainerProp
   );
 
   const dismiss = useCallback((id: string) => {
+    if (!mountedRef.current) return;
     setExitingIds((prev) => new Set(prev).add(id));
 
     const existingTimeout = timeoutsRef.current.get(id);
@@ -97,9 +99,26 @@ export const ToastContainer: React.FC<React.PropsWithChildren<ToastContainerProp
   }, [toasts, dismiss]);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       timeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+      timeoutsRef.current.clear();
+      setToasts([]);
+      setExitingIds(new Set());
     };
+  }, []);
+
+  useEffect(() => {
+    const handleRouteChange = () => {
+      timeoutsRef.current.forEach((timeout) => clearTimeout(timeout));
+      timeoutsRef.current.clear();
+      setToasts([]);
+      setExitingIds(new Set());
+    };
+
+    window.addEventListener('popstate', handleRouteChange);
+    return () => window.removeEventListener('popstate', handleRouteChange);
   }, []);
 
   const value = { toast, dismiss, dismissAll };

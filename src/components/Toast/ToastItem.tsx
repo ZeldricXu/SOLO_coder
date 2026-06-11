@@ -52,12 +52,20 @@ export const ToastItem = forwardRef<HTMLDivElement, ToastProps & { isExiting?: b
     const Icon = iconMap[type] || InfoIcon;
     const onCloseRef = useRef(onClose);
     onCloseRef.current = onClose;
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+      mountedRef.current = true;
+      return () => { mountedRef.current = false; };
+    }, []);
 
     useEffect(() => {
       if (duration === Infinity || duration <= 0) return;
 
       const timer = setTimeout(() => {
-        onCloseRef.current();
+        if (mountedRef.current) {
+          onCloseRef.current();
+        }
       }, duration);
 
       return () => clearTimeout(timer);

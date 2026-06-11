@@ -6,7 +6,7 @@ export interface SortState {
 }
 
 export interface FilterState {
-  [key: string]: string | number | boolean | undefined;
+  [key: string]: string | number | boolean | undefined | Array<string | number | boolean>;
 }
 
 export interface PaginationState {
@@ -23,6 +23,7 @@ export interface Column<T> {
   sortable?: boolean;
   filterable?: boolean;
   filterOptions?: Array<{ label: string; value: string | number | boolean }>;
+  filterFn?: (value: T[keyof T] | undefined, record: T, filterValue: string | number | boolean | Array<string | number | boolean> | undefined) => boolean;
   width?: string | number;
   align?: 'left' | 'center' | 'right';
   fixed?: 'left' | 'right';

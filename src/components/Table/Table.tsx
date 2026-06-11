@@ -248,9 +248,26 @@ export const Table = forwardRef(function Table<T extends Record<string, unknown>
         if (filterValue === undefined || filterValue === '') return true;
         const column = columns.find((c) => c.key === key);
         if (!column) return true;
+
+        if (column.filterFn) {
+          const dataIndex = column.dataIndex ?? (key as keyof T);
+          return column.filterFn(record[dataIndex], record, filterValue);
+        }
+
         const dataIndex = column.dataIndex ?? (key as keyof T);
         const cellValue = record[dataIndex];
         const cellStr = String(cellValue);
+
+        if (Array.isArray(filterValue)) {
+          if (filterValue.length === 0) return true;
+          if (column.filterOptions) {
+            return filterValue.some((fv) => cellStr === String(fv));
+          }
+          return filterValue.some((fv) =>
+            cellStr.toLowerCase().includes(String(fv).toLowerCase()),
+          );
+        }
+
         const filterStr = String(filterValue);
         if (column.filterOptions) {
           return cellStr === filterStr;
