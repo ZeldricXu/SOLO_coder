@@ -1,5 +1,7 @@
 pub mod admin_handler;
 pub mod ai_review_handler;
+pub mod ai_rule_handler;
+pub mod attachment_handler;
 pub mod auth_handler;
 pub mod checklist_handler;
 pub mod comment_handler;
@@ -18,6 +20,17 @@ pub use admin_handler::{
 
 pub use ai_review_handler::{
     ai_review_api, trigger_scan_api, act_on_suggestion_api,
+};
+
+pub use ai_rule_handler::{
+    ai_rules_page, ai_rules_api, ai_rule_api,
+    create_ai_rule_api, update_ai_rule_api, delete_ai_rule_api,
+    set_default_rule_api, effective_rules_api,
+};
+
+pub use attachment_handler::{
+    upload_attachment_api, list_attachments_api, delete_attachment_api,
+    UploadAttachmentRequest,
 };
 
 pub use auth_handler::{
@@ -63,8 +76,9 @@ pub use repo_handler::{
 };
 
 pub use stats_handler::{
-    stats_page,
+    stats_page, org_stats_page,
     coverage_stats_api, heatmap_api, personal_stats_api, team_ranking_api, export_report_api,
+    org_overview_api, org_repo_health_api, org_contributor_ranking_api, org_issue_trend_api, org_refresh_mv_api,
 };
 
 pub use webhook_handler::{
@@ -222,6 +236,44 @@ pub fn configure_ai_review_routes(cfg: &mut web::ServiceConfig) {
     );
 }
 
+pub fn configure_ai_rule_routes(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::resource("/ai-rules")
+            .route(web::get().to(ai_rules_page)),
+    )
+    .service(
+        web::resource("/api/ai-rules")
+            .route(web::get().to(ai_rules_api))
+            .route(web::post().to(create_ai_rule_api)),
+    )
+    .service(
+        web::resource("/api/ai-rules/{id}")
+            .route(web::get().to(ai_rule_api))
+            .route(web::put().to(update_ai_rule_api))
+            .route(web::delete().to(delete_ai_rule_api)),
+    )
+    .service(
+        web::resource("/api/ai-rules/{id}/set-default")
+            .route(web::post().to(set_default_rule_api)),
+    )
+    .service(
+        web::resource("/api/repos/{repo_id}/effective-rules")
+            .route(web::get().to(effective_rules_api)),
+    );
+}
+
+pub fn configure_attachment_routes(cfg: &mut web::ServiceConfig) {
+    cfg.service(
+        web::resource("/api/attachments/{organization_id}/{attachment_type}/{target_id}")
+            .route(web::post().to(upload_attachment_api))
+            .route(web::get().to(list_attachments_api)),
+    )
+    .service(
+        web::resource("/api/attachments/{id}")
+            .route(web::delete().to(delete_attachment_api)),
+    );
+}
+
 pub fn configure_checklist_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::resource("/checklists")
@@ -341,6 +393,30 @@ pub fn configure_stats_routes(cfg: &mut web::ServiceConfig) {
     .service(
         web::resource("/api/stats/export")
             .route(web::post().to(export_report_api)),
+    )
+    .service(
+        web::resource("/org-stats")
+            .route(web::get().to(org_stats_page)),
+    )
+    .service(
+        web::resource("/api/org-stats/{organization_id}/overview")
+            .route(web::get().to(org_overview_api)),
+    )
+    .service(
+        web::resource("/api/org-stats/{organization_id}/repo-health")
+            .route(web::get().to(org_repo_health_api)),
+    )
+    .service(
+        web::resource("/api/org-stats/{organization_id}/contributor-ranking")
+            .route(web::get().to(org_contributor_ranking_api)),
+    )
+    .service(
+        web::resource("/api/org-stats/{organization_id}/issue-trend")
+            .route(web::get().to(org_issue_trend_api)),
+    )
+    .service(
+        web::resource("/api/org-stats/{organization_id}/refresh-mv")
+            .route(web::post().to(org_refresh_mv_api)),
     );
 }
 
@@ -351,6 +427,8 @@ pub fn configure_all_routes<N: NotificationService + 'static>(cfg: &mut web::Ser
     configure_merge_request_routes(cfg);
     configure_admin_routes(cfg);
     configure_ai_review_routes(cfg);
+    configure_ai_rule_routes(cfg);
+    configure_attachment_routes(cfg);
     configure_checklist_routes(cfg);
     configure_comment_routes(cfg);
     configure_issue_routes(cfg);

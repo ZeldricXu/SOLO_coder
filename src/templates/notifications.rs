@@ -149,7 +149,7 @@ pub fn notifications_page(ctx: LayoutContext, notifications: &[Notification], ca
                                                         (notification.title)
                                                     }
                                                     p class="text-sm text-[#94A3B8] line-clamp-2" { (notification.content) }
-                                                </div>
+                                                }
                                                 div class="flex-shrink-0 text-right" {
                                                     p class="text-xs text-[#64748B] whitespace-nowrap" { (notification.time) }
                                                     div class={

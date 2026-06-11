@@ -276,8 +276,9 @@ pub fn checklist_detail_page(ctx: LayoutContext, detail: &ChecklistDetail) -> Ma
                                                         rows="2"
                                                         class="w-full px-3 py-1 bg-transparent border-b border-transparent focus:border-[#3B82F6] text-[#94A3B8] placeholder-[#64748B] focus:outline-none transition-colors text-sm resize-none"
                                                     { (item.description) }
-                                                </div>
-                                            }div class="flex flex-col gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity" {
+                                                }
+                                            }
+                                            div class="flex flex-col gap-1 opacity-0 group-hover/item:opacity-100 transition-opacity" {
                                                 button type="button" onclick={"moveItemUp('" (item.id) "')"} class="p-1 text-[#64748B] hover:text-white hover:bg-white/10 rounded transition-colors" title="上移" {
                                                     "↑"
                                                 }
@@ -322,7 +323,7 @@ pub fn checklist_detail_page(ctx: LayoutContext, detail: &ChecklistDetail) -> Ma
                                                     @if !item.description.is_empty() {
                                                         p class="text-sm text-[#64748B] mt-1" { (item.description) }
                                                     }
-                                                </div>
+                                                }
                                             }
                                         }
                                     }

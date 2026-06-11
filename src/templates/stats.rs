@@ -259,3 +259,36 @@ fn severity_pie_chart(data: &[IssueBySeverity]) -> Markup {
     let radius = 100.0;
 
     for item in data {
+        let color = colors.iter().find(|(k, _)| k == &item.severity.as_str()).map(|(_, c)| c).unwrap_or("#64748B");
+        let angle = (item.count as f64 / total as f64) * 360.0;
+        let end_angle = current_angle + angle;
+        
+        let start_rad = (current_angle - 90.0).to_radians();
+        let end_rad = (end_angle - 90.0).to_radians();
+        
+        let x1 = center_x + radius * start_rad.cos();
+        let y1 = center_y + radius * start_rad.sin();
+        let x2 = center_x + radius * end_rad.cos();
+        let y2 = center_y + radius * end_rad.sin();
+        
+        let large_arc = if angle > 180.0 { 1 } else { 0 };
+        
+        let path_data = format!(
+            "M {},{} A {},{} 0 {},1 {},{} L {},{} Z",
+            x1, y1, radius, radius, large_arc, x2, y2, center_x, center_y
+        );
+        
+        paths.push((path_data, color, item.severity.clone(), item.count));
+        current_angle = end_angle;
+    }
+
+    html! {
+        svg width="300" height="300" viewBox="0 0 300 300" class="mx-auto" {
+            @for (path, color, label, count) in &paths {
+                path d=(path) fill=(color) {
+                    title { (format!("{}: {}", label, count)) }
+                }
+            }
+        }
+    }
+}

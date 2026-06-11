@@ -1,4 +1,6 @@
 use maud::{html, Markup, PreEscaped};
+use uuid::Uuid;
+use crate::models::AttachmentWithDetails;
 
 pub enum Status {
     Open,
@@ -389,7 +391,7 @@ pub fn button(variant: ButtonVariant, content: &str, onclick: Option<&str>, disa
         button
             type="button"
             disabled[disabled]
-            @if let Some(oc) = onclick { onclick=(oc) }
+            onclick=[onclick]
             class={(base_class) " " (variant_class) " disabled:cursor-not-allowed disabled:opacity-50"}
         {
             (content)
@@ -532,5 +534,186 @@ pub fn progress_bar(progress: ProgressBarData) -> Markup {
                 }
             }
         }
+    }
+}
+
+pub fn attachment_gallery(attachments: &[AttachmentWithDetails]) -> Markup {
+    if attachments.is_empty() {
+        return html! {
+            div class="flex flex-col items-center justify-center py-8 text-[#64748B]" {
+                div class="text-4xl mb-2" { "📎" }
+                span class="text-sm" { "暂无附件" }
+            }
+        };
+    }
+
+    html! {
+        div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3" {
+            @for attachment in attachments {
+                div class="relative group rounded-lg overflow-hidden border border-[#334155] bg-[#1E293B]" {
+                    @if attachment.content_type.starts_with("image/") {
+                        div class="aspect-square bg-[#0F172A] flex items-center justify-center cursor-pointer"
+                            onclick={"openAttachmentPreview('" (attachment.file_url) "', '" (attachment.file_name) "')"}
+                        {
+                            img
+                                src=(attachment.thumbnail_url.as_ref().unwrap_or(&attachment.file_url))
+                                alt=(attachment.file_name)
+                                class="w-full h-full object-cover"
+                            ;
+                        }
+                    } @else {
+                        div class="aspect-square bg-[#0F172A] flex flex-col items-center justify-center cursor-pointer hover:bg-[#334155]/50 transition-colors"
+                            onclick={"window.open('" (attachment.file_url) "', '_blank')"}
+                        {
+                            div class="text-3xl mb-2" { "📄" }
+                            span class="text-xs text-[#94A3B8] px-2 text-center truncate w-full" title=(attachment.file_name) {
+                                (attachment.file_name)
+                            }
+                        }
+                    }
+                    div class="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity" {
+                        button
+                            class="w-7 h-7 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-sm shadow-lg"
+                            onclick={"deleteAttachment('" (attachment.id) "')"}
+                            title="删除附件"
+                        {
+                            "×"
+                        }
+                    }
+                    div class="p-2 border-t border-[#334155]" {
+                        div class="text-xs text-[#CBD5E1] truncate" title=(attachment.file_name) {
+                            (attachment.file_name)
+                        }
+                        div class="text-xs text-[#64748B] mt-0.5" {
+                            (format_file_size(attachment.file_size_bytes))
+                        }
+                    }
+                }
+            }
+        }
+
+        div id="attachmentPreviewModal" class="fixed inset-0 z-50 hidden items-center justify-center" {
+            div class="absolute inset-0 bg-black/80 backdrop-blur-sm" onclick="closeAttachmentPreview()" {}
+            div class="relative z-10 max-w-[90vw] max-h-[90vh]" onclick="event.stopPropagation()" {
+                button
+                    class="absolute -top-12 right-0 w-10 h-10 bg-white/10 hover:bg-white/20 text-white rounded-full flex items-center justify-center text-xl transition-colors"
+                    onclick="closeAttachmentPreview()"
+                {
+                    "×"
+                }
+                img id="attachmentPreviewImage" src="" alt="" class="max-w-full max-h-[90vh] rounded-lg shadow-2xl";
+            }
+        }
+    }
+}
+
+pub fn attachment_upload_button(target_type: &str, target_id: Uuid) -> Markup {
+    html! {
+        div class="attachment-upload-area" {
+            div
+                id="dropZone"
+                class="border-2 border-dashed border-[#334155] rounded-xl p-8 text-center hover:border-[#3B82F6]/50 hover:bg-[#3B82F6]/5 transition-all cursor-pointer"
+                onclick={"document.getElementById('fileInput').click()"}
+                ondragover="event.preventDefault(); this.classList.add('border-[#3B82F6]', 'bg-[#3B82F6]/10');"
+                ondragleave="this.classList.remove('border-[#3B82F6]', 'bg-[#3B82F6]/10');"
+                ondrop={"handleFileDrop(event, '" (target_type) "', '" (target_id) "')"}
+            {
+                div class="text-4xl mb-3" { "📤" }
+                p class="text-[#CBD5E1] font-medium mb-1" { "点击或拖拽上传附件" }
+                p class="text-sm text-[#64748B]" { "支持图片、文档等文件" }
+            }
+
+            input
+                type="file"
+                id="fileInput"
+                class="hidden"
+                multiple
+                onchange={"handleFileSelect(event, '" (target_type) "', '" (target_id) "')"}
+            ;
+
+            div id="uploadProgressContainer" class="hidden mt-4 space-y-2" {}
+        }
+    }
+}
+
+pub fn health_score_bar(score: f64) -> Markup {
+    let score_pct = (score * 100.0).max(0.0).min(100.0);
+
+    let color_start = if score_pct >= 70.0 {
+        "#10B981"
+    } else if score_pct >= 40.0 {
+        "#F59E0B"
+    } else {
+        "#EF4444"
+    };
+
+    let color_end = if score_pct >= 70.0 {
+        "#34D399"
+    } else if score_pct >= 40.0 {
+        "#FBBF24"
+    } else {
+        "#F87171"
+    };
+
+    html! {
+        div class="space-y-2" {
+            div class="flex items-center justify-between" {
+                span class="text-sm text-[#94A3B8]" { "健康度" }
+                span class="text-lg font-bold" style={"color: " (color_end) ";"} {
+                    (format!("{:.0}", score_pct))
+                }
+            }
+            div class="h-3 bg-[#1E293B] rounded-full overflow-hidden" {
+                div
+                    class="h-full rounded-full transition-all duration-700 ease-out"
+                    style={
+                        "width: " (score_pct) "%; "
+                        "background: linear-gradient(90deg, " (color_start) ", " (color_end) ")"
+                    }
+                {}
+            }
+            div class="flex justify-between text-xs text-[#64748B]" {
+                span { "0" }
+                span { "50" }
+                span { "100" }
+            }
+        }
+    }
+}
+
+pub fn trend_badge(value: f64) -> Markup {
+    let threshold = 0.01;
+    let is_up = value > threshold;
+    let is_down = value < -threshold;
+    let is_flat = !is_up && !is_down;
+
+    let display_value = format!("{:+.1}%", value.abs() * 100.0);
+
+    html! {
+        span class={
+            "inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium"
+            @if is_up { "text-emerald-400 bg-emerald-500/20" }
+            @else if is_down { "text-red-400 bg-red-500/20" }
+            @else { "text-gray-400 bg-gray-500/20" }
+        } {
+            @if is_up {
+                "↑"
+            } @else if is_down {
+                "↓"
+            } @else {
+                "→"
+            }
+            (display_value)
+        }
+    }
+}
+
+fn format_file_size(bytes: i64) -> String {
+    if bytes >= 1024 * 1024 {
+        format!("{:.1} MB", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{} B", bytes)
     }
 }

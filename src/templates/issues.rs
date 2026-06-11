@@ -104,7 +104,7 @@ fn issue_card(issue: &IssueWithDetails) -> Markup {
                     div class="flex items-start justify-between gap-3 mb-2" {
                         h3 class="font-semibold text-white truncate group-hover:text-[#3B82F6] transition-colors" {
                             (issue.title)
-                        </h3>
+                        }
                         (severity_badge(get_severity_enum(&issue.severity)))
                     }
                     div class="flex items-center gap-2 mb-3" {
@@ -332,7 +332,7 @@ pub fn issues_page(layout_ctx: LayoutContext, ctx: IssuesPageContext) -> Markup 
                                 "创建问题"
                             }
                         }
-                    </form>
+                    }
                 }
             }
         }
@@ -453,7 +453,7 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                                 }
                             }
                         }
-                    </form>
+                    }
 
                     @if ctx.comments.is_empty() {
                         div class="text-center py-8" {
@@ -471,7 +471,7 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                                                 div class="flex items-center gap-2" {
                                                     span class="font-medium text-white" { (comment.author_name) }
                                                     span class="text-xs text-[#64748B]" { (format_datetime(&comment.created_at)) }
-                                                </div>
+                                                }
                                                 @if comment.resolved {
                                                     span class="text-xs px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full" { "已解决" }
                                                 }
@@ -484,13 +484,13 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                                                 }
                                             }
                                         }
-                                    </div>
-                                </div>
+                                    }
+                                }
                             }
                         }
                     }
-                </div>
-            </div>
+                }
+            }
 
             div class="space-y-6" {
                 div class="bg-[#1E293B] border border-[#334155] rounded-xl p-6" {
@@ -529,7 +529,7 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                             span class="text-white text-sm" { (format_datetime(&ctx.issue.updated_at)) }
                         }
                     }
-                </div>
+                }
 
                 @if let (Some(mr_id), Some(mr_title)) = (ctx.issue.merge_request_id, &ctx.issue.merge_request_title) {
                     div class="bg-[#1E293B] border border-[#334155] rounded-xl p-6" {
@@ -589,8 +589,8 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                             }
                         }
                     }
-                </div>
-            </div>
+                }
+            }
         }
 
         div id="assignModal" class="fixed inset-0 z-50 hidden" {
@@ -618,7 +618,7 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                             }
                         }
                     }
-                </div>
+                }
             }
         }
 
@@ -666,7 +666,7 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                                 required
                                 class="w-full px-4 py-2.5 bg-[#0F172A] border border-[#334155] rounded-lg text-white placeholder-[#64748B] focus:outline-none focus:border-[#3B82F6] focus:ring-1 focus:ring-[#3B82F6] transition-all resize-y mono"
                             { (ctx.issue.description) }
-                        </div>
+                        }
                         div {
                             label class="block text-sm font-medium text-[#94A3B8] mb-1" { "代码片段" }
                             textarea 
@@ -683,8 +683,8 @@ pub fn issue_detail_page(layout_ctx: LayoutContext, ctx: IssueDetailPageContext)
                                 "保存修改"
                             }
                         }
-                    </form>
-                </div>
+                    }
+                }
             }
         }
     })

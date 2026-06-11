@@ -8,10 +8,11 @@ use crate::models::ai_review::{
     AiReviewStatus, AiSuggestionStatus, AiScanCategory,
     LlmMessage,
 };
+use crate::models::ai_rule::AiRule;
 use crate::models::issue::{CreateIssueRequest, IssueSeverity};
-use crate::repositories::{AiReviewRepository, IssueRepository};
+use crate::repositories::{AiReviewRepository, AiRuleRepository, IssueRepository};
 use crate::repositories::ai_review_repo::AiSuggestionStatistics;
-use crate::utils::{AppError, AppResult, DiffFile};
+use crate::utils::{AppError, AppResult, DiffFile, DiffParser};
 
 use super::diff_service::DiffService;
 use crate::providers::LlmClient;
@@ -22,6 +23,8 @@ pub struct AiReviewService {
     llm_client: LlmClient,
     diff_service: DiffService,
     issue_repo: IssueRepository,
+    ai_rule_repo: Option<AiRuleRepository>,
+    diff_parser: DiffParser,
 }
 
 impl AiReviewService {
@@ -36,6 +39,18 @@ impl AiReviewService {
             llm_client,
             diff_service,
             issue_repo,
+            ai_rule_repo: None,
+            diff_parser: DiffParser::new(),
+        }
+    }
+
+    pub fn with_extensions(
+        self,
+        ai_rule_repo: AiRuleRepository,
+    ) -> Self {
+        Self {
+            ai_rule_repo: Some(ai_rule_repo),
+            ..self
         }
     }
 
@@ -390,6 +405,196 @@ impl AiReviewService {
             "minor" => IssueSeverity::Minor,
             _ => IssueSeverity::Info,
         }
+    }
+
+    pub async fn scan_diff_with_rules(
+        &self,
+        ai_review_id: Uuid,
+        repo_id: Uuid,
+        organization_id: Uuid,
+        diff_files: &[DiffFile],
+    ) -> AppResult<Vec<AiSuggestion>> {
+        let ai_rule_repo = self.ai_rule_repo.as_ref().ok_or_else(|| {
+            AppError::Configuration("AiRuleRepository not configured".to_string())
+        })?;
+
+        let rules = ai_rule_repo
+            .get_active_rules(organization_id, repo_id)
+            .await?;
+
+        let mut all_suggestions = Vec::new();
+
+        for diff_file in diff_files {
+            if !self.should_scan_file(diff_file, &rules) {
+                continue;
+            }
+
+            let file_suggestions = self
+                .analyze_diff_file(ai_review_id, diff_file, &rules)
+                .await?;
+
+            all_suggestions.extend(file_suggestions);
+        }
+
+        Ok(all_suggestions)
+    }
+
+    pub async fn analyze_diff_file(
+        &self,
+        ai_review_id: Uuid,
+        diff_file: &DiffFile,
+        rules: &[AiRule],
+    ) -> AppResult<Vec<AiSuggestion>> {
+        let context_lines = rules
+            .iter()
+            .filter_map(|r| r.context_lines)
+            .max()
+            .unwrap_or(3);
+
+        let prompt = self.build_diff_aware_prompt(diff_file, rules, context_lines);
+
+        let messages = vec![LlmMessage {
+            role: "user".to_string(),
+            content: prompt,
+        }];
+
+        let response = self.llm_client.chat(messages).await?;
+
+        let suggestions = self.parse_suggestions(ai_review_id, &response)?;
+
+        for suggestion in &suggestions {
+            self.ai_review_repo
+                .add_suggestion(
+                    ai_review_id,
+                    &suggestion.file_path,
+                    suggestion.line_no,
+                    &suggestion.category,
+                    &suggestion.severity,
+                    &suggestion.title,
+                    &suggestion.description,
+                    &suggestion.suggestion,
+                )
+                .await?;
+        }
+
+        Ok(suggestions)
+    }
+
+    pub fn build_diff_aware_prompt(
+        &self,
+        diff_file: &DiffFile,
+        rules: &[AiRule],
+        context_lines: i32,
+    ) -> String {
+        let (added, deleted) = self.count_changed_lines(diff_file);
+
+        let mut hunks_str = String::new();
+        for hunk in &diff_file.hunks {
+            hunks_str.push_str(&format!(
+                "@@ -{},{} +{},{} @@{}\n",
+                hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines, hunk.header
+            ));
+
+            for line in &hunk.lines {
+                let prefix = match line.line_type.as_str() {
+                    "new" => "+",
+                    "old" => "-",
+                    _ => " ",
+                };
+                hunks_str.push_str(&format!("{}{}\n", prefix, line.content));
+            }
+        }
+
+        let custom_rules_str: String = rules
+            .iter()
+            .filter(|r| r.is_active && !r.custom_prompt.is_empty())
+            .map(|r| format!("- [{}] {}", r.name, r.custom_prompt))
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        format!(
+            r#"你是一个专业的代码评审专家。请重点分析以下diff变更内容，并提供针对性的改进建议。
+
+文件路径: {file_path}
+变更类型: {change_type}
+新增: {added}行 删除: {deleted}行
+
+变更区域及上下文:
+---
+{hunks_str}
+---
+
+自定义规则:
+{custom_rules_str}
+
+请重点关注变更的行及其上下文。基于变更语义分析：
+- 新增的函数是否缺少参数校验
+- 修改的逻辑是否引入死代码或边界条件遗漏
+- 删除后是否有残留的未清理引用
+
+请按照以下JSON格式返回建议列表（不要包含其他文本，只返回JSON）:
+{{
+    "suggestions": [
+        {{
+            "file_path": "文件路径",
+            "line_no": 行号,
+            "category": "类别（code_style/bug_pattern/security/performance/best_practice/maintainability）",
+            "severity": "严重程度（info/minor/major/critical）",
+            "title": "问题标题",
+            "description": "问题详细描述",
+            "suggestion": "改进建议"
+        }}
+    ]
+}}"#,
+            file_path = diff_file.new_path,
+            change_type = diff_file.status,
+            added = added,
+            deleted = deleted,
+            hunks_str = hunks_str,
+            custom_rules_str = custom_rules_str,
+        )
+    }
+
+    pub fn count_changed_lines(&self, diff_file: &DiffFile) -> (i32, i32) {
+        let mut added = 0;
+        let mut deleted = 0;
+
+        for hunk in &diff_file.hunks {
+            for line in &hunk.lines {
+                match line.line_type.as_str() {
+                    "new" => added += 1,
+                    "old" => deleted += 1,
+                    _ => {}
+                }
+            }
+        }
+
+        (added, deleted)
+    }
+
+    pub fn should_scan_file(&self, diff_file: &DiffFile, rules: &[AiRule]) -> bool {
+        if diff_file.binary {
+            return false;
+        }
+
+        let (added, deleted) = self.count_changed_lines(diff_file);
+        let total_changed = added + deleted;
+
+        if rules.is_empty() {
+            return total_changed > 0;
+        }
+
+        for rule in rules {
+            if !rule.is_active {
+                continue;
+            }
+            match rule.min_changed_lines {
+                Some(min) if total_changed < min => continue,
+                _ => return true,
+            }
+        }
+
+        false
     }
 }
 

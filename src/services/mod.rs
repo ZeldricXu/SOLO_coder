@@ -8,9 +8,12 @@ pub mod repo_service;
 pub mod webhook_service;
 pub mod merge_request_service;
 pub mod stats_service;
+pub mod org_stats_service;
 pub mod notification_service;
 pub mod ai_review_service;
+pub mod ai_rule_service;
 pub mod issue_service;
+pub mod attachment_service;
 
 pub use auth_service::{AuthService, TokenResponse};
 pub use user_service::UserService;
@@ -29,6 +32,9 @@ pub use merge_request_service::{
     MergeRequestService, AiReviewTriggerResult, MrExportResult,
 };
 pub use stats_service::StatsService;
+pub use org_stats_service::OrgStatsService;
 pub use notification_service::NotificationService;
 pub use ai_review_service::AiReviewService;
+pub use ai_rule_service::AiRuleService;
 pub use issue_service::IssueService;
+pub use attachment_service::AttachmentService;

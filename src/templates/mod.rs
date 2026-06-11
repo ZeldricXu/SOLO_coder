@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod ai_rules;
 pub mod checklist;
 pub mod components;
 pub mod dashboard;
@@ -7,6 +8,7 @@ pub mod layout;
 pub mod login;
 pub mod merge_requests;
 pub mod notifications;
+pub mod org_stats;
 pub mod repos;
 pub mod review_detail;
 pub mod stats;
@@ -14,6 +16,10 @@ pub mod stats;
 pub use admin::{
     Organization, Team, TeamMember, Repo, TeamTreeNode, TeamNode,
     organization_page, teams_page, team_members_page,
+};
+
+pub use ai_rules::{
+    AiRulesPageContext, ai_rules_page,
 };
 
 pub use checklist::{
@@ -26,6 +32,7 @@ pub use components::{
     stat_card, status_badge, severity_badge, role_badge, user_avatar, comment_bubble, diff_line,
     checklist_item, activity_item, pagination, modal, button, input_field, select_field,
     textarea_field, card, table, tabs, progress_bar,
+    attachment_gallery, attachment_upload_button, health_score_bar, trend_badge,
 };
 
 pub use dashboard::dashboard_page;
@@ -45,6 +52,10 @@ pub use merge_requests::mrs_page;
 pub use notifications::{
     Notification, NotificationCategory, NotificationSettings, NotificationEvents,
     notifications_page, notifications_settings_page,
+};
+
+pub use org_stats::{
+    OrgStatsPageContext, org_stats_page,
 };
 
 pub use repos::{repos_page, repo_detail_page};

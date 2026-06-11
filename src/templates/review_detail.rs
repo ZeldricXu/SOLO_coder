@@ -198,7 +198,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                         span class="file-diff" { "+12" }
                     }
                 }
-            </div>
+            }
 
             div class="diff-panel" {
                 div class="diff-header" {
@@ -234,7 +234,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                             (diff_line("135", "", "", "added", "comment"))
                             (diff_line("136", "        session.set(SESSION_ID_KEY, user.id.to_string())?;", "", "context", ""))
                         }
-                    </div>
+                    }
 
                     div class="diff-side diff-right" {
                         div class="diff-file-header" {
@@ -275,7 +275,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                         input type="text" class="reply-input" placeholder="回复...";
                         button class="btn btn-sm btn-primary" { "回复" }
                     }
-                </div>
+                }
 
                 div class="diff-content" style="margin-top: 24px;" {
                     div class="diff-side diff-left" {
@@ -299,7 +299,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                         }
                     }
                 }
-            </div>
+            }
 
             div class="side-panel" {
                 div class="side-tabs" {
@@ -314,7 +314,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                         "AI建议"
                         span class="side-tab-count ai" { "3" }
                     }
-                </div>
+                }
 
                 div class="side-panel-content" id="comments-panel" {
                     div class="comment-thread" {
@@ -335,7 +335,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                                 div class="comment-actions-inline" {
                                     button { "回复" }
                                     button { "👍 3" }
-                                </div>
+                                }
                             }
                         }
                         div class="comment-item reply" {
@@ -350,7 +350,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                                 }
                             }
                         }
-                    </div>
+                    }
 
                     div class="comment-thread" {
                         div class="comment-thread-header unresolved" {
@@ -367,18 +367,18 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                                 }
                                 div class="comment-text" {
                                     p { "这里有个安全问题，密码验证失败时应该使用相同的响应时间，防止时序攻击。" }
-                                    <pre class="code-inline">
-                                        <code>{ "// TODO: 添加恒定时间比较" }</code>
-                                    </pre>
+                                    pre class="code-inline" {
+                                        code { "// TODO: 添加恒定时间比较" }
+                                    }
                                 }
                                 div class="comment-actions-inline" {
                                     button { "回复" }
                                     button { "👍 5" }
                                     button { "创建问题" }
-                                </div>
+                                }
                             }
                         }
-                    </div>
+                    }
 
                     div class="comment-input-box" {
                         (avatar_with_name(&user.username, &user.avatar_url, 32))
@@ -396,7 +396,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                             }
                         }
                     }
-                </div>
+                }
 
                 div class="side-panel-content hidden" id="checklist-panel" {
                     div class="checklist-section" {
@@ -448,7 +448,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                                     }
                                 }
                             }
-                        </div>
+                        }
 
                         div class="checklist-group" {
                             div class="checklist-group-header" {
@@ -491,7 +491,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                                     }
                                 }
                             }
-                        </div>
+                        }
 
                         div class="checklist-group" {
                             div class="checklist-group-header" {
@@ -499,7 +499,7 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                                 span class="group-title" { "安全性" }
                                 span class="group-progress" { "1/2" }
                             }
-                        </div>
+                        }
 
                         div class="checklist-group" {
                             div class="checklist-group-header" {
@@ -508,8 +508,8 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                                 span class="group-progress" { "0/2" }
                             }
                         }
-                    </div>
-                </div>
+                    }
+                }
 
                 div class="side-panel-content hidden" id="ai-panel" {
                     div class="ai-suggestions" {
@@ -521,16 +521,16 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                             }
                             div class="ai-suggestion-content" {
                                 p { "在第156行，`credentials.user` 可能为 None，建议添加空值检查。" }
-                                <pre class="ai-code">
-                                    <code>{ "if let Some(user) = credentials.user {\n    // 处理逻辑\n} else {\n    return Err(AppError::Authentication(\"用户不存在\"));\n}" }</code>
-                                </pre>
-                            </div>
+                                pre class="ai-code" {
+                                    code { "if let Some(user) = credentials.user {\n    // 处理逻辑\n} else {\n    return Err(AppError::Authentication(\"用户不存在\"));\n}" }
+                                }
+                            }
                             div class="ai-suggestion-actions" {
                                 button class="btn btn-sm btn-success" { "采纳建议" }
                                 button class="btn btn-sm btn-secondary" { "忽略" }
                                 button class="btn btn-sm btn-ghost" { "查看详情" }
-                            </div>
-                        </div>
+                            }
+                        }
 
                         div class="ai-suggestion-item" {
                             div class="ai-suggestion-header" {
@@ -540,13 +540,13 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                             }
                             div class="ai-suggestion-content" {
                                 p { "这段认证逻辑可以提取为一个独立的函数，提高复用性。" }
-                            </div>
+                            }
                             div class="ai-suggestion-actions" {
                                 button class="btn btn-sm btn-success" { "采纳建议" }
                                 button class="btn btn-sm btn-secondary" { "忽略" }
                                 button class="btn btn-sm btn-ghost" { "查看详情" }
                             }
-                        </div>
+                        }
 
                         div class="ai-suggestion-item" {
                             div class="ai-suggestion-header" {
@@ -556,17 +556,17 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                             }
                             div class="ai-suggestion-content" {
                                 p { "建议在认证失败时添加错误日志，便于问题排查。" }
-                                <pre class="ai-code">
-                                    <code>{ "tracing::warn!(\"Authentication failed for user: {}\", email);" }</code>
-                                </pre>
-                            </div>
+                                pre class="ai-code" {
+                                    code { "tracing::warn!(\"Authentication failed for user: {}\", email);" }
+                                }
+                            }
                             div class="ai-suggestion-actions" {
                                 button class="btn btn-sm btn-success" { "采纳建议" }
                                 button class="btn btn-sm btn-secondary" { "忽略" }
                                 button class="btn btn-sm btn-ghost" { "查看详情" }
                             }
-                        </div>
-                    </div>
+                        }
+                    }
 
                     div class="ai-scan-info" {
                         span { "AI 扫描完成于 2小时前" }
@@ -577,9 +577,9 @@ pub fn review_detail_page(user: &AuthUser, mr_id: &str, mr_title: &str, repo_nam
                             }
                             "重新扫描"
                         }
-                    </div>
-                </div>
-            </div>
+                    }
+                }
+            }
         }
     })
 }

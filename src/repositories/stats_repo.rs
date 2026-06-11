@@ -6,6 +6,8 @@ use crate::error::AppResult;
 use crate::models::stats::{
     ReviewStats, PersonalStats, HeatmapData, CoverageTrend, ResponseTimeTrend,
     DashboardStats, ActivityItem, TeamRankingItem, IssueBySeverity, IssueByStatus,
+    RepoHealthRanking, RepoHealthItem, TeamContributionRanking, ContributorItem,
+    IssueTypeTrendCompare, IssueTypeData, OrgStatsOverview,
 };
 
 #[derive(Clone)]
@@ -576,5 +578,587 @@ impl StatsRepository {
             count: row.count,
             percentage: row.percentage.unwrap_or(0.0),
         }).collect())
+    }
+
+    pub async fn get_repo_health_ranking(
+        &self,
+        organization_id: Uuid,
+        benchmark_date: DateTime<Utc>,
+        compare_date: DateTime<Utc>,
+    ) -> AppResult<RepoHealthRanking> {
+        let benchmark_date_str = benchmark_date.format("%Y-%m-%d").to_string();
+        let compare_date_str = compare_date.format("%Y-%m-%d").to_string();
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                r.id as repo_id,
+                r.name as repo_name,
+                COALESCE(bm.health_score, 0)::float8 as health_score,
+                COALESCE(bm.coverage_rate, 0)::float8 as coverage_rate,
+                COALESCE(bm.issue_density, 0)::float8 as issue_density,
+                COALESCE(bm.avg_response_time_hours, 0)::float8 as avg_response_time_hours,
+                COALESCE(bm.active_mrs, 0) as active_mrs,
+                COALESCE(bm.health_score, 0)::float8 - COALESCE(cm.health_score, 0)::float8 as trend
+            FROM repositories r
+            LEFT JOIN mv_repo_health_daily bm
+                ON r.id = bm.repo_id AND bm.stat_date = $2::date
+            LEFT JOIN mv_repo_health_daily cm
+                ON r.id = cm.repo_id AND cm.stat_date = $3::date
+            WHERE r.organization_id = $1
+            ORDER BY COALESCE(bm.health_score, 0) DESC
+            LIMIT 20
+            "#,
+            organization_id,
+            benchmark_date_str,
+            compare_date_str,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let items = rows
+            .into_iter()
+            .map(|row| RepoHealthItem {
+                repo_id: row.repo_id,
+                repo_name: row.repo_name,
+                health_score: row.health_score.unwrap_or(0.0),
+                coverage_rate: row.coverage_rate.unwrap_or(0.0),
+                issue_density: row.issue_density.unwrap_or(0.0),
+                avg_response_time_hours: row.avg_response_time_hours.unwrap_or(0.0),
+                active_mrs: row.active_mrs.unwrap_or(0),
+                trend: row.trend.unwrap_or(0.0),
+            })
+            .collect();
+
+        Ok(RepoHealthRanking {
+            benchmark_date: benchmark_date_str,
+            compare_date: compare_date_str,
+            items,
+        })
+    }
+
+    pub async fn get_contributor_ranking(
+        &self,
+        organization_id: Uuid,
+        benchmark_date: DateTime<Utc>,
+        team_id: Option<Uuid>,
+        top_n: i32,
+    ) -> AppResult<TeamContributionRanking> {
+        let benchmark_date_str = benchmark_date.format("%Y-%m-%d").to_string();
+        let limit_n = top_n.max(1).min(100) as i64;
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT
+                ROW_NUMBER() OVER (ORDER BY (
+                    COALESCE(mv.reviews_done, 0) * 2 +
+                    COALESCE(mv.issues_found, 0) * 5 +
+                    COALESCE(mv.issues_fixed, 0) * 3 +
+                    COALESCE(mv.comments_count, 0) * 1 +
+                    COALESCE(mv.lines_changed, 0) * 0.001
+                ) DESC) as rank,
+                u.id as user_id,
+                u.username,
+                u.avatar_url,
+                COALESCE(mv.reviews_done, 0) as reviews_done,
+                COALESCE(mv.issues_found, 0) as issues_found,
+                COALESCE(mv.issues_fixed, 0) as issues_fixed,
+                COALESCE(mv.comments_count, 0) as comments_count,
+                COALESCE(mv.lines_changed, 0) as lines_changed,
+                ROUND((
+                    COALESCE(mv.reviews_done, 0) * 2 +
+                    COALESCE(mv.issues_found, 0) * 5 +
+                    COALESCE(mv.issues_fixed, 0) * 3 +
+                    COALESCE(mv.comments_count, 0) * 1 +
+                    COALESCE(mv.lines_changed, 0) * 0.001
+                )::numeric, 2)::float8 as score
+            FROM users u
+            JOIN team_members tm ON u.id = tm.user_id
+            JOIN teams t ON tm.team_id = t.id
+            LEFT JOIN mv_contributor_stats_daily mv
+                ON u.id = mv.user_id AND mv.stat_date = $2::date
+            WHERE t.organization_id = $1
+                AND ($3::uuid IS NULL OR t.id = $3)
+            ORDER BY score DESC
+            LIMIT $4
+            "#,
+            organization_id,
+            benchmark_date_str,
+            team_id,
+            limit_n,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let items = rows
+            .into_iter()
+            .map(|row| ContributorItem {
+                rank: row.rank.unwrap_or(0) as i32,
+                user_id: row.user_id,
+                username: row.username,
+                avatar_url: row.avatar_url,
+                reviews_done: row.reviews_done.unwrap_or(0),
+                issues_found: row.issues_found.unwrap_or(0),
+                issues_fixed: row.issues_fixed.unwrap_or(0),
+                comments_count: row.comments_count.unwrap_or(0),
+                lines_changed: row.lines_changed.unwrap_or(0),
+                score: row.score.unwrap_or(0.0),
+            })
+            .collect();
+
+        Ok(TeamContributionRanking {
+            benchmark_date: benchmark_date_str,
+            team_id,
+            top_n,
+            items,
+        })
+    }
+
+    pub async fn get_issue_type_trend(
+        &self,
+        organization_id: Uuid,
+        start_date: DateTime<Utc>,
+        end_date: DateTime<Utc>,
+        compare_start_date: DateTime<Utc>,
+        compare_end_date: DateTime<Utc>,
+    ) -> AppResult<IssueTypeTrendCompare> {
+        let start_date_str = start_date.format("%Y-%m-%d").to_string();
+        let end_date_str = end_date.format("%Y-%m-%d").to_string();
+        let compare_start_str = compare_start_date.format("%Y-%m-%d").to_string();
+        let compare_end_str = compare_end_date.format("%Y-%m-%d").to_string();
+
+        let current_rows = sqlx::query!(
+            r#"
+            WITH current_total AS (
+                SELECT COUNT(*) as total FROM issues i
+                JOIN merge_requests mr ON i.merge_request_id = mr.id
+                JOIN repositories r ON mr.repo_id = r.id
+                WHERE r.organization_id = $1
+                    AND i.created_at >= $2::timestamp
+                    AND i.created_at <= $3::timestamp
+            )
+            SELECT
+                COALESCE(i.severity, 'unknown') as issue_type,
+                COUNT(*) as count,
+                CASE
+                    WHEN ct.total > 0
+                    THEN ROUND(COUNT(*)::numeric / ct.total::numeric * 100, 2)::float8
+                    ELSE 0
+                END as percentage
+            FROM issues i
+            JOIN merge_requests mr ON i.merge_request_id = mr.id
+            JOIN repositories r ON mr.repo_id = r.id
+            CROSS JOIN current_total ct
+            WHERE r.organization_id = $1
+                AND i.created_at >= $2::timestamp
+                AND i.created_at <= $3::timestamp
+            GROUP BY i.severity, ct.total
+            ORDER BY count DESC
+            "#,
+            organization_id,
+            start_date_str,
+            end_date_str,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let previous_rows = sqlx::query!(
+            r#"
+            WITH prev_total AS (
+                SELECT COUNT(*) as total FROM issues i
+                JOIN merge_requests mr ON i.merge_request_id = mr.id
+                JOIN repositories r ON mr.repo_id = r.id
+                WHERE r.organization_id = $1
+                    AND i.created_at >= $2::timestamp
+                    AND i.created_at <= $3::timestamp
+            )
+            SELECT
+                COALESCE(i.severity, 'unknown') as issue_type,
+                COUNT(*) as count,
+                CASE
+                    WHEN pt.total > 0
+                    THEN ROUND(COUNT(*)::numeric / pt.total::numeric * 100, 2)::float8
+                    ELSE 0
+                END as percentage
+            FROM issues i
+            JOIN merge_requests mr ON i.merge_request_id = mr.id
+            JOIN repositories r ON mr.repo_id = r.id
+            CROSS JOIN prev_total pt
+            WHERE r.organization_id = $1
+                AND i.created_at >= $2::timestamp
+                AND i.created_at <= $3::timestamp
+            GROUP BY i.severity, pt.total
+            ORDER BY count DESC
+            "#,
+            organization_id,
+            compare_start_str,
+            compare_end_str,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let current_total: i64 = current_rows.iter().map(|r| r.count.unwrap_or(0)).sum();
+        let previous_total: i64 = previous_rows.iter().map(|r| r.count.unwrap_or(0)).sum();
+
+        let change_rate = if previous_total > 0 {
+            (current_total - previous_total) as f64 / previous_total as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        let current = current_rows
+            .into_iter()
+            .map(|row| IssueTypeData {
+                issue_type: row.issue_type,
+                count: row.count.unwrap_or(0),
+                percentage: row.percentage.unwrap_or(0.0),
+            })
+            .collect();
+
+        let previous = previous_rows
+            .into_iter()
+            .map(|row| IssueTypeData {
+                issue_type: row.issue_type,
+                count: row.count.unwrap_or(0),
+                percentage: row.percentage.unwrap_or(0.0),
+            })
+            .collect();
+
+        Ok(IssueTypeTrendCompare {
+            start_date: start_date_str,
+            end_date: end_date_str,
+            compare_start_date: compare_start_str,
+            compare_end_date: compare_end_str,
+            current,
+            previous,
+            change_rate,
+        })
+    }
+
+    pub async fn get_org_stats_overview(
+        &self,
+        organization_id: Uuid,
+        start_date: DateTime<Utc>,
+        end_date: DateTime<Utc>,
+        compare_start_date: DateTime<Utc>,
+        compare_end_date: DateTime<Utc>,
+    ) -> AppResult<OrgStatsOverview> {
+        let start_date_str = start_date.format("%Y-%m-%d").to_string();
+        let end_date_str = end_date.format("%Y-%m-%d").to_string();
+        let compare_start_str = compare_start_date.format("%Y-%m-%d").to_string();
+        let compare_end_str = compare_end_date.format("%Y-%m-%d").to_string();
+
+        let overview = sqlx::query_as!(
+            OrgStatsOverview,
+            r#"
+            SELECT
+                $2::varchar as start_date,
+                $3::varchar as end_date,
+                $4::varchar as compare_start_date,
+                $5::varchar as compare_end_date,
+                (SELECT COUNT(*) FROM repositories WHERE organization_id = $1) as total_repos,
+                -- 本期 MR 统计
+                (SELECT COUNT(*) FROM merge_requests mr
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND mr.created_at >= $2::timestamp
+                     AND mr.created_at <= $3::timestamp) as total_mrs,
+                -- 上期 MR 统计
+                (SELECT COUNT(*) FROM merge_requests mr
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND mr.created_at >= $4::timestamp
+                     AND mr.created_at <= $5::timestamp) as total_mrs_previous,
+                -- MR 变化率
+                CASE
+                    WHEN (SELECT COUNT(*) FROM merge_requests mr
+                          JOIN repositories r ON mr.repo_id = r.id
+                          WHERE r.organization_id = $1
+                              AND mr.created_at >= $4::timestamp
+                              AND mr.created_at <= $5::timestamp) > 0
+                    THEN ROUND((
+                        (SELECT COUNT(*) FROM merge_requests mr
+                         JOIN repositories r ON mr.repo_id = r.id
+                         WHERE r.organization_id = $1
+                             AND mr.created_at >= $2::timestamp
+                             AND mr.created_at <= $3::timestamp)::numeric -
+                        (SELECT COUNT(*) FROM merge_requests mr
+                         JOIN repositories r ON mr.repo_id = r.id
+                         WHERE r.organization_id = $1
+                             AND mr.created_at >= $4::timestamp
+                             AND mr.created_at <= $5::timestamp)::numeric
+                    ) / (SELECT COUNT(*) FROM merge_requests mr
+                         JOIN repositories r ON mr.repo_id = r.id
+                         WHERE r.organization_id = $1
+                             AND mr.created_at >= $4::timestamp
+                             AND mr.created_at <= $5::timestamp)::numeric * 100, 2)::float8
+                    ELSE 0
+                END as mrs_change_rate,
+                -- 本期已评审 MR
+                (SELECT COUNT(*) FROM merge_requests mr
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND mr.status IN ('approved', 'merged')
+                     AND mr.created_at >= $2::timestamp
+                     AND mr.created_at <= $3::timestamp) as reviewed_mrs,
+                -- 上期已评审 MR
+                (SELECT COUNT(*) FROM merge_requests mr
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND mr.status IN ('approved', 'merged')
+                     AND mr.created_at >= $4::timestamp
+                     AND mr.created_at <= $5::timestamp) as reviewed_mrs_previous,
+                -- 本期评审覆盖率
+                CASE
+                    WHEN (SELECT COUNT(*) FROM merge_requests mr
+                          JOIN repositories r ON mr.repo_id = r.id
+                          WHERE r.organization_id = $1
+                              AND mr.created_at >= $2::timestamp
+                              AND mr.created_at <= $3::timestamp) > 0
+                    THEN ROUND((
+                        SELECT COUNT(*) FROM merge_requests mr
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND mr.status IN ('approved', 'merged')
+                            AND mr.created_at >= $2::timestamp
+                            AND mr.created_at <= $3::timestamp
+                    )::numeric / (
+                        SELECT COUNT(*) FROM merge_requests mr
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND mr.created_at >= $2::timestamp
+                            AND mr.created_at <= $3::timestamp
+                    )::numeric * 100, 2)::float8
+                    ELSE 0
+                END as coverage_rate,
+                -- 上期评审覆盖率
+                CASE
+                    WHEN (SELECT COUNT(*) FROM merge_requests mr
+                          JOIN repositories r ON mr.repo_id = r.id
+                          WHERE r.organization_id = $1
+                              AND mr.created_at >= $4::timestamp
+                              AND mr.created_at <= $5::timestamp) > 0
+                    THEN ROUND((
+                        SELECT COUNT(*) FROM merge_requests mr
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND mr.status IN ('approved', 'merged')
+                            AND mr.created_at >= $4::timestamp
+                            AND mr.created_at <= $5::timestamp
+                    )::numeric / (
+                        SELECT COUNT(*) FROM merge_requests mr
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND mr.created_at >= $4::timestamp
+                            AND mr.created_at <= $5::timestamp
+                    )::numeric * 100, 2)::float8
+                    ELSE 0
+                END as coverage_rate_previous,
+                -- 本期 Issue 总数
+                (SELECT COUNT(*) FROM issues i
+                 JOIN merge_requests mr ON i.merge_request_id = mr.id
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND i.created_at >= $2::timestamp
+                     AND i.created_at <= $3::timestamp) as total_issues,
+                -- 上期 Issue 总数
+                (SELECT COUNT(*) FROM issues i
+                 JOIN merge_requests mr ON i.merge_request_id = mr.id
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND i.created_at >= $4::timestamp
+                     AND i.created_at <= $5::timestamp) as total_issues_previous,
+                -- Issue 变化率
+                CASE
+                    WHEN (SELECT COUNT(*) FROM issues i
+                          JOIN merge_requests mr ON i.merge_request_id = mr.id
+                          JOIN repositories r ON mr.repo_id = r.id
+                          WHERE r.organization_id = $1
+                              AND i.created_at >= $4::timestamp
+                              AND i.created_at <= $5::timestamp) > 0
+                    THEN ROUND((
+                        (SELECT COUNT(*) FROM issues i
+                         JOIN merge_requests mr ON i.merge_request_id = mr.id
+                         JOIN repositories r ON mr.repo_id = r.id
+                         WHERE r.organization_id = $1
+                             AND i.created_at >= $2::timestamp
+                             AND i.created_at <= $3::timestamp)::numeric -
+                        (SELECT COUNT(*) FROM issues i
+                         JOIN merge_requests mr ON i.merge_request_id = mr.id
+                         JOIN repositories r ON mr.repo_id = r.id
+                         WHERE r.organization_id = $1
+                             AND i.created_at >= $4::timestamp
+                             AND i.created_at <= $5::timestamp)::numeric
+                    ) / (SELECT COUNT(*) FROM issues i
+                         JOIN merge_requests mr ON i.merge_request_id = mr.id
+                         JOIN repositories r ON mr.repo_id = r.id
+                         WHERE r.organization_id = $1
+                             AND i.created_at >= $4::timestamp
+                             AND i.created_at <= $5::timestamp)::numeric * 100, 2)::float8
+                    ELSE 0
+                END as issues_change_rate,
+                -- 本期已解决 Issue
+                (SELECT COUNT(*) FROM issues i
+                 JOIN merge_requests mr ON i.merge_request_id = mr.id
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND i.status = 'resolved'
+                     AND i.updated_at >= $2::timestamp
+                     AND i.updated_at <= $3::timestamp) as resolved_issues,
+                -- 上期已解决 Issue
+                (SELECT COUNT(*) FROM issues i
+                 JOIN merge_requests mr ON i.merge_request_id = mr.id
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND i.status = 'resolved'
+                     AND i.updated_at >= $4::timestamp
+                     AND i.updated_at <= $5::timestamp) as resolved_issues_previous,
+                -- 本期修复率
+                CASE
+                    WHEN (SELECT COUNT(*) FROM issues i
+                          JOIN merge_requests mr ON i.merge_request_id = mr.id
+                          JOIN repositories r ON mr.repo_id = r.id
+                          WHERE r.organization_id = $1
+                              AND i.created_at >= $2::timestamp
+                              AND i.created_at <= $3::timestamp) > 0
+                    THEN ROUND((
+                        SELECT COUNT(*) FROM issues i
+                        JOIN merge_requests mr ON i.merge_request_id = mr.id
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND i.status = 'resolved'
+                            AND i.updated_at >= $2::timestamp
+                            AND i.updated_at <= $3::timestamp
+                    )::numeric / (
+                        SELECT COUNT(*) FROM issues i
+                        JOIN merge_requests mr ON i.merge_request_id = mr.id
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND i.created_at >= $2::timestamp
+                            AND i.created_at <= $3::timestamp
+                    )::numeric * 100, 2)::float8
+                    ELSE 0
+                END as fix_rate,
+                -- 上期修复率
+                CASE
+                    WHEN (SELECT COUNT(*) FROM issues i
+                          JOIN merge_requests mr ON i.merge_request_id = mr.id
+                          JOIN repositories r ON mr.repo_id = r.id
+                          WHERE r.organization_id = $1
+                              AND i.created_at >= $4::timestamp
+                              AND i.created_at <= $5::timestamp) > 0
+                    THEN ROUND((
+                        SELECT COUNT(*) FROM issues i
+                        JOIN merge_requests mr ON i.merge_request_id = mr.id
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND i.status = 'resolved'
+                            AND i.updated_at >= $4::timestamp
+                            AND i.updated_at <= $5::timestamp
+                    )::numeric / (
+                        SELECT COUNT(*) FROM issues i
+                        JOIN merge_requests mr ON i.merge_request_id = mr.id
+                        JOIN repositories r ON mr.repo_id = r.id
+                        WHERE r.organization_id = $1
+                            AND i.created_at >= $4::timestamp
+                            AND i.created_at <= $5::timestamp
+                    )::numeric * 100, 2)::float8
+                    ELSE 0
+                END as fix_rate_previous,
+                -- 本期平均响应时间
+                COALESCE((
+                    SELECT AVG(EXTRACT(EPOCH FROM (mr.updated_at - mr.created_at)) / 3600)::float8
+                    FROM merge_requests mr
+                    JOIN repositories r ON mr.repo_id = r.id
+                    WHERE r.organization_id = $1
+                        AND mr.status IN ('approved', 'merged')
+                        AND mr.created_at >= $2::timestamp
+                        AND mr.created_at <= $3::timestamp
+                ), 0) as avg_response_time_hours,
+                -- 上期平均响应时间
+                COALESCE((
+                    SELECT AVG(EXTRACT(EPOCH FROM (mr.updated_at - mr.created_at)) / 3600)::float8
+                    FROM merge_requests mr
+                    JOIN repositories r ON mr.repo_id = r.id
+                    WHERE r.organization_id = $1
+                        AND mr.status IN ('approved', 'merged')
+                        AND mr.created_at >= $4::timestamp
+                        AND mr.created_at <= $5::timestamp
+                ), 0) as avg_response_time_hours_previous,
+                -- 本期活跃贡献者
+                (SELECT COUNT(DISTINCT c.author_id) FROM comments c
+                 JOIN merge_requests mr ON c.merge_request_id = mr.id
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND c.created_at >= $2::timestamp
+                     AND c.created_at <= $3::timestamp) as active_contributors,
+                -- 上期活跃贡献者
+                (SELECT COUNT(DISTINCT c.author_id) FROM comments c
+                 JOIN merge_requests mr ON c.merge_request_id = mr.id
+                 JOIN repositories r ON mr.repo_id = r.id
+                 WHERE r.organization_id = $1
+                     AND c.created_at >= $4::timestamp
+                     AND c.created_at <= $5::timestamp) as active_contributors_previous,
+                -- 本期平均健康分
+                COALESCE((
+                    SELECT AVG(mv.health_score)::float8
+                    FROM mv_repo_health_daily mv
+                    JOIN repositories r ON mv.repo_id = r.id
+                    WHERE r.organization_id = $1
+                        AND mv.stat_date >= $2::date
+                        AND mv.stat_date <= $3::date
+                ), 0) as avg_health_score,
+                -- 上期平均健康分
+                COALESCE((
+                    SELECT AVG(mv.health_score)::float8
+                    FROM mv_repo_health_daily mv
+                    JOIN repositories r ON mv.repo_id = r.id
+                    WHERE r.organization_id = $1
+                        AND mv.stat_date >= $4::date
+                        AND mv.stat_date <= $5::date
+                ), 0) as avg_health_score_previous
+            "#,
+            organization_id,
+            start_date_str,
+            end_date_str,
+            compare_start_str,
+            compare_end_str,
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(overview)
+    }
+
+    pub async fn refresh_materialized_views(&self) -> AppResult<()> {
+        sqlx::query("REFRESH MATERIALIZED VIEW mv_repo_health_daily")
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query("REFRESH MATERIALIZED VIEW mv_contributor_stats_daily")
+            .execute(&self.pool)
+            .await?;
+
+        sqlx::query("REFRESH MATERIALIZED VIEW mv_issue_type_trend_daily")
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn get_org_total_members(&self, organization_id: Uuid) -> AppResult<i64> {
+        let count = sqlx::query_scalar!(
+            r#"
+            SELECT COUNT(DISTINCT tm.user_id) as count
+            FROM team_members tm
+            JOIN teams t ON tm.team_id = t.id
+            WHERE t.organization_id = $1
+            "#,
+            organization_id
+        )
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(count.unwrap_or(0))
     }
 }

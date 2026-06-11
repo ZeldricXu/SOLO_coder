@@ -5,6 +5,8 @@ pub mod comment_repo;
 pub mod checklist_repo;
 pub mod issue_repo;
 pub mod ai_review_repo;
+pub mod ai_rule_repo;
+pub mod attachment_repo;
 pub mod notification_repo;
 pub mod stats_repo;
 
@@ -15,5 +17,7 @@ pub use comment_repo::CommentRepository;
 pub use checklist_repo::ChecklistRepository;
 pub use issue_repo::IssueRepository;
 pub use ai_review_repo::AiReviewRepository;
+pub use ai_rule_repo::AiRuleRepository;
+pub use attachment_repo::AttachmentRepository;
 pub use notification_repo::NotificationRepository;
 pub use stats_repo::StatsRepository;
