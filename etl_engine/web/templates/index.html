@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ETL Engine Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <h1>ETL Engine</h1>
+        <span>Orchestration Dashboard</span>
+      </div>
+      <ul class="sidebar-nav">
+        <li><a href="#dashboard" class="active"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></a></li>
+        <li><a href="#sources"><span class="nav-icon">📂</span><span class="nav-label">Sources</span></a></li>
+        <li><a href="#pipelines"><span class="nav-icon">🔄</span><span class="nav-label">Pipelines</span></a></li>
+        <li><a href="#executions"><span class="nav-icon">📋</span><span class="nav-label">Executions</span></a></li>
+      </ul>
+    </aside>
+
+    <main class="main-content">
+      <div id="refresh-indicator" class="refresh-indicator"></div>
+
+      <section id="section-dashboard" class="page-section active">
+        <div class="section-header">
+          <h2>Dashboard</h2>
+          <p>Overview of your ETL orchestration engine</p>
+        </div>
+        <div id="stats-grid" class="stats-grid"></div>
+        <div class="section-header" style="margin-top:16px">
+          <h2>Recent Executions</h2>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Execution ID</th>
+                <th>Status</th>
+                <th>Trigger</th>
+                <th>Started</th>
+                <th>Finished</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody id="executions-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="section-sources" class="page-section">
+        <div class="section-header">
+          <h2>Data Sources</h2>
+          <p>Configured data source connections</p>
+        </div>
+        <div id="sources-grid" class="card-grid"></div>
+      </section>
+
+      <section id="section-pipelines" class="page-section">
+        <div class="section-header">
+          <h2>Pipelines</h2>
+          <p>ETL pipeline definitions and current status</p>
+        </div>
+        <div id="pipeline-status-overview" class="stats-grid"></div>
+        <div id="pipelines-grid" class="card-grid" style="margin-top:16px"></div>
+      </section>
+
+      <section id="section-executions" class="page-section">
+        <div class="section-header">
+          <h2>Execution History</h2>
+          <p>Recent pipeline execution records</p>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Execution ID</th>
+                <th>Status</th>
+                <th>Trigger</th>
+                <th>Started</th>
+                <th>Finished</th>
+                <th>Error</th>
+              </tr>
+            </thead>
+            <tbody id="executions-table-body-full"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    window.__API_BASE__ = "{{ api_base_url }}";
+  </script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

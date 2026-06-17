@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "etl_engine"
+version = "0.1.0"
+description = "ETL orchestration engine"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    "celery[redis]",
+    "redis",
+    "pandas",
+    "dask[dataframe]",
+    "great-expectations",
+    "pymysql",
+    "psycopg2-binary",
+    "pymongo",
+    "boto3",
+    "confluent-kafka",
+    "httpx",
+    "clickhouse-driver",
+    "google-cloud-bigquery",
+    "redshift-connector",
+    "jinja2",
+    "prometheus-client",
+    "python-multipart",
+    "aiosmtplib",
+    "pydantic-settings",
+    "python-dateutil",
+    "psutil",
+    "scipy",
+    "croniter",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+include = ["etl_engine*"]

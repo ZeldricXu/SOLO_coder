@@ -1,0 +1,38 @@
+Metadata-Version: 2.4
+Name: etl_engine
+Version: 0.1.0
+Summary: ETL orchestration engine
+Requires-Python: >=3.12
+Requires-Dist: fastapi
+Requires-Dist: uvicorn
+Requires-Dist: sqlalchemy[asyncio]
+Requires-Dist: asyncpg
+Requires-Dist: alembic
+Requires-Dist: celery[redis]
+Requires-Dist: redis
+Requires-Dist: pandas
+Requires-Dist: dask[dataframe]
+Requires-Dist: great-expectations
+Requires-Dist: pymysql
+Requires-Dist: psycopg2-binary
+Requires-Dist: pymongo
+Requires-Dist: boto3
+Requires-Dist: confluent-kafka
+Requires-Dist: httpx
+Requires-Dist: clickhouse-driver
+Requires-Dist: google-cloud-bigquery
+Requires-Dist: redshift-connector
+Requires-Dist: jinja2
+Requires-Dist: prometheus-client
+Requires-Dist: python-multipart
+Requires-Dist: aiosmtplib
+Requires-Dist: pydantic-settings
+Requires-Dist: python-dateutil
+Requires-Dist: psutil
+Requires-Dist: scipy
+Requires-Dist: croniter
+Provides-Extra: dev
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: pytest-asyncio; extra == "dev"
+Requires-Dist: httpx; extra == "dev"
+Requires-Dist: ruff; extra == "dev"
