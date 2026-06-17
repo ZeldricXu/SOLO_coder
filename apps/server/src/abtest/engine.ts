@@ -143,6 +143,13 @@ export class ABTestEngine {
     const existing = await prisma.aBTest.findUnique({ where: { id } });
     if (!existing) return null;
 
+    if (validated.expectedUpdatedAt !== undefined) {
+      const existingUpdatedAt = existing.updatedAt.getTime();
+      if (existingUpdatedAt !== validated.expectedUpdatedAt) {
+        throw new Error(`VERSION_CONFLICT: Version mismatch. Expected ${validated.expectedUpdatedAt}, got ${existingUpdatedAt}`);
+      }
+    }
+
     const updateData: Record<string, unknown> = {};
     if (validated.name) updateData.name = validated.name;
     if (validated.description !== undefined) updateData.description = validated.description;

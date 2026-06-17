@@ -65,6 +65,7 @@ export const abTestUpdateRequestSchema = z.object({
   metrics: z.array(abTestMetricSchema).optional(),
   tags: z.array(z.string()).optional(),
   metadata: z.record(z.unknown()).optional(),
+  expectedUpdatedAt: z.number().optional(),
 });
 
 export const assignmentRequestSchema = z.object({

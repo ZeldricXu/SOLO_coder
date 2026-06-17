@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
-import { prisma } from '../config/database';
+import { prisma, getReadPrisma } from '../config/database';
+import { env } from '../config/env';
 import { redis, RedisKeys } from '../config/redis';
 import { logger } from '../config/logger';
 import { featureStorage } from '../storage';
@@ -152,10 +153,11 @@ export class FeatureStoreService {
 
   async getOnlineFeatures(request: FeatureGetRequest): Promise<FeatureGetResponse> {
     const validated = featureGetRequestSchema.parse(request);
+    const readPrisma = getReadPrisma();
 
     let versionId = validated.version;
     if (!versionId) {
-      const latest = await prisma.featureSetVersion.findFirst({
+      const latest = await readPrisma.featureSetVersion.findFirst({
         where: { featureSetId: validated.featureSetId, status: 'active' },
         orderBy: { createdAt: 'desc' },
       });
@@ -166,7 +168,7 @@ export class FeatureStoreService {
     }
 
     const values: Record<string, Record<string, unknown>> = {};
-    const featureSet = await prisma.featureSet.findUnique({
+    const featureSet = await readPrisma.featureSet.findUnique({
       where: { id: validated.featureSetId },
     });
 
@@ -238,49 +240,67 @@ export class FeatureStoreService {
 
     const ttl = featureSet.ttlSeconds || 86400 * 7;
     const timestamp = Date.now();
-    const valuesByEntity: Record<string, Record<string, string>> = {};
+    const batchSize = env.FEATURE_IMPORT_BATCH_SIZE;
+    const totalData = validated.data;
 
-    for (const row of validated.data) {
-      const entityKey = String(row[validated.entityKeyField]);
-      if (!entityKey) continue;
+    for (let batchIdx = 0; batchIdx * batchSize < totalData.length; batchIdx++) {
+      const batchStart = batchIdx * batchSize;
+      const batchEnd = Math.min(batchStart + batchSize, totalData.length);
+      const batchData = totalData.slice(batchStart, batchEnd);
 
-      if (!valuesByEntity[entityKey]) {
-        valuesByEntity[entityKey] = {};
-      }
+      const valuesByEntity: Record<string, Record<string, string>> = {};
 
-      for (const feature of featureSet.features as any[]) {
-        const value = row[feature.name];
-        if (value !== undefined && value !== null) {
-          valuesByEntity[entityKey]![feature.name] = JSON.stringify(value);
+      for (const row of batchData) {
+        const entityKey = String(row[validated.entityKeyField]);
+        if (!entityKey) continue;
+
+        if (!valuesByEntity[entityKey]) {
+          valuesByEntity[entityKey] = {};
+        }
+
+        for (const feature of featureSet.features as any[]) {
+          const value = row[feature.name];
+          if (value !== undefined && value !== null) {
+            valuesByEntity[entityKey]![feature.name] = JSON.stringify(value);
+          }
         }
       }
-    }
 
-    const pipeline = redis.pipeline();
+      const pipeline = redis.pipeline();
 
-    for (const [entityKey, values] of Object.entries(valuesByEntity)) {
-      const key = RedisKeys.featureValue(validated.featureSetId, versionId, entityKey);
+      for (const [entityKey, values] of Object.entries(valuesByEntity)) {
+        const key = RedisKeys.featureValue(validated.featureSetId, versionId, entityKey);
 
-      if (validated.mode === 'overwrite') {
-        pipeline.del(key);
+        if (validated.mode === 'overwrite') {
+          pipeline.del(key);
+        }
+
+        pipeline.hset(key, values);
+        pipeline.expire(key, ttl);
       }
 
-      pipeline.hset(key, values);
-      pipeline.expire(key, ttl);
+      await pipeline.exec();
+
+      const offlinePath = `${validated.featureSetId}/${versionId}/${timestamp}-batch${batchIdx}.parquet`;
+      if (featureSet.mode === 'offline' || featureSet.mode === 'both') {
+        await featureStorage
+          .putObject(offlinePath, JSON.stringify(batchData), 'application/json')
+          .catch((err) => {
+            logger.warn({ error: err, path: offlinePath }, 'Failed to write offline feature data');
+          });
+      }
+
+      this.updateStatistics(validated.featureSetId, batchData).catch(() => {});
+
+      logger.debug(
+        { featureSetId: validated.featureSetId, batch: batchIdx, count: batchData.length },
+        'Feature batch ingested'
+      );
+
+      if (totalData.length > batchSize) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
     }
-
-    await pipeline.exec();
-
-    const offlinePath = `${validated.featureSetId}/${versionId}/${timestamp}.parquet`;
-    if (featureSet.mode === 'offline' || featureSet.mode === 'both') {
-      await featureStorage
-        .putObject(offlinePath, JSON.stringify(validated.data), 'application/json')
-        .catch((err) => {
-          logger.warn({ error: err, path: offlinePath }, 'Failed to write offline feature data');
-        });
-    }
-
-    this.updateStatistics(validated.featureSetId, validated.data).catch(() => {});
 
     logger.info(
       { featureSetId: validated.featureSetId, count: validated.data.length },

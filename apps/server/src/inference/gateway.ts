@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import crypto from 'node:crypto';
+import { EventEmitter } from 'node:events';
 import { prisma } from '../config/database';
 import { redisCache, RedisKeys } from '../config/redis';
 import { logger } from '../config/logger';
@@ -220,50 +221,130 @@ export class InferenceGateway {
 
   async unloadModel(modelId: string, versionId: string): Promise<void> {
     const cacheKey = `${modelId}:${versionId}`;
+    const latestKey = `${modelId}:latest`;
     const model = this.loadedModels.get(cacheKey);
+    const batcher = this.batchers.get(cacheKey);
+
+    if (batcher) {
+      if (batcher.timer) {
+        clearTimeout(batcher.timer);
+        batcher.timer = null;
+      }
+
+      for (const req of batcher.queue) {
+        req.reject(new Error('Model unloaded'));
+      }
+      batcher.queue = [];
+    }
+
+    this.loadPromises.delete(cacheKey);
+    this.loadPromises.delete(latestKey);
+
     if (model) {
       const loader = modelLoaderRegistry.get(model.loaderType as any);
       await loader.unload(model.handle).catch(() => {});
+
+      if (model.handle instanceof EventEmitter) {
+        model.handle.removeAllListeners();
+      }
+
       this.loadedModels.delete(cacheKey);
-      this.loadedModels.delete(`${modelId}:latest`);
+      this.loadedModels.delete(latestKey);
       this.batchers.delete(cacheKey);
+
+      (model as any).handle = null;
+      (model as any).memoryUsageBytes = 0;
+      (model as any).loaderType = null;
+
       logger.info({ modelId, versionId }, 'Model unloaded');
+    } else {
+      this.batchers.delete(cacheKey);
     }
+
+    if (typeof (global as any).gc === 'function') {
+      (global as any).gc(true);
+      logger.info({ memoryUsage: process.memoryUsage(), modelId, versionId }, 'Memory usage after GC');
+    }
+  }
+
+  assertMemoryReleased(modelId: string, versionId: string, expectedMaxBytes?: number): boolean {
+    const cacheKey = `${modelId}:${versionId}`;
+    const latestKey = `${modelId}:latest`;
+
+    if (typeof (global as any).gc === 'function') {
+      (global as any).gc(true);
+    }
+
+    if (this.loadedModels.has(cacheKey) || this.loadedModels.has(latestKey)) {
+      return false;
+    }
+
+    for (const [key, batcher] of this.batchers) {
+      if (batcher.modelId === modelId && batcher.version === versionId) {
+        return false;
+      }
+      if (key === cacheKey || key === latestKey) {
+        return false;
+      }
+    }
+
+    if (expectedMaxBytes !== undefined) {
+      const memUsage = process.memoryUsage();
+      if (memUsage.heapUsed > expectedMaxBytes) {
+        return false;
+      }
+    }
+
+    return true;
   }
 
   private getOrCreateBatcher(modelId: string, version: string): ModelBatcher {
     const key = `${modelId}:${version}`;
-    if (!this.batchers.has(key)) {
-      const config: TokenBucketConfig = {
-        ...DEFAULT_TOKEN_BUCKET_CONFIG,
-        maxBatchSize: env.INFERENCE_BATCH_MAX_SIZE,
-        windowMs: env.INFERENCE_BATCH_TIMEOUT_MS,
-      };
-      const now = Date.now();
-      this.batchers.set(key, {
-        modelId,
-        version,
-        queue: [],
-        config,
-        tokens: config.maxBurstSize,
-        lastRefillTime: now,
-        windowStart: now,
-        timer: null,
-        processing: false,
-        stats: {
-          totalRequests: 0,
-          totalBatches: 0,
-          batchSizes: [],
-          queueTimes: [],
-          processingTimes: [],
-          tokensConsumed: 0,
-          tokensRefilled: 0,
-          windowFlushes: 0,
-          sizeFlushes: 0,
-          adaptiveAdjustments: 0,
-        },
-      });
+    const existing = this.batchers.get(key);
+    if (existing && existing.modelId === modelId && existing.version === version) {
+      return existing;
     }
+
+    if (existing) {
+      if (existing.timer) {
+        clearTimeout(existing.timer);
+        existing.timer = null;
+      }
+      for (const req of existing.queue) {
+        req.reject(new Error('Batcher replaced'));
+      }
+      existing.queue = [];
+    }
+
+    const config: TokenBucketConfig = {
+      ...DEFAULT_TOKEN_BUCKET_CONFIG,
+      maxBatchSize: env.INFERENCE_BATCH_MAX_SIZE,
+      windowMs: env.INFERENCE_BATCH_TIMEOUT_MS,
+    };
+    const now = Date.now();
+    this.batchers.set(key, {
+      modelId,
+      version,
+      queue: [],
+      config,
+      tokens: config.maxBurstSize,
+      lastRefillTime: now,
+      windowStart: now,
+      timer: null,
+      processing: false,
+      stats: {
+        totalRequests: 0,
+        totalBatches: 0,
+        batchSizes: [],
+        queueTimes: [],
+        processingTimes: [],
+        tokensConsumed: 0,
+        tokensRefilled: 0,
+        windowFlushes: 0,
+        sizeFlushes: 0,
+        adaptiveAdjustments: 0,
+      },
+    });
     return this.batchers.get(key)!;
   }
 

@@ -157,6 +157,7 @@ export interface ABTestUpdateRequest {
   metrics?: Omit<ABTestMetric, 'id'>[];
   tags?: string[];
   metadata?: Record<string, unknown>;
+  expectedUpdatedAt?: number;
 }
 
 export interface TrackEventRequest {

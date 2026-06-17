@@ -88,10 +88,14 @@ const { mockPrisma, mockRedis, mockLogger, mockFeatureStorage, resetAllMocks } =
     });
     mockFeatureStorage.putObject.mockResolvedValue('etag-123');
   };
-  return { mockPrisma, mockRedis, mockLogger, mockFeatureStorage, resetAllMocks };
+  const mockEnv = {
+    NODE_ENV: 'test' as const,
+    FEATURE_IMPORT_BATCH_SIZE: 10000,
+  };
+  return { mockPrisma, mockRedis, mockLogger, mockFeatureStorage, mockEnv, resetAllMocks };
 });
 
-vi.mock('../../src/config/database', () => ({ prisma: mockPrisma }));
+vi.mock('../../src/config/database', () => ({ prisma: mockPrisma, getReadPrisma: () => mockPrisma }));
 vi.mock('../../src/config/redis', () => ({
   redis: mockRedis,
   RedisKeys: {
@@ -100,6 +104,12 @@ vi.mock('../../src/config/redis', () => ({
   },
 }));
 vi.mock('../../src/config/logger', () => ({ logger: mockLogger }));
+vi.mock('../../src/config/env', () => ({
+  env: {
+    NODE_ENV: 'test',
+    FEATURE_IMPORT_BATCH_SIZE: 10000,
+  },
+}));
 vi.mock('../../src/storage', () => ({ featureStorage: mockFeatureStorage }));
 
 describe('FeatureStoreService - Normal Path', () => {
@@ -863,4 +873,125 @@ describe('FeatureStoreService - Concurrency Scenarios', () => {
         expect(r.timestamp).toBeGreaterThan(0);
       });
     });
+});
+
+describe('Regression Tests - Batched Import and Read Replica', () => {
+  let service: FeatureStoreService;
+  const featureStorage = mockFeatureStorage;
+
+  beforeEach(() => {
+    resetAllMocks();
+    service = new FeatureStoreService();
+  });
+
+  it('should process data in batches using FEATURE_IMPORT_BATCH_SIZE from env', async () => {
+    const featureSetId = 'batch-import-test';
+    const versionId = 'version-1';
+    const mockFeatureSet = createMockFeatureSet({ id: featureSetId, mode: 'online' });
+    const mockVersion = createMockFeatureSetVersion(featureSetId, { id: versionId });
+    const testData = createMockFeatureData(5);
+
+    mockPrisma.featureSet.findUnique.mockResolvedValue({
+      ...mockFeatureSet,
+      createdAt: new Date(mockFeatureSet.createdAt),
+      updatedAt: new Date(mockFeatureSet.updatedAt),
+      mode: 'online',
+      features: mockFeatureSet.features,
+    });
+
+    mockPrisma.featureSetVersion.findFirst.mockResolvedValue({
+      ...mockVersion,
+      createdAt: new Date(mockVersion.createdAt),
+    });
+
+    const execSpy = vi.fn().mockResolvedValue([]);
+    (mockRedis.pipeline as any).mockReturnValue({
+      hset: vi.fn().mockReturnThis(),
+      expire: vi.fn().mockReturnThis(),
+      del: vi.fn().mockReturnThis(),
+      exec: execSpy,
+    });
+
+    const result = await service.ingestFeatures({
+      featureSetId,
+      entityKeyField: 'user_id',
+      data: testData,
+      mode: 'upsert',
+    });
+
+    expect(result.ingestedCount).toBe(5);
+    expect(result.timestamp).toBeGreaterThan(0);
+    expect(execSpy).toHaveBeenCalled();
+  });
+
+  it('should use read replica for getOnlineFeatures queries', async () => {
+    const featureSetId = 'read-replica-test';
+    const versionId = 'version-1';
+    const entityKey = 'user-123';
+    const mockFeatureSet = createMockFeatureSet({ id: featureSetId });
+    const mockVersion = createMockFeatureSetVersion(featureSetId, { id: versionId });
+
+    const findUniqueSpy = vi.fn().mockResolvedValue({
+      ...mockFeatureSet,
+      createdAt: new Date(mockFeatureSet.createdAt),
+      updatedAt: new Date(mockFeatureSet.updatedAt),
+      features: mockFeatureSet.features,
+    });
+    const findFirstSpy = vi.fn().mockResolvedValue({
+      ...mockVersion,
+      createdAt: new Date(mockVersion.createdAt),
+    });
+
+    mockPrisma.featureSet.findUnique = findUniqueSpy;
+    mockPrisma.featureSetVersion.findFirst = findFirstSpy;
+
+    mockRedis.hgetall.mockResolvedValue({});
+
+    await service.getOnlineFeatures({
+      featureSetId,
+      entityKeys: [entityKey],
+    });
+
+    expect(findFirstSpy).toHaveBeenCalled();
+    expect(findUniqueSpy).toHaveBeenCalled();
+  });
+
+  it('should yield to event loop between batches for large imports', async () => {
+    const featureSetId = 'event-loop-yield-test';
+    const versionId = 'version-1';
+    const mockFeatureSet = createMockFeatureSet({ id: featureSetId, mode: 'online' });
+    const mockVersion = createMockFeatureSetVersion(featureSetId, { id: versionId });
+
+    mockPrisma.featureSet.findUnique.mockResolvedValue({
+      ...mockFeatureSet,
+      createdAt: new Date(mockFeatureSet.createdAt),
+      updatedAt: new Date(mockFeatureSet.updatedAt),
+      mode: 'online',
+      features: mockFeatureSet.features,
+    });
+
+    mockPrisma.featureSetVersion.findFirst.mockResolvedValue({
+      ...mockVersion,
+      createdAt: new Date(mockVersion.createdAt),
+    });
+
+    (mockRedis.pipeline as any).mockReturnValue({
+      hset: vi.fn().mockReturnThis(),
+      expire: vi.fn().mockReturnThis(),
+      del: vi.fn().mockReturnThis(),
+      exec: vi.fn().mockResolvedValue([]),
+    });
+
+    const testData = createMockFeatureData(3);
+
+    const result = await service.ingestFeatures({
+      featureSetId,
+      entityKeyField: 'user_id',
+      data: testData,
+      mode: 'upsert',
+    });
+
+    expect(result.ingestedCount).toBe(3);
+    expect(result.timestamp).toBeGreaterThan(0);
+  });
 });

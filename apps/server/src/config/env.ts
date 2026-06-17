@@ -4,6 +4,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   DATABASE_URL: z.string().min(1),
+  DATABASE_READ_REPLICA_URL: z.string().optional(),
   REDIS_URL: z.string().min(1),
   S3_ENDPOINT: z.string().min(1),
   S3_REGION: z.string().min(1),
@@ -20,6 +21,7 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal']).default('info'),
   INFERENCE_BATCH_MAX_SIZE: z.coerce.number().default(32),
   INFERENCE_BATCH_TIMEOUT_MS: z.coerce.number().default(10),
+  FEATURE_IMPORT_BATCH_SIZE: z.coerce.number().default(10000),
   INFERENCE_CACHE_TTL_SECONDS: z.coerce.number().default(300),
   METRICS_RETENTION_DAYS: z.coerce.number().default(30),
   DRIFT_DETECTION_INTERVAL_MINUTES: z.coerce.number().default(60),

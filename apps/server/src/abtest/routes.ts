@@ -27,9 +27,20 @@ export async function registerABTestRoutes(fastify: any): Promise<void> {
   });
 
   fastify.patch('/api/v1/ab-tests/:id', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    const result = await engine.updateExperiment(request.params.id, request.body as ABTestUpdateRequest);
-    if (!result) return reply.status(404).send({ error: 'Experiment not found' });
-    return result;
+    try {
+      const result = await engine.updateExperiment(request.params.id, request.body as ABTestUpdateRequest);
+      if (!result) return reply.status(404).send({ error: 'Experiment not found' });
+      return result;
+    } catch (err: any) {
+      if (err.message && err.message.startsWith('VERSION_CONFLICT')) {
+        return reply.status(409).send({
+          error: 'Version conflict',
+          message: err.message,
+          expectedUpdatedAt: (request.body as any).expectedUpdatedAt,
+        });
+      }
+      throw err;
+    }
   });
 
   fastify.post('/api/v1/ab-tests/assign', async (request: FastifyRequest) => {
