@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+markers = [
+    "unit: Unit tests (no external dependencies)",
+    "integration: Integration tests (require docker-compose)",
+    "exception: Exception scenario tests",
+    "concurrency: Concurrency and load tests",
+    "slow: Slow-running tests",
+]
+addopts = "-v --tb=short -x"

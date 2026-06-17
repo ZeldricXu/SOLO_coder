@@ -1,0 +1,6 @@
+/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py:331: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+Plugin: helpconfig, Hook: pytest_cmdline_parse
+ConftestImportFailure: ModuleNotFoundError: No module named 'shapely' (from /Users/huangzitong/Desktop/SoloCoder6月/Code/81-85/DF1-83/backend/tests/conftest.py)
+For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+  config = pluginmanager.hook.pytest_cmdline_parse(
+ImportError while loading conftest '/Users/huangzitong/Desktop/SoloCoder6月/Code/81-85/DF1-83/backend/tests/conftest.py'.

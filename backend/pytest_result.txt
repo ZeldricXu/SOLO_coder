@@ -1,0 +1,51 @@
+/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py:331: PluggyTeardownRaisedWarning: A plugin raised an exception during an old-style hookwrapper teardown.
+Plugin: helpconfig, Hook: pytest_cmdline_parse
+KeyboardInterrupt: 
+For more information see https://pluggy.readthedocs.io/en/stable/api_reference.html#pluggy.PluggyTeardownRaisedWarning
+  config = pluginmanager.hook.pytest_cmdline_parse(
+Traceback (most recent call last):
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pytest/__main__.py", line 5, in <module>
+    raise SystemExit(pytest.console_main())
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py", line 192, in console_main
+    code = main()
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py", line 150, in main
+    config = _prepareconfig(args, plugins)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py", line 331, in _prepareconfig
+    config = pluginmanager.hook.pytest_cmdline_parse(
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_hooks.py", line 512, in __call__
+    return self._hookexec(self.name, self._hookimpls.copy(), kwargs, firstresult)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_manager.py", line 120, in _hookexec
+    return self._inner_hookexec(hook_name, methods, kwargs, firstresult)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_callers.py", line 167, in _multicall
+    raise exception
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_callers.py", line 139, in _multicall
+    teardown.throw(exception)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_callers.py", line 43, in run_old_style_hookwrapper
+    teardown.send(result)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/helpconfig.py", line 104, in pytest_cmdline_parse
+    config: Config = outcome.get_result()
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_result.py", line 103, in get_result
+    raise exc.with_traceback(tb)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_callers.py", line 38, in run_old_style_hookwrapper
+    res = yield
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_callers.py", line 121, in _multicall
+    res = hook_impl.function(*args)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py", line 1075, in pytest_cmdline_parse
+    self.parse(args)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py", line 1425, in parse
+    self._preparse(args, addopts=addopts)
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/_pytest/config/__init__.py", line 1305, in _preparse
+    self.pluginmanager.load_setuptools_entrypoints("pytest11")
+  File "/Users/huangzitong/Library/Python/3.9/lib/python/site-packages/pluggy/_manager.py", line 407, in load_setuptools_entrypoints
+    for ep in dist.entry_points:
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/importlib/metadata.py", line 261, in entry_points
+    return EntryPoint._from_text(self.read_text('entry_points.txt'))
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/importlib/metadata.py", line 106, in _from_text
+    config = ConfigParser(delimiters='=')
+  File "/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/configparser.py", line 623, in __init__
+    self._optcre = re.compile(self._OPT_TMPL.format(delim=d),
+KeyboardInterrupt
