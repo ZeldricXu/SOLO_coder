@@ -1,0 +1,296 @@
+server:
+  port: 8080
+  shutdown: graceful
+  tomcat:
+    max-threads: 500
+    accept-count: 1000
+
+spring:
+  application:
+    name: risk-detection-platform
+
+  profiles:
+    active: ${SPRING_PROFILES_ACTIVE:dev}
+
+  datasource:
+    url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${POSTGRES_DB:risk_db}
+    username: ${POSTGRES_USER:risk_user}
+    password: ${POSTGRES_PASSWORD:risk_pass}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 50
+      minimum-idle: 10
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+      pool-name: RiskHikariPool
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: false
+        jdbc:
+          batch_size: 50
+        order_inserts: true
+        order_updates: true
+    open-in-view: false
+    show-sql: false
+
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 100
+          max-idle: 50
+          min-idle: 10
+          max-wait: 3000ms
+
+  kafka:
+    bootstrap-servers: ${KAFKA_BROKERS:localhost:9092}
+    producer:
+      acks: 1
+      retries: 3
+      batch-size: 16384
+      buffer-memory: 33554432
+      compression-type: snappy
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+    consumer:
+      group-id: risk-platform-group
+      auto-offset-reset: latest
+      enable-auto-commit: false
+      max-poll-records: 500
+      fetch-min-size: 1024
+      fetch-max-wait: 500ms
+      properties:
+        max.poll.interval.ms: 300000
+        session.timeout.ms: 30000
+        heartbeat.interval.ms: 10000
+    listener:
+      ack-mode: MANUAL_IMMEDIATE
+      concurrency: 8
+      poll-timeout: 5000ms
+
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 100MB
+
+  sql:
+    init:
+      mode: ${SQL_INIT_MODE:always}
+      schema-locations: classpath:schema.sql
+      data-locations: classpath:data.sql
+      continue-on-error: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,beans,caches,conditions,scheduledtasks,threaddump,heapdump
+      base-path: /actuator
+  endpoint:
+    health:
+      show-details: always
+      show-components: always
+      probes:
+        enabled: true
+    metrics:
+      export:
+        prometheus:
+          enabled: true
+          step: 30s
+  metrics:
+    tags:
+      application: ${spring.application.name}
+      environment: ${spring.profiles.active}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
+        risk.engine.evaluation: true
+        risk.gateway.latency: true
+      percentiles:
+        http.server.requests: [0.5, 0.9, 0.95, 0.99]
+        risk.engine.evaluation: [0.5, 0.9, 0.95, 0.99]
+
+risk:
+  gateway:
+    http:
+      enabled: true
+      max-batch-size: 1000
+    kafka:
+      enabled: true
+      topic: risk.events
+      dlq-topic: risk.events.dlq
+      alert-topic: risk.alerts
+      action-topic: risk.actions
+    rate-limit:
+      enabled: true
+      global-qps: 10000
+      per-business-line-qps: 5000
+      per-ip-qps: 500
+      per-entity-qps: 200
+      bucket-capacity: 1000
+    validation:
+      enabled: true
+      strict-mode: false
+      max-event-age-seconds: 86400
+      allowed-event-types:
+        - payment.create
+        - payment.refund
+        - login.success
+        - login.fail
+        - login.blocked
+        - marketing.click
+        - marketing.coupon.redeem
+        - transaction.create
+        - transaction.confirm
+        - transaction.cancel
+
+  engine:
+    hot-loader:
+      enabled: true
+      reload-interval-ms: 5000
+      initial-delay-ms: 3000
+    short-circuit:
+      enabled: true
+      memory-ttl-seconds: 300
+    cache:
+      max-size: 10000
+      expire-after-write-minutes: 60
+    evaluation:
+      thread-pool-size: 64
+      timeout-ms: 20
+      async-logging: true
+
+  model:
+    onnx:
+      enabled: false
+      model-directory: ${RISK_MODEL_DIR:/data/risk-models}
+      intra-op-num-threads: 2
+      inter-op-num-threads: 4
+      execution-mode: parallel
+    inference:
+      timeout-ms: 50
+      fallback-score: 0.0
+    drift:
+      enabled: true
+      window-minutes: 60
+      max-samples: 10000
+      alert-threshold: 0.3
+
+  alert:
+    convergence:
+      window-seconds: 300
+      check-interval-ms: 10000
+      max-alerts-per-window: 100
+    deduplication:
+      window-seconds: 300
+      max-size: 100000
+    escalation:
+      default-threshold: 5
+      cooldown-seconds: 3600
+    suppression:
+      ttl-seconds: 1800
+      min-severity-diff: 1
+    fingerprint:
+      default-fields:
+        - ruleId
+        - entityId
+        - entityType
+        - businessLine
+        - severity
+
+  orchestration:
+    action:
+      thread-pool-size: 32
+      default-timeout-ms: 5000
+      retry:
+        max-attempts: 3
+        initial-delay-ms: 1000
+        multiplier: 2.0
+    webhook:
+      connect-timeout-ms: 3000
+      read-timeout-ms: 5000
+      signing-secret: ${RISK_WEBHOOK_SECRET:default-signing-secret-change-me}
+      sign-algorithm: HmacSHA256
+
+  observability:
+    metrics:
+      enabled: true
+      rule-hit-rate:
+        window-minutes: 5
+        top-n: 50
+      alert-efficiency:
+        slas:
+          - level: CRITICAL
+            response-minutes: 5
+            resolution-minutes: 60
+          - level: HIGH
+            response-minutes: 15
+            resolution-minutes: 240
+          - level: MEDIUM
+            response-minutes: 60
+            resolution-minutes: 1440
+
+logging:
+  level:
+    root: INFO
+    com.enterprise.risk: ${LOG_LEVEL:INFO}
+    com.enterprise.risk.engine: DEBUG
+    org.springframework.kafka: WARN
+    org.redisson: WARN
+    com.microsoft.onnxruntime: WARN
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: ${LOG_FILE:/var/log/risk/risk-detection.log}
+    max-size: 500MB
+    max-history: 30
+    total-size-cap: 20GB
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+  datasource:
+    url: jdbc:h2:mem:risk_db;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+    show-sql: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  kafka:
+    bootstrap-servers: localhost:9092
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+logging:
+  level:
+    com.enterprise.risk: DEBUG
