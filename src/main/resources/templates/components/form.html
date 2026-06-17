@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/layout :: head('编辑组件')"></head>
+<body class="bg-gray-50">
+
+<div th:replace="fragments/layout :: sidebar"></div>
+<div th:replace="fragments/layout :: header('编辑组件')"></div>
+
+<main class="ml-64 pt-16 min-h-screen">
+    <div class="p-6">
+
+        <div class="mb-6">
+            <a href="/components" class="text-sm text-gray-500 hover:text-gray-700 flex items-center">
+                <i class="fas fa-arrow-left mr-2"></i>
+                返回列表
+            </a>
+        </div>
+
+        <div class="max-w-4xl mx-auto">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-8">
+                <h1 class="text-2xl font-bold text-gray-900 mb-6" th:if="${component == null}">新建组件</h1>
+                <h1 class="text-2xl font-bold text-gray-900 mb-6" th:if="${component != null}">编辑组件</h1>
+
+                <form th:action="${component == null} ? @{/components} : @{/components/{id}(id=${component.id})}"
+                      th:method="${component == null} ? 'post' : 'put'"
+                      class="space-y-6">
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">组件名称 *</label>
+                            <input type="text" name="name" th:value="${component?.name}" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                   placeholder="button">
+                            <p class="text-xs text-gray-500 mt-1">英文标识，用于代码引用</p>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">显示名称 *</label>
+                            <input type="text" name="displayName" th:value="${component?.displayName}" required
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                   placeholder="按钮">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">组件描述</label>
+                        <textarea name="description" rows="3"
+                                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                  placeholder="请输入组件描述..." th:text="${component?.description}"></textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">分类 *</label>
+                            <select name="category" th:value="${component?.category}" required
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                <option value="">请选择分类</option>
+                                <option value="基础组件">基础组件</option>
+                                <option value="表单组件">表单组件</option>
+                                <option value="数据展示">数据展示</option>
+                                <option value="反馈组件">反馈组件</option>
+                                <option value="导航组件">导航组件</option>
+                                <option value="布局组件">布局组件</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">技术栈 *</label>
+                            <select name="framework" th:value="${component?.framework?.code}" required
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                <option value="">请选择技术栈</option>
+                                <option value="react">React</option>
+                                <option value="vue">Vue</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">维护人 *</label>
+                            <select name="maintainerId" th:value="${component?.maintainerId}" required
+                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                <option value="">请选择维护人</option>
+                                <option th:each="user : ${users}" th:value="${user.id}" th:text="${user.nickname}">张三</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">标签</label>
+                        <input type="text" name="tags" th:value="${component?.tags}"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                               placeholder="基础, 表单, 交互（用逗号分隔）">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Git 仓库地址</label>
+                            <input type="url" name="gitRepository" th:value="${component?.gitRepository}"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                   placeholder="https://github.com/...">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">NPM 包名</label>
+                            <input type="text" name="npmPackage" th:value="${component?.npmPackage}"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                   placeholder="@design-system/button">
+                        </div>
+                    </div>
+
+                    <div class="flex items-center">
+                        <input type="checkbox" id="published" name="published" th:checked="${component?.published == 1}"
+                               class="w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                        <label for="published" class="ml-2 text-sm text-gray-700">立即发布</label>
+                    </div>
+
+                    <div class="flex items-center justify-end space-x-4 pt-6 border-t border-gray-200">
+                        <a href="/components" class="px-6 py-2 text-gray-700 hover:text-gray-900">取消</a>
+                        <button type="submit" class="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                            <i class="fas fa-save mr-2"></i>保存
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+    </div>
+</main>
+
+</body>
+</html>

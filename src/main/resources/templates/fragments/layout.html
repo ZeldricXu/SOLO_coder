@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:fragment="head(title)">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title th:text="${title} + ' - 设计系统管理平台'">设计系统管理平台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="/api/public/tokens/css">
+    <style>
+        [x-cloak] { display: none !important; }
+        .sidebar-link.active {
+            background-color: rgba(99, 102, 241, 0.1);
+            border-right: 3px solid var(--ds-color-primary, #6366f1);
+            color: var(--ds-color-primary, #6366f1);
+        }
+    </style>
+</head>
+<body>
+
+<nav th:fragment="sidebar" x-data="{ open: true }" class="fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col">
+    <div class="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+        <div class="flex items-center space-x-2">
+            <i class="fas fa-palette text-2xl text-indigo-600"></i>
+            <span class="text-lg font-bold text-gray-900">Design System</span>
+        </div>
+        <button @click="open = !open" class="p-1 rounded hover:bg-gray-100">
+            <i class="fas fa-bars text-gray-500"></i>
+        </button>
+    </div>
+
+    <nav class="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+        <a href="/dashboard" th:class="${#request.requestURI == '/dashboard'} ? 'sidebar-link active' : 'sidebar-link'"
+           class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50">
+            <i class="fas fa-tachometer-alt w-5 h-5 mr-3"></i>
+            <span>仪表盘</span>
+        </a>
+        <a href="/components" th:class="${#request.requestURI.startsWith('/components')} ? 'sidebar-link active' : 'sidebar-link'"
+           class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50">
+            <i class="fas fa-puzzle-piece w-5 h-5 mr-3"></i>
+            <span>组件管理</span>
+        </a>
+        <a href="/marketplace" th:class="${#request.requestURI.startsWith('/marketplace')} ? 'sidebar-link active' : 'sidebar-link'"
+           class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50">
+            <i class="fas fa-store w-5 h-5 mr-3"></i>
+            <span>组件市场</span>
+        </a>
+        <a href="/tokens" th:class="${#request.requestURI.startsWith('/tokens')} ? 'sidebar-link active' : 'sidebar-link'"
+           class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50">
+            <i class="fas fa-gem w-5 h-5 mr-3"></i>
+            <span>设计令牌</span>
+        </a>
+        <a href="/approvals" th:class="${#request.requestURI.startsWith('/approvals')} ? 'sidebar-link active' : 'sidebar-link'"
+           class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50">
+            <i class="fas fa-check-circle w-5 h-5 mr-3"></i>
+            <span>审批中心</span>
+        </a>
+        <a href="/changelog" th:class="${#request.requestURI.startsWith('/changelog')} ? 'sidebar-link active' : 'sidebar-link'"
+           class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50">
+            <i class="fas fa-history w-5 h-5 mr-3"></i>
+            <span>变更日志</span>
+        </a>
+        <a href="/codegen" th:class="${#request.requestURI.startsWith('/codegen')} ? 'sidebar-link active' : 'sidebar-link'"
+           class="flex items-center px-3 py-2 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50">
+            <i class="fas fa-code w-5 h-5 mr-3"></i>
+            <span>代码生成</span>
+        </a>
+    </nav>
+
+    <div class="p-4 border-t border-gray-200">
+        <form th:action="@{/logout}" method="post" class="flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="w-8 h-8 bg-indigo-100 rounded-full flex items-center justify-center">
+                    <i class="fas fa-user text-indigo-600 text-sm"></i>
+                </div>
+                <div class="text-sm">
+                    <p class="font-medium text-gray-900" th:text="${#authentication?.name ?: '用户'}">用户</p>
+                </div>
+            </div>
+            <button type="submit" class="p-2 text-gray-500 hover:text-gray-700">
+                <i class="fas fa-sign-out-alt"></i>
+            </button>
+        </form>
+    </div>
+</nav>
+
+<header th:fragment="header(title)" class="fixed top-0 left-64 right-0 h-16 bg-white border-b border-gray-200 z-40">
+    <div class="flex items-center justify-between h-full px-6">
+        <h1 class="text-xl font-semibold text-gray-900" th:text="${title}">标题</h1>
+        <div class="flex items-center space-x-4">
+            <div class="relative" x-data="{ showNotifications: false }">
+                <button @click="showNotifications = !showNotifications" class="p-2 text-gray-500 hover:text-gray-700 relative">
+                    <i class="fas fa-bell"></i>
+                    <span class="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                </button>
+                <div x-show="showNotifications" @click.away="showNotifications = false"
+                     x-cloak
+                     class="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                    <div class="px-4 py-2 border-b border-gray-100">
+                        <h3 class="font-medium text-gray-900">通知</h3>
+                    </div>
+                    <div class="max-h-64 overflow-y-auto">
+                        <div class="px-4 py-3 hover:bg-gray-50 cursor-pointer">
+                            <p class="text-sm text-gray-900">新版本 v2.1.0 已发布</p>
+                            <p class="text-xs text-gray-500 mt-1">5分钟前</p>
+                        </div>
+                        <div class="px-4 py-3 hover:bg-gray-50 cursor-pointer">
+                            <p class="text-sm text-gray-900">主色值已更新，请检查影响</p>
+                            <p class="text-xs text-gray-500 mt-1">1小时前</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</header>
+
+</body>
+</html>

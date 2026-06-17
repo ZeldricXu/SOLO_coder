@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.TokenChangeMapper">
+
+    <select id="selectByTokenId" resultType="com.designsystem.entity.TokenChange">
+        SELECT * FROM ds_token_change
+        WHERE token_id = #{tokenId} AND deleted = 0
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectPendingMigration" resultType="com.designsystem.entity.TokenChange">
+        SELECT * FROM ds_token_change
+        WHERE effective_date <= NOW() AND deleted = 0
+        ORDER BY effective_date DESC
+    </select>
+
+    <select id="selectByApprovalRequestId" resultType="com.designsystem.entity.TokenChange">
+        SELECT * FROM ds_token_change
+        WHERE approval_request_id = #{approvalRequestId} AND deleted = 0
+        ORDER BY created_at DESC
+    </select>
+
+</mapper>

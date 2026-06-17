@@ -1,0 +1,92 @@
+spring:
+  application:
+    name: design-system-platform
+
+  thymeleaf:
+    cache: false
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    encoding: UTF-8
+
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://localhost:3306/design_system?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: root
+    password: root
+    hikari:
+      minimum-idle: 5
+      maximum-pool-size: 20
+      idle-timeout: 60000
+      connection-timeout: 30000
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      database: 0
+      timeout: 3000
+
+    elasticsearch:
+      uris: http://localhost:9200
+      username: elastic
+      password: elastic
+
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: admin
+    password: admin
+    virtual-host: /design-system
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    listener:
+      simple:
+        acknowledge-mode: manual
+        prefetch: 10
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+  freemarker:
+    template-loader-path: classpath:/templates/codegen/
+    suffix: .ftl
+    content-type: text/plain
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.designsystem.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+minio:
+  endpoint: http://localhost:9000
+  access-key: minioadmin
+  secret-key: minioadmin
+  bucket-name: design-system
+
+elasticsearch:
+  index:
+    component: ds_component
+    token: ds_token
+    document: ds_document
+
+server:
+  port: 8080
+  servlet:
+    context-path: /
+
+logging:
+  level:
+    root: INFO
+    com.designsystem: DEBUG
+    org.springframework.security: DEBUG

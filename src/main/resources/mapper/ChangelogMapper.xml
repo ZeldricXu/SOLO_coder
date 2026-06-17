@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.ChangelogMapper">
+
+    <select id="selectByComponentId" resultType="com.designsystem.entity.Changelog">
+        SELECT * FROM ds_changelog
+        WHERE component_id = #{componentId} AND deleted = 0
+        ORDER BY committed_at DESC
+    </select>
+
+    <select id="selectUnreleasedByComponentId" resultType="com.designsystem.entity.Changelog">
+        SELECT * FROM ds_changelog
+        WHERE component_id = #{componentId} AND included_in_release = 0 AND deleted = 0
+        ORDER BY committed_at DESC
+    </select>
+
+    <select id="selectByComponentIdAndVersion" resultType="com.designsystem.entity.Changelog">
+        SELECT * FROM ds_changelog
+        WHERE component_id = #{componentId} AND version = #{version} AND deleted = 0
+        ORDER BY committed_at DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>组件预览</title>
+    <link rel="stylesheet" th:href="@{/api/public/tokens/css}">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.5.0/css/all.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 24px;
+            background: #f9fafb;
+        }
+        .component-demo {
+            background: white;
+            border-radius: 12px;
+            padding: 32px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .component-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 24px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="component-demo">
+    <div class="component-title" th:text="${component?.displayName + ' 组件预览'}">Button 组件预览</div>
+
+    <div class="space-y-8">
+        <div>
+            <h4 class="text-sm font-medium text-gray-500 mb-3">基础用法</h4>
+            <div class="flex flex-wrap gap-3">
+                <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                    Primary Button
+                </button>
+                <button class="px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition">
+                    Default Button
+                </button>
+                <button class="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition">
+                    Secondary
+                </button>
+                <button class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition">
+                    Danger
+                </button>
+            </div>
+        </div>
+
+        <div>
+            <h4 class="text-sm font-medium text-gray-500 mb-3">按钮尺寸</h4>
+            <div class="flex flex-wrap items-center gap-3">
+                <button class="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded hover:bg-indigo-700 transition">
+                    Small
+                </button>
+                <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                    Medium
+                </button>
+                <button class="px-6 py-3 text-lg bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition">
+                    Large
+                </button>
+            </div>
+        </div>
+
+        <div>
+            <h4 class="text-sm font-medium text-gray-500 mb-3">按钮状态</h4>
+            <div class="flex flex-wrap gap-3">
+                <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg opacity-50 cursor-not-allowed" disabled>
+                    Disabled
+                </button>
+                <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg flex items-center">
+                    <i class="fas fa-spinner fa-spin mr-2"></i>
+                    Loading
+                </button>
+                <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center">
+                    <i class="fas fa-search mr-2"></i>
+                    带图标
+                </button>
+            </div>
+        </div>
+
+        <div>
+            <h4 class="text-sm font-medium text-gray-500 mb-3">设计令牌应用示例</h4>
+            <div class="grid grid-cols-5 gap-3">
+                <div class="text-center">
+                    <div class="w-full aspect-square rounded-lg mb-2" style="background-color: var(--color-primary)"></div>
+                    <code class="text-xs text-gray-500">--color-primary</code>
+                </div>
+                <div class="text-center">
+                    <div class="w-full aspect-square rounded-lg mb-2" style="background-color: var(--color-success)"></div>
+                    <code class="text-xs text-gray-500">--color-success</code>
+                </div>
+                <div class="text-center">
+                    <div class="w-full aspect-square rounded-lg mb-2" style="background-color: var(--color-warning)"></div>
+                    <code class="text-xs text-gray-500">--color-warning</code>
+                </div>
+                <div class="text-center">
+                    <div class="w-full aspect-square rounded-lg mb-2" style="background-color: var(--color-danger)"></div>
+                    <code class="text-xs text-gray-500">--color-danger</code>
+                </div>
+                <div class="text-center">
+                    <div class="w-full aspect-square rounded-lg mb-2" style="background-color: var(--color-info)"></div>
+                    <code class="text-xs text-gray-500">--color-info</code>
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <h4 class="text-sm font-medium text-gray-500 mb-3">圆角系统示例</h4>
+            <div class="flex flex-wrap gap-4 items-center">
+                <div class="w-16 h-16 bg-indigo-100" style="border-radius: var(--border-radius-sm)"></div>
+                <div class="w-16 h-16 bg-indigo-200" style="border-radius: var(--border-radius-md)"></div>
+                <div class="w-16 h-16 bg-indigo-300" style="border-radius: var(--border-radius-lg)"></div>
+                <div class="w-16 h-16 bg-indigo-400" style="border-radius: var(--border-radius-xl)"></div>
+                <div class="w-16 h-16 bg-indigo-500" style="border-radius: var(--border-radius-full)"></div>
+            </div>
+        </div>
+
+        <div>
+            <h4 class="text-sm font-medium text-gray-500 mb-3">阴影系统示例</h4>
+            <div class="flex flex-wrap gap-6">
+                <div class="w-24 h-24 bg-white rounded-lg" style="box-shadow: var(--box-shadow-sm)"></div>
+                <div class="w-24 h-24 bg-white rounded-lg" style="box-shadow: var(--box-shadow-md)"></div>
+                <div class="w-24 h-24 bg-white rounded-lg" style="box-shadow: var(--box-shadow-lg)"></div>
+                <div class="w-24 h-24 bg-white rounded-lg" style="box-shadow: var(--box-shadow-xl)"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    window.addEventListener('message', function(event) {
+        if (event.data === 'getHeight') {
+            window.parent.postMessage({
+                type: 'resize',
+                height: document.body.scrollHeight
+            }, '*');
+        }
+    });
+
+    window.parent.postMessage({
+        type: 'resize',
+        height: document.body.scrollHeight
+    }, '*');
+</script>
+
+</body>
+</html>

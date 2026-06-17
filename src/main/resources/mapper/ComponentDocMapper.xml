@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.ComponentDocMapper">
+
+    <select id="selectByVersionId" resultType="com.designsystem.entity.ComponentDoc">
+        SELECT * FROM ds_component_doc
+        WHERE component_version_id = #{versionId} AND deleted = 0
+        ORDER BY sort_order, title
+    </select>
+
+    <select id="selectUnindexedDocs" resultType="com.designsystem.entity.ComponentDoc">
+        SELECT * FROM ds_component_doc
+        WHERE indexed = 0 AND deleted = 0
+        ORDER BY updated_at DESC
+    </select>
+
+</mapper>

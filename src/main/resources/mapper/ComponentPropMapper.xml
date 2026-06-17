@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.ComponentPropMapper">
+
+    <select id="selectByVersionId" resultType="com.designsystem.entity.ComponentProp">
+        SELECT * FROM ds_component_prop
+        WHERE component_version_id = #{versionId} AND deleted = 0
+        ORDER BY sort_order, name
+    </select>
+
+    <delete id="deleteByVersionId">
+        DELETE FROM ds_component_prop WHERE component_version_id = #{versionId}
+    </delete>
+
+</mapper>

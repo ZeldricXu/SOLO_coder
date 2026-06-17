@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.ComponentMapper">
+
+    <resultMap id="ComponentMap" type="com.designsystem.entity.Component">
+        <id column="id" property="id"/>
+        <result column="name" property="name"/>
+        <result column="display_name" property="displayName"/>
+        <result column="description" property="description"/>
+        <result column="category" property="category"/>
+        <result column="tags" property="tags"/>
+        <result column="framework" property="framework"/>
+        <result column="maintainer_id" property="maintainerId"/>
+        <result column="latest_version" property="latestVersion"/>
+        <result column="git_repository" property="gitRepository"/>
+        <result column="npm_package" property="npmPackage"/>
+        <result column="preview_url" property="previewUrl"/>
+        <result column="screenshot_url" property="screenshotUrl"/>
+        <result column="readme_content" property="readmeContent"/>
+        <result column="status" property="status"/>
+        <result column="published" property="published"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted" property="deleted"/>
+    </resultMap>
+
+    <select id="selectComponentPage" resultMap="ComponentMap">
+        SELECT c.* FROM ds_component c
+        WHERE c.deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (c.name LIKE CONCAT('%', #{keyword}, '%')
+            OR c.display_name LIKE CONCAT('%', #{keyword}, '%')
+            OR c.description LIKE CONCAT('%', #{keyword}, '%')
+            OR c.tags LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="category != null and category != ''">
+            AND c.category = #{category}
+        </if>
+        <if test="framework != null and framework != ''">
+            AND c.framework = #{framework}
+        </if>
+        ORDER BY c.updated_at DESC
+    </select>
+
+    <select id="selectComponentsByTokenId" resultMap="ComponentMap">
+        SELECT DISTINCT c.* FROM ds_component c
+        INNER JOIN ds_component_token_usage u ON c.id = u.component_id
+        WHERE u.token_id = #{tokenId} AND c.deleted = 0
+        ORDER BY c.name
+    </select>
+
+    <select id="selectMarketplacePage" resultMap="ComponentMap">
+        SELECT c.* FROM ds_component c
+        WHERE c.deleted = 0 AND c.published = 1 AND c.status = 1
+        <if test="keyword != null and keyword != ''">
+            AND (c.name LIKE CONCAT('%', #{keyword}, '%')
+            OR c.display_name LIKE CONCAT('%', #{keyword}, '%')
+            OR c.description LIKE CONCAT('%', #{keyword}, '%')
+            OR c.tags LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="category != null and category != ''">
+            AND c.category = #{category}
+        </if>
+        <if test="framework != null and framework != ''">
+            AND c.framework = #{framework}
+        </if>
+        <if test="tags != null and tags.size() > 0">
+            AND (
+            <foreach collection="tags" item="tag" separator=" OR ">
+                c.tags LIKE CONCAT('%', #{tag}, '%')
+            </foreach>
+            )
+        </if>
+        ORDER BY c.updated_at DESC
+    </select>
+
+</mapper>

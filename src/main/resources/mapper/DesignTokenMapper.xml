@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.DesignTokenMapper">
+
+    <resultMap id="DesignTokenMap" type="com.designsystem.entity.DesignToken">
+        <id column="id" property="id"/>
+        <result column="token_name" property="tokenName"/>
+        <result column="display_name" property="displayName"/>
+        <result column="description" property="description"/>
+        <result column="token_type" property="tokenType"/>
+        <result column="token_level" property="tokenLevel"/>
+        <result column="base_value" property="baseValue"/>
+        <result column="inherits_from" property="inheritsFrom"/>
+        <result column="category" property="category"/>
+        <result column="tags" property="tags"/>
+        <result column="status" property="status"/>
+        <result column="deprecated_by" property="deprecatedBy"/>
+        <result column="deprecation_reason" property="deprecationReason"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+        <result column="created_by" property="createdBy"/>
+        <result column="updated_by" property="updatedBy"/>
+        <result column="deleted" property="deleted"/>
+    </resultMap>
+
+    <select id="selectTokenPage" resultMap="DesignTokenMap">
+        SELECT t.* FROM ds_design_token t
+        WHERE t.deleted = 0
+        <if test="keyword != null and keyword != ''">
+            AND (t.token_name LIKE CONCAT('%', #{keyword}, '%')
+            OR t.display_name LIKE CONCAT('%', #{keyword}, '%')
+            OR t.description LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        <if test="tokenType != null and tokenType != ''">
+            AND t.token_type = #{tokenType}
+        </if>
+        <if test="tokenLevel != null and tokenLevel != ''">
+            AND t.token_level = #{tokenLevel}
+        </if>
+        <if test="category != null and category != ''">
+            AND t.category = #{category}
+        </if>
+        ORDER BY t.token_level, t.category, t.token_name
+    </select>
+
+    <select id="selectByParentId" resultMap="DesignTokenMap">
+        SELECT t.* FROM ds_design_token t
+        WHERE t.deleted = 0 AND t.inherits_from = #{inheritsFrom}
+        ORDER BY t.token_name
+    </select>
+
+    <select id="selectByLevel" resultMap="DesignTokenMap">
+        SELECT t.* FROM ds_design_token t
+        WHERE t.deleted = 0 AND t.token_level = #{tokenLevel}
+        ORDER BY t.category, t.token_name
+    </select>
+
+    <select id="selectByType" resultMap="DesignTokenMap">
+        SELECT t.* FROM ds_design_token t
+        WHERE t.deleted = 0 AND t.token_type = #{tokenType}
+        ORDER BY t.token_level, t.token_name
+    </select>
+
+    <select id="selectByName" resultMap="DesignTokenMap">
+        SELECT t.* FROM ds_design_token t
+        WHERE t.deleted = 0 AND t.token_name = #{tokenName}
+        LIMIT 1
+    </select>
+
+    <select id="selectTokenChain" resultMap="DesignTokenMap">
+        WITH RECURSIVE token_chain AS (
+            SELECT * FROM ds_design_token WHERE id = #{tokenId} AND deleted = 0
+            UNION ALL
+            SELECT t.* FROM ds_design_token t
+            INNER JOIN token_chain tc ON t.inherits_from = tc.token_name
+            WHERE t.deleted = 0
+        )
+        SELECT * FROM token_chain
+    </select>
+
+</mapper>

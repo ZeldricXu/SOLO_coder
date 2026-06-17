@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.TokenOverrideMapper">
+
+    <select id="selectByTokenId" resultType="com.designsystem.entity.TokenOverride">
+        SELECT * FROM ds_token_override
+        WHERE token_id = #{tokenId} AND deleted = 0
+        ORDER BY priority DESC
+    </select>
+
+    <select id="selectByTokenIdAndScope" resultType="com.designsystem.entity.TokenOverride">
+        SELECT * FROM ds_token_override
+        WHERE token_id = #{tokenId} AND deleted = 0
+        AND scope = #{scope} AND theme = #{theme}
+        ORDER BY priority DESC
+    </select>
+
+</mapper>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.ProjectMapper">
+
+    <select id="selectSubscribedProjects" resultType="com.designsystem.entity.Project">
+        SELECT * FROM ds_project
+        WHERE subscription_status = 1 AND deleted = 0
+        ORDER BY project_name
+    </select>
+
+</mapper>

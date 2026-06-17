@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/layout :: head('组件详情')"></head>
+<body class="bg-gray-50">
+
+<div th:replace="fragments/layout :: sidebar"></div>
+<div th:replace="fragments/layout :: header('组件详情')"></div>
+
+<main class="ml-64 pt-16 min-h-screen">
+    <div class="p-6">
+
+        <div class="mb-6">
+            <a href="/components" class="text-sm text-gray-500 hover:text-gray-700 flex items-center">
+                <i class="fas fa-arrow-left mr-2"></i>
+                返回列表
+            </a>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 space-y-6">
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <div class="flex items-start justify-between">
+                        <div class="flex items-center">
+                            <div class="w-16 h-16 bg-indigo-100 rounded-2xl flex items-center justify-center mr-4">
+                                <i class="fas fa-puzzle-piece text-3xl text-indigo-600"></i>
+                            </div>
+                            <div>
+                                <div class="flex items-center space-x-3">
+                                    <h1 class="text-2xl font-bold text-gray-900" th:text="${component.displayName}">Button</h1>
+                                    <span th:if="${component.framework.code == 'react'}" class="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
+                                        <i class="fab fa-react mr-1"></i>React
+                                    </span>
+                                    <span th:if="${component.framework.code == 'vue'}" class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
+                                        <i class="fab fa-vuejs mr-1"></i>Vue
+                                    </span>
+                                    <span th:if="${component.published == 1}" class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">已发布</span>
+                                    <span th:if="${component.published == 0}" class="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">草稿</span>
+                                </div>
+                                <p class="text-gray-500 mt-1" th:text="${component.description}">按钮组件，用于触发操作</p>
+                                <p class="text-sm text-gray-400 mt-2">
+                                    <i class="fas fa-tag mr-1"></i>
+                                    <span th:text="${component.tags}">基础, 表单, 交互</span>
+                                </p>
+                            </div>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <a th:href="@{'/components/' + ${component.id} + '/edit'}"
+                               class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                                <i class="fas fa-edit mr-2"></i>编辑
+                            </a>
+                            <button class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                                <i class="fas fa-rocket mr-2"></i>发布新版本
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">组件预览</h2>
+                    <div class="border border-gray-200 rounded-lg overflow-hidden">
+                        <div class="bg-gray-100 px-4 py-2 border-b border-gray-200 flex items-center justify-between">
+                            <div class="flex space-x-2">
+                                <div class="w-3 h-3 bg-red-400 rounded-full"></div>
+                                <div class="w-3 h-3 bg-yellow-400 rounded-full"></div>
+                                <div class="w-3 h-3 bg-green-400 rounded-full"></div>
+                            </div>
+                            <button class="text-sm text-gray-500 hover:text-gray-700">
+                                <i class="fas fa-expand mr-1"></i>新窗口打开
+                            </button>
+                        </div>
+                        <iframe th:src="@{'/preview/' + ${component.id} + '?version=' + ${component.latestVersion}}"
+                                class="w-full h-64" frameborder="0"></iframe>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold text-gray-900">属性定义</h2>
+                        <button class="text-sm text-indigo-600 hover:text-indigo-700">
+                            <i class="fas fa-sync mr-1"></i>从源码同步
+                        </button>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="border-b border-gray-200">
+                                    <th class="text-left py-3 px-2 font-medium text-gray-500">属性名</th>
+                                    <th class="text-left py-3 px-2 font-medium text-gray-500">类型</th>
+                                    <th class="text-left py-3 px-2 font-medium text-gray-500">默认值</th>
+                                    <th class="text-left py-3 px-2 font-medium text-gray-500">必填</th>
+                                    <th class="text-left py-3 px-2 font-medium text-gray-500">说明</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr th:each="prop : ${props}" class="border-b border-gray-100 hover:bg-gray-50">
+                                    <td class="py-3 px-2 font-mono text-indigo-600" th:text="${prop.name}">type</td>
+                                    <td class="py-3 px-2 font-mono text-gray-600" th:text="${prop.type}">string</td>
+                                    <td class="py-3 px-2 font-mono text-gray-600" th:text="${prop.defaultValue ?: '-'}">'default'</td>
+                                    <td class="py-3 px-2">
+                                        <span th:if="${prop.required == 1}" class="text-red-500"><i class="fas fa-asterisk text-xs"></i></span>
+                                        <span th:if="${prop.required == 0}" class="text-gray-400">-</span>
+                                    </td>
+                                    <td class="py-3 px-2 text-gray-600" th:text="${prop.description}">按钮类型</td>
+                                </tr>
+                                <tr th:if="${#lists.isEmpty(props)}">
+                                    <td colspan="5" class="py-8 text-center text-gray-500">暂无属性定义</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">版本历史</h2>
+                    <div class="space-y-4">
+                        <div th:each="version : ${versions}" class="flex items-start">
+                            <div class="w-2 h-2 bg-indigo-600 rounded-full mt-2 mr-3"></div>
+                            <div class="flex-1 pb-4 border-b border-gray-100">
+                                <div class="flex items-center justify-between">
+                                    <div class="flex items-center space-x-2">
+                                        <span class="font-semibold text-gray-900" th:text="${version.version}">v2.1.0</span>
+                                        <span th:if="${version.version == component.latestVersion}"
+                                              class="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">最新</span>
+                                    </div>
+                                    <span class="text-sm text-gray-500" th:text="${#dates.format(version.createTime, 'yyyy-MM-dd')}">2024-01-15</span>
+                                </div>
+                                <p class="text-sm text-gray-600 mt-1" th:text="${version.changelog}">新增加载状态，支持disabled状态样式优化</p>
+                                <div class="flex items-center space-x-4 mt-2">
+                                    <button class="text-sm text-indigo-600 hover:text-indigo-700">
+                                        <i class="fas fa-eye mr-1"></i>预览此版本
+                                    </button>
+                                    <button class="text-sm text-gray-500 hover:text-gray-700">
+                                        <i class="fas fa-undo mr-1"></i>回滚到此版本
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="space-y-6">
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">基本信息</h3>
+                    <div class="space-y-3">
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-500">分类</span>
+                            <span class="text-sm text-gray-900" th:text="${component.category}">基础组件</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-500">最新版本</span>
+                            <span class="text-sm text-gray-900" th:text="${component.latestVersion}">v2.1.0</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-500">维护人</span>
+                            <span class="text-sm text-gray-900" th:text="${component.maintainer?.nickname}">张三</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-500">创建时间</span>
+                            <span class="text-sm text-gray-900" th:text="${#dates.format(component.createTime, 'yyyy-MM-dd')}">2024-01-01</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-sm text-gray-500">使用次数</span>
+                            <span class="text-sm text-gray-900">1,234</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">使用的设计令牌</h3>
+                    <div class="space-y-2">
+                        <div th:each="usage : ${tokenUsages}" class="flex items-center justify-between p-2 bg-gray-50 rounded">
+                            <code class="text-sm text-indigo-600" th:text="${usage.tokenName}">--btn-color-primary</code>
+                            <span class="text-xs text-gray-500" th:text="${usage.tokenType}">COLOR</span>
+                        </div>
+                    </div>
+                    <a href="#" class="block text-center text-sm text-indigo-600 hover:text-indigo-700 mt-4">
+                        查看完整令牌依赖图
+                    </a>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                    <h3 class="text-lg font-semibold text-gray-900 mb-4">安装使用</h3>
+                    <div class="bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                        <pre class="text-sm text-green-400"><code>npm install @design-system/button@2.1.0</code></pre>
+                    </div>
+                    <div class="mt-3 bg-gray-900 rounded-lg p-4 overflow-x-auto">
+                        <pre class="text-sm text-blue-300"><code th:text="|import { Button } from '@design-system/button';|">import { Button } from '@design-system/button';</code></pre>
+                    </div>
+                    <button class="w-full mt-4 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50">
+                        <i class="fas fa-download mr-2"></i>下载脚手架代码
+                    </button>
+                </div>
+
+            </div>
+        </div>
+
+    </div>
+</main>
+
+</body>
+</html>

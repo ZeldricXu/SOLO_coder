@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.designsystem.mapper.ComponentVersionMapper">
+
+    <select id="selectByComponentId" resultType="com.designsystem.entity.ComponentVersion">
+        SELECT * FROM ds_component_version
+        WHERE component_id = #{componentId} AND deleted = 0
+        ORDER BY created_at DESC
+    </select>
+
+    <select id="selectLatestVersion" resultType="com.designsystem.entity.ComponentVersion">
+        SELECT * FROM ds_component_version
+        WHERE component_id = #{componentId} AND deleted = 0 AND is_latest = 1
+        LIMIT 1
+    </select>
+
+    <select id="selectByComponentIdAndVersion" resultType="com.designsystem.entity.ComponentVersion">
+        SELECT * FROM ds_component_version
+        WHERE component_id = #{componentId} AND version = #{version} AND deleted = 0
+        LIMIT 1
+    </select>
+
+</mapper>
