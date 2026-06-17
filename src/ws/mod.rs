@@ -1,0 +1,360 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Duration;
+
+use async_trait::async_trait;
+use dashmap::{DashMap, DashSet};
+use futures::{SinkExt, StreamExt};
+use parking_lot::Mutex;
+use serde::{Deserialize, Serialize};
+use tokio::sync::mpsc;
+use tokio_tungstenite::tungstenite::protocol::Message;
+use uuid::Uuid;
+
+use crate::crdt::{Op, YataDocument};
+use crate::presence::{PresenceUpdate, CursorPosition, SelectionRange};
+use crate::config::AppConfig;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum WsMessage {
+    Hello {
+        session_id: Uuid,
+        client_id: u64,
+        user_id: String,
+        document_id: Uuid,
+        resume_from: Option<u64>,
+    },
+    Welcome {
+        session_id: Uuid,
+        client_id: u64,
+        server_time: i64,
+        vector_clock: HashMap<u64, u32>,
+        content: Option<String>,
+        missing_ops: Vec<Op>,
+    },
+    Op {
+        sequence: u64,
+        op: Op,
+    },
+    Ack {
+        sequence: u64,
+        applied: bool,
+    },
+    Presence {
+        user_id: String,
+        update: PresenceUpdate,
+    },
+    Cursor {
+        user_id: String,
+        position: CursorPosition,
+    },
+    Selection {
+        user_id: String,
+        range: SelectionRange,
+    },
+    SnapshotRequest {
+        from_version: Option<u64>,
+    },
+    SnapshotResponse {
+        version: u64,
+        ops: Vec<Op>,
+        full_snapshot: bool,
+    },
+    Ping {
+        timestamp: i64,
+    },
+    Pong {
+        timestamp: i64,
+        server_time: i64,
+    },
+    Error {
+        code: String,
+        message: String,
+    },
+    Goodbye {
+        reason: String,
+    },
+    RoomJoined {
+        document_id: Uuid,
+        users: Vec<RoomUser>,
+    },
+    UserJoined {
+        user: RoomUser,
+    },
+    UserLeft {
+        user_id: String,
+        reason: String,
+    },
+    BatchOps {
+        sequence: u64,
+        ops: Vec<Op>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoomUser {
+    pub user_id: String,
+    pub client_id: u64,
+    pub joined_at: i64,
+    pub session_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectionInfo {
+    pub session_id: Uuid,
+    pub client_id: u64,
+    pub user_id: String,
+    pub document_id: Uuid,
+    pub sender: mpsc::UnboundedSender<WsMessage>,
+    pub last_pong: Arc<Mutex<i64>>,
+    pub last_seq: Arc<Mutex<u64>>,
+    pub connected_at: chrono::DateTime<chrono::Utc>,
+    pub disconnected_at: Arc<Mutex<Option<chrono::DateTime<chrono::Utc>>>>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ResumeSession {
+    pub session_id: Uuid,
+    pub client_id: u64,
+    pub user_id: String,
+    pub document_id: Uuid,
+    pub pending_ops: Vec<(u64, Op)>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Room {
+    pub document_id: Uuid,
+    pub connections: DashSet<Uuid>,
+    pub document: Arc<parking_lot::RwLock<YataDocument>>,
+    pub ops_history: Arc<Mutex<Vec<(u64, Op)>>>,
+    pub current_version: Arc<Mutex<u64>>,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub last_activity: Arc<Mutex<chrono::DateTime<chrono::Utc>>>,
+}
+
+impl Room {
+    fn new(document_id: Uuid, client_id: u64) -> Self {
+        Self {
+            document_id,
+            connections: DashSet::new(),
+            document: Arc::new(parking_lot::RwLock::new(YataDocument::new(document_id, client_id))),
+            ops_history: Arc::new(Mutex::new(Vec::new())),
+            current_version: Arc::new(Mutex::new(0)),
+            created_at: chrono::Utc::now(),
+            last_activity: Arc::new(Mutex::new(chrono::Utc::now())),
+        }
+    }
+
+    pub fn add_op(&self, op: Op) -> u64 {
+        let mut ver = self.current_version.lock();
+        *ver += 1;
+        let seq = *ver;
+        self.ops_history.lock().push((seq, op));
+        *self.last_activity.lock() = chrono::Utc::now();
+        seq
+    }
+
+    pub fn get_ops_since(&self, from: u64) -> Vec<(u64, Op)> {
+        let history = self.ops_history.lock();
+        history.iter()
+            .filter(|(s, _)| *s > from)
+            .cloned()
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ConnectionManager {
+    pub rooms: Arc<DashMap<Uuid, Arc<Room>>>,
+    connections: Arc<DashMap<Uuid, ConnectionInfo>>,
+    resume_sessions: Arc<DashMap<Uuid, ResumeSession>>,
+    config: AppConfig,
+}
+
+impl ConnectionManager {
+    pub fn new(config: AppConfig) -> Self {
+        Self {
+            rooms: Arc::new(DashMap::new()),
+            connections: Arc::new(DashMap::new()),
+            resume_sessions: Arc::new(DashMap::new()),
+            config,
+        }
+    }
+
+    pub fn get_or_create_room(&self, document_id: Uuid, client_id: u64) -> Arc<Room> {
+        self.rooms
+            .entry(document_id)
+            .or_insert_with(|| Arc::new(Room::new(document_id, client_id)))
+            .clone()
+    }
+
+    pub fn get_room(&self, document_id: &Uuid) -> Option<Arc<Room>> {
+        self.rooms.get(document_id).map(|r| r.clone())
+    }
+
+    pub fn remove_connection(&self, session_id: &Uuid) -> Option<ConnectionInfo> {
+        if let Some(info) = self.connections.remove(session_id) {
+            let info = info.1;
+
+            if let Some(room) = self.rooms.get(&info.document_id) {
+                room.connections.remove(session_id);
+                self.broadcast_to_room(
+                    &info.document_id,
+                    WsMessage::UserLeft {
+                        user_id: info.user_id.clone(),
+                        reason: "disconnected".to_string(),
+                    },
+                    Some(session_id),
+                );
+
+                if room.connections.is_empty() {
+                    let expires_at = chrono::Utc::now()
+                        + chrono::Duration::seconds(self.config.websocket.session_resume_window_secs as i64);
+
+                    let pending_ops = room.ops_history.lock().clone();
+                    let resume = ResumeSession {
+                        session_id: info.session_id,
+                        client_id: info.client_id,
+                        user_id: info.user_id.clone(),
+                        document_id: info.document_id,
+                        pending_ops,
+                        created_at: chrono::Utc::now(),
+                        expires_at,
+                    };
+                    self.resume_sessions.insert(*session_id, resume);
+                }
+            }
+            Some(info)
+        } else {
+            None
+        }
+    }
+
+    pub fn register_connection(
+        &self,
+        session_id: Uuid,
+        client_id: u64,
+        user_id: String,
+        document_id: Uuid,
+        sender: mpsc::UnboundedSender<WsMessage>,
+    ) -> ConnectionInfo {
+        let info = ConnectionInfo {
+            session_id,
+            client_id,
+            user_id,
+            document_id,
+            sender,
+            last_pong: Arc::new(Mutex::new(chrono::Utc::now().timestamp_millis())),
+            last_seq: Arc::new(Mutex::new(0)),
+            connected_at: chrono::Utc::now(),
+            disconnected_at: Arc::new(Mutex::new(None)),
+        };
+        self.connections.insert(session_id, info.clone());
+        info
+    }
+
+    pub fn broadcast_to_room(&self, document_id: &Uuid, message: WsMessage, exclude: Option<&Uuid>) {
+        if let Some(room) = self.rooms.get(document_id) {
+            for session_id in room.connections.iter() {
+                if exclude.map(|e| e == session_id.key()).unwrap_or(false) {
+                    continue;
+                }
+                if let Some(conn) = self.connections.get(session_id.key()) {
+                    let _ = conn.sender.send(message.clone());
+                }
+            }
+        }
+    }
+
+    pub fn send_to_session(&self, session_id: &Uuid, message: WsMessage) -> bool {
+        if let Some(conn) = self.connections.get(session_id) {
+            conn.sender.send(message).is_ok()
+        } else {
+            false
+        }
+    }
+
+    pub fn room_users(&self, document_id: &Uuid) -> Vec<RoomUser> {
+        if let Some(room) = self.rooms.get(document_id) {
+            room.connections
+                .iter()
+                .filter_map(|sid| self.connections.get(sid.key()))
+                .map(|c| RoomUser {
+                    user_id: c.user_id.clone(),
+                    client_id: c.client_id,
+                    joined_at: c.connected_at.timestamp_millis(),
+                    session_id: c.session_id,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
+    pub fn get_resume_session(&self, session_id: &Uuid) -> Option<ResumeSession> {
+        self.resume_sessions.get(session_id).map(|r| r.clone())
+    }
+
+    pub fn remove_resume_session(&self, session_id: &Uuid) {
+        self.resume_sessions.remove(session_id);
+    }
+
+    pub fn cleanup_expired_sessions(&self) {
+        let now = chrono::Utc::now();
+        self.resume_sessions.retain(|_, s| s.expires_at > now);
+    }
+
+    pub fn total_connections(&self) -> usize {
+        self.connections.len()
+    }
+
+    pub fn total_rooms(&self) -> usize {
+        self.rooms.len()
+    }
+
+    pub fn active_documents(&self) -> HashSet<Uuid> {
+        self.rooms.iter().map(|r| *r.key()).collect()
+    }
+
+    pub fn get_connection(&self, session_id: &Uuid) -> Option<ConnectionInfo> {
+        self.connections.get(session_id).map(|c| c.clone())
+    }
+
+    pub fn update_pong(&self, session_id: &Uuid) {
+        if let Some(conn) = self.connections.get(session_id) {
+            *conn.last_pong.lock() = chrono::Utc::now().timestamp_millis();
+        }
+    }
+
+    pub fn check_stale_connections(&self) -> Vec<Uuid> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let timeout = self.config.websocket.client_timeout_secs * 1000;
+        let mut stale = Vec::new();
+
+        for conn in self.connections.iter() {
+            let last_pong = *conn.last_pong.lock();
+            if now - last_pong > timeout as i64 {
+                stale.push(*conn.key());
+            }
+        }
+
+        stale
+    }
+}
+
+impl WsMessage {
+    pub fn to_ws(&self) -> Message {
+        let json = serde_json::to_string(self).unwrap();
+        Message::Text(json)
+    }
+
+    pub fn from_ws(msg: &Message) -> Result<Self, String> {
+        match msg {
+            Message::Text(text) => serde_json::from_str(text).map_err(|e| e.to_string()),
+            Message::Binary(data) => serde_json::from_slice(data).map_err(|e| e.to_string()),
+            _ => Err("Unsupported message type".into()),
+        }
+    }
+}
