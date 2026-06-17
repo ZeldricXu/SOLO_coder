@@ -1,0 +1,18 @@
+processors:
+  - type: parse
+    params:
+      grok.pattern.common_log: "%{COMMONAPACHELOG}"
+      grok.pattern.combined_log: "%{COMBINEDAPACHELOG}"
+  - type: filter
+    params:
+      excludedLevels: "DEBUG"
+      excludeHealthChecks: "true"
+  - type: enrich
+    params:
+      cmdb.timeout: "5000"
+      cache.expire.seconds: "300"
+  - type: route
+    params:
+      INFO: "parsed-logs"
+      WARN: "parsed-logs"
+      ERROR: "error-logs"

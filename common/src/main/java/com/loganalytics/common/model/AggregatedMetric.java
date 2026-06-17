@@ -1,8 +1,12 @@
 package com.loganalytics.common.model;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Map;
 
 public class AggregatedMetric {
+    private String id;
+    private String metricName;
     private Instant windowStart;
     private Instant windowEnd;
     private String windowType;
@@ -13,8 +17,18 @@ public class AggregatedMetric {
     private long count;
     private double eps;
     private double errorRate;
+    private Duration windowSize;
+    private double value;
+    private Map<String, String> tags;
+    private Instant timestamp;
 
     public AggregatedMetric() {}
+
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
+
+    public String getMetricName() { return metricName; }
+    public void setMetricName(String metricName) { this.metricName = metricName; }
 
     public Instant getWindowStart() { return windowStart; }
     public void setWindowStart(Instant windowStart) { this.windowStart = windowStart; }
@@ -45,4 +59,16 @@ public class AggregatedMetric {
 
     public double getErrorRate() { return errorRate; }
     public void setErrorRate(double errorRate) { this.errorRate = errorRate; }
+
+    public Duration getWindowSize() { return windowSize; }
+    public void setWindowSize(Duration windowSize) { this.windowSize = windowSize; }
+
+    public double getValue() { return value; }
+    public void setValue(double value) { this.value = value; }
+
+    public Map<String, String> getTags() { return tags; }
+    public void setTags(Map<String, String> tags) { this.tags = tags; }
+
+    public Instant getTimestamp() { return timestamp; }
+    public void setTimestamp(Instant timestamp) { this.timestamp = timestamp; }
 }

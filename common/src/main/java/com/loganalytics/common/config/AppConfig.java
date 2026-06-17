@@ -54,6 +54,19 @@ public class AppConfig {
         return value != null ? Boolean.parseBoolean(value) : defaultValue;
     }
 
+    public double getDouble(String key, double defaultValue) {
+        String value = properties.getProperty(key);
+        return value != null ? Double.parseDouble(value) : defaultValue;
+    }
+
+    public static AppConfig loadFromFile(String path) throws IOException {
+        return new AppConfig(path);
+    }
+
+    public static AppConfig loadDefault() {
+        return new AppConfig();
+    }
+
     public Properties asProperties() {
         return new Properties(properties);
     }

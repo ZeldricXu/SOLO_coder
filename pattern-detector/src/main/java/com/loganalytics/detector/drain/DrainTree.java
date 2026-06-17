@@ -18,7 +18,8 @@ public class DrainTree {
     private static final Logger log = LoggerFactory.getLogger(DrainTree.class);
 
     private final DetectorConfig config;
-    private final DrainNode root;
+    private final TokenEncoder tokenEncoder;
+    private final EncodedDrainNode root;
     private final Map<String, LogPattern> patternMap;
     private final Cache<String, LogPattern> fastPathCache;
     private final Pattern variablePattern;
@@ -28,24 +29,30 @@ public class DrainTree {
     private final Pattern uuidPattern;
     private final Pattern datePattern;
 
-    static class DrainNode {
-        final int depth;
-        final String token;
-        final Map<String, DrainNode> children;
-        LogPattern pattern;
-        long lastAccessTime;
-
-        DrainNode(int depth, String token) {
-            this.depth = depth;
-            this.token = token;
-            this.children = new ConcurrentHashMap<>();
-            this.lastAccessTime = System.currentTimeMillis();
-        }
-    }
-
     public DrainTree(DetectorConfig config) {
         this.config = config;
-        this.root = new DrainNode(0, null);
+        this.tokenEncoder = new TokenEncoder();
+        this.root = new EncodedDrainNode(0, -1);
+        this.patternMap = new ConcurrentHashMap<>();
+        this.fastPathCache = Caffeine.newBuilder()
+                .maximumSize(10000)
+                .expireAfterAccess(Duration.ofHours(1))
+                .build();
+        this.variablePattern = Pattern.compile("^[<\\[{].*[>\\]}]$|^\\*$|^\\?$");
+        this.digitPattern = Pattern.compile("^\\d+$");
+        this.hexPattern = Pattern.compile("^[0-9a-fA-F]+$");
+        this.ipPattern = Pattern.compile("^\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}$");
+        this.uuidPattern = Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", Pattern.CASE_INSENSITIVE);
+        this.datePattern = Pattern.compile("^\\d{4}[-/]\\d{2}[-/]\\d{2}[T ]?\\d{2}:\\d{2}:\\d{2}.*$");
+    }
+
+    public DrainTree(int maxDepth, int maxChildren, double similarityThreshold, java.util.Set<String> services) {
+        this.config = new DetectorConfig();
+        this.config.setMaxTreeDepth(maxDepth);
+        this.config.setMaxChildren(maxChildren);
+        this.config.setSimilarityThreshold(similarityThreshold);
+        this.tokenEncoder = new TokenEncoder();
+        this.root = new EncodedDrainNode(0, -1);
         this.patternMap = new ConcurrentHashMap<>();
         this.fastPathCache = Caffeine.newBuilder()
                 .maximumSize(10000)
@@ -72,11 +79,12 @@ public class DrainTree {
         }
 
         List<String> tokens = tokenize(message);
-        LogPattern pattern = match(tokens);
+        int[] codes = tokenEncoder.encodeTokens(tokens);
+        LogPattern pattern = match(codes);
 
         if (pattern == null) {
             pattern = createPattern(tokens, event);
-            addToTree(tokens, pattern);
+            addToTree(codes, pattern);
             log.debug("Created new pattern: {} (total: {})", pattern.getTemplate(), patternMap.size());
         } else {
             pattern.incrementCount(event.getServiceName(), event.getLevel());
@@ -120,19 +128,19 @@ public class DrainTree {
         return false;
     }
 
-    private LogPattern match(List<String> tokens) {
-        if (tokens.isEmpty()) return null;
+    private LogPattern match(int[] codes) {
+        if (codes.length == 0) return null;
 
-        DrainNode current = root;
+        EncodedDrainNode current = root;
 
-        for (int i = 0; i < tokens.size(); i++) {
-            String token = tokens.get(i);
+        for (int i = 0; i < codes.length; i++) {
+            int code = codes[i];
             int depth = i + 1;
 
-            DrainNode child = current.children.get(token);
+            EncodedDrainNode child = current.children.get(code);
 
             if (child == null) {
-                child = current.children.get("<*>");
+                child = current.children.get(TokenEncoder.WILDCARD_CODE);
             }
 
             if (child == null) {
@@ -140,9 +148,10 @@ public class DrainTree {
                     double bestSimilarity = 0;
                     LogPattern bestPattern = null;
 
-                    for (DrainNode node : current.children.values()) {
+                    for (EncodedDrainNode node : current.children.values()) {
                         if (node.pattern != null) {
-                            double sim = calculateSimilarity(tokens, tokenize(node.pattern.getTemplate()));
+                            int[] patternCodes = tokenEncoder.encodeTokens(tokenize(node.pattern.getTemplate()));
+                            double sim = calculateSimilarity(codes, patternCodes);
                             if (sim > bestSimilarity && sim >= config.getSimilarityThreshold()) {
                                 bestSimilarity = sim;
                                 bestPattern = node.pattern;
@@ -159,7 +168,8 @@ public class DrainTree {
             current.lastAccessTime = System.currentTimeMillis();
 
             if (current.pattern != null) {
-                double sim = calculateSimilarity(tokens, tokenize(current.pattern.getTemplate()));
+                int[] patternCodes = tokenEncoder.encodeTokens(tokenize(current.pattern.getTemplate()));
+                double sim = calculateSimilarity(codes, patternCodes);
                 if (sim >= config.getSimilarityThreshold()) {
                     return current.pattern;
                 }
@@ -169,26 +179,26 @@ public class DrainTree {
         return current.pattern;
     }
 
-    private double calculateSimilarity(List<String> tokens1, List<String> tokens2) {
-        if (tokens1.size() != tokens2.size()) {
-            double ratio = (double) Math.min(tokens1.size(), tokens2.size()) / Math.max(tokens1.size(), tokens2.size());
+    private double calculateSimilarity(int[] codes1, int[] codes2) {
+        if (codes1.length != codes2.length) {
+            double ratio = (double) Math.min(codes1.length, codes2.length) / Math.max(codes1.length, codes2.length);
             if (ratio < 0.8) return 0.0;
         }
 
         int matches = 0;
         int total = 0;
 
-        int minLen = Math.min(tokens1.size(), tokens2.size());
+        int minLen = Math.min(codes1.length, codes2.length);
         for (int i = 0; i < minLen; i++) {
-            String t1 = tokens1.get(i);
-            String t2 = tokens2.get(i);
+            int c1 = codes1[i];
+            int c2 = codes2[i];
 
-            if (t1.equals("<*>") || t2.equals("<*>")) {
+            if (c1 == TokenEncoder.WILDCARD_CODE || c2 == TokenEncoder.WILDCARD_CODE) {
                 continue;
             }
 
             total++;
-            if (t1.equals(t2)) {
+            if (c1 == c2) {
                 matches++;
             }
         }
@@ -223,18 +233,20 @@ public class DrainTree {
         return pattern;
     }
 
-    private void addToTree(List<String> tokens, LogPattern pattern) {
-        DrainNode current = root;
+    private void addToTree(int[] codes, LogPattern pattern) {
+        EncodedDrainNode current = root;
 
-        for (int i = 0; i < tokens.size(); i++) {
-            String token = tokens.get(i);
+        for (int i = 0; i < codes.length; i++) {
+            int code = codes[i];
 
-            if (current.children.size() >= config.getMaxChildren() && !current.children.containsKey(token)) {
-                token = "<*>";
+            if (current.children.size() >= config.getMaxChildren() && !current.children.containsKey(code)) {
+                code = TokenEncoder.WILDCARD_CODE;
             }
 
-            DrainNode child = current.children.computeIfAbsent(
-                    token, k -> new DrainNode(i + 1, k)
+            int depth = i + 1;
+            int finalCode = code;
+            EncodedDrainNode child = current.children.computeIfAbsent(
+                    finalCode, k -> new EncodedDrainNode(depth, k)
             );
             current = child;
             current.lastAccessTime = System.currentTimeMillis();

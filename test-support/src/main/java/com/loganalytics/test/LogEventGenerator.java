@@ -67,9 +67,9 @@ public class LogEventGenerator {
         event.setSpanId("span-" + random.nextInt(100000));
         event.setPatternId("pattern-" + (100 + random.nextInt(50)));
 
-        Map<String, Object> fields = new HashMap<>();
+        Map<String, String> fields = new HashMap<>();
         fields.put("duration", random.nextInt(1000) + "ms");
-        fields.put("statusCode", 200 + random.nextInt(300));
+        fields.put("statusCode", String.valueOf(200 + random.nextInt(300)));
         fields.put("userId", "user-" + random.nextInt(10000));
         fields.put("requestId", "req-" + random.nextInt(100000));
         event.setFields(fields);

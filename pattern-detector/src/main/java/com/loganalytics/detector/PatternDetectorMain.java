@@ -133,7 +133,7 @@ public class PatternDetectorMain implements Runnable {
                 org.apache.kafka.streams.kstream.Consumed.with(Serdes.String(), new LogEventSerde())
         );
 
-        KStream<String, AnomalyEvent> anomalyStream = inputStream.processValues(
+        KStream<String, AnomalyEvent> anomalyStream = inputStream.process(
                 () -> new PatternDetectionProcessor(),
                 patternStore
         );

@@ -51,4 +51,8 @@ public final class IdUtils {
         }
         return Integer.toHexString(sb.toString().hashCode());
     }
+
+    public static String generateId(String prefix) {
+        return prefix.toUpperCase().charAt(0) + "-" + newShortId();
+    }
 }

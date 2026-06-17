@@ -35,6 +35,8 @@ public class DetectorConfig {
 
     private int anomalyCooldownMinutes;
 
+    private int partitionCount;
+
     public DetectorConfig() {}
 
     public static DetectorConfig fromAppConfig(AppConfig config) {
@@ -63,6 +65,8 @@ public class DetectorConfig {
         dc.setCorrelationDetectionEnabled(config.getBoolean("detector.correlation.enabled", true));
 
         dc.setAnomalyCooldownMinutes(config.getInt("detector.anomaly.cooldown.minutes", 5));
+
+        dc.setPartitionCount(config.getInt("detector.partition.count", Runtime.getRuntime().availableProcessors()));
 
         return dc;
     }
@@ -135,4 +139,7 @@ public class DetectorConfig {
 
     public int getColdStartDefaultThreshold() { return coldStartDefaultThreshold; }
     public void setColdStartDefaultThreshold(int coldStartDefaultThreshold) { this.coldStartDefaultThreshold = coldStartDefaultThreshold; }
+
+    public int getPartitionCount() { return partitionCount; }
+    public void setPartitionCount(int partitionCount) { this.partitionCount = partitionCount; }
 }

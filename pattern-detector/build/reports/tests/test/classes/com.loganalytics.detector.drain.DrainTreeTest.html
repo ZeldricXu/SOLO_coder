@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+<meta http-equiv="x-ua-compatible" content="IE=edge"/>
+<title>Test results - DrainTree - 日志模式聚类</title>
+<link href="../css/base-style.css" rel="stylesheet" type="text/css"/>
+<link href="../css/style.css" rel="stylesheet" type="text/css"/>
+<script src="../js/report.js" type="text/javascript"></script>
+</head>
+<body>
+<div id="content">
+<h1>DrainTree - 日志模式聚类</h1>
+<div class="breadcrumbs">
+<a href="../index.html">all</a> &gt; 
+<a href="../packages/com.loganalytics.detector.drain.html">com.loganalytics.detector.drain</a> &gt; DrainTreeTest</div>
+<div id="summary">
+<table>
+<tr>
+<td>
+<div class="summaryGroup">
+<table>
+<tr>
+<td>
+<div class="infoBox" id="tests">
+<div class="counter">11</div>
+<p>tests</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="failures">
+<div class="counter">4</div>
+<p>failures</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="ignored">
+<div class="counter">0</div>
+<p>ignored</p>
+</div>
+</td>
+<td>
+<div class="infoBox" id="duration">
+<div class="counter">0.249s</div>
+<p>duration</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+</td>
+<td>
+<div class="infoBox failures" id="successRate">
+<div class="percent">63%</div>
+<p>successful</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="tab-container">
+<ul class="tabLinks">
+<li>
+<a href="#">Failed tests</a>
+</li>
+<li>
+<a href="#">Tests</a>
+</li>
+<li>
+<a href="#">Standard output</a>
+</li>
+</ul>
+<div class="tab">
+<h2>Failed tests</h2>
+<div class="test">
+<a name="shouldClusterSamePatternLogsIntoSameTemplate()"></a>
+<h3 class="failures">相同模式的日志被聚类到同一个模式模板</h3>
+<span class="code">
+<pre id="test-message-shouldClusterSamePatternLogsIntoSameTemplate()">org.opentest4j.AssertionFailedError: 
+expected: &quot;P-1781169192477-0d78-ae5cab&quot;
+ but was: &quot;P-1781169192475-0d77-718cd8&quot;
+	at app//com.loganalytics.detector.drain.DrainTreeTest.shouldClusterSamePatternLogsIntoSameTemplate(DrainTreeTest.java:59)
+	at java.base@17.0.19/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+</pre>
+<button class="clipboard-copy-btn" aria-label="Copy to clipboard" data-copy-element-id="test-message-shouldClusterSamePatternLogsIntoSameTemplate()">Copy</button>
+</span>
+</div>
+<div class="test">
+<a name="shouldGetTopKPatternsSortedByFrequency()"></a>
+<h3 class="failures">按频率排序获取Top K模式</h3>
+<span class="code">
+<pre id="test-message-shouldGetTopKPatternsSortedByFrequency()">java.lang.AssertionError: 
+Expecting actual:
+  0L
+to be greater than or equal to:
+  10L
+
+	at com.loganalytics.detector.drain.DrainTreeTest.shouldGetTopKPatternsSortedByFrequency(DrainTreeTest.java:243)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+</pre>
+<button class="clipboard-copy-btn" aria-label="Copy to clipboard" data-copy-element-id="test-message-shouldGetTopKPatternsSortedByFrequency()">Copy</button>
+</span>
+</div>
+<div class="test">
+<a name="shouldMarkNewPatternAsNovelAndRecord()"></a>
+<h3 class="failures">新模式首次出现被正确标记为novel pattern并记录</h3>
+<span class="code">
+<pre id="test-message-shouldMarkNewPatternAsNovelAndRecord()">org.opentest4j.AssertionFailedError: 
+expected: &quot;P-1781169192554-0d92-315a6f&quot;
+ but was: &quot;P-1781169192558-0d93-658f8b&quot;
+	at app//com.loganalytics.detector.drain.DrainTreeTest.shouldMarkNewPatternAsNovelAndRecord(DrainTreeTest.java:95)
+	at java.base@17.0.19/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+</pre>
+<button class="clipboard-copy-btn" aria-label="Copy to clipboard" data-copy-element-id="test-message-shouldMarkNewPatternAsNovelAndRecord()">Copy</button>
+</span>
+</div>
+<div class="test">
+<a name="shouldUseFastPathCacheForRepeatedMessages()"></a>
+<h3 class="failures">快速路径缓存命中</h3>
+<span class="code">
+<pre id="test-message-shouldUseFastPathCacheForRepeatedMessages()">org.opentest4j.AssertionFailedError: 
+expected: 2L
+ but was: 1L
+	at app//com.loganalytics.detector.drain.DrainTreeTest.shouldUseFastPathCacheForRepeatedMessages(DrainTreeTest.java:258)
+	at java.base@17.0.19/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+</pre>
+<button class="clipboard-copy-btn" aria-label="Copy to clipboard" data-copy-element-id="test-message-shouldUseFastPathCacheForRepeatedMessages()">Copy</button>
+</span>
+</div>
+</div>
+<div class="tab">
+<h2>Tests</h2>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Method name</th>
+<th>Duration</th>
+<th>Result</th>
+</tr>
+</thead>
+<tr>
+<td class="failures">相同模式的日志被聚类到同一个模式模板</td>
+<td class="failures">shouldClusterSamePatternLogsIntoSameTemplate()</td>
+<td class="failures">0.014s</td>
+<td class="failures">failed</td>
+</tr>
+<tr>
+<td class="success">不同模式的日志创建不同的模式模板</td>
+<td class="success">shouldCreateDifferentTemplatesForDifferentPatterns()</td>
+<td class="success">0.003s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">模式更新时泛化模板</td>
+<td class="success">shouldGeneralizeTemplateWhenPatternUpdates()</td>
+<td class="success">0.003s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="failures">按频率排序获取Top K模式</td>
+<td class="failures">shouldGetTopKPatternsSortedByFrequency()</td>
+<td class="failures">0.029s</td>
+<td class="failures">failed</td>
+</tr>
+<tr>
+<td class="success">正确识别静态token和变量slot</td>
+<td class="success">shouldIdentifyStaticTokensAndVariableSlots()</td>
+<td class="success">0.006s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="failures">新模式首次出现被正确标记为novel pattern并记录</td>
+<td class="failures">shouldMarkNewPatternAsNovelAndRecord()</td>
+<td class="failures">0.012s</td>
+<td class="failures">failed</td>
+</tr>
+<tr>
+<td class="success">空消息或空白消息返回null</td>
+<td class="success">shouldReturnNullForEmptyOrBlankMessages()</td>
+<td class="success">0.001s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">IP地址被正确识别为变量</td>
+<td class="success">shouldTreatIpAddressesAsVariables()</td>
+<td class="success">0.005s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">数字ID被正确识别为变量</td>
+<td class="success">shouldTreatLongDigitStringsAsVariables()</td>
+<td class="success">0.001s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="success">UUID被正确识别为变量</td>
+<td class="success">shouldTreatUuidsAsVariables()</td>
+<td class="success">0.164s</td>
+<td class="success">passed</td>
+</tr>
+<tr>
+<td class="failures">快速路径缓存命中</td>
+<td class="failures">shouldUseFastPathCacheForRepeatedMessages()</td>
+<td class="failures">0.011s</td>
+<td class="failures">failed</td>
+</tr>
+</table>
+</div>
+<div class="tab">
+<h2>Standard output</h2>
+<span class="code">
+<pre id="class-stdout">17:13:12.428 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Transaction &lt;*&gt; completed (total: 1)
+17:13:12.475 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_123 login from &lt;*&gt; (total: 1)
+17:13:12.477 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_456 login from &lt;*&gt; (total: 2)
+17:13:12.478 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_789 login from &lt;*&gt; (total: 3)
+17:13:12.488 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Request from &lt;*&gt; processed in 50ms (total: 1)
+17:13:12.494 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_0 login from &lt;*&gt; (total: 1)
+17:13:12.495 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_1 login from &lt;*&gt; (total: 2)
+17:13:12.496 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_2 login from &lt;*&gt; (total: 3)
+17:13:12.496 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_3 login from &lt;*&gt; (total: 4)
+17:13:12.496 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_4 login from &lt;*&gt; (total: 5)
+17:13:12.497 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_5 login from &lt;*&gt; (total: 6)
+17:13:12.498 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_6 login from &lt;*&gt; (total: 7)
+17:13:12.499 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_7 login from &lt;*&gt; (total: 8)
+17:13:12.499 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_8 login from &lt;*&gt; (total: 9)
+17:13:12.499 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_9 login from &lt;*&gt; (total: 10)
+17:13:12.500 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 0s to server-0:8080 (total: 11)
+17:13:12.500 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 1s to server-1:8080 (total: 12)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 2s to server-2:8080 (total: 13)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 3s to server-3:8080 (total: 14)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 4s to server-4:8080 (total: 15)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Single unique event (total: 16)
+17:13:12.524 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_1 login from &lt;*&gt; (total: 1)
+17:13:12.531 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_cache login from &lt;*&gt; (total: 1)
+17:13:12.544 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_1 login from &lt;*&gt; (total: 1)
+17:13:12.545 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 10s to server-1:8080 (total: 2)
+17:13:12.545 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Payment processed successfully for order &lt;*&gt; (total: 3)
+17:13:12.547 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User &lt;*&gt; logged in (total: 1)
+17:13:12.550 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User login from &lt;*&gt; success (total: 1)
+17:13:12.554 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 30s to db-server-01:5432 (total: 1)
+17:13:12.558 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 60s to db-server-02:3306 (total: 2)
+</pre>
+<button class="clipboard-copy-btn" aria-label="Copy to clipboard" data-copy-element-id="class-stdout">Copy</button>
+</span>
+</div>
+</div>
+<div id="footer">
+<p>
+<div>
+<label class="hidden" id="label-for-line-wrapping-toggle" for="line-wrapping-toggle">Wrap lines
+<input id="line-wrapping-toggle" type="checkbox" autocomplete="off"/>
+</label>
+</div>Generated by 
+<a href="https://www.gradle.org">Gradle 9.2.0</a> at 2026年6月11日 下午5:13:12</p>
+</div>
+</div>
+</body>
+</html>

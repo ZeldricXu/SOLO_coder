@@ -19,6 +19,7 @@ import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class TimescaleWriter implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(TimescaleWriter.class);
@@ -29,12 +30,18 @@ public class TimescaleWriter implements AutoCloseable {
     private final ExecutorService writerThreadPool;
     private volatile boolean running;
 
+    private final AtomicLong totalBatchesWritten = new AtomicLong(0);
+    private final AtomicLong totalMetricsWritten = new AtomicLong(0);
+    private final AtomicLong totalWriteErrors = new AtomicLong(0);
+
+    private volatile boolean flushRequested = false;
+
     private static final String INSERT_METRIC_SQL =
             "INSERT INTO metrics (time, metric_name, value, metric_type, tags, service, window) " +
             "VALUES (?, ?, ?, ?::metric_type, ?::jsonb, ?, ?)";
 
     private static final String CREATE_HYPERTABLE_SQL =
-            "SELECT create_hypertable('metrics', 'time', if_not_exists => TRUE)";
+            "SELECT create_hypertable('metrics', 'time', chunk_time_interval => INTERVAL '%s', if_not_exists => TRUE)";
 
     private static final String CREATE_RAW_RETENTION_SQL =
             "SELECT add_retention_policy('metrics', INTERVAL '%d days', if_not_exists => TRUE)";
@@ -94,13 +101,14 @@ public class TimescaleWriter implements AutoCloseable {
         hc.setLeakDetectionThreshold(60000);
         hc.setConnectionTestQuery("SELECT 1");
         hc.addDataSourceProperty("reWriteBatchedInserts", "true");
-        hc.addDataSourceProperty("batchSize", "1000");
+        hc.addDataSourceProperty("batchSize", String.valueOf(config.getBatchSize()));
         return new HikariDataSource(hc);
     }
 
     private void initializeDatabase() {
         try (Connection conn = dataSource.getConnection()) {
-            executeSQL(conn, CREATE_HYPERTABLE_SQL);
+            String hypertableSql = String.format(CREATE_HYPERTABLE_SQL, config.getChunkTimeInterval());
+            executeSQL(conn, hypertableSql);
 
             if (config.getRawDataRetentionDays() > 0 && config.getRawDataRetentionDays() < Integer.MAX_VALUE) {
                 String sql = String.format(CREATE_RAW_RETENTION_SQL, config.getRawDataRetentionDays());
@@ -137,8 +145,8 @@ public class TimescaleWriter implements AutoCloseable {
     private void writerLoop() {
         List<MetricPoint> batch = new java.util.ArrayList<>();
         long lastFlushTime = System.currentTimeMillis();
-        long flushIntervalMs = Duration.ofSeconds(1).toMillis();
-        int batchSize = 1000;
+        long flushIntervalMs = Duration.ofSeconds(config.getBatchFlushIntervalSeconds()).toMillis();
+        int batchSize = config.getBatchSize();
 
         while (running || !writeQueue.isEmpty()) {
             try {
@@ -149,12 +157,15 @@ public class TimescaleWriter implements AutoCloseable {
                 }
 
                 long now = System.currentTimeMillis();
-                if (batch.size() >= batchSize || (now - lastFlushTime) >= flushIntervalMs) {
-                    if (!batch.isEmpty()) {
-                        writeBatch(batch);
-                        batch.clear();
-                    }
+                boolean shouldFlush = batch.size() >= batchSize
+                        || (now - lastFlushTime) >= flushIntervalMs
+                        || (flushRequested && !batch.isEmpty());
+
+                if (shouldFlush) {
+                    writeBatch(batch);
+                    batch.clear();
                     lastFlushTime = now;
+                    flushRequested = false;
                 }
 
             } catch (InterruptedException e) {
@@ -177,34 +188,51 @@ public class TimescaleWriter implements AutoCloseable {
     }
 
     private void writeBatch(List<MetricPoint> batch) {
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(INSERT_METRIC_SQL)) {
+        int maxRetries = config.getMaxRetryAttempts();
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(INSERT_METRIC_SQL)) {
 
-            for (MetricPoint metric : batch) {
-                stmt.setTimestamp(1, Timestamp.from(metric.getTimestamp()));
-                stmt.setString(2, metric.getMetricName());
-                stmt.setDouble(3, metric.getValue());
-                stmt.setString(4, metric.getType() != null ? metric.getType().name() : "GAUGE");
+                for (MetricPoint metric : batch) {
+                    stmt.setTimestamp(1, Timestamp.from(metric.getTimestamp()));
+                    stmt.setString(2, metric.getMetricName());
+                    stmt.setDouble(3, metric.getValue());
+                    stmt.setString(4, metric.getType() != null ? metric.getType().name() : "GAUGE");
 
-                String tagsJson = metric.getTagsAsJson();
-                stmt.setString(5, tagsJson);
+                    String tagsJson = metric.getTagsAsJson();
+                    stmt.setString(5, tagsJson);
 
-                stmt.setString(6, metric.getTag("service"));
-                stmt.setString(7, metric.getTag("window"));
+                    stmt.setString(6, metric.getTag("service"));
+                    stmt.setString(7, metric.getTag("window"));
 
-                stmt.addBatch();
+                    stmt.addBatch();
+                }
+
+                int[] results = stmt.executeBatch();
+                int inserted = 0;
+                for (int r : results) {
+                    if (r > 0) inserted++;
+                }
+
+                totalBatchesWritten.incrementAndGet();
+                totalMetricsWritten.addAndGet(inserted);
+                log.debug("Wrote {} metrics to TimescaleDB", inserted);
+                return;
+
+            } catch (Exception e) {
+                totalWriteErrors.incrementAndGet();
+                if (attempt < maxRetries) {
+                    log.warn("Error writing batch of {} metrics (attempt {}/{}): {}", batch.size(), attempt, maxRetries, e.getMessage());
+                    try {
+                        Thread.sleep(100 * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        return;
+                    }
+                } else {
+                    log.error("Error writing batch of {} metrics after {} attempts: {}", batch.size(), maxRetries, e.getMessage());
+                }
             }
-
-            int[] results = stmt.executeBatch();
-            int inserted = 0;
-            for (int r : results) {
-                if (r > 0) inserted++;
-            }
-
-            log.debug("Wrote {} metrics to TimescaleDB", inserted);
-
-        } catch (Exception e) {
-            log.error("Error writing batch of {} metrics: {}", batch.size(), e.getMessage());
         }
     }
 
@@ -229,6 +257,26 @@ public class TimescaleWriter implements AutoCloseable {
 
     public Connection getConnection() throws SQLException {
         return dataSource.getConnection();
+    }
+
+    public int getPendingCount() {
+        return writeQueue.size();
+    }
+
+    public void flush() {
+        flushRequested = true;
+    }
+
+    public long getTotalBatchesWritten() {
+        return totalBatchesWritten.get();
+    }
+
+    public long getTotalMetricsWritten() {
+        return totalMetricsWritten.get();
+    }
+
+    public long getTotalWriteErrors() {
+        return totalWriteErrors.get();
     }
 
     @Override
@@ -260,7 +308,10 @@ public class TimescaleWriter implements AutoCloseable {
                 "queueCapacity", writeQueue.remainingCapacity(),
                 "poolSize", dataSource.getHikariPoolMXBean().getTotalConnections(),
                 "activeConnections", dataSource.getHikariPoolMXBean().getActiveConnections(),
-                "idleConnections", dataSource.getHikariPoolMXBean().getIdleConnections()
+                "idleConnections", dataSource.getHikariPoolMXBean().getIdleConnections(),
+                "totalBatchesWritten", totalBatchesWritten.get(),
+                "totalMetricsWritten", totalMetricsWritten.get(),
+                "totalWriteErrors", totalWriteErrors.get()
         );
     }
 }

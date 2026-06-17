@@ -28,6 +28,11 @@ public class MetricsConfig {
     private boolean enableContinuousAggregation;
     private int aggregationParallelism;
 
+    private String chunkTimeInterval;
+    private int batchFlushIntervalSeconds;
+    private int batchSize;
+    private int maxRetryAttempts;
+
     public static class WindowConfig {
         private final String name;
         private final Duration size;
@@ -82,6 +87,11 @@ public class MetricsConfig {
         mc.setEnableContinuousAggregation(config.getBoolean("metrics.continuous.aggregation.enabled", true));
         mc.setAggregationParallelism(config.getInt("metrics.parallelism", 4));
 
+        mc.setChunkTimeInterval(config.getString("timescale.chunk.time.interval", "1 hour"));
+        mc.setBatchFlushIntervalSeconds(config.getInt("timescale.batch.flush.interval.seconds", 5));
+        mc.setBatchSize(config.getInt("timescale.batch.size", 1000));
+        mc.setMaxRetryAttempts(config.getInt("timescale.max.retry.attempts", 3));
+
         return mc;
     }
 
@@ -132,4 +142,16 @@ public class MetricsConfig {
 
     public int getAggregationParallelism() { return aggregationParallelism; }
     public void setAggregationParallelism(int aggregationParallelism) { this.aggregationParallelism = aggregationParallelism; }
+
+    public String getChunkTimeInterval() { return chunkTimeInterval; }
+    public void setChunkTimeInterval(String chunkTimeInterval) { this.chunkTimeInterval = chunkTimeInterval; }
+
+    public int getBatchFlushIntervalSeconds() { return batchFlushIntervalSeconds; }
+    public void setBatchFlushIntervalSeconds(int batchFlushIntervalSeconds) { this.batchFlushIntervalSeconds = batchFlushIntervalSeconds; }
+
+    public int getBatchSize() { return batchSize; }
+    public void setBatchSize(int batchSize) { this.batchSize = batchSize; }
+
+    public int getMaxRetryAttempts() { return maxRetryAttempts; }
+    public void setMaxRetryAttempts(int maxRetryAttempts) { this.maxRetryAttempts = maxRetryAttempts; }
 }

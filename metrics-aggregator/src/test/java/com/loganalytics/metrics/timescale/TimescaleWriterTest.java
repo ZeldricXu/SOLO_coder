@@ -42,6 +42,10 @@ class TimescaleWriterTest {
         config.setTimescalePoolSize(2);
         config.setRawDataRetentionDays(7);
         config.setEnableContinuousAggregation(false);
+        config.setChunkTimeInterval("1 hour");
+        config.setBatchFlushIntervalSeconds(1);
+        config.setBatchSize(1000);
+        config.setMaxRetryAttempts(3);
         config.setWindows(List.of(
                 new MetricsConfig.WindowConfig(
                         "1min_tumbling",
@@ -271,6 +275,9 @@ class TimescaleWriterTest {
         assertThat(diagnostics).containsKey("poolSize");
         assertThat(diagnostics).containsKey("activeConnections");
         assertThat(diagnostics).containsKey("idleConnections");
+        assertThat(diagnostics).containsKey("totalBatchesWritten");
+        assertThat(diagnostics).containsKey("totalMetricsWritten");
+        assertThat(diagnostics).containsKey("totalWriteErrors");
 
         assertThat((Integer) diagnostics.get("queueSize")).isEqualTo(0);
         assertThat((Integer) diagnostics.get("queueCapacity")).isGreaterThan(0);

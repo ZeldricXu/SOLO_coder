@@ -108,7 +108,7 @@ public class CorrelationAnomalyDetector {
                             String errorMsg = errorEvent.getMessage() != null ?
                                     errorEvent.getMessage().toLowerCase() : "";
                             if (errorMsg.contains(errorPattern)) {
-                                errorEvent.addTag("counterpart_found:" + counterpart);
+                                errorEvent.addTag("counterpart_found", counterpart);
                                 log.debug("Found counterpart for ERROR: {} -> {}",
                                         errorPattern, counterpart);
                             }
@@ -133,7 +133,7 @@ public class CorrelationAnomalyDetector {
                 long age = now - errorEvent.getTimestamp().toEpochMilli();
 
                 if (age >= windowMs) {
-                    boolean hasCounterpart = errorEvent.getTags().stream()
+                    boolean hasCounterpart = errorEvent.getTags().values().stream()
                             .anyMatch(tag -> tag.startsWith("counterpart_found:"));
 
                     if (!hasCounterpart) {

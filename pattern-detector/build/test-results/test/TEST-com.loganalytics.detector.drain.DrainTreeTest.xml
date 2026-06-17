@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="DrainTree - 日志模式聚类" tests="11" skipped="0" failures="4" errors="0" timestamp="2026-06-11T09:13:12.303Z" hostname="localhost" time="0.259">
+  <properties/>
+  <testcase name="UUID被正确识别为变量" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.164"/>
+  <testcase name="空消息或空白消息返回null" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.001"/>
+  <testcase name="相同模式的日志被聚类到同一个模式模板" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.014">
+    <failure message="org.opentest4j.AssertionFailedError: &#10;expected: &quot;P-1781169192477-0d78-ae5cab&quot;&#10; but was: &quot;P-1781169192475-0d77-718cd8&quot;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: 
+expected: &quot;P-1781169192477-0d78-ae5cab&quot;
+ but was: &quot;P-1781169192475-0d77-718cd8&quot;
+	at app//com.loganalytics.detector.drain.DrainTreeTest.shouldClusterSamePatternLogsIntoSameTemplate(DrainTreeTest.java:59)
+	at java.base@17.0.19/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+</failure>
+  </testcase>
+  <testcase name="IP地址被正确识别为变量" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.005"/>
+  <testcase name="按频率排序获取Top K模式" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.029">
+    <failure message="java.lang.AssertionError: &#10;Expecting actual:&#10;  0L&#10;to be greater than or equal to:&#10;  10L&#10;" type="java.lang.AssertionError">java.lang.AssertionError: 
+Expecting actual:
+  0L
+to be greater than or equal to:
+  10L
+
+	at com.loganalytics.detector.drain.DrainTreeTest.shouldGetTopKPatternsSortedByFrequency(DrainTreeTest.java:243)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1511)
+</failure>
+  </testcase>
+  <testcase name="正确识别静态token和变量slot" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.006"/>
+  <testcase name="快速路径缓存命中" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.011">
+    <failure message="org.opentest4j.AssertionFailedError: &#10;expected: 2L&#10; but was: 1L" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: 
+expected: 2L
+ but was: 1L
+	at app//com.loganalytics.detector.drain.DrainTreeTest.shouldUseFastPathCacheForRepeatedMessages(DrainTreeTest.java:258)
+	at java.base@17.0.19/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+</failure>
+  </testcase>
+  <testcase name="不同模式的日志创建不同的模式模板" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.003"/>
+  <testcase name="数字ID被正确识别为变量" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.001"/>
+  <testcase name="模式更新时泛化模板" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.003"/>
+  <testcase name="新模式首次出现被正确标记为novel pattern并记录" classname="com.loganalytics.detector.drain.DrainTreeTest" time="0.012">
+    <failure message="org.opentest4j.AssertionFailedError: &#10;expected: &quot;P-1781169192554-0d92-315a6f&quot;&#10; but was: &quot;P-1781169192558-0d93-658f8b&quot;" type="org.opentest4j.AssertionFailedError">org.opentest4j.AssertionFailedError: 
+expected: &quot;P-1781169192554-0d92-315a6f&quot;
+ but was: &quot;P-1781169192558-0d93-658f8b&quot;
+	at app//com.loganalytics.detector.drain.DrainTreeTest.shouldMarkNewPatternAsNovelAndRecord(DrainTreeTest.java:95)
+	at java.base@17.0.19/java.lang.reflect.Method.invoke(Method.java:569)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+	at java.base@17.0.19/java.util.ArrayList.forEach(ArrayList.java:1511)
+</failure>
+  </testcase>
+  <system-out><![CDATA[17:13:12.428 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Transaction <*> completed (total: 1)
+17:13:12.475 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_123 login from <*> (total: 1)
+17:13:12.477 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_456 login from <*> (total: 2)
+17:13:12.478 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_789 login from <*> (total: 3)
+17:13:12.488 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Request from <*> processed in 50ms (total: 1)
+17:13:12.494 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_0 login from <*> (total: 1)
+17:13:12.495 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_1 login from <*> (total: 2)
+17:13:12.496 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_2 login from <*> (total: 3)
+17:13:12.496 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_3 login from <*> (total: 4)
+17:13:12.496 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_4 login from <*> (total: 5)
+17:13:12.497 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_5 login from <*> (total: 6)
+17:13:12.498 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_6 login from <*> (total: 7)
+17:13:12.499 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_7 login from <*> (total: 8)
+17:13:12.499 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_8 login from <*> (total: 9)
+17:13:12.499 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_9 login from <*> (total: 10)
+17:13:12.500 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 0s to server-0:8080 (total: 11)
+17:13:12.500 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 1s to server-1:8080 (total: 12)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 2s to server-2:8080 (total: 13)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 3s to server-3:8080 (total: 14)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 4s to server-4:8080 (total: 15)
+17:13:12.501 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Single unique event (total: 16)
+17:13:12.524 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_1 login from <*> (total: 1)
+17:13:12.531 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_cache login from <*> (total: 1)
+17:13:12.544 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User user_1 login from <*> (total: 1)
+17:13:12.545 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 10s to server-1:8080 (total: 2)
+17:13:12.545 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Payment processed successfully for order <*> (total: 3)
+17:13:12.547 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User <*> logged in (total: 1)
+17:13:12.550 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: User login from <*> success (total: 1)
+17:13:12.554 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 30s to db-server-01:5432 (total: 1)
+17:13:12.558 [Test worker] DEBUG com.loganalytics.detector.drain.DrainTree -- Created new pattern: Connection timeout after 60s to db-server-02:3306 (total: 2)
+]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

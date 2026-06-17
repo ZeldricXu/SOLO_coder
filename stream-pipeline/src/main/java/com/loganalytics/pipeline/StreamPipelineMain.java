@@ -2,6 +2,8 @@ package com.loganalytics.pipeline;
 
 import com.loganalytics.common.config.AppConfig;
 import com.loganalytics.pipeline.config.PipelineConfig;
+import com.loganalytics.pipeline.processor.ProcessorChain;
+import com.loganalytics.pipeline.processor.ProcessorFactory;
 import com.loganalytics.pipeline.topology.PipelineTopology;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsConfig;
@@ -9,8 +11,12 @@ import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.errors.LogAndContinueExceptionHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.yaml.snakeyaml.Yaml;
 import picocli.CommandLine;
 
+import java.io.InputStream;
+import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -75,7 +81,9 @@ public class StreamPipelineMain implements Runnable {
         }
 
         config = PipelineConfig.fromAppConfig(appConfig);
-        topologyBuilder = new PipelineTopology(config);
+
+        ProcessorChain chain = loadProcessorChain();
+        topologyBuilder = new PipelineTopology(config, chain);
         monitorScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "pipeline-monitor");
             t.setDaemon(true);
@@ -160,6 +168,33 @@ public class StreamPipelineMain implements Runnable {
             stopPipeline();
             shutdownLatch.countDown();
         }, "shutdown-hook"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private ProcessorChain loadProcessorChain() {
+        Yaml yaml = new Yaml();
+        try (InputStream is = getClass().getClassLoader().getResourceAsStream("pipeline-processors.yaml")) {
+            if (is == null) {
+                log.warn("pipeline-processors.yaml not found, using default chain");
+                return ProcessorFactory.createChain(List.of(
+                        Map.of("type", "parse", "params", Map.of()),
+                        Map.of("type", "filter", "params", Map.of()),
+                        Map.of("type", "enrich", "params", Map.of()),
+                        Map.of("type", "route", "params", Map.of())
+                ));
+            }
+            Map<String, Object> root = yaml.load(is);
+            List<Map<String, Object>> processors = (List<Map<String, Object>>) root.get("processors");
+            return ProcessorFactory.createChain(processors);
+        } catch (Exception e) {
+            log.error("Failed to load processor chain from YAML, using default", e);
+            return ProcessorFactory.createChain(List.of(
+                    Map.of("type", "parse", "params", Map.of()),
+                    Map.of("type", "filter", "params", Map.of()),
+                    Map.of("type", "enrich", "params", Map.of()),
+                    Map.of("type", "route", "params", Map.of())
+            ));
+        }
     }
 
     private void stopPipeline() {

@@ -8,6 +8,11 @@ import com.loganalytics.pipeline.enrich.LogEnricher;
 import com.loganalytics.pipeline.filter.LogFilter;
 import com.loganalytics.pipeline.geo.GeoIpService;
 import com.loganalytics.pipeline.parse.LogParser;
+import com.loganalytics.pipeline.processor.ProcessorChain;
+import com.loganalytics.pipeline.processor.FilterProcessor;
+import com.loganalytics.pipeline.processor.ParseProcessor;
+import com.loganalytics.pipeline.processor.RouteProcessor;
+import com.loganalytics.pipeline.processor.EnrichProcessor;
 import com.loganalytics.pipeline.route.LogRouter;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.StreamsBuilder;
@@ -21,12 +26,11 @@ import org.apache.kafka.streams.processor.api.Record;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.List;
-
 public class PipelineTopology {
     private static final Logger log = LoggerFactory.getLogger(PipelineTopology.class);
 
     private final PipelineConfig config;
+    private final ProcessorChain chain;
     private final LogParser parser;
     private final LogFilter filter;
     private final LogEnricher enricher;
@@ -34,14 +38,19 @@ public class PipelineTopology {
     private final CmdbService cmdbService;
     private final GeoIpService geoIpService;
 
-    public PipelineTopology(PipelineConfig config) {
+    public PipelineTopology(PipelineConfig config, ProcessorChain chain) {
         this.config = config;
+        this.chain = chain;
         this.cmdbService = new CmdbService(config);
         this.geoIpService = new GeoIpService(config);
         this.parser = new LogParser(config);
         this.filter = new LogFilter(config);
         this.enricher = new LogEnricher(config, cmdbService, geoIpService);
         this.router = new LogRouter(config);
+    }
+
+    public PipelineTopology(PipelineConfig config) {
+        this(config, null);
     }
 
     public StreamsBuilder build() {
@@ -54,36 +63,73 @@ public class PipelineTopology {
                         .withName("raw-logs-consumer")
         );
 
-        KStream<String, LogEvent> parsedStream = rawStream
-                .processValues(() -> new ParseProcessor(parser),
-                        Named.as("parse-processor"));
+        if (chain != null) {
+            rawStream
+                    .processValues(() -> new ChainKafkaProcessor(chain),
+                            Named.as("chain-processor"))
+                    .to(
+                            config.getEnrichedTopic(),
+                            Produced.with(Serdes.String(), logEventSerde)
+                                    .withName("enriched-logs-producer")
+                    );
+        } else {
+            KStream<String, LogEvent> parsedStream = rawStream
+                    .processValues(() -> new ParseKafkaProcessor(parser),
+                            Named.as("parse-processor"));
 
-        KStream<String, LogEvent> filteredStream = parsedStream
-                .filter((key, event) -> filter.accept(event),
-                        Named.as("filter-processor"));
+            KStream<String, LogEvent> filteredStream = parsedStream
+                    .filter((key, event) -> filter.accept(event),
+                            Named.as("filter-processor"));
 
-        KStream<String, LogEvent> enrichedStream = filteredStream
-                .processValues(() -> new EnrichProcessor(enricher),
-                        Named.as("enrich-processor"));
+            KStream<String, LogEvent> enrichedStream = filteredStream
+                    .processValues(() -> new EnrichKafkaProcessor(enricher),
+                            Named.as("enrich-processor"));
 
-        enrichedStream
-                .processValues(() -> new RouteProcessor(router, config),
-                        Named.as("route-processor"));
+            enrichedStream
+                    .processValues(() -> new RouteKafkaProcessor(router, config),
+                            Named.as("route-processor"));
 
-        enrichedStream.to(
-                config.getEnrichedTopic(),
-                Produced.with(Serdes.String(), logEventSerde)
-                        .withName("enriched-logs-producer")
-        );
+            enrichedStream.to(
+                    config.getEnrichedTopic(),
+                    Produced.with(Serdes.String(), logEventSerde)
+                            .withName("enriched-logs-producer")
+            );
+        }
 
         return builder;
     }
 
-    static class ParseProcessor implements Processor<String, LogEvent, String, LogEvent> {
+    static class ChainKafkaProcessor implements Processor<String, LogEvent, String, LogEvent> {
+        private final ProcessorChain chain;
+        private ProcessorContext<String, LogEvent> context;
+
+        ChainKafkaProcessor(ProcessorChain chain) {
+            this.chain = chain;
+        }
+
+        @Override
+        public void init(ProcessorContext<String, LogEvent> context) {
+            this.context = context;
+        }
+
+        @Override
+        public void process(Record<String, LogEvent> record) {
+            LogEvent result = chain.process(record.value());
+            if (result != null) {
+                context.forward(record.withValue(result));
+            }
+        }
+
+        @Override
+        public void close() {
+        }
+    }
+
+    static class ParseKafkaProcessor implements Processor<String, LogEvent, String, LogEvent> {
         private final LogParser parser;
         private ProcessorContext<String, LogEvent> context;
 
-        ParseProcessor(LogParser parser) {
+        ParseKafkaProcessor(LogParser parser) {
             this.parser = parser;
         }
 
@@ -103,11 +149,11 @@ public class PipelineTopology {
         }
     }
 
-    static class EnrichProcessor implements Processor<String, LogEvent, String, LogEvent> {
+    static class EnrichKafkaProcessor implements Processor<String, LogEvent, String, LogEvent> {
         private final LogEnricher enricher;
         private ProcessorContext<String, LogEvent> context;
 
-        EnrichProcessor(LogEnricher enricher) {
+        EnrichKafkaProcessor(LogEnricher enricher) {
             this.enricher = enricher;
         }
 
@@ -127,13 +173,13 @@ public class PipelineTopology {
         }
     }
 
-    static class RouteProcessor implements Processor<String, LogEvent, String, LogEvent> {
+    static class RouteKafkaProcessor implements Processor<String, LogEvent, String, LogEvent> {
         private final LogRouter router;
         private final PipelineConfig config;
         private ProcessorContext<String, LogEvent> context;
         private final LogEventSerde logEventSerde;
 
-        RouteProcessor(LogRouter router, PipelineConfig config) {
+        RouteKafkaProcessor(LogRouter router, PipelineConfig config) {
             this.router = router;
             this.config = config;
             this.logEventSerde = new LogEventSerde();
@@ -147,7 +193,7 @@ public class PipelineTopology {
         @Override
         public void process(Record<String, LogEvent> record) {
             LogEvent event = record.value();
-            List<LogRouter.RouteTarget> targets = router.route(event);
+            java.util.List<LogRouter.RouteTarget> targets = router.route(event);
 
             for (LogRouter.RouteTarget target : targets) {
                 String topic = getTopicForTarget(target);
@@ -188,18 +234,46 @@ public class PipelineTopology {
     }
 
     public LogFilter getFilter() {
+        if (chain != null) {
+            for (var p : chain.getProcessors()) {
+                if (p instanceof FilterProcessor fp) {
+                    return fp.getFilter();
+                }
+            }
+        }
         return filter;
     }
 
     public LogRouter getRouter() {
+        if (chain != null) {
+            for (var p : chain.getProcessors()) {
+                if (p instanceof RouteProcessor rp) {
+                    return rp.getRouter();
+                }
+            }
+        }
         return router;
     }
 
     public LogParser getParser() {
+        if (chain != null) {
+            for (var p : chain.getProcessors()) {
+                if (p instanceof ParseProcessor pp) {
+                    return pp.getParser();
+                }
+            }
+        }
         return parser;
     }
 
     public LogEnricher getEnricher() {
+        if (chain != null) {
+            for (var p : chain.getProcessors()) {
+                if (p instanceof EnrichProcessor ep) {
+                    return ep.getEnricher();
+                }
+            }
+        }
         return enricher;
     }
 }

@@ -1,3 +1,10 @@
+pluginManagement {
+    repositories {
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
 rootProject.name = 'log-analytics-platform'
 
 include 'common'
@@ -10,10 +17,3 @@ include 'api-server'
 include 'alert-engine'
 include 'query-parser'
 include 'test-support'
-
-pluginManagement {
-    repositories {
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
