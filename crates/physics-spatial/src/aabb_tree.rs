@@ -131,68 +131,54 @@ impl AABBTree {
 
     pub fn get_pairs(&self) -> Vec<(AABBProxy, AABBProxy)> {
         let mut pairs = Vec::new();
-        if let Some(root) = self.root {
-            self.get_pairs_recursive(root, root, &mut pairs);
-        }
+        let leaves: Vec<(usize, AABBProxy, AABB)> = self
+            .nodes
+            .iter()
+            .enumerate()
+            .filter(|(_, n)| n.is_leaf() && n.proxy.is_some())
+            .map(|(i, n)| (i, n.proxy.unwrap(), n.aabb))
+            .collect();
 
-        pairs.sort();
-        pairs.dedup();
-        pairs
-    }
+        let mut stack = Vec::new();
+        let mut query_results = Vec::new();
 
-    fn get_pairs_recursive(
-        &self,
-        a: usize,
-        b: usize,
-        pairs: &mut Vec<(AABBProxy, AABBProxy)>,
-    ) {
-        let node_a = &self.nodes[a];
-        let node_b = &self.nodes[b];
+        for &(_, proxy_a, ref aabb_a) in leaves.iter() {
+            query_results.clear();
+            stack.clear();
 
-        if node_a.is_leaf() && node_b.is_leaf() {
-            if a != b
-                && node_a.aabb.intersects(&node_b.aabb)
-                && node_a.proxy.is_some()
-                && node_b.proxy.is_some()
-            {
-                let pa = node_a.proxy.unwrap();
-                let pb = node_b.proxy.unwrap();
-                if pa.data().as_ffi() < pb.data().as_ffi() {
-                    pairs.push((pa, pb));
+            if let Some(root) = self.root {
+                stack.push(root);
+            }
+
+            while let Some(node_index) = stack.pop() {
+                let node = &self.nodes[node_index];
+
+                if !node.aabb.intersects(aabb_a) {
+                    continue;
+                }
+
+                if node.is_leaf() {
+                    if let Some(proxy_b) = node.proxy {
+                        if proxy_a.data().as_ffi() < proxy_b.data().as_ffi() {
+                            query_results.push(proxy_b);
+                        }
+                    }
                 } else {
-                    pairs.push((pb, pa));
+                    if let Some(left) = node.left {
+                        stack.push(left);
+                    }
+                    if let Some(right) = node.right {
+                        stack.push(right);
+                    }
                 }
             }
-            return;
+
+            for &proxy_b in &query_results {
+                pairs.push((proxy_a, proxy_b));
+            }
         }
 
-        if node_a.is_leaf() {
-            if let Some(left) = node_b.left {
-                self.get_pairs_recursive(a, left, pairs);
-            }
-            if let Some(right) = node_b.right {
-                self.get_pairs_recursive(a, right, pairs);
-            }
-        } else if node_b.is_leaf() {
-            if let Some(left) = node_a.left {
-                self.get_pairs_recursive(left, b, pairs);
-            }
-            if let Some(right) = node_a.right {
-                self.get_pairs_recursive(right, b, pairs);
-            }
-        } else {
-            if let (Some(al), Some(ar), Some(bl), Some(br)) = (
-                node_a.left,
-                node_a.right,
-                node_b.left,
-                node_b.right,
-            ) {
-                self.get_pairs_recursive(al, bl, pairs);
-                self.get_pairs_recursive(al, br, pairs);
-                self.get_pairs_recursive(ar, bl, pairs);
-                self.get_pairs_recursive(ar, br, pairs);
-            }
-        }
+        pairs
     }
 
     fn allocate_node(&mut self) -> usize {

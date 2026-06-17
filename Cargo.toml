@@ -12,6 +12,7 @@ members = [
     "crates/physics-serialization",
     "crates/physics-debug-render",
     "crates/physics-engine",
+    "crates/physics-benches",
 ]
 
 [workspace.dependencies]
@@ -27,6 +28,7 @@ eframe = { version = "0.24", features = ["persistence"] }
 epaint = "0.24"
 emath = "0.24"
 ecolor = "0.24"
+criterion = "0.5"
 
 [profile.dev]
 opt-level = 1

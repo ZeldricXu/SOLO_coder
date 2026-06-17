@@ -90,12 +90,13 @@ mod tests {
         let ta = bodies.get(body_a).unwrap().transform;
         let tb = bodies.get(body_b).unwrap().transform;
 
-        let mut joints = vec![RevoluteJoint::new(body_a, body_b, Vec2::new(1.0, 0.0), &ta, &tb)];
+        let mut joint = RevoluteJoint::new(body_a, body_b, Vec2::new(1.0, 0.0), &ta, &tb);
 
         let solver = ConstraintSolver::new(8, 3);
         let dt = 1.0 / 60.0;
 
-        solver.solve(&mut joints, &mut bodies, dt);
+        let mut constraint_refs: Vec<&mut dyn Constraint> = vec![&mut joint];
+        solver.solve(&mut constraint_refs, &mut bodies, dt);
 
         let body_a_pos = bodies.get(body_a).unwrap().transform.position;
         let body_b_pos = bodies.get(body_b).unwrap().transform.position;

@@ -4,7 +4,7 @@ pub mod joints;
 pub mod solver;
 mod tests;
 
-pub use constraint::{Constraint, ConstraintHandle, ConstraintSolverData};
+pub use constraint::{Constraint, ConstraintHandle, ConstraintSolverData, ConstraintSolveStep};
 pub use contact_constraint::ContactConstraint;
 pub use joints::*;
 pub use solver::ConstraintSolver;

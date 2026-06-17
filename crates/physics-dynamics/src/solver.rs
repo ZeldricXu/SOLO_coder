@@ -1,32 +1,48 @@
+use crate::integrator::Integrator;
 use physics_core::{BodyType, World};
 use physics_math::Vec2;
 
-pub struct DynamicsSolver {
+pub struct DynamicsSolver<I: Integrator = crate::integrator::IntegratorDefault> {
     pub gravity: Vec2,
     pub velocity_iterations: usize,
     pub position_iterations: usize,
+    pub integrator: I,
     pub linear_damping: f32,
     pub angular_damping: f32,
 }
 
-impl Default for DynamicsSolver {
+impl<I: Integrator + Default> Default for DynamicsSolver<I> {
     fn default() -> Self {
         DynamicsSolver {
             gravity: Vec2::new(0.0, -9.81),
             velocity_iterations: 8,
             position_iterations: 3,
+            integrator: I::default(),
             linear_damping: 0.0,
             angular_damping: 0.0,
         }
     }
 }
 
-impl DynamicsSolver {
+impl<I: Integrator + Default> DynamicsSolver<I> {
     pub fn new() -> Self {
-        Self::default()
+        Self::new_with_integrator(I::default())
+    }
+}
+
+impl<I: Integrator> DynamicsSolver<I> {
+    pub fn new_with_integrator(integrator: I) -> Self {
+        DynamicsSolver {
+            gravity: Vec2::new(0.0, -9.81),
+            velocity_iterations: 8,
+            position_iterations: 3,
+            integrator,
+            linear_damping: 0.0,
+            angular_damping: 0.0,
+        }
     }
 
-    pub fn step(&self, world: &mut World, dt: f32) {
+    pub fn step(&mut self, world: &mut World, dt: f32) {
         self.save_transforms(world);
         self.apply_gravity(world);
         self.integrate_velocities(world, dt);
@@ -34,59 +50,29 @@ impl DynamicsSolver {
         self.integrate_positions(world, dt);
     }
 
-    fn save_transforms(&self, world: &mut World) {
-        for (_, body) in world.bodies.iter_mut() {
-            body.prev_transform = body.transform;
-        }
+    fn save_transforms(&mut self, world: &mut World) {
+        let mut body_refs: Vec<&mut _> = world.bodies.iter_mut().map(|(_, b)| b).collect();
+        self.integrator.pre_step(&mut body_refs);
     }
 
-    fn apply_gravity(&self, world: &mut World) {
-        for (_, body) in world.bodies.iter_mut() {
-            if body.is_dynamic() && !body.is_sensor {
-                let gravity_force = self.gravity * body.mass * body.gravity_scale;
-                body.apply_force(gravity_force);
-            }
-        }
+    fn apply_gravity(&mut self, world: &mut World) {
+        let mut body_refs: Vec<&mut _> = world.bodies.iter_mut().map(|(_, b)| b).collect();
+        self.integrator.apply_gravity(&mut body_refs, self.gravity);
     }
 
-    pub fn integrate_velocities(&self, world: &mut World, dt: f32) {
-        for (_, body) in world.bodies.iter_mut() {
-            if !body.is_dynamic() {
-                continue;
-            }
-
-            body.linear_velocity += body.force * body.inv_mass * dt;
-            body.angular_velocity += body.torque * body.inv_inertia * dt;
-
-            body.force = Vec2::ZERO;
-            body.torque = 0.0;
-        }
+    pub fn integrate_velocities(&mut self, world: &mut World, dt: f32) {
+        let mut body_refs: Vec<&mut _> = world.bodies.iter_mut().map(|(_, b)| b).collect();
+        self.integrator.integrate_velocities(&mut body_refs, self.gravity, dt);
     }
 
-    fn apply_damping(&self, world: &mut World, dt: f32) {
-        for (_, body) in world.bodies.iter_mut() {
-            if !body.is_dynamic() {
-                continue;
-            }
-
-            let linear_damping = body.linear_damping.max(self.linear_damping);
-            let angular_damping = body.angular_damping.max(self.angular_damping);
-
-            body.linear_velocity *= 1.0 - linear_damping * dt;
-            body.angular_velocity *= 1.0 - angular_damping * dt;
-        }
+    fn apply_damping(&mut self, world: &mut World, dt: f32) {
+        let mut body_refs: Vec<&mut _> = world.bodies.iter_mut().map(|(_, b)| b).collect();
+        self.integrator.apply_damping(&mut body_refs, dt, self.linear_damping, self.angular_damping);
     }
 
-    pub fn integrate_positions(&self, world: &mut World, dt: f32) {
-        for (_, body) in world.bodies.iter_mut() {
-            if body.body_type == BodyType::Static {
-                continue;
-            }
-
-            body.transform.position += body.linear_velocity * dt;
-            let new_angle = body.transform.rotation.angle() + body.angular_velocity * dt;
-            body.transform.rotation.set_angle(new_angle);
-        }
+    pub fn integrate_positions(&mut self, world: &mut World, dt: f32) {
+        let mut body_refs: Vec<&mut _> = world.bodies.iter_mut().map(|(_, b)| b).collect();
+        self.integrator.integrate_positions(&mut body_refs, dt);
     }
 }
 
@@ -97,6 +83,8 @@ mod tests {
     use physics_core::{BodyHandle, Circle, Material, Shape};
     use physics_math::Vec2;
 
+    type TestSolver = DynamicsSolver;
+
     fn create_dynamic_body(world: &mut World, shape: Shape, position: Vec2) -> BodyHandle {
         world.add_body(shape, position, 0.0, BodyType::Dynamic, Material::DEFAULT)
     }
@@ -104,7 +92,7 @@ mod tests {
     #[test]
     fn test_gravity_application() {
         let mut world = World::new();
-        let solver = DynamicsSolver::new();
+        let mut solver: TestSolver = DynamicsSolver::new();
 
         let shape = Shape::Circle(Circle { radius: 1.0 });
         let handle = create_dynamic_body(&mut world, shape, Vec2::ZERO);
@@ -119,7 +107,7 @@ mod tests {
     #[test]
     fn test_position_integration() {
         let mut world = World::new();
-        let mut solver = DynamicsSolver::new();
+        let mut solver: TestSolver = DynamicsSolver::new();
         solver.gravity = Vec2::ZERO;
 
         let shape = Shape::Circle(Circle { radius: 1.0 });
@@ -136,7 +124,7 @@ mod tests {
     #[test]
     fn test_static_body_not_moved() {
         let mut world = World::new();
-        let solver = DynamicsSolver::new();
+        let mut solver: TestSolver = DynamicsSolver::new();
 
         let shape = Shape::Circle(Circle { radius: 1.0 });
         let handle = world.add_body(shape, Vec2::ZERO, 0.0, BodyType::Static, Material::DEFAULT);

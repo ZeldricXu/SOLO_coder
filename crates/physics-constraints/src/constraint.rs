@@ -19,6 +19,27 @@ pub trait Constraint {
     fn prepare(&mut self, data: &ConstraintSolverData);
     fn solve_velocity(&mut self, data: &mut ConstraintSolverData);
     fn solve_position(&mut self, data: &mut ConstraintSolverData) -> bool;
+
+    fn apply(&mut self, data: &mut ConstraintSolverData, step: ConstraintSolveStep) -> bool {
+        match step {
+            ConstraintSolveStep::Prepare => {
+                self.prepare(data);
+                true
+            }
+            ConstraintSolveStep::Velocity => {
+                self.solve_velocity(data);
+                true
+            }
+            ConstraintSolveStep::Position => self.solve_position(data),
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ConstraintSolveStep {
+    Prepare,
+    Velocity,
+    Position,
 }
 
 #[derive(Clone, Copy, Debug)]

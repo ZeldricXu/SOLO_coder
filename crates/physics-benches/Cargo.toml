@@ -1,0 +1,18 @@
+[package]
+name = "physics-benches"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
+slotmap = { workspace = true }
+physics-math = { path = "../physics-math" }
+physics-core = { path = "../physics-core" }
+physics-collision = { path = "../physics-collision" }
+physics-engine = { path = "../physics-engine" }
+
+[[bench]]
+name = "broad_phase"
+harness = false
