@@ -4,22 +4,25 @@ import type { Note, SearchResult, SearchOptions } from '../../shared/types';
 let index: any = null;
 let notesCache: Map<string, Note> = new Map();
 
+const createSearchIndex = () => {
+  const Document = (FlexSearch as any).Document || FlexSearch;
+  return new Document({
+    id: 'id',
+    tag: 'tags',
+    field: [
+      { name: 'title', boost: 3 },
+      { name: 'content', boost: 1 },
+      { name: 'tags', boost: 2 },
+    ],
+    tokenize: 'forward',
+    cache: true,
+    suggest: true,
+  });
+};
+
 export const SearchService = {
   init(notes: Note[]) {
-    index = new FlexSearch.Document({
-      document: {
-        id: 'id',
-        tag: 'tags',
-        field: [
-          { name: 'title', boost: 3 as any },
-          { name: 'content', boost: 1 as any },
-          { name: 'tags', boost: 2 as any },
-        ],
-      },
-      tokenize: 'forward',
-      cache: true,
-      suggest: true,
-    } as any);
+    index = createSearchIndex();
     
     notesCache.clear();
     
@@ -27,9 +30,9 @@ export const SearchService = {
       notesCache.set(note.id, note);
       index.add({
         id: note.id,
-        title: note.title,
-        content: note.content,
-        tags: note.tags.join(' '),
+        title: note.title || '',
+        content: note.content || '',
+        tags: (note.tags || []).join(' '),
       });
     }
   },
