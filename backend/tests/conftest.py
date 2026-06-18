@@ -220,19 +220,21 @@ def sample_extreme_flow_records():
             "lon": 116.4074,
             "lat": 39.9042,
         },
-        {
-            "sensor_id": f"SENSOR_NORMAL_{i:04d}",
-            "timestamp": now.isoformat(),
-            "vehicle_count": 50,
-            "pedestrian_count": 10,
-            "avg_speed": 45.0,
-            "congestion_index": 0.3,
-            "vehicle_type": "car",
-            "direction": "east",
-            "lon": 116.4074 + i * 0.002,
-            "lat": 39.9042 + i * 0.002,
-        }
-        for i in range(5)
+        *[
+            {
+                "sensor_id": f"SENSOR_NORMAL_{i:04d}",
+                "timestamp": now.isoformat(),
+                "vehicle_count": 50,
+                "pedestrian_count": 10,
+                "avg_speed": 45.0,
+                "congestion_index": 0.3,
+                "vehicle_type": "car",
+                "direction": "east",
+                "lon": 116.4074 + i * 0.002,
+                "lat": 39.9042 + i * 0.002,
+            }
+            for i in range(5)
+        ]
     ]
 
 

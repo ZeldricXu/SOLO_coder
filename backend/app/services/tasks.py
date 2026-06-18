@@ -1,6 +1,7 @@
 import logging
-from celery import shared_task
+from celery import shared_task, group, chord, chain
 from datetime import datetime, timedelta
+from typing import List, Dict, Optional
 
 from app.database import SessionLocal
 from app.prediction import prediction_service
@@ -195,3 +196,202 @@ def import_hdfs_data_task(date: str = None, **kwargs):
     except Exception as e:
         logger.error(f"HDFS import task failed: {e}")
         raise
+
+
+@shared_task(name="heatmap.temporal.generate_single_frame_tile")
+def generate_single_frame_tile_task(z: int, x: int, y: int,
+                                     frame_dt_iso: str,
+                                     data_type: str = "vehicle",
+                                     vehicle_type: str = "all",
+                                     road_level: str = "all",
+                                     direction: str = "both") -> Dict:
+    from app.heatmap import temporal_heatmap_service
+    db = SessionLocal()
+    try:
+        frame_dt = datetime.fromisoformat(frame_dt_iso)
+        tile_bytes = temporal_heatmap_service.get_frame_tile(
+            db, z, x, y, frame_dt,
+            data_type=data_type,
+            vehicle_type=vehicle_type,
+            road_level=road_level,
+            direction=direction,
+        )
+        return {
+            "status": "success",
+            "z": z, "x": x, "y": y,
+            "frame_dt": frame_dt_iso,
+            "size_bytes": len(tile_bytes),
+        }
+    except Exception as e:
+        logger.error(f"Frame tile generation failed {z}/{x}/{y}@{frame_dt_iso}: {e}")
+        return {
+            "status": "failed",
+            "z": z, "x": x, "y": y,
+            "frame_dt": frame_dt_iso,
+            "error": str(e),
+        }
+    finally:
+        db.close()
+
+
+@shared_task(name="heatmap.temporal.pregenerate_day_frames")
+def pregenerate_day_frames_task(date_iso: str = None,
+                                 min_zoom: int = 10,
+                                 max_zoom: int = 15,
+                                 bbox: List[float] = None,
+                                 data_type: str = "vehicle",
+                                 vehicle_type: str = "all",
+                                 road_level: str = "all",
+                                 direction: str = "both") -> Dict:
+    from app.utils.geo_utils import bbox_to_tiles
+    from app.heatmap import temporal_heatmap_service
+
+    if date_iso is None:
+        date_iso = datetime.utcnow().date().isoformat()
+    date_obj = datetime.strptime(date_iso, "%Y-%m-%d")
+
+    bbox = bbox or [116.3, 39.8, 116.5, 40.0]
+
+    frame_timestamps = temporal_heatmap_service.get_frame_timestamps(date_obj)
+    total_frames = len(frame_timestamps)
+
+    subtasks = []
+    for z in range(min_zoom, max_zoom + 1):
+        tiles = bbox_to_tiles(bbox, z)
+        for (x, y) in tiles:
+            for frame_dt_iso in frame_timestamps:
+                subtasks.append(generate_single_frame_tile_task.s(
+                    z, x, y, frame_dt_iso,
+                    data_type=data_type,
+                    vehicle_type=vehicle_type,
+                    road_level=road_level,
+                    direction=direction,
+                ))
+
+    logger.info(f"Pregenerating {len(subtasks)} temporal tiles for {date_iso}")
+
+    if not subtasks:
+        return {"status": "empty", "generated": 0, "date": date_iso}
+
+    job = group(subtasks)
+    result = job.apply_async()
+    results = result.get(timeout=3600 * 6)
+
+    success = [r for r in results if r.get("status") == "success"]
+    failed = [r for r in results if r.get("status") != "success"]
+
+    return {
+        "status": "completed",
+        "date": date_iso,
+        "total_tasks": len(subtasks),
+        "success_count": len(success),
+        "failed_count": len(failed),
+        "total_bytes": sum(r.get("size_bytes", 0) for r in success),
+        "frames_count": total_frames,
+        "zoom_range": [min_zoom, max_zoom],
+    }
+
+
+@shared_task(name="heatmap.temporal.schedule_pregeneration")
+def schedule_temporal_pregeneration_task(min_zoom: int = 10,
+                                          max_zoom: int = 14,
+                                          bbox: List[float] = None) -> Dict:
+    target_date = (datetime.utcnow() - timedelta(days=1)).date().isoformat()
+    combos = [
+        ("vehicle", "all", "all", "both"),
+        ("vehicle", "car", "all", "both"),
+        ("vehicle", "bus", "all", "both"),
+        ("vehicle", "truck", "all", "both"),
+        ("congestion", "all", "all", "both"),
+    ]
+
+    results = []
+    for data_type, vt, rl, d in combos:
+        res = pregenerate_day_frames_task(
+            date_iso=target_date,
+            min_zoom=min_zoom, max_zoom=max_zoom,
+            bbox=bbox,
+            data_type=data_type, vehicle_type=vt,
+            road_level=rl, direction=d,
+        )
+        results.append(res)
+
+    evict_old_frames_task.apply_async()
+
+    return {
+        "date": target_date,
+        "combos_processed": len(results),
+        "results": results,
+    }
+
+
+@shared_task(name="heatmap.temporal.evict_old_frames")
+def evict_old_frames_task(days_to_keep: int = 7) -> Dict:
+    from app.heatmap import temporal_heatmap_service
+    before = len(temporal_heatmap_service.cache)
+    temporal_heatmap_service.evict_old_frames(days_to_keep=days_to_keep)
+    after = len(temporal_heatmap_service.cache)
+    logger.info(f"Evicted {before - after} old frames (kept last {days_to_keep} days)")
+    return {
+        "days_to_keep": days_to_keep,
+        "frames_before": before,
+        "frames_after": after,
+        "evicted": before - after,
+    }
+
+
+@shared_task(name="heatmap.dimensions.pregenerate_combo_tiles")
+def pregenerate_dimension_combo_task(combo_key: str,
+                                      min_zoom: int = 10,
+                                      max_zoom: int = 14,
+                                      bbox: List[float] = None) -> Dict:
+    from app.heatmap import heatmap_dimension_service, heatmap_service
+    from app.utils.geo_utils import bbox_to_tiles
+
+    dims = heatmap_dimension_service.parse_dimension_key(combo_key)
+    bbox = bbox or [116.3, 39.8, 116.5, 40.0]
+
+    db = SessionLocal()
+    try:
+        count = 0
+        for z in range(min_zoom, max_zoom + 1):
+            tiles = bbox_to_tiles(bbox, z)
+            for (x, y) in tiles:
+                try:
+                    heatmap_service.generate_tile(
+                        db, z, x, y,
+                        timestamp=datetime.utcnow(),
+                        data_type=dims.get("data_type", "vehicle"),
+                        vehicle_type=dims.get("vehicle_type", "all"),
+                    )
+                    count += 1
+                except Exception as e:
+                    logger.warning(f"Dim combo tile {combo_key} {z}/{x}/{y} failed: {e}")
+        return {"combo_key": combo_key, "generated_tiles": count, "dims": dims}
+    finally:
+        db.close()
+
+
+@shared_task(name="heatmap.dimensions.pregenerate_popular")
+def pregenerate_popular_dimensions_task(min_zoom: int = 10,
+                                         max_zoom: int = 14,
+                                         top_n: int = 10) -> Dict:
+    from app.heatmap import heatmap_dimension_service
+
+    db = SessionLocal()
+    try:
+        popular = heatmap_dimension_service.list_popular_combos(db, top_n=top_n)
+    finally:
+        db.close()
+
+    results = []
+    for combo in popular:
+        try:
+            res = pregenerate_dimension_combo_task(
+                combo["key"], min_zoom=min_zoom, max_zoom=max_zoom,
+            )
+            results.append(res)
+        except Exception as e:
+            logger.warning(f"Dimension pregeneration failed for {combo['key']}: {e}")
+
+    return {"pregenerated_count": len(results), "results": results}

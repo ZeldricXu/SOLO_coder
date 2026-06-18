@@ -26,6 +26,7 @@ celery_app.autodiscover_tasks([
     "app.prediction",
     "app.etl",
     "app.heatmap",
+    "app.services",
 ])
 
 celery_app.conf.beat_schedule = {
@@ -40,5 +41,18 @@ celery_app.conf.beat_schedule = {
     "refresh-heatmap-cache": {
         "task": "heatmap.refresh_heatmap_cache",
         "schedule": crontab(minute="*/5"),
+    },
+    "pregenerate-temporal-frames-daily": {
+        "task": "heatmap.temporal.schedule_pregeneration",
+        "schedule": crontab(hour=3, minute=30),
+    },
+    "evict-old-frames-daily": {
+        "task": "heatmap.temporal.evict_old_frames",
+        "schedule": crontab(hour=4, minute=0),
+        "kwargs": {"days_to_keep": 7},
+    },
+    "pregenerate-popular-dimensions-daily": {
+        "task": "heatmap.dimensions.pregenerate_popular",
+        "schedule": crontab(hour=4, minute=30),
     },
 }

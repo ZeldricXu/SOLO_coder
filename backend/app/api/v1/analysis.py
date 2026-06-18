@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from typing import Optional, List
 
 from app.database import get_db
-from app.routing import path_analysis_service
+from app.routing import path_analysis_service, congestion_propagation_service
 from app.schemas import ODQuery, SignalTimingCreate, SignalTiming
 from app.utils.auth import get_current_active_user
 
@@ -200,3 +200,26 @@ async def get_traffic_zones(
         "count": len(zones),
         "zones": zones,
     }
+
+
+@router.get("/congestion-propagation")
+async def analyze_congestion_propagation(
+    lon: float = Query(..., description="拥堵点经度"),
+    lat: float = Query(..., description="拥堵点纬度"),
+    start_time: Optional[str] = Query(None),
+    end_time: Optional[str] = Query(None),
+    max_depth: int = Query(5, ge=1, le=10, description="BFS 最大深度"),
+    db: Session = Depends(get_db),
+):
+    end_dt = datetime.utcnow()
+    start_dt = end_dt - timedelta(hours=1)
+
+    if end_time:
+        end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
+    if start_time:
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+
+    result = congestion_propagation_service.analyze_propagation(
+        db, lon, lat, start_dt, end_dt, max_depth=max_depth
+    )
+    return result

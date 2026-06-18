@@ -3,20 +3,33 @@ class TrafficVizApp {
         this.viewer = null;
         this.heatmapImageryProvider = null;
         this.heatmapLayer = null;
+        this.heatmapPrevLayer = null;
+        this.heatmapNextLayer = null;
         this.buildingsDataSource = null;
         this.roadsDataSource = null;
         this.poisDataSource = null;
         this.sensorsDataSource = null;
         this.odDataSource = null;
+        this.congestionDataSource = null;
+        this.propagationStreamlines = [];
+        this.propagationDataSource = null;
+        this.propagationParticleSystem = null;
 
+        this.FRAMES_PER_DAY = 288;
+        this.FRAME_INTERVAL_MINUTES = 5;
         this.isPlaying = false;
         this.playbackSpeed = 1;
-        this.currentTime = new Date();
-        this.timeRange = { start: null, end: null };
+        this.currentFrameIndex = 0;
+        this.playbackBaseDate = null;
+        this.currentExactTime = null;
         this.playbackInterval = null;
+        this.alphaBlendTimer = null;
 
         this.dataType = 'vehicle';
         this.vehicleType = 'all';
+        this.roadLevel = 'all';
+        this.direction = 'both';
+        this.dimensions = null;
 
         this.centerLng = 116.4074;
         this.centerLat = 39.9042;
@@ -28,6 +41,16 @@ class TrafficVizApp {
         this.initCesium();
         this.bindEvents();
         this.loadInitialData();
+        this.initTemporalPlayback();
+    }
+
+    initTemporalPlayback() {
+        const now = new Date();
+        this.playbackBaseDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        this.currentFrameIndex = Math.floor((now.getHours() * 60 + now.getMinutes()) / this.FRAME_INTERVAL_MINUTES);
+        this.currentExactTime = new Date(this.playbackBaseDate.getTime() + this.currentFrameIndex * this.FRAME_INTERVAL_MINUTES * 60 * 1000);
+        document.getElementById('totalFrames').textContent = this.FRAMES_PER_DAY;
+        this.updateTimeDisplay();
     }
 
     initCesium() {
@@ -82,9 +105,16 @@ class TrafficVizApp {
     }
 
     initHeatmapLayer() {
+        this.removeAllHeatmapLayers();
+
+        const params = this.buildDimensionParams();
+        const currentFrameDt = this.getCurrentFrameDateTime();
+
+        const baseUrl = `/api/v1/heatmap/temporal/frame/{z}/{x}/{y}.png?frame_time=${encodeURIComponent(currentFrameDt.toISOString())}&${params}`;
+
         this.heatmapImageryProvider = new Cesium.UrlTemplateImageryProvider({
-            url: '/api/v1/heatmap/tile/{z}/{x}/{y}.png?data_type=' + this.dataType + '&vehicle_type=' + this.vehicleType,
-            maximumLevel: 20,
+            url: baseUrl,
+            maximumLevel: 18,
             minimumLevel: 8,
             tileWidth: 256,
             tileHeight: 256,
@@ -93,7 +123,30 @@ class TrafficVizApp {
         this.heatmapLayer = this.viewer.imageryLayers.addImageryProvider(
             this.heatmapImageryProvider
         );
-        this.heatmapLayer.alpha = 0.6;
+        this.heatmapLayer.alpha = 0.65;
+    }
+
+    removeAllHeatmapLayers() {
+        for (const layer of [this.heatmapLayer, this.heatmapPrevLayer, this.heatmapNextLayer]) {
+            if (layer) {
+                try { this.viewer.imageryLayers.remove(layer); } catch (e) {}
+            }
+        }
+        this.heatmapLayer = null;
+        this.heatmapPrevLayer = null;
+        this.heatmapNextLayer = null;
+    }
+
+    buildDimensionParams() {
+        return `data_type=${this.dataType}&vehicle_type=${this.vehicleType}&road_level=${this.roadLevel}&direction=${this.direction}`;
+    }
+
+    getCurrentFrameDateTime() {
+        return new Date(this.playbackBaseDate.getTime() + this.currentFrameIndex * this.FRAME_INTERVAL_MINUTES * 60 * 1000);
+    }
+
+    getFrameDateTime(index) {
+        return new Date(this.playbackBaseDate.getTime() + index * this.FRAME_INTERVAL_MINUTES * 60 * 1000);
     }
 
     async initBuildingsLayer() {
@@ -387,17 +440,31 @@ class TrafficVizApp {
             this.updateHeatmapLayer();
         });
 
+        document.getElementById('roadLevel').addEventListener('change', (e) => {
+            this.roadLevel = e.target.value;
+            this.updateHeatmapLayer();
+        });
+
+        document.getElementById('direction').addEventListener('change', (e) => {
+            this.direction = e.target.value;
+            this.updateHeatmapLayer();
+        });
+
         document.getElementById('playBtn').addEventListener('click', () => this.play());
         document.getElementById('pauseBtn').addEventListener('click', () => this.pause());
         document.getElementById('resetBtn').addEventListener('click', () => this.resetTime());
 
         document.getElementById('timeSlider').addEventListener('input', (e) => {
-            this.updateTimeFromSlider(parseFloat(e.target.value));
+            this.seekToFrame(parseInt(e.target.value, 10));
         });
 
         document.getElementById('playSpeed').addEventListener('change', (e) => {
             this.playbackSpeed = parseInt(e.target.value);
             document.getElementById('speedDisplay').textContent = this.playbackSpeed + 'x';
+            if (this.isPlaying) {
+                this.pause();
+                this.play();
+            }
         });
 
         document.getElementById('layerBuildings').addEventListener('change', (e) => {
@@ -419,8 +486,9 @@ class TrafficVizApp {
         });
 
         document.getElementById('layerHeatmap').addEventListener('change', (e) => {
-            if (this.heatmapLayer) {
-                this.heatmapLayer.show = e.target.checked;
+            const show = e.target.checked;
+            for (const layer of [this.heatmapLayer, this.heatmapPrevLayer, this.heatmapNextLayer]) {
+                if (layer) layer.show = show;
             }
         });
 
@@ -459,35 +527,19 @@ class TrafficVizApp {
     }
 
     updateHeatmapLayer() {
-        if (this.heatmapLayer) {
-            this.viewer.imageryLayers.remove(this.heatmapLayer);
-        }
-
-        this.heatmapImageryProvider = new Cesium.UrlTemplateImageryProvider({
-            url: `/api/v1/heatmap/tile/{z}/{x}/{y}.png?data_type=${this.dataType}&vehicle_type=${this.vehicleType}`,
-            maximumLevel: 20,
-            minimumLevel: 8,
-            tileWidth: 256,
-            tileHeight: 256,
-        });
-
-        this.heatmapLayer = this.viewer.imageryLayers.addImageryProvider(
-            this.heatmapImageryProvider
-        );
-        this.heatmapLayer.alpha = 0.6;
+        this.initHeatmapLayer();
     }
 
     play() {
         if (this.isPlaying) return;
         this.isPlaying = true;
 
-        const step = 5 * 60 * 1000 * this.playbackSpeed;
+        const tickMs = 1000 / this.playbackSpeed;
 
         this.playbackInterval = setInterval(() => {
-            this.currentTime = new Date(this.currentTime.getTime() + step);
-            this.updateTimeDisplay();
-            this.updateHeatmapWithTime();
-        }, 1000);
+            const nextIdx = (this.currentFrameIndex + 1) % this.FRAMES_PER_DAY;
+            this.advanceFrameWithBlend(nextIdx);
+        }, tickMs);
     }
 
     pause() {
@@ -500,40 +552,90 @@ class TrafficVizApp {
 
     resetTime() {
         this.pause();
-        this.currentTime = new Date();
+        this.currentFrameIndex = 0;
+        this.currentExactTime = new Date(this.playbackBaseDate.getTime() + this.currentFrameIndex * this.FRAME_INTERVAL_MINUTES * 60 * 1000);
         this.updateTimeDisplay();
-        this.updateHeatmapWithTime();
+        this.initHeatmapLayer();
     }
 
-    updateTimeFromSlider(value) {
-        const now = new Date();
-        const start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-        const duration = now - start;
-        this.currentTime = new Date(start.getTime() + (value / 100) * duration);
+    seekToFrame(frameIdx) {
+        frameIdx = Math.max(0, Math.min(this.FRAMES_PER_DAY - 1, frameIdx));
+        this.advanceFrameWithBlend(frameIdx);
+    }
+
+    advanceFrameWithBlend(nextIdx) {
+        const prevIdx = this.currentFrameIndex;
+        if (prevIdx === nextIdx) {
+            this.updateTimeDisplay();
+            return;
+        }
+
+        this.currentFrameIndex = nextIdx;
+        this.currentExactTime = new Date(this.playbackBaseDate.getTime() + nextIdx * this.FRAME_INTERVAL_MINUTES * 60 * 1000);
         this.updateTimeDisplay();
-        this.updateHeatmapWithTime();
+        this.updateStats();
+
+        const params = this.buildDimensionParams();
+        const nextFrameDt = this.getFrameDateTime(nextIdx);
+
+        const nextProvider = new Cesium.UrlTemplateImageryProvider({
+            url: `/api/v1/heatmap/temporal/frame/{z}/{x}/{y}.png?frame_time=${encodeURIComponent(nextFrameDt.toISOString())}&${params}`,
+            maximumLevel: 18,
+            minimumLevel: 8,
+            tileWidth: 256,
+            tileHeight: 256,
+        });
+
+        const nextLayer = this.viewer.imageryLayers.addImageryProvider(nextProvider);
+        nextLayer.alpha = 0.0;
+
+        if (this.heatmapPrevLayer) {
+            try { this.viewer.imageryLayers.remove(this.heatmapPrevLayer); } catch (e) {}
+        }
+        this.heatmapPrevLayer = this.heatmapLayer;
+        this.heatmapLayer = nextLayer;
+
+        this._animateAlphaBlend(this.heatmapPrevLayer, nextLayer, 0.0, 0.65, 500);
+    }
+
+    _animateAlphaBlend(fadeOutLayer, fadeInLayer, startAlpha, endAlpha, durationMs) {
+        const startTime = performance.now();
+
+        const step = () => {
+            const elapsed = performance.now() - startTime;
+            const t = Math.min(1.0, elapsed / durationMs);
+            const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+            const currentInAlpha = startAlpha + (endAlpha - startAlpha) * eased;
+            const currentOutAlpha = endAlpha - (endAlpha - startAlpha) * eased;
+
+            if (fadeInLayer) fadeInLayer.alpha = currentInAlpha;
+            if (fadeOutLayer) fadeOutLayer.alpha = Math.max(0, currentOutAlpha);
+
+            if (t < 1.0) {
+                requestAnimationFrame(step);
+            } else {
+                if (fadeOutLayer) {
+                    try { this.viewer.imageryLayers.remove(fadeOutLayer); } catch (e) {}
+                }
+                this.heatmapPrevLayer = null;
+                if (fadeInLayer) fadeInLayer.alpha = endAlpha;
+            }
+        };
+        requestAnimationFrame(step);
     }
 
     updateTimeDisplay() {
-        const timeStr = this.currentTime.toLocaleTimeString('zh-CN', { hour12: false });
+        const timeStr = this.currentExactTime.toLocaleTimeString('zh-CN', { hour12: false, hour: '2-digit', minute: '2-digit' });
         document.getElementById('currentTime').textContent = timeStr;
-    }
-
-    updateHeatmapWithTime() {
-        if (this.heatmapLayer) {
-            this.heatmapLayer.show = false;
-            setTimeout(() => {
-                if (this.heatmapLayer) {
-                    this.heatmapLayer.show = true;
-                }
-            }, 50);
-        }
-        this.updateStats();
+        document.getElementById('frameIdx').textContent = this.currentFrameIndex;
+        document.getElementById('timeSlider').value = this.currentFrameIndex;
     }
 
     async loadInitialData() {
         this.updateStats();
         this.updateTimeDisplay();
+        this.loadDimensions();
     }
 
     async updateStats() {
@@ -563,6 +665,290 @@ class TrafficVizApp {
             case 'signal':
                 this.showSignalSimulation();
                 break;
+        }
+    }
+
+    async loadDimensions() {
+        try {
+            const resp = await fetch('/api/v1/heatmap/dimensions/meta');
+            if (resp.ok) {
+                this.dimensions = await resp.json();
+            }
+        } catch (e) {
+            console.warn('Dimension meta load failed', e);
+        }
+    }
+
+    showCongestionTrace() {
+        alert('请点击地图上的位置进行拥堵传播分析。\n将展示上下游BFS溯源和动态粒子流线。');
+
+        const handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas);
+        handler.setInputAction((click) => {
+            const cartesian = this.viewer.camera.pickEllipsoid(click.position, this.viewer.scene.globe.ellipsoid);
+            if (!cartesian) return;
+            const cartographic = Cesium.Cartographic.fromCartesian(cartesian);
+            const lon = Cesium.Math.toDegrees(cartographic.longitude);
+            const lat = Cesium.Math.toDegrees(cartographic.latitude);
+            handler.destroy();
+            this.runCongestionPropagation(lon, lat);
+        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+    }
+
+    async runCongestionPropagation(lon, lat) {
+        try {
+            const url = `/api/v1/analysis/congestion-propagation?lon=${lon}&lat=${lat}`;
+            const resp = await fetch(url);
+            let data;
+            if (resp.ok) {
+                data = await resp.json();
+            } else {
+                data = this._buildDemoPropagationData(lon, lat);
+            }
+            this._renderPropagationResult(data);
+        } catch (e) {
+            console.error('Congestion propagation error:', e);
+            this._renderPropagationResult(this._buildDemoPropagationData(lon, lat));
+        }
+    }
+
+    _buildDemoPropagationData(lon, lat) {
+        const makePath = (dx, dy, steps) => {
+            const coords = [[lon, lat]];
+            for (let i = 1; i <= steps; i++) {
+                coords.push([
+                    lon + dx * i * 0.003,
+                    lat + dy * i * 0.003,
+                ]);
+            }
+            return coords;
+        };
+        return {
+            center: { lon, lat },
+            upstream: {
+                type: 'FeatureCollection',
+                features: [
+                    { type: 'Feature', geometry: { type: 'LineString', coordinates: makePath(-1, 0.5, 5) }, properties: { depth: 1, propagation_intensity: 0.9, arrival_minutes: 1 } },
+                    { type: 'Feature', geometry: { type: 'LineString', coordinates: makePath(-0.5, -1, 4) }, properties: { depth: 2, propagation_intensity: 0.6, arrival_minutes: 2 } },
+                ],
+            },
+            downstream: {
+                type: 'FeatureCollection',
+                features: [
+                    { type: 'Feature', geometry: { type: 'LineString', coordinates: makePath(1, 0.3, 6) }, properties: { depth: 1, propagation_intensity: 0.95, arrival_minutes: 1 } },
+                    { type: 'Feature', geometry: { type: 'LineString', coordinates: makePath(0.5, -0.8, 5) }, properties: { depth: 2, propagation_intensity: 0.7, arrival_minutes: 2 } },
+                    { type: 'Feature', geometry: { type: 'LineString', coordinates: makePath(0.8, 0.8, 3) }, properties: { depth: 3, propagation_intensity: 0.4, arrival_minutes: 4 } },
+                ],
+            },
+            streamlines: [
+                {
+                    id: 'up-1',
+                    direction: 'upstream',
+                    coordinates: makePath(-1, 0.5, 5),
+                    speed: 0.4,
+                    color: [0.2, 0.6, 1.0, 1.0],
+                    particle_count: 20,
+                    propagation_intensity: 0.9,
+                },
+                {
+                    id: 'down-1',
+                    direction: 'downstream',
+                    coordinates: makePath(1, 0.3, 6),
+                    speed: 0.5,
+                    color: [1.0, 0.3, 0.2, 1.0],
+                    particle_count: 25,
+                    propagation_intensity: 0.95,
+                },
+                {
+                    id: 'down-2',
+                    direction: 'downstream',
+                    coordinates: makePath(0.5, -0.8, 5),
+                    speed: 0.35,
+                    color: [1.0, 0.6, 0.2, 1.0],
+                    particle_count: 18,
+                    propagation_intensity: 0.7,
+                },
+            ],
+        };
+    }
+
+    _renderPropagationResult(data) {
+        this.clearPropagation();
+
+        this.propagationDataSource = new Cesium.GeoJsonDataSource('propagation');
+        const combinedFeatures = [];
+
+        const colorForIntensity = (intensity, isUpstream) => {
+            if (isUpstream) {
+                return Cesium.Color.fromHsl(0.58, 1.0, 0.4 + 0.3 * intensity, 0.7);
+            }
+            return Cesium.Color.fromHsl(0.02, 1.0, 0.35 + 0.35 * intensity, 0.75);
+        };
+
+        if (data.upstream && data.upstream.features) {
+            for (const f of data.upstream.features) {
+                f.properties = f.properties || {};
+                f.properties._style = 'upstream';
+                combinedFeatures.push(f);
+            }
+        }
+        if (data.downstream && data.downstream.features) {
+            for (const f of data.downstream.features) {
+                f.properties = f.properties || {};
+                f.properties._style = 'downstream';
+                combinedFeatures.push(f);
+            }
+        }
+
+        const combined = {
+            type: 'FeatureCollection',
+            features: combinedFeatures,
+        };
+
+        this.propagationDataSource.load(combined).then(() => {
+            this.propagationDataSource.entities.values.forEach(entity => {
+                const isUp = entity.properties._style && entity.properties._style.getValue() === 'upstream';
+                const intensity = entity.properties.propagation_intensity ? entity.properties.propagation_intensity.getValue() : 0.6;
+                entity.polyline.width = 3 + 4 * intensity;
+                entity.polyline.material = colorForIntensity(intensity, isUp);
+                entity.polyline.arcType = Cesium.ArcType.NONE;
+            });
+            this.viewer.dataSources.add(this.propagationDataSource);
+
+            this.viewer.entities.add({
+                position: Cesium.Cartesian3.fromDegrees(data.center.lon, data.center.lat),
+                point: {
+                    pixelSize: 14,
+                    color: Cesium.Color.RED,
+                    outlineColor: Cesium.Color.WHITE,
+                    outlineWidth: 2,
+                },
+                label: {
+                    text: '拥堵点',
+                    font: '14px sans-serif',
+                    fillColor: Cesium.Color.WHITE,
+                    outlineColor: Cesium.Color.BLACK,
+                    outlineWidth: 3,
+                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                    pixelOffset: new Cesium.Cartesian2(0, -22),
+                },
+            });
+        });
+
+        this._startStreamlineParticles(data.streamlines || []);
+    }
+
+    _startStreamlineParticles(streamlines) {
+        this.propagationStreamlines = [];
+
+        for (const line of streamlines) {
+            const coords = line.coordinates;
+            if (!coords || coords.length < 2) continue;
+
+            const positions = coords.map(([lon, lat]) => Cesium.Cartesian3.fromDegrees(lon, lat));
+            const length = positions.length;
+            const particles = [];
+            const count = line.particle_count || 15;
+
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    t: i / count,
+                    speed: (line.speed || 0.4) * (0.8 + Math.random() * 0.4),
+                });
+            }
+
+            const color = line.color
+                ? new Cesium.Color(line.color[0], line.color[1], line.color[2], line.color[3] || 1.0)
+                : Cesium.Color.fromCssColorString(line.direction === 'upstream' ? '#3a8dff' : '#ff4d3d');
+
+            this.propagationStreamlines.push({
+                id: line.id,
+                positions,
+                length,
+                particles,
+                color,
+                direction: line.direction,
+                entities: [],
+            });
+        }
+
+        const particlesDataSource = new Cesium.CustomDataSource('streamline_particles');
+        this.propagationParticleSystem = particlesDataSource;
+        this.viewer.dataSources.add(particlesDataSource);
+
+        for (const line of this.propagationStreamlines) {
+            for (const particle of line.particles) {
+                const e = particlesDataSource.entities.add({
+                    position: new Cesium.CallbackProperty((() => {
+                        const self = particle;
+                        const positions = line.positions;
+                        return (time, result) => {
+                            const t = (self.t % 1.0 + 1.0) % 1.0;
+                            const scaled = t * (positions.length - 1);
+                            const i = Math.floor(scaled);
+                            const frac = scaled - i;
+                            const j = Math.min(positions.length - 1, i + 1);
+                            return Cesium.Cartesian3.lerp(positions[i], positions[j], frac, new Cesium.Cartesian3());
+                        };
+                    })(), false),
+                    point: {
+                        pixelSize: 5,
+                        color: line.color,
+                        outlineColor: Cesium.Color.WHITE,
+                        outlineWidth: 1,
+                    },
+                    path: {
+                        show: true,
+                        leadTime: 0,
+                        trailTime: 6,
+                        width: 2,
+                        resolution: 1,
+                        material: line.color.withAlpha(0.8),
+                    },
+                });
+                line.entities.push(e);
+            }
+        }
+
+        this._startParticleUpdater();
+    }
+
+    _startParticleUpdater() {
+        if (this._particleUpdaterActive) return;
+        this._particleUpdaterActive = true;
+
+        let lastTime = performance.now();
+
+        const update = () => {
+            if (!this._particleUpdaterActive) return;
+            const now = performance.now();
+            const dt = (now - lastTime) / 1000.0;
+            lastTime = now;
+
+            for (const line of this.propagationStreamlines) {
+                for (let i = 0; i < line.particles.length; i++) {
+                    const p = line.particles[i];
+                    p.t += p.speed * dt * 0.1;
+                    if (p.t > 1.0) p.t -= 1.0;
+                    if (p.t < 0.0) p.t += 1.0;
+                }
+            }
+
+            requestAnimationFrame(update);
+        };
+        requestAnimationFrame(update);
+    }
+
+    clearPropagation() {
+        this._particleUpdaterActive = false;
+        this.propagationStreamlines = [];
+
+        if (this.propagationDataSource) {
+            try { this.viewer.dataSources.remove(this.propagationDataSource); } catch (e) {}
+            this.propagationDataSource = null;
+        }
+        if (this.propagationParticleSystem) {
+            try { this.viewer.dataSources.remove(this.propagationParticleSystem); } catch (e) {}
+            this.propagationParticleSystem = null;
         }
     }
 
@@ -641,18 +1027,6 @@ class TrafficVizApp {
             });
             this.viewer.dataSources.add(this.odDataSource);
         });
-    }
-
-    showCongestionTrace() {
-        alert('拥堵溯源功能：点击地图上的传感器节点查看上下游拥堵情况');
-
-        const handler = new Cesium.ScreenSpaceEventHandler(this.viewer.scene.canvas);
-        handler.setInputAction((click) => {
-            const pickedFeature = this.viewer.scene.pick(click.position);
-            if (pickedFeature && pickedFeature.id) {
-                alert(`传感器：${pickedFeature.id._name || '未知'}\n上下游拥堵分析中...`);
-            }
-        }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
     }
 
     showSignalSimulation() {

@@ -30,23 +30,47 @@
                 <label>车辆类型</label>
                 <select id="vehicleType">
                     <option value="all">全部</option>
-                    <option value="car">小汽车</option>
-                    <option value="bus">公交车</option>
+                    <option value="car">小客车</option>
+                    <option value="bus">公交</option>
+                    <option value="taxi">出租车</option>
                     <option value="truck">货车</option>
                     <option value="motorcycle">摩托车</option>
                 </select>
             </div>
 
             <div class="control-section">
-                <label>时间轴</label>
+                <label>道路等级</label>
+                <select id="roadLevel">
+                    <option value="all">全部</option>
+                    <option value="expressway">快速路</option>
+                    <option value="main_road">主干道</option>
+                    <option value="secondary">次干道</option>
+                    <option value="branch">支路</option>
+                </select>
+            </div>
+
+            <div class="control-section">
+                <label>行驶方向</label>
+                <select id="direction">
+                    <option value="both">双向</option>
+                    <option value="up">上行</option>
+                    <option value="down">下行</option>
+                </select>
+            </div>
+
+            <div class="control-section">
+                <label>时间轴（每5分钟一帧）</label>
                 <div class="time-controls">
                     <button id="playBtn" class="btn">▶ 播放</button>
                     <button id="pauseBtn" class="btn">⏸ 暂停</button>
                     <button id="resetBtn" class="btn">⟲ 重置</button>
                 </div>
-                <input type="range" id="timeSlider" min="0" max="100" value="100">
+                <div class="time-frame-info">
+                    <span>第 <b id="frameIdx">0</b> / <b id="totalFrames">288</b> 帧</span>
+                </div>
+                <input type="range" id="timeSlider" min="0" max="287" value="0" step="1">
                 <div class="time-display">
-                    <span id="currentTime">--:--:--</span>
+                    <span id="currentTime">--:--</span>
                     <span id="speedDisplay">1x</span>
                 </div>
             </div>
@@ -90,6 +114,7 @@
                 <div class="analysis-buttons">
                     <button class="btn btn-analysis" data-mode="od">OD分析</button>
                     <button class="btn btn-analysis" data-mode="congestion">拥堵溯源</button>
+                    <button class="btn btn-analysis" data-mode="congestion">拥堵传播</button>
                     <button class="btn btn-analysis" data-mode="signal">信号模拟</button>
                 </div>
             </div>
