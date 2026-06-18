@@ -21,15 +21,11 @@ setup(
         "networkx>=3.2.0",
         "pandas>=2.1.0",
         "PyYAML>=6.0.0",
-        "click>=8.1.0",
-        "tabulate>=0.9.0",
-        "fastapi>=0.104.0",
-        "uvicorn>=0.24.0",
     ],
     entry_points={
         "console_scripts": [
-            "gvp-pipeline=cli.main:main",
-            "gvp-admin=cli.main:main",
+            "gvp-pipeline=pipeline.cli:main",
+            "gvp-admin=data_management.cli:main",
         ],
     },
 )

@@ -301,3 +301,64 @@ class PipelineDefinition:
         ))
 
         return steps
+
+    @staticmethod
+    def get_cohort_genotyping_pipeline(cohort_id: int, gvcf_paths: List[str]) -> List[PipelineStep]:
+        cohort_str = str(cohort_id)
+        steps = []
+
+        steps.append(PipelineStep(
+            step_id=f"cohort_{cohort_str}_genotype_gvcfs",
+            step_type=PipelineStepType.GENOTYPE_GVCFS,
+            name="Joint Genotyping with GenotypeGVCFs",
+            description="Multi-sample joint genotyping for cohort",
+            inputs=gvcf_paths,
+            outputs=[f"cohort_{cohort_str}_joint.vcf.gz", f"cohort_{cohort_str}_joint.vcf.gz.tbi"],
+            max_retries=3,
+        ))
+
+        steps.append(PipelineStep(
+            step_id=f"cohort_{cohort_str}_vep_annotation",
+            step_type=PipelineStepType.VEP_ANNOTATION,
+            name="VEP Variant Annotation (Cohort)",
+            description="Ensembl VEP functional annotation for cohort",
+            inputs=[f"cohort_{cohort_str}_joint.vcf.gz"],
+            outputs=[f"cohort_{cohort_str}_joint_vep.vcf.gz"],
+            dependencies=[f"cohort_{cohort_str}_genotype_gvcfs"],
+            max_retries=2,
+        ))
+
+        steps.append(PipelineStep(
+            step_id=f"cohort_{cohort_str}_dbnsfp_annotation",
+            step_type=PipelineStepType.DBNSFP_ANNOTATION,
+            name="dbNSFP Annotation (Cohort)",
+            description="Population frequency and pathogenicity predictions",
+            inputs=[f"cohort_{cohort_str}_joint_vep.vcf.gz"],
+            outputs=[f"cohort_{cohort_str}_joint_dbnsfp.vcf.gz"],
+            dependencies=[f"cohort_{cohort_str}_vep_annotation"],
+            max_retries=2,
+        ))
+
+        steps.append(PipelineStep(
+            step_id=f"cohort_{cohort_str}_clinvar_annotation",
+            step_type=PipelineStepType.CLINVAR_ANNOTATION,
+            name="ClinVar Annotation (Cohort)",
+            description="ClinVar clinical significance annotation",
+            inputs=[f"cohort_{cohort_str}_joint_dbnsfp.vcf.gz"],
+            outputs=[f"cohort_{cohort_str}_joint_clinvar.vcf.gz"],
+            dependencies=[f"cohort_{cohort_str}_dbnsfp_annotation"],
+            max_retries=1,
+        ))
+
+        steps.append(PipelineStep(
+            step_id=f"cohort_{cohort_str}_acmg_classification",
+            step_type=PipelineStepType.ACMG_CLASSIFICATION,
+            name="ACMG Classification (Cohort)",
+            description="Automated ACMG/AMP classification for cohort",
+            inputs=[f"cohort_{cohort_str}_joint_clinvar.vcf.gz"],
+            outputs=[f"cohort_{cohort_str}_joint_acmg.vcf.gz"],
+            dependencies=[f"cohort_{cohort_str}_clinvar_annotation"],
+            max_retries=2,
+        ))
+
+        return steps

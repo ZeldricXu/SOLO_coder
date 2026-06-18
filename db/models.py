@@ -20,7 +20,6 @@ class SampleStatus(str, enum.Enum):
     ANALYZING = "analyzing"
     ANALYZED = "analyzed"
     REPORTED = "reported"
-    FAILED = "failed"
     ARCHIVED = "archived"
 
 

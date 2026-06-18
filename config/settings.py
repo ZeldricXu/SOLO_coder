@@ -87,18 +87,10 @@ class RetentionPolicy(BaseSettings):
     report_days: int = -1
 
 
-class CelerySettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CELERY_", env_file=".env", extra="ignore")
-
-    broker_url: str = "redis://localhost:6379/0"
-    result_backend: str = "redis://localhost:6379/0"
-
-
 class PipelineSettings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="PIPELINE_", env_file=".env", extra="ignore")
 
     max_retries: int = 3
-    max_parallel: int = 4
     max_parallel_chromosomes: int = 8
     work_dir: str = "/data/work"
     temp_dir: str = "/tmp/pipeline"
@@ -116,7 +108,6 @@ class Settings(BaseSettings):
     annotation: AnnotationDatabases = Field(default_factory=AnnotationDatabases)
     retention: RetentionPolicy = Field(default_factory=RetentionPolicy)
     pipeline: PipelineSettings = Field(default_factory=PipelineSettings)
-    celery: CelerySettings = Field(default_factory=CelerySettings)
     environment: str = "development"
 
 
