@@ -1,0 +1,66 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: celery-worker-scaler
+  namespace: traffic-viz
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: celery-worker
+  pollingInterval: 15
+  cooldownPeriod: 120
+  minReplicaCount: 2
+  maxReplicaCount: 20
+  triggers:
+    - type: rabbitmq
+      metadata:
+        queueName: celery
+        queueLength: "10"
+      authenticationRef:
+        name: celery-rabbitmq-trigger-auth
+    - type: redis
+      metadata:
+        addressFromEnv: REDIS_HOST
+        passwordFromEnv: REDIS_PASSWORD
+        listName: celery
+        listLength: "5"
+      authenticationRef:
+        name: celery-redis-trigger-auth
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 30
+          policies:
+            - type: Pods
+              value: 4
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 120
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: celery-redis-trigger-auth
+  namespace: traffic-viz
+spec:
+  secretTargetRef:
+    - parameter: password
+      name: traffic-viz-secrets
+      key: REDIS_PASSWORD
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: celery-rabbitmq-trigger-auth
+  namespace: traffic-viz
+spec:
+  secretTargetRef:
+    - parameter: host
+      name: traffic-viz-secrets
+      key: RABBITMQ_HOST

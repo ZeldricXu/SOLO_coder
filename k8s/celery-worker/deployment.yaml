@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: traffic-viz
+  labels:
+    app: celery-worker
+    component: backend
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: celery-worker
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      initContainers:
+        - name: wait-redis
+          image: redis:7-alpine
+          command: ['sh', '-c', 'until redis-cli -h $REDIS_HOST -p $REDIS_PORT -a $REDIS_PASSWORD ping; do echo waiting for redis; sleep 2; done']
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+      containers:
+        - name: celery-worker
+          image: registry.gitlab.example.com/traffic-viz/celery-worker:latest
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+          env:
+            - name: CELERY_BROKER_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)/1"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)/2"
+            - name: CELERY_WORKER_CONCURRENCY
+              value: "8"
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "1Gi"
+            limits:
+              cpu: "4000m"
+              memory: "4Gi"
+          volumeMounts:
+            - name: tiles-data
+              mountPath: /app/data/tiles
+            - name: cache-data
+              mountPath: /app/data/cache
+            - name: models-data
+              mountPath: /app/models
+      volumes:
+        - name: tiles-data
+          emptyDir: {}
+        - name: cache-data
+          emptyDir: {}
+        - name: models-data
+          persistentVolumeClaim:
+            claimName: models-pvc
+      terminationGracePeriodSeconds: 120

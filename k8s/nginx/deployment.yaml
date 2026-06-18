@@ -1,0 +1,54 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: traffic-viz
+  labels:
+    app: nginx
+    component: frontend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+        component: frontend
+    spec:
+      containers:
+        - name: nginx
+          image: registry.gitlab.example.com/traffic-viz/nginx:latest
+          ports:
+            - containerPort: 80
+              name: http
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          volumeMounts:
+            - name: tiles-data
+              mountPath: /data/tiles
+              readOnly: true
+      volumes:
+        - name: tiles-data
+          persistentVolumeClaim:
+            claimName: tiles-pvc
+            readOnly: true

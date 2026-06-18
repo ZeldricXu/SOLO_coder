@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-migrate
+  namespace: traffic-viz
+  labels:
+    app: db-migrate
+    component: backend
+spec:
+  backoffLimit: 3
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app: db-migrate
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.gitlab.example.com/traffic-viz/api:latest
+          command: ["python", "-c", "from app.database import init_db; init_db()"]
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"

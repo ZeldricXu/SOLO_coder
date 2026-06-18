@@ -8,13 +8,14 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-DATABASE_URL = f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_HOST}:{settings.POSTGRES_PORT}/{settings.POSTGRES_DB}"
+DATABASE_URL = settings.database_url
 
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
-    pool_size=20,
-    max_overflow=30,
+    pool_size=settings.POSTGRES_POOL_SIZE,
+    max_overflow=settings.POSTGRES_MAX_OVERFLOW,
+    pool_recycle=settings.POSTGRES_POOL_RECYCLE,
     echo=settings.DEBUG,
 )
 

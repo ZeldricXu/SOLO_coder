@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: traffic-viz
+  labels:
+    app: celery-beat
+    component: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-beat
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+        component: backend
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      initContainers:
+        - name: wait-redis
+          image: redis:7-alpine
+          command: ['sh', '-c', 'until redis-cli -h $REDIS_HOST -p $REDIS_PORT -a $REDIS_PASSWORD ping; do echo waiting for redis; sleep 2; done']
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+      containers:
+        - name: celery-beat
+          image: registry.gitlab.example.com/traffic-viz/celery-beat:latest
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+          env:
+            - name: CELERY_BROKER_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)/1"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)/2"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+          volumeMounts:
+            - name: beat-schedule
+              mountPath: /app/celerybeat-schedule
+              subPath: celerybeat-schedule
+      volumes:
+        - name: beat-schedule
+          persistentVolumeClaim:
+            claimName: celery-beat-pvc
+      terminationGracePeriodSeconds: 60

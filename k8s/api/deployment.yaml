@@ -1,0 +1,106 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  namespace: traffic-viz
+  labels:
+    app: api
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: api
+        component: backend
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: "/metrics"
+    spec:
+      imagePullSecrets:
+        - name: registry-credentials
+      initContainers:
+        - name: wait-postgres
+          image: postgres:16-alpine
+          command: ['sh', '-c', 'until pg_isready -h $POSTGRES_HOST -p 5432 -U $POSTGRES_USER; do echo waiting for postgres; sleep 2; done']
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+        - name: wait-redis
+          image: redis:7-alpine
+          command: ['sh', '-c', 'until redis-cli -h $REDIS_HOST -p $REDIS_PORT -a $REDIS_PASSWORD ping; do echo waiting for redis; sleep 2; done']
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+      containers:
+        - name: api
+          image: registry.gitlab.example.com/traffic-viz/api:latest
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+            - containerPort: 9090
+              name: metrics
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: traffic-viz-config
+            - secretRef:
+                name: traffic-viz-secrets
+          env:
+            - name: CELERY_BROKER_URL
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)/1"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://:$(REDIS_PASSWORD)@$(REDIS_HOST):$(REDIS_PORT)/2"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          volumeMounts:
+            - name: tiles-data
+              mountPath: /app/data/tiles
+            - name: cache-data
+              mountPath: /app/data/cache
+            - name: models-data
+              mountPath: /app/models
+      volumes:
+        - name: tiles-data
+          emptyDir: {}
+        - name: cache-data
+          emptyDir: {}
+        - name: models-data
+          persistentVolumeClaim:
+            claimName: models-pvc
+      terminationGracePeriodSeconds: 60

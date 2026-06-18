@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: traffic-viz
+  labels:
+    app.kubernetes.io/name: traffic-viz
+    app.kubernetes.io/part-of: traffic-viz-platform

@@ -1,0 +1,268 @@
+stages:
+  - lint
+  - test
+  - build
+  - deploy
+
+variables:
+  DOCKER_REGISTRY: $CI_REGISTRY
+  DOCKER_IMAGE_PREFIX: $CI_REGISTRY_IMAGE
+  DOCKER_TLS_CERTDIR: "/certs"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+.cache: &python_cache
+  cache:
+    key:
+      files:
+        - backend/requirements.txt
+    paths:
+      - .cache/pip
+      - backend/.venv
+
+.lint_base: &lint_base
+  image: python:3.12-slim
+  before_script:
+    - cd backend
+    - pip install --cache-dir $PIP_CACHE_DIR ruff mypy types-redis types-python-jose
+    - pip install --cache-dir $PIP_CACHE_DIR -r requirements.txt
+  <<: *python_cache
+
+ruff:
+  stage: lint
+  <<: *lint_base
+  script:
+    - ruff check app/ --output-format=gitlab --output-file=ruff-report.json || true
+    - ruff check app/ --statistics
+  artifacts:
+    reports:
+      codequality: backend/ruff-report.json
+    when: always
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+mypy:
+  stage: lint
+  <<: *lint_base
+  script:
+    - mypy app/ --ignore-missing-imports --no-strict-optional
+      --disable-error-code=attr-defined
+      --disable-error-code=union-attr
+      --disable-error-code=call-arg
+      --disable-error-code=arg-type
+      --disable-error-code=assignment
+      --disable-error-code=var-annotated
+      --disable-error-code=import-untyped
+      --disable-error-code=no-redef
+      --disable-error-code=override
+      --python-version 3.12
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+pytest:
+  stage: test
+  image: python:3.12-slim
+  services:
+    - name: postgis/postgis:16-3.4-alpine
+      alias: postgres
+    - name: redis:7-alpine
+      alias: redis
+    - name: influxdb:2.7-alpine
+      alias: influxdb
+  variables:
+    POSTGRES_DB: traffic_viz_test
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    REDIS_HOST: redis
+    REDIS_PORT: "6379"
+    INFLUXDB_URL: http://influxdb:8086
+    INFLUXDB_TOKEN: test-token
+    INFLUXDB_ORG: traffic-org
+    INFLUXDB_BUCKET: traffic-data
+    DOCKER_INFLUXDB_INIT_MODE: setup
+    DOCKER_INFLUXDB_INIT_USERNAME: admin
+    DOCKER_INFLUXDB_INIT_PASSWORD: admin12345
+    DOCKER_INFLUXDB_INIT_ORG: traffic-org
+    DOCKER_INFLUXDB_INIT_BUCKET: traffic-data
+    DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: test-token
+    ENVIRONMENT: dev
+    DEBUG: "true"
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends
+      gcc libpq-dev python3-dev libgeos-dev proj-bin libproj-dev gdal-bin libgdal-dev
+    - cd backend
+    - pip install --cache-dir $PIP_CACHE_DIR -r requirements.txt
+  script:
+    - pytest tests/
+      -m "not slow and not integration"
+      --cov=app
+      --cov-report=term-missing
+      --cov-report=html:coverage-html
+      --cov-report=lcov:coverage.lcov
+      --junitxml=pytest-report.xml
+      -v
+  coverage: '/TOTAL.+?(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: lcov
+        path: backend/coverage.lcov
+      junit: backend/pytest-report.xml
+    paths:
+      - backend/coverage-html/
+    when: always
+  <<: *python_cache
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+
+pytest_integration:
+  stage: test
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+  before_script:
+    - apk add --no-cache docker-compose python3 py3-pip
+    - pip3 install docker-compose
+  script:
+    - cd backend/tests
+    - docker-compose -f docker-compose.test.yml up -d --wait
+    - sleep 15
+    - docker-compose -f docker-compose.test.yml exec -T backend
+      pytest tests/ -m integration -v --timeout=120
+  after_script:
+    - cd backend/tests
+    - docker-compose -f docker-compose.test.yml down -v || true
+  allow_failure: true
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: manual
+
+.build_base: &build_base
+  stage: build
+  image: docker:24-dind
+  services:
+    - docker:24-dind
+  variables:
+    DOCKER_HOST: tcp://docker:2376
+    DOCKER_TLS_CERTDIR: "/certs"
+    DOCKER_TLS_VERIFY: 1
+    DOCKER_CERT_PATH: "$DOCKER_TLS_CERTDIR/client"
+  before_script:
+    - until docker info; do sleep 1; done
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin $CI_REGISTRY
+  script:
+    - IMAGE_TAG="${DOCKER_IMAGE_PREFIX}/${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+    - IMAGE_TAG_LATEST="${DOCKER_IMAGE_PREFIX}/${IMAGE_NAME}:latest"
+    - cd backend
+    - docker build
+      --target ${BUILD_TARGET}
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      --cache-from ${IMAGE_TAG_LATEST}
+      -t ${IMAGE_TAG}
+      -t ${IMAGE_TAG_LATEST}
+      -f Dockerfile
+      .
+    - docker push ${IMAGE_TAG}
+    - docker push ${IMAGE_TAG_LATEST}
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_BRANCH =~ /^release\//
+
+build_api:
+  <<: *build_base
+  variables:
+    IMAGE_NAME: "api"
+    BUILD_TARGET: "api"
+  needs: ["ruff", "pytest"]
+
+build_celery_worker:
+  <<: *build_base
+  variables:
+    IMAGE_NAME: "celery-worker"
+    BUILD_TARGET: "celery-worker"
+  needs: ["ruff", "pytest"]
+
+build_celery_beat:
+  <<: *build_base
+  variables:
+    IMAGE_NAME: "celery-beat"
+    BUILD_TARGET: "celery-beat"
+  needs: ["ruff", "pytest"]
+
+build_nginx:
+  <<: *build_base
+  script:
+    - IMAGE_TAG="${DOCKER_IMAGE_PREFIX}/${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+    - IMAGE_TAG_LATEST="${DOCKER_IMAGE_PREFIX}/${IMAGE_NAME}:latest"
+    - cd backend
+    - docker build
+      --build-arg BUILDKIT_INLINE_CACHE=1
+      --cache-from ${IMAGE_TAG_LATEST}
+      -t ${IMAGE_TAG}
+      -t ${IMAGE_TAG_LATEST}
+      -f Dockerfile.nginx
+      .
+    - docker push ${IMAGE_TAG}
+    - docker push ${IMAGE_TAG_LATEST}
+  variables:
+    IMAGE_NAME: "nginx"
+  needs: ["ruff", "pytest"]
+
+deploy_staging:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p $HOME/.kube
+    - echo "$KUBE_CONFIG_STAGING" | base64 -d > $HOME/.kube/config
+  script:
+    - kubectl set image deployment/api
+      api=${DOCKER_IMAGE_PREFIX}/api:${CI_COMMIT_SHORT_SHA}
+      -n traffic-viz-staging
+    - kubectl set image deployment/celery-worker
+      celery-worker=${DOCKER_IMAGE_PREFIX}/celery-worker:${CI_COMMIT_SHORT_SHA}
+      -n traffic-viz-staging
+    - kubectl set image deployment/celery-beat
+      celery-beat=${DOCKER_IMAGE_PREFIX}/celery-beat:${CI_COMMIT_SHORT_SHA}
+      -n traffic-viz-staging
+    - kubectl rollout status deployment/api -n traffic-viz-staging --timeout=300s
+    - kubectl rollout status deployment/celery-worker -n traffic-viz-staging --timeout=300s
+  environment:
+    name: staging
+    url: https://staging.traffic-viz.internal
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+
+deploy_prod:
+  stage: deploy
+  image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p $HOME/.kube
+    - echo "$KUBE_CONFIG_PROD" | base64 -d > $HOME/.kube/config
+  script:
+    - kubectl set image deployment/api
+      api=${DOCKER_IMAGE_PREFIX}/api:${CI_COMMIT_SHORT_SHA}
+      -n traffic-viz-prod
+    - kubectl set image deployment/celery-worker
+      celery-worker=${DOCKER_IMAGE_PREFIX}/celery-worker:${CI_COMMIT_SHORT_SHA}
+      -n traffic-viz-prod
+    - kubectl set image deployment/celery-beat
+      celery-beat=${DOCKER_IMAGE_PREFIX}/celery-beat:${CI_COMMIT_SHORT_SHA}
+      -n traffic-viz-prod
+    - kubectl rollout status deployment/api -n traffic-viz-prod --timeout=300s
+    - kubectl rollout status deployment/celery-worker -n traffic-viz-prod --timeout=300s
+  environment:
+    name: production
+    url: https://traffic-viz.internal
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  needs: ["deploy_staging"]
