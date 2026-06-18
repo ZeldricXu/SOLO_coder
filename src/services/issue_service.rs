@@ -355,13 +355,9 @@ impl IssueService {
         current: &IssueStatus,
         next: &IssueStatus,
     ) -> AppResult<()> {
-        if !current.can_transition_to(next) {
-            return Err(AppError::Validation(format!(
-                "Invalid status transition from {} to {}",
-                current.as_str(),
-                next.as_str()
-            )));
-        }
+        current
+            .transition_to(*next)
+            .map_err(|e| AppError::Validation(e.to_string()))?;
         Ok(())
     }
 

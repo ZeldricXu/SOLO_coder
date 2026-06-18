@@ -1,3 +1,22 @@
+[workspace]
+members = [
+    "crates/git-diff-core",
+    "crates/review-diff",
+    "crates/review-data-access",
+    ".",
+]
+resolver = "2"
+
+[workspace.dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+regex = "1.10"
+
 [package]
 name = "code_review_platform"
 version = "0.1.0"
@@ -17,26 +36,26 @@ reqwest = { version = "0.11", features = ["json", "stream", "multipart", "gzip"]
 async-trait = "0.1"
 oauth2 = { version = "4.4", features = ["reqwest"] }
 config = { version = "0.14", features = ["yaml"] }
-tracing = "0.1"
+tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 tracing-actix-web = "0.7"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { workspace = true }
+serde_json = { workspace = true }
 serde_qs = "0.12"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
 argon2 = "0.5"
 jsonwebtoken = "8.0"
-thiserror = "1.0"
-anyhow = "1.0"
+thiserror = { workspace = true }
+anyhow = { workspace = true }
 tokio-cron-scheduler = { version = "0.9", features = ["signal"] }
 tokio = { version = "1.0", features = ["full"] }
-uuid = { version = "1.0", features = ["v4", "serde"] }
+uuid = { workspace = true }
 rand = "0.8"
 sha2 = "0.10"
 hmac = "0.12"
 lettre = { version = "0.11", features = ["tokio1-native-tls", "builder", "serde"] }
 urlencoding = "2.1"
-regex = "1.10"
+regex = { workspace = true }
 lazy_static = "1.4"
 futures = "0.3"
 bytes = "1.5"
@@ -46,6 +65,9 @@ percent-encoding = "2.3"
 ring = "0.17"
 base64 = "0.21"
 dotenvy = "0.15"
+git-diff-core = { path = "crates/git-diff-core" }
+review-diff = { path = "crates/review-diff" }
+review-data-access = { path = "crates/review-data-access" }
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -123,7 +123,7 @@ impl IssueSeverity {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 pub enum IssueStatus {
     Open,
     InProgress,
@@ -154,17 +154,145 @@ impl IssueStatus {
         }
     }
 
+    pub fn allowed_transitions(&self) -> &[IssueStatus] {
+        static TRANSITIONS: &[&[IssueStatus]] = &[
+            &[IssueStatus::InProgress, IssueStatus::Closed],
+            &[IssueStatus::PendingReview, IssueStatus::Closed],
+            &[IssueStatus::Resolved, IssueStatus::InProgress],
+            &[IssueStatus::Closed, IssueStatus::Open],
+            &[],
+        ];
+
+        const STATUS_ORDER: &[IssueStatus] = &[
+            IssueStatus::Open,
+            IssueStatus::InProgress,
+            IssueStatus::PendingReview,
+            IssueStatus::Resolved,
+            IssueStatus::Closed,
+        ];
+
+        let idx = STATUS_ORDER.iter().position(|s| s == self).unwrap();
+        TRANSITIONS[idx]
+    }
+
     pub fn can_transition_to(&self, next: &IssueStatus) -> bool {
-        match (self, next) {
-            (IssueStatus::Open, IssueStatus::InProgress) => true,
-            (IssueStatus::Open, IssueStatus::Closed) => true,
-            (IssueStatus::InProgress, IssueStatus::PendingReview) => true,
-            (IssueStatus::InProgress, IssueStatus::Closed) => true,
-            (IssueStatus::PendingReview, IssueStatus::Resolved) => true,
-            (IssueStatus::PendingReview, IssueStatus::InProgress) => true,
-            (IssueStatus::Resolved, IssueStatus::Closed) => true,
-            (IssueStatus::Resolved, IssueStatus::Open) => true,
-            _ => false,
+        self.allowed_transitions().contains(next)
+    }
+
+    pub fn transition_to(&self, next: IssueStatus) -> Result<IssueStatus, StatusTransitionError> {
+        if self.can_transition_to(&next) {
+            Ok(next)
+        } else {
+            Err(StatusTransitionError {
+                from: *self,
+                to: next,
+            })
         }
+    }
+
+    pub fn all_statuses() -> &'static [IssueStatus] {
+        &[
+            IssueStatus::Open,
+            IssueStatus::InProgress,
+            IssueStatus::PendingReview,
+            IssueStatus::Resolved,
+            IssueStatus::Closed,
+        ]
+    }
+
+    pub fn is_terminal(&self) -> bool {
+        matches!(self, IssueStatus::Closed)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("Invalid status transition from {from:?} to {to:?}")]
+pub struct StatusTransitionError {
+    pub from: IssueStatus,
+    pub to: IssueStatus,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_valid_transitions() {
+        assert!(IssueStatus::Open.can_transition_to(&IssueStatus::InProgress));
+        assert!(IssueStatus::Open.can_transition_to(&IssueStatus::Closed));
+        assert!(IssueStatus::InProgress.can_transition_to(&IssueStatus::PendingReview));
+        assert!(IssueStatus::InProgress.can_transition_to(&IssueStatus::Closed));
+        assert!(IssueStatus::PendingReview.can_transition_to(&IssueStatus::Resolved));
+        assert!(IssueStatus::PendingReview.can_transition_to(&IssueStatus::InProgress));
+        assert!(IssueStatus::Resolved.can_transition_to(&IssueStatus::Closed));
+        assert!(IssueStatus::Resolved.can_transition_to(&IssueStatus::Open));
+    }
+
+    #[test]
+    fn test_invalid_transitions() {
+        assert!(!IssueStatus::Open.can_transition_to(&IssueStatus::Open));
+        assert!(!IssueStatus::Open.can_transition_to(&IssueStatus::Resolved));
+        assert!(!IssueStatus::Closed.can_transition_to(&IssueStatus::Open));
+        assert!(!IssueStatus::Closed.can_transition_to(&IssueStatus::InProgress));
+        assert!(!IssueStatus::InProgress.can_transition_to(&IssueStatus::Open));
+        assert!(!IssueStatus::PendingReview.can_transition_to(&IssueStatus::Open));
+    }
+
+    #[test]
+    fn test_transition_to_ok() {
+        let result = IssueStatus::Open.transition_to(IssueStatus::InProgress);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), IssueStatus::InProgress);
+    }
+
+    #[test]
+    fn test_transition_to_err() {
+        let result = IssueStatus::Closed.transition_to(IssueStatus::InProgress);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert_eq!(err.from, IssueStatus::Closed);
+        assert_eq!(err.to, IssueStatus::InProgress);
+    }
+
+    #[test]
+    fn test_is_terminal() {
+        assert!(!IssueStatus::Open.is_terminal());
+        assert!(!IssueStatus::InProgress.is_terminal());
+        assert!(IssueStatus::Closed.is_terminal());
+    }
+
+    #[test]
+    fn test_full_lifecycle() {
+        let mut status = IssueStatus::Open;
+        status = status.transition_to(IssueStatus::InProgress).unwrap();
+        status = status.transition_to(IssueStatus::PendingReview).unwrap();
+        status = status.transition_to(IssueStatus::Resolved).unwrap();
+        status = status.transition_to(IssueStatus::Closed).unwrap();
+        assert!(status.is_terminal());
+    }
+
+    #[test]
+    fn test_reopen_lifecycle() {
+        let mut status = IssueStatus::Open;
+        status = status.transition_to(IssueStatus::InProgress).unwrap();
+        status = status.transition_to(IssueStatus::PendingReview).unwrap();
+        status = status.transition_to(IssueStatus::Resolved).unwrap();
+        status = status.transition_to(IssueStatus::Open).unwrap();
+        assert_eq!(status, IssueStatus::Open);
+    }
+
+    #[test]
+    fn test_from_str_roundtrip() {
+        for s in IssueStatus::all_statuses() {
+            assert_eq!(IssueStatus::from_str(s.as_str()), Some(*s));
+        }
+    }
+
+    #[test]
+    fn test_allowed_transitions_returns_slice() {
+        let transitions = IssueStatus::Open.allowed_transitions();
+        assert_eq!(transitions.len(), 2);
+        assert!(transitions.contains(&IssueStatus::InProgress));
+        assert!(transitions.contains(&IssueStatus::Closed));
     }
 }
