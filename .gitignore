@@ -1,11 +1,73 @@
-.env
-config/local.yaml
-config/development.yaml
-config/production.yaml
-target/
-*.log
-.vscode/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+build/
+dist/
+*.egg-info/
+.cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+*.egg-info/
+**/__pycache__/**
+
+# Rust
+/target/
+**/target/
+Cargo.lock.bak
+.rustc_info.json
+
+# IDE
 .idea/
+.vscode/
 *.swp
 *.swo
 *~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Editor backup
+*~
+\#*\#
+.\#*
+
+# Env files
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# Sqlx offline data (recreated on demand)
+.sqlx/
+sqlx-data.json
+
+# MinIO
+data/
+minio-data/
+
+# Docker volumes
+postgres-data/
+redis-data/
+
+# Temp files
+tmp/
+temp/
+*.log
+*.tmp
+
+# IDE
+.trae/
+.idea/
+.vscode/
+*.iml
+
+# OS
+Thumbs.db

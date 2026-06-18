@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+
+echo "Creating extension and schema..."
+
+PGPASSWORD="$POSTGRES_PASSWORD" psql -v ON_ERROR_STOP=1 \
+  --username "$POSTGRES_USER" \
+  --dbname "$POSTGRES_DB" <<-EOSQL
+    CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+    CREATE EXTENSION IF NOT EXISTS "pg_trgm";
+    CREATE SCHEMA IF NOT EXISTS public;
+    GRANT ALL PRIVILEGES ON SCHEMA public TO $POSTGRES_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO $POSTGRES_USER;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO $POSTGRES_USER;
+EOSQL
+
+echo "Database initialized successfully."

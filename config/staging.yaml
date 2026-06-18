@@ -1,48 +1,28 @@
 server:
   host: 0.0.0.0
   port: 8080
-  base_url: https://staging.df1-69.example.com
+  base_url: https://staging-review.example.com
 
 database:
-  max_connections: 15
+  max_connections: 20
   min_connections: 5
   acquire_timeout_secs: 30
   idle_timeout_secs: 300
 
 redis:
-  max_connections: 30
+  max_connections: 50
   min_connections: 10
 
 minio:
-  region: us-east-1
   use_ssl: true
-
-oauth:
-  github:
-    redirect_url: https://staging.df1-69.example.com/auth/github/callback
-  gitlab:
-    redirect_url: https://staging.df1-69.example.com/auth/gitlab/callback
-  gitee:
-    redirect_url: https://staging.df1-69.example.com/auth/gitee/callback
-
-llm:
-  model: gpt-4
-  max_tokens: 4096
-  temperature: 0.5
-  timeout_secs: 60
-
-email:
-  use_tls: true
+  region: us-east-1
 
 session:
-  ttl_secs: 86400
-  cookie_name: df1_69_session
+  ttl_secs: 259200
   cookie_secure: true
   cookie_http_only: true
 
 app:
-  name: DF1-69 Staging
   log_level: info
   environment: staging
-  webhook_signature_header: X-Webhook-Signature
-  daily_digest_cron: "0 0 9 * * *"
+  daily_digest_cron: "0 0 9 * * 1-5"

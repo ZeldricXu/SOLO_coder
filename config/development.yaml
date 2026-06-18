@@ -1,0 +1,22 @@
+server:
+  host: 127.0.0.1
+  port: 8080
+  base_url: http://localhost:8080
+
+database:
+  max_connections: 5
+  min_connections: 1
+
+redis:
+  max_connections: 10
+  min_connections: 2
+
+minio:
+  use_ssl: false
+
+session:
+  cookie_secure: false
+
+app:
+  log_level: debug
+  environment: development

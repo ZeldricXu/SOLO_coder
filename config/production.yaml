@@ -1,0 +1,25 @@
+server:
+  host: 0.0.0.0
+  port: 8080
+
+database:
+  max_connections: 50
+  min_connections: 10
+  acquire_timeout_secs: 60
+  idle_timeout_secs: 600
+
+redis:
+  max_connections: 100
+  min_connections: 20
+
+minio:
+  use_ssl: true
+
+session:
+  ttl_secs: 604800
+  cookie_secure: true
+  cookie_http_only: true
+
+app:
+  log_level: info
+  environment: production

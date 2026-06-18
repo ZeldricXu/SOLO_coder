@@ -1,164 +1,198 @@
 version: "3.9"
 
+x-app-env: &app-env
+  APP_ENV: development
+  APP__SERVER__HOST: 0.0.0.0
+  APP__SERVER__PORT: "8080"
+  APP__SERVER__BASE_URL: http://localhost:8080
+  DATABASE_URL: postgres://df169:df169secret@postgres:5432/df1_69
+  APP__DATABASE__MAX_CONNECTIONS: "20"
+  APP__DATABASE__MIN_CONNECTIONS: "5"
+  APP__REDIS__URL: redis://:df169redissecret@redis:6379/0
+  APP__MINIO__ENDPOINT: minio:9000
+  APP__MINIO__ACCESS_KEY: minioadmin
+  APP__MINIO__SECRET_KEY: minioadminsecret
+  APP__MINIO__BUCKET_NAME: df1-69
+  APP__MINIO__REGION: us-east-1
+  APP__MINIO__USE_SSL: "false"
+  APP__SESSION__SECRET_KEY: ${SESSION_SECRET_KEY:-change-me-to-a-long-random-secret-key-please}
+  APP__SESSION__TTL_SECS: "86400"
+  APP__SESSION__COOKIE_NAME: df169_session
+  APP__SESSION__COOKIE_SECURE: "false"
+  APP__SESSION__COOKIE_HTTP_ONLY: "true"
+  APP__APP__NAME: "DF1-69 Code Review Platform"
+  APP__APP__LOG_LEVEL: debug
+  APP__APP__ENVIRONMENT: development
+  APP__APP__WEBHOOK_SIGNATURE_HEADER: X-Gitlab-Token
+  APP__APP__DAILY_DIGEST_CRON: "0 0 9 * * *"
+  APP__OAUTH__GITHUB__CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+  APP__OAUTH__GITHUB__CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+  APP__OAUTH__GITHUB__AUTH_URL: https://github.com/login/oauth/authorize
+  APP__OAUTH__GITHUB__TOKEN_URL: https://github.com/login/oauth/access_token
+  APP__OAUTH__GITHUB__API_BASE_URL: https://api.github.com
+  APP__OAUTH__GITHUB__REDIRECT_URL: http://localhost:8080/auth/github/callback
+  APP__OAUTH__GITLAB__CLIENT_ID: ${GITLAB_CLIENT_ID:-}
+  APP__OAUTH__GITLAB__CLIENT_SECRET: ${GITLAB_CLIENT_SECRET:-}
+  APP__OAUTH__GITLAB__AUTH_URL: https://gitlab.com/oauth/authorize
+  APP__OAUTH__GITLAB__TOKEN_URL: https://gitlab.com/oauth/token
+  APP__OAUTH__GITLAB__API_BASE_URL: https://gitlab.com/api/v4
+  APP__OAUTH__GITLAB__REDIRECT_URL: http://localhost:8080/auth/gitlab/callback
+  APP__OAUTH__GITEE__CLIENT_ID: ${GITEE_CLIENT_ID:-}
+  APP__OAUTH__GITEE__CLIENT_SECRET: ${GITEE_CLIENT_SECRET:-}
+  APP__OAUTH__GITEE__AUTH_URL: https://gitee.com/oauth/authorize
+  APP__OAUTH__GITEE__TOKEN_URL: https://gitee.com/oauth/token
+  APP__OAUTH__GITEE__API_BASE_URL: https://gitee.com/api/v5
+  APP__OAUTH__GITEE__REDIRECT_URL: http://localhost:8080/auth/gitee/callback
+  APP__LLM__PROVIDER: openai
+  APP__LLM__API_KEY: ${LLM_API_KEY:-}
+  APP__LLM__API_BASE_URL: https://api.openai.com/v1
+  APP__LLM__MODEL: gpt-4o-mini
+  APP__LLM__MAX_TOKENS: "4096"
+  APP__LLM__TEMPERATURE: "0.3"
+  APP__LLM__TIMEOUT_SECS: "120"
+  APP__EMAIL__SMTP_HOST: ${SMTP_HOST:-}
+  APP__EMAIL__SMTP_PORT: ${SMTP_PORT:-587}
+  APP__EMAIL__SMTP_USERNAME: ${SMTP_USERNAME:-}
+  APP__EMAIL__SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+  APP__EMAIL__FROM_ADDRESS: noreply@example.com
+  APP__EMAIL__FROM_NAME: "DF1-69 Code Review"
+  APP__EMAIL__USE_TLS: "true"
+  APP__SLACK__WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  APP__DINGTALK__WEBHOOK_URL: ${DINGTALK_WEBHOOK_URL:-}
+  APP__DINGTALK__SECRET: ${DINGTALK_SECRET:-}
+
 services:
   postgres:
-    image: postgres:14-alpine
-    container_name: df1-69-postgres
+    image: postgres:16-alpine
+    container_name: df169-postgres
     restart: unless-stopped
     environment:
+      POSTGRES_USER: df169
+      POSTGRES_PASSWORD: df169secret
       POSTGRES_DB: df1_69
-      POSTGRES_USER: df1_69
-      POSTGRES_PASSWORD: df1_69_password
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      PGDATA: /var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U df1_69 -d df1_69"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U df169 -d df1_69"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
     networks:
-      - df1-69-net
+      - df169-net
 
   redis:
     image: redis:7-alpine
-    container_name: df1-69-redis
+    container_name: df169-redis
     restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
-    volumes:
-      - redis_data:/data
+    command: ["redis-server", "--requirepass", "df169redissecret", "--appendonly", "yes"]
     ports:
       - "6379:6379"
+    volumes:
+      - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      test: ["CMD", "redis-cli", "-a", "df169redissecret", "ping"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 5s
     networks:
-      - df1-69-net
+      - df169-net
 
   minio:
-    image: minio/minio:latest
-    container_name: df1-69-minio
+    image: minio/minio:RELEASE.2024-06-11T03-13-30Z
+    container_name: df169-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin_secret
-    volumes:
-      - minio_data:/data
+      MINIO_ROOT_PASSWORD: minioadminsecret
     ports:
       - "9000:9000"
       - "9001:9001"
+    volumes:
+      - minio_data:/data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 10s
     networks:
-      - df1-69-net
+      - df169-net
 
-  create-bucket:
-    image: minio/mc:latest
-    container_name: df1-69-create-bucket
+  minio-init:
+    image: minio/mc:RELEASE.2024-05-30T14-39-31Z
+    container_name: df169-minio-init
     depends_on:
       minio:
         condition: service_healthy
     entrypoint: >
       /bin/sh -c "
-      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin_secret;
-      /usr/bin/mc mb --ignore-existing myminio/df1-69;
-      /usr/bin/mc anonymous set public myminio/df1-69 || true;
-      exit 0;
+      /usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadminsecret &&
+      /usr/bin/mc mb --ignore-existing myminio/df1-69 &&
+      /usr/bin/mc anonymous set download myminio/df1-69 &&
+      echo 'MinIO bucket df1-69 created successfully'
       "
     networks:
-      - df1-69-net
+      - df169-net
 
   migrate:
     build:
       context: .
-      dockerfile: Dockerfile
-      target: builder
-    container_name: df1-69-migrate
+      target: migrate-init
+    container_name: df169-migrate
     depends_on:
       postgres:
         condition: service_healthy
-    command: >
-      sh -c "
-      cargo install sqlx-cli --no-default-features --features postgres,rustls &&
-      export DATABASE_URL=postgres://df1_69:df1_69_password@postgres:5432/df1_69 &&
-      sqlx migrate run &&
-      echo 'Migration completed successfully'
-      "
-    working_dir: /app
     environment:
-      DATABASE_URL: postgres://df1_69:df1_69_password@postgres:5432/df1_69
-    volumes:
-      - ./migrations:/app/migrations
+      <<: *app-env
+      APP__DATABASE__HOST: postgres
+      APP__DATABASE__PORT: "5432"
+      APP__DATABASE__USER: df169
     networks:
-      - df1-69-net
+      - df169-net
 
   app:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: df1-69-app
+      target: runner
+    container_name: df169-app
     restart: unless-stopped
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      minio:
-        condition: service_healthy
       migrate:
         condition: service_completed_successfully
-      create-bucket:
+      redis:
+        condition: service_healthy
+      minio-init:
         condition: service_completed_successfully
+    environment:
+      <<: *app-env
     ports:
       - "8080:8080"
-    environment:
-      RUN_MODE: development
-      APP__SERVER__HOST: 0.0.0.0
-      APP__SERVER__PORT: 8080
-      APP__SERVER__BASE_URL: http://localhost:8080
-      APP__DATABASE__URL: postgres://df1_69:df1_69_password@postgres:5432/df1_69
-      APP__DATABASE__MAX_CONNECTIONS: 10
-      APP__DATABASE__MIN_CONNECTIONS: 2
-      APP__DATABASE__ACQUIRE_TIMEOUT_SECS: 30
-      APP__DATABASE__IDLE_TIMEOUT_SECS: 300
-      APP__REDIS__URL: redis://redis:6379/0
-      APP__REDIS__MAX_CONNECTIONS: 20
-      APP__REDIS__MIN_CONNECTIONS: 5
-      APP__MINIO__ENDPOINT: minio:9000
-      APP__MINIO__ACCESS_KEY: minioadmin
-      APP__MINIO__SECRET_KEY: minioadmin_secret
-      APP__MINIO__BUCKET_NAME: df1-69
-      APP__MINIO__REGION: us-east-1
-      APP__MINIO__USE_SSL: "false"
-      APP__OAUTH__GITHUB__CLIENT_ID: your_github_client_id
-      APP__OAUTH__GITHUB__CLIENT_SECRET: your_github_client_secret
-      APP__OAUTH__GITLAB__CLIENT_ID: your_gitlab_client_id
-      APP__OAUTH__GITLAB__CLIENT_SECRET: your_gitlab_client_secret
-      APP__OAUTH__GITEE__CLIENT_ID: your_gitee_client_id
-      APP__OAUTH__GITEE__CLIENT_SECRET: your_gitee_client_secret
-      APP__SESSION__SECRET_KEY: change_this_to_a_long_random_string_in_production
-      APP__SESSION__COOKIE_SECURE: "false"
-      APP__APP__LOG_LEVEL: info
-      APP__APP__ENVIRONMENT: development
-      RUST_LOG: info
     volumes:
       - ./config:/app/config:ro
       - ./static:/app/static:ro
+      - app_tmp:/app/tmp
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
     networks:
-      - df1-69-net
+      - df169-net
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  app_tmp:
 
 networks:
-  df1-69-net:
+  df169-net:
     driver: bridge

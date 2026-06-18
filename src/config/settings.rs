@@ -2,7 +2,6 @@ use std::time::Duration;
 
 use config::{Config, ConfigError, Environment, File};
 use serde::Deserialize;
-use url::Url;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct Settings {
@@ -29,6 +28,16 @@ pub struct ServerConfig {
 #[derive(Debug, Deserialize, Clone)]
 pub struct DatabaseConfig {
     pub url: String,
+    #[serde(default)]
+    pub host: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub user: Option<String>,
+    #[serde(default)]
+    pub password: Option<String>,
+    #[serde(default)]
+    pub name: Option<String>,
     pub max_connections: u32,
     pub min_connections: u32,
     pub acquire_timeout_secs: u64,
@@ -111,16 +120,61 @@ pub struct AppConfig {
 
 impl Settings {
     pub fn new() -> Result<Self, ConfigError> {
-        let run_mode = std::env::var("RUN_MODE").unwrap_or_else(|_| "development".into());
-        
-        let mut config = Config::builder()
+        let run_mode = std::env::var("APP_ENV")
+            .or_else(|_| std::env::var("RUN_MODE"))
+            .unwrap_or_else(|_| "development".into());
+
+        let mut builder = Config::builder()
             .add_source(File::with_name("config/default").required(false))
             .add_source(File::with_name(&format!("config/{}", run_mode)).required(false))
             .add_source(File::with_name("config/local").required(false))
-            .add_source(Environment::with_prefix("APP").separator("__"))
-            .build()?;
-        
-        config.try_deserialize()
+            .add_source(Environment::with_prefix("APP").separator("__"));
+
+        if let Ok(db_url) = std::env::var("DATABASE_URL") {
+            builder = builder.set_override("database.url", db_url)?;
+        }
+        if let Ok(redis_url) = std::env::var("REDIS_URL") {
+            builder = builder.set_override("redis.url", redis_url)?;
+        }
+        if let Ok(minio_endpoint) = std::env::var("MINIO_ENDPOINT") {
+            builder = builder.set_override("minio.endpoint", minio_endpoint)?;
+        }
+        if let Ok(minio_access) = std::env::var("MINIO_ACCESS_KEY") {
+            builder = builder.set_override("minio.access_key", minio_access)?;
+        }
+        if let Ok(minio_secret) = std::env::var("MINIO_SECRET_KEY") {
+            builder = builder.set_override("minio.secret_key", minio_secret)?;
+        }
+        if let Ok(minio_bucket) = std::env::var("MINIO_BUCKET") {
+            builder = builder.set_override("minio.bucket_name", minio_bucket)?;
+        }
+        if let Ok(llm_key) = std::env::var("LLM_API_KEY") {
+            builder = builder.set_override("llm.api_key", llm_key)?;
+        }
+
+        let config = builder.build()?;
+        let mut settings: Settings = config.try_deserialize()?;
+
+        if let Some(github_id) = std::env::var("GITHUB_CLIENT_ID").ok().filter(|v| !v.is_empty()) {
+            settings.oauth.github.client_id = github_id;
+        }
+        if let Some(github_secret) = std::env::var("GITHUB_CLIENT_SECRET").ok().filter(|v| !v.is_empty()) {
+            settings.oauth.github.client_secret = github_secret;
+        }
+        if let Some(gitlab_id) = std::env::var("GITLAB_CLIENT_ID").ok().filter(|v| !v.is_empty()) {
+            settings.oauth.gitlab.client_id = gitlab_id;
+        }
+        if let Some(gitlab_secret) = std::env::var("GITLAB_CLIENT_SECRET").ok().filter(|v| !v.is_empty()) {
+            settings.oauth.gitlab.client_secret = gitlab_secret;
+        }
+        if let Some(gitee_id) = std::env::var("GITEE_CLIENT_ID").ok().filter(|v| !v.is_empty()) {
+            settings.oauth.gitee.client_id = gitee_id;
+        }
+        if let Some(gitee_secret) = std::env::var("GITEE_CLIENT_SECRET").ok().filter(|v| !v.is_empty()) {
+            settings.oauth.gitee.client_secret = gitee_secret;
+        }
+
+        Ok(settings)
     }
 
     pub fn database_url(&self) -> &str {
@@ -141,6 +195,26 @@ impl Settings {
 
     pub fn session_ttl(&self) -> Duration {
         Duration::from_secs(self.session.ttl_secs)
+    }
+
+    pub fn is_development(&self) -> bool {
+        self.app.environment == "development" || self.app.environment == "dev"
+    }
+
+    pub fn is_production(&self) -> bool {
+        self.app.environment == "production" || self.app.environment == "prod"
+    }
+
+    pub fn is_staging(&self) -> bool {
+        self.app.environment == "staging" || self.app.environment == "stage"
+    }
+
+    pub fn is_testing(&self) -> bool {
+        self.app.environment == "testing" || self.app.environment == "test"
+    }
+
+    pub fn environment(&self) -> &str {
+        &self.app.environment
     }
 }
 
