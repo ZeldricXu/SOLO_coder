@@ -36,6 +36,9 @@ dependencies = [
     "psutil",
     "scipy",
     "croniter",
+    "duckdb",
+    "pyyaml",
+    "dbutils",
 ]
 
 [project.optional-dependencies]
@@ -44,6 +47,16 @@ dev = [
     "pytest-asyncio",
     "httpx",
     "ruff",
+]
+test = [
+    "pytest",
+    "pytest-asyncio",
+    "pytest-celery",
+    "httpx",
+    "aiosqlite",
+    "testcontainers[mysql,postgres,redis,minio]",
+    "pyyaml",
+    "duckdb",
 ]
 
 [tool.setuptools.packages.find]
