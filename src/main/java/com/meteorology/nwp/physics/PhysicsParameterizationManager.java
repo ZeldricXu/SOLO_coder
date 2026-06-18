@@ -1,6 +1,8 @@
 package com.meteorology.nwp.physics;
 
 import com.meteorology.nwp.common.*;
+import com.meteorology.nwp.dynamics.DynamicsState;
+import com.meteorology.nwp.dynamics.TendencyAccumulator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -9,6 +11,7 @@ import java.util.*;
 public class PhysicsParameterizationManager {
     private static final Logger logger = LoggerFactory.getLogger(PhysicsParameterizationManager.class);
     private final NWPConfig config;
+    private final GridDefinition grid;
     private final Map<PhysicsType, PhysicsScheme> schemes = new EnumMap<>(PhysicsType.class);
     private final List<PhysicsScheme> callOrder = new ArrayList<>();
     private final Map<PhysicsType, String> schemeConfig;
@@ -16,9 +19,22 @@ public class PhysicsParameterizationManager {
     private int stepCounter;
     private long totalTimeNanos;
     private final Map<PhysicsType, Long> schemeTiming = new EnumMap<>(PhysicsType.class);
+    private final TendencyAccumulator tendencyAccumulator;
+
+    private static final Map<VariableType, double[]> PHYSICS_LIMITS = new EnumMap<>(VariableType.class);
+    static {
+        PHYSICS_LIMITS.put(VariableType.T, new double[]{150.0, 400.0});
+        PHYSICS_LIMITS.put(VariableType.QV, new double[]{0.0, 0.05});
+        PHYSICS_LIMITS.put(VariableType.QC, new double[]{0.0, 0.02});
+        PHYSICS_LIMITS.put(VariableType.QR, new double[]{0.0, 0.05});
+        PHYSICS_LIMITS.put(VariableType.QI, new double[]{0.0, 0.02});
+        PHYSICS_LIMITS.put(VariableType.QS, new double[]{0.0, 0.02});
+        PHYSICS_LIMITS.put(VariableType.QG, new double[]{0.0, 0.01});
+    }
 
     public PhysicsParameterizationManager(NWPConfig config) {
         this.config = config;
+        this.grid = config.getGrid();
         this.schemeConfig = new EnumMap<>(PhysicsType.class);
         schemeConfig.put(PhysicsType.SURFACE_LAYER, config.getString("nwp.physics.surface", "default"));
         schemeConfig.put(PhysicsType.RADIATION, config.getString("nwp.physics.radiation", "rrtmg"));
@@ -27,6 +43,7 @@ public class PhysicsParameterizationManager {
         schemeConfig.put(PhysicsType.CUMULUS, config.getString("nwp.physics.cumulus", "kain-fritsch"));
         this.radiationCallInterval = config.getInt("nwp.physics.radiationInterval", 3600);
         this.stepCounter = 0;
+        this.tendencyAccumulator = new TendencyAccumulator(grid);
         initializeSchemes();
     }
 
@@ -55,7 +72,7 @@ public class PhysicsParameterizationManager {
         }
         try {
             PhysicsScheme scheme = createScheme(type, schemeName);
-            scheme.initialize(config);
+            scheme.initialize(config, grid);
             schemes.put(type, scheme);
             schemeTiming.put(type, 0L);
             logger.info("  ✓ 加载: {} → {}", type, scheme.getName());
@@ -84,47 +101,7 @@ public class PhysicsParameterizationManager {
             }
             case SURFACE_LAYER -> {
                 if ("default".equalsIgnoreCase(name) || "monin-obukhov".equalsIgnoreCase(name)) {
-                    yield new PhysicsScheme() {
-                        @Override public String getName() { return "Monin-Obukhov Surface"; }
-                        @Override public PhysicsType getType() { return PhysicsType.SURFACE_LAYER; }
-                        @Override public void initialize(NWPConfig cfg) {}
-                        @Override public void configure(Map<String, Object> params) {}
-                        @Override public void apply(ModelState s, double dt) {
-                            GridDefinition grid = config.getGrid();
-                            DataField psfc = s.fields.get(VariableType.PSFC);
-                            DataField t2 = s.fields.computeIfAbsent(VariableType.T2, v -> new DataField(nx(), ny()));
-                            DataField q2 = s.fields.computeIfAbsent(VariableType.Q2, v -> new DataField(nx(), ny()));
-                            DataField u10 = s.fields.computeIfAbsent(VariableType.U10, v -> new DataField(nx(), ny()));
-                            DataField v10 = s.fields.computeIfAbsent(VariableType.V10, v -> new DataField(nx(), ny()));
-                            DataField t = s.fields.get(VariableType.T);
-                            DataField qv = s.fields.get(VariableType.QV);
-                            DataField u = s.fields.get(VariableType.U);
-                            DataField v = s.fields.get(VariableType.V);
-                            double z0 = 0.01, zr = 10.0, zb = 2.0;
-                            for (int j = 0; j < ny(); j++) for (int i = 0; i < nx(); i++) {
-                                int idx2d = i + nx() * j;
-                                int idx3d = i + nx() * (j + ny() * 0);
-                                double tk1 = t.get(idx3d);
-                                double q1 = qv.get(idx3d);
-                                double u1 = u.get(idx3d), v1 = v.get(idx3d);
-                                double wind = Math.sqrt(u1*u1 + v1*v1) + 0.01;
-                                double thv = tk1 * (1 + 0.61 * q1);
-                                double kappa = 0.4;
-                                double fm = Math.log(zr / z0), fh = fm;
-                                double ustar = wind * kappa / fm;
-                                double tstar = 0.3;
-                                t2.set(idx2d, tk1 + tstar / kappa * Math.log(zb / zr));
-                                q2.set(idx2d, Math.max(0, q1 - 0.0001));
-                                double factor = Math.log(zr/z0)/Math.log(zb/z0);
-                                u10.set(idx2d, u1 * factor);
-                                v10.set(idx2d, v1 * factor);
-                            }
-                        }
-                        @Override public void applyColumn(ColumnData col, double dt, GridDefinition g, int i, int j) {}
-                        @Override public void cleanup() {}
-                        private int nx() { return config.getNX(); }
-                        private int ny() { return config.getNY(); }
-                    };
+                    yield new MoninObukhovSurface();
                 }
                 throw new IllegalArgumentException("Unknown surface: " + name);
             }
@@ -133,6 +110,50 @@ public class PhysicsParameterizationManager {
     }
 
     public void applyAll(ModelState state, double dt) {
+        long start = System.nanoTime();
+
+        tendencyAccumulator.reset();
+
+        for (PhysicsScheme scheme : callOrder) {
+            boolean shouldCall = true;
+            if (scheme.getType() == PhysicsType.RADIATION) {
+                int steps = radiationCallInterval / Math.max(1, (int)dt);
+                shouldCall = (stepCounter % steps == 0) || stepCounter == 0;
+                if (!shouldCall) continue;
+            }
+            long t0 = System.nanoTime();
+            try {
+                DynamicsState schemeTendencies = new DynamicsState(grid);
+                scheme.apply(state, schemeTendencies, dt);
+
+                for (VariableType var : VariableType.values()) {
+                    DataField tend = schemeTendencies.getTendency(var);
+                    if (tend != null) {
+                        double maxAbs = tend.rms();
+                        if (maxAbs > 1e-20) {
+                            tendencyAccumulator.accumulate(scheme.getType(), var, tend);
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("物理方案 {} 执行异常: {}", scheme.getName(), e.getMessage(), e);
+            }
+            long elapsed = System.nanoTime() - t0;
+            schemeTiming.merge(scheme.getType(), elapsed, Long::sum);
+        }
+
+        tendencyAccumulator.sanitizeNaN();
+        tendencyAccumulator.applyToStateWithClipping(state, dt, PHYSICS_LIMITS);
+
+        stepCounter++;
+        totalTimeNanos += (System.nanoTime() - start);
+
+        if (stepCounter % 100 == 0) {
+            tendencyAccumulator.printContributionReport();
+        }
+    }
+
+    public void applyAllLegacy(ModelState state, double dt) {
         long start = System.nanoTime();
         for (PhysicsScheme scheme : callOrder) {
             boolean shouldCall = true;
@@ -143,7 +164,7 @@ public class PhysicsParameterizationManager {
             }
             long t0 = System.nanoTime();
             try {
-                scheme.apply(state, dt);
+                scheme.apply(state, new DynamicsState(grid), dt);
             } catch (Exception e) {
                 logger.error("物理方案 {} 执行异常: {}", scheme.getName(), e.getMessage(), e);
             }
@@ -158,11 +179,13 @@ public class PhysicsParameterizationManager {
         for (PhysicsScheme scheme : callOrder) {
             if (scheme.getType() == PhysicsType.RADIATION && stepCounter > 0) continue;
             try {
-                scheme.applyColumn(col, dt, grid, i, j);
-            } catch (Exception e) {
-                // ignore per-column errors, just log
-            }
+                scheme.applyColumn(i, j, col, dt);
+            } catch (Exception ignored) {}
         }
+    }
+
+    public TendencyAccumulator getTendencyAccumulator() {
+        return tendencyAccumulator;
     }
 
     public Optional<PhysicsScheme> getScheme(PhysicsType type) {

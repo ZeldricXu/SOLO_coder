@@ -83,4 +83,24 @@ public class NWPConfig {
     public String getKafkaGroupId() { return getStorageConfig().getConfig("kafka").getString("group-id"); }
     public List<String> getOutputVariables() { return getOutputConfig().getStringList("variables"); }
     public List<Integer> getPressureLevels() { return getOutputConfig().getIntList("pressure-levels"); }
+
+    public GridDefinition getGrid() {
+        return new GridDefinition(getNX(), getNY(), getNZ(), 6371000.0);
+    }
+
+    public String getString(String path, String defaultValue) {
+        try {
+            return config.getString(path);
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
+
+    public int getInt(String path, int defaultValue) {
+        try {
+            return config.getInt(path);
+        } catch (Exception e) {
+            return defaultValue;
+        }
+    }
 }

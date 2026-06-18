@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicLong;
 
 public class HaloExchangeManager implements Serializable {
     private static final Logger logger = LoggerFactory.getLogger(HaloExchangeManager.class);
@@ -15,7 +16,13 @@ public class HaloExchangeManager implements Serializable {
     private final int haloWidth;
     private final int nx, ny, nz;
     private final transient Map<Integer, CompletableFuture<double[][]>> sendBuffers;
-    private final transient ExecutorService executor;
+    private final transient ExecutorService exchangeExecutor;
+    private final transient ExecutorService computeExecutor;
+
+    private final AtomicLong totalExchangeNanos = new AtomicLong(0);
+    private final AtomicLong totalComputeNanos = new AtomicLong(0);
+    private final AtomicLong totalOverlapNanos = new AtomicLong(0);
+    private long exchangeCount = 0;
 
     public enum Direction {
         WEST(-1, 0), EAST(1, 0), SOUTH(0, -1), NORTH(0, 1),
@@ -32,29 +39,99 @@ public class HaloExchangeManager implements Serializable {
         this.ny = config.getNY();
         this.nz = config.getNZ();
         this.sendBuffers = new ConcurrentHashMap<>();
-        this.executor = Executors.newFixedThreadPool(
-                Math.min(4, Runtime.getRuntime().availableProcessors() / 2),
-                r -> { Thread t = new Thread(r, "halo-exchanger"); t.setDaemon(true); return t; }
+
+        int nExchangeThreads = Math.min(4, Math.max(2, Runtime.getRuntime().availableProcessors() / 4));
+        this.exchangeExecutor = Executors.newFixedThreadPool(nExchangeThreads, r -> {
+            Thread t = new Thread(r, "halo-exchange");
+            t.setDaemon(true);
+            return t;
+        });
+
+        int nComputeThreads = Math.min(
+                Runtime.getRuntime().availableProcessors(),
+                Math.max(2, Runtime.getRuntime().availableProcessors() - nExchangeThreads)
         );
+        this.computeExecutor = Executors.newFixedThreadPool(nComputeThreads, r -> {
+            Thread t = new Thread(r, "halo-compute");
+            t.setDaemon(true);
+            return t;
+        });
+
+        logger.info("HaloExchangeManager: {} exchange threads, {} compute threads, halo={}",
+                nExchangeThreads, nComputeThreads, haloWidth);
     }
 
-    public void performExchange(ModelState[] localStates, int step) {
+    public void performExchangeAsync(ModelState[] localStates, int step,
+                                      Runnable interiorCompute) {
         if (localStates == null) return;
         long t0 = System.nanoTime();
+
         int totalP = partitioner.getTotalPartitions();
         if (localStates.length < totalP) {
             throw new IllegalArgumentException("localStates长度不足: " + localStates.length + " < " + totalP);
         }
+
+        List<CompletableFuture<Void>> sendFutures = new ArrayList<>();
         for (GridPartitioner.Partition p : partitioner.getAllPartitions()) {
-            packAndSend(localStates, p);
+            sendFutures.add(CompletableFuture.runAsync(
+                    () -> packAndSend(localStates, p), exchangeExecutor));
         }
+
+        List<CompletableFuture<Void>> recvFutures = new ArrayList<>();
         for (GridPartitioner.Partition p : partitioner.getAllPartitions()) {
-            receiveAndUnpack(localStates, p);
+            recvFutures.add(CompletableFuture.runAsync(
+                    () -> receiveAndUnpack(localStates, p), exchangeExecutor));
         }
-        long dt = System.nanoTime() - t0;
+
+        long computeStart = System.nanoTime();
+        if (interiorCompute != null) {
+            interiorCompute.run();
+        }
+        long computeEnd = System.nanoTime();
+        long computeTime = computeEnd - computeStart;
+
+        try {
+            CompletableFuture.allOf(sendFutures.toArray(new CompletableFuture[0]))
+                    .get(2, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.warn("Halo发送超时 step={}: {}", step, e.getMessage());
+        }
+
+        try {
+            CompletableFuture.allOf(recvFutures.toArray(new CompletableFuture[0]))
+                    .get(5, TimeUnit.SECONDS);
+        } catch (Exception e) {
+            logger.warn("Halo接收超时 step={}: {}", step, e.getMessage());
+            for (GridPartitioner.Partition p : partitioner.getAllPartitions()) {
+                finalizePolarBoundaries(localStates[p.pid], p);
+            }
+        }
+
+        long totalTime = System.nanoTime() - t0;
+        long overlapTime = Math.max(0, computeTime - (totalTime - computeTime));
+
+        totalExchangeNanos.addAndGet(totalTime);
+        totalComputeNanos.addAndGet(computeTime);
+        totalOverlapNanos.addAndGet(overlapTime);
+        exchangeCount++;
+
         if (step % 100 == 0) {
-            logger.debug("Halo交换 step{}: {:.3f}ms", step, dt / 1e6);
+            double totalMs = totalExchangeNanos.get() / 1e6;
+            double computeMs = totalComputeNanos.get() / 1e6;
+            double overlapMs = totalOverlapNanos.get() / 1e6;
+            double overlapPct = totalMs > 0 ? 100.0 * overlapMs / totalMs : 0;
+            logger.debug("Halo异步统计 step={}: 总耗时={:.1f}ms, 内部计算={:.1f}ms, 重叠={:.1f}ms ({:.1f}%)",
+                    step, totalMs, computeMs, overlapMs, overlapPct);
         }
+    }
+
+    public void performExchange(ModelState[] localStates, int step) {
+        performExchangeAsync(localStates, step, null);
+    }
+
+    public void performExchangeWithCompute(ModelState[] localStates, int step,
+                                            Runnable interiorCompute) {
+        performExchangeAsync(localStates, step, interiorCompute);
     }
 
     private void packAndSend(ModelState[] states, GridPartitioner.Partition p) {
@@ -93,20 +170,19 @@ public class HaloExchangeManager implements Serializable {
             if (f == null) continue;
             boolean is3D = f.getNDim() == 3;
             int layers = is3D ? nz : 1;
-            int count;
             int is, ie, js, je;
             switch (dir) {
-                case WEST -> { is = 0; ie = h; js = 0; je = npy; }
-                case EAST -> { is = npx - h; ie = npx; js = 0; je = npy; }
-                case SOUTH -> { is = 0; ie = npx; js = 0; je = h; }
-                case NORTH -> { is = 0; ie = npx; js = npy - h; je = npy; }
-                case SOUTHWEST -> { is = 0; ie = h; js = 0; je = h; }
-                case SOUTHEAST -> { is = npx - h; ie = npx; js = 0; je = h; }
-                case NORTHWEST -> { is = 0; ie = h; js = npy - h; je = npy; }
-                case NORTHEAST -> { is = npx - h; ie = npx; js = npy - h; je = npy; }
+                case WEST -> { is = h; ie = 2 * h; js = h; je = npy - h; }
+                case EAST -> { is = npx - 2 * h; ie = npx - h; js = h; je = npy - h; }
+                case SOUTH -> { is = h; ie = npx - h; js = h; je = 2 * h; }
+                case NORTH -> { is = h; ie = npx - h; js = npy - 2 * h; je = npy - h; }
+                case SOUTHWEST -> { is = h; ie = 2 * h; js = h; je = 2 * h; }
+                case SOUTHEAST -> { is = npx - 2 * h; ie = npx - h; js = h; je = 2 * h; }
+                case NORTHWEST -> { is = h; ie = 2 * h; js = npy - 2 * h; je = npy - h; }
+                case NORTHEAST -> { is = npx - 2 * h; ie = npx - h; js = npy - 2 * h; je = npy - h; }
                 default -> { is = 0; ie = 0; js = 0; je = 0; }
             }
-            count = (ie - is) * (je - js) * layers;
+            int count = (ie - is) * (je - js) * layers;
             double[] arr = new double[count];
             int idx = 0;
             for (int k = 0; k < layers; k++) {
@@ -251,8 +327,24 @@ public class HaloExchangeManager implements Serializable {
         return list;
     }
 
+    public void printPerformanceReport() {
+        if (exchangeCount > 0) {
+            double avgTotal = (totalExchangeNanos.get() / (double) exchangeCount) / 1e6;
+            double avgCompute = (totalComputeNanos.get() / (double) exchangeCount) / 1e6;
+            double avgOverlap = (totalOverlapNanos.get() / (double) exchangeCount) / 1e6;
+            double overlapPct = avgTotal > 0 ? 100.0 * avgOverlap / avgTotal : 0;
+            logger.info("===== Halo Exchange 性能报告 =====");
+            logger.info("总交换次数: {}", exchangeCount);
+            logger.info("平均总耗时: {:.3f}ms", avgTotal);
+            logger.info("平均内部计算: {:.3f}ms", avgCompute);
+            logger.info("平均重叠时间: {:.3f}ms ({:.1f}%)", avgOverlap, overlapPct);
+            logger.info("有效隐藏延迟: {:.3f}ms/步", avgOverlap);
+        }
+    }
+
     public void shutdown() {
-        if (executor != null) executor.shutdownNow();
+        if (exchangeExecutor != null) exchangeExecutor.shutdownNow();
+        if (computeExecutor != null) computeExecutor.shutdownNow();
         if (sendBuffers != null) sendBuffers.clear();
     }
 }
