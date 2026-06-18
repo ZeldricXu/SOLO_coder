@@ -1,0 +1,44 @@
+# Log Agent Sidecar Image - lightweight log collector
+# Multi-stage build: gradle:8-jdk21 builds fat jar, eclipse-temurin:21-jre-alpine runs it
+
+FROM gradle:8-jdk21 AS builder
+WORKDIR /workspace
+
+# Copy gradle wrapper and config first for better layer caching
+COPY gradle ./gradle
+COPY gradlew build.gradle settings.gradle gradle.properties ./
+COPY config ./config
+
+# Copy source for required modules
+COPY common ./common
+COPY log-agent ./log-agent
+
+# Build fat jar without tests/checks
+RUN gradle :log-agent:assemble --no-daemon -x checkstyleMain -x checkstyleTest -x spotbugsMain -x spotbugsTest
+
+# --- Runtime stage ---
+FROM eclipse-temurin:21-jre-alpine
+
+LABEL org.opencontainers.image.title="log-analytics-agent"
+LABEL org.opencontainers.image.description="Lightweight log collection sidecar agent"
+LABEL org.opencontainers.image.source="https://github.com/log-analytics-platform/log-analytics-platform"
+
+# Install curl for healthchecks
+RUN apk add --no-cache curl && \
+    addgroup -S appgroup && \
+    adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Copy fat jar and default config
+COPY --from=builder /workspace/log-agent/build/libs/log-agent-1.0.0.jar /app/log-agent.jar
+
+# Non-root user
+USER appuser
+
+EXPOSE 9400
+
+# JVM tuning for sidecar footprint
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/log-agent.jar"]

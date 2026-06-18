@@ -1,0 +1,63 @@
+# Main Application Image - stream-pipeline / pattern-detector / metrics-aggregator / storage-index / api-server
+# Multi-stage build: gradle:8-jdk21 compiles fat jar, eclipse-temurin:21-jre-alpine runs it
+#
+# Usage:
+#   docker build -f docker/Dockerfile.main --build-arg MODULE=stream-pipeline -t ghcr.io/owner/log-analytics-platform/stream-pipeline:latest .
+#   docker build -f docker/Dockerfile.main --build-arg MODULE=api-server -t ghcr.io/owner/log-analytics-platform/api-server:latest .
+
+ARG MODULE=stream-pipeline
+
+# --- Build stage ---
+FROM gradle:8-jdk21 AS builder
+ARG MODULE
+
+WORKDIR /workspace
+
+# Copy gradle wrapper and project config for dependency caching
+COPY gradle ./gradle
+COPY gradlew build.gradle settings.gradle gradle.properties ./
+COPY config ./config
+
+# Copy all modules (fat jar build needs project dependencies)
+COPY common ./common
+COPY log-agent ./log-agent
+COPY stream-pipeline ./stream-pipeline
+COPY pattern-detector ./pattern-detector
+COPY metrics-aggregator ./metrics-aggregator
+COPY storage-index ./storage-index
+COPY api-server ./api-server
+COPY alert-engine ./alert-engine
+COPY query-parser ./query-parser
+COPY test-support ./test-support
+
+# Build the target module's fat jar (assemble skips tests/checks)
+RUN gradle :${MODULE}:assemble --no-daemon -x checkstyleMain -x checkstyleTest -x spotbugsMain -x spotbugsTest
+
+# --- Runtime stage ---
+FROM eclipse-temurin:21-jre-alpine
+ARG MODULE
+
+LABEL org.opencontainers.image.title="log-analytics-${MODULE}"
+LABEL org.opencontainers.image.description="Log Analytics Platform - ${MODULE} service"
+LABEL org.opencontainers.image.source="https://github.com/log-analytics-platform/log-analytics-platform"
+
+RUN apk add --no-cache curl && \
+    addgroup -S appgroup && \
+    adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Copy fat jar
+COPY --from=builder /workspace/${MODULE}/build/libs/${MODULE}-1.0.0.jar /app/app.jar
+
+# Copy module resources if present (config files, YAML, etc.)
+COPY --from=builder /workspace/${MODULE}/src/main/resources/ /app/config/
+
+USER appuser
+
+EXPOSE 8080 9400
+
+ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+ENV MODULE=${MODULE}
+
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar /app/app.jar"]

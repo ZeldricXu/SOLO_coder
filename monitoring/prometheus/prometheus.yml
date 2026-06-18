@@ -1,0 +1,129 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: log-analytics
+    environment: production
+
+rule_files:
+  - rules.yml
+
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#             - alertmanager:9093
+
+scrape_configs:
+  - job_name: log-agent
+    metrics_path: /metrics
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - log-analytics
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: la-log-agent-.*
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:9400
+      - source_labels: [__meta_kubernetes_pod_node_name]
+        action: replace
+        target_label: node
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - target_label: service
+        replacement: log-agent
+
+  - job_name: stream-pipeline
+    metrics_path: /metrics
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - log-analytics
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: la-stream-pipeline-.*
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:9400
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - target_label: service
+        replacement: stream-pipeline
+
+  - job_name: pattern-detector
+    metrics_path: /metrics
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - log-analytics
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: la-pattern-detector-.*
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:9400
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - target_label: service
+        replacement: pattern-detector
+
+  - job_name: metrics-aggregator
+    metrics_path: /metrics
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - log-analytics
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: la-metrics-aggregator-.*
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:9400
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - target_label: service
+        replacement: metrics-aggregator
+
+  - job_name: api-server
+    metrics_path: /actuator/prometheus
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - log-analytics
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: keep
+        regex: la-api-server-.*
+      - source_labels: [__address__]
+        action: replace
+        target_label: __address__
+        regex: ([^:]+)(?::\d+)?
+        replacement: $1:8080
+      - source_labels: [__meta_kubernetes_pod_name]
+        action: replace
+        target_label: pod
+      - target_label: service
+        replacement: api-server

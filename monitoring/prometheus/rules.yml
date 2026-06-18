@@ -1,0 +1,175 @@
+groups:
+  - name: LogAgentAlerts
+    interval: 15s
+    rules:
+      - alert: LogAgentDown
+        expr: up{job="log-agent"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: log-agent
+        annotations:
+          summary: "Log Agent is down"
+          description: "Log Agent pod {{ $labels.pod }} has been down for more than 2 minutes."
+
+      - alert: HighCollectionLatency
+        expr: log_agent_collection_latency_seconds > 5
+        for: 5m
+        labels:
+          severity: warning
+          service: log-agent
+        annotations:
+          summary: "High log collection latency"
+          description: "Log Agent {{ $labels.pod }} collection latency is {{ $value }}s (threshold 5s) for 5 minutes."
+
+      - alert: HighErrorRate
+        expr: rate(log_agent_errors_total[5m]) > 10
+        for: 0m
+        labels:
+          severity: warning
+          service: log-agent
+        annotations:
+          summary: "High log agent error rate"
+          description: "Log Agent {{ $labels.pod }} error rate is {{ $value }} errors/s (threshold 10/s)."
+
+  - name: StreamPipelineAlerts
+    interval: 15s
+    rules:
+      - alert: PipelineDown
+        expr: up{job="stream-pipeline"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: stream-pipeline
+        annotations:
+          summary: "Stream Pipeline is down"
+          description: "Stream Pipeline pod {{ $labels.pod }} has been down for more than 2 minutes."
+
+      - alert: HighConsumerLag
+        expr: kafka_consumer_lag > 10000
+        for: 5m
+        labels:
+          severity: warning
+          service: stream-pipeline
+        annotations:
+          summary: "High Kafka consumer lag"
+          description: "Consumer lag is {{ $value }} (threshold 10000) for partition {{ $labels.partition }} for 5 minutes."
+
+      - alert: LowProcessingRate
+        expr: rate(stream_pipeline_processed_total[5m]) < 100
+        for: 10m
+        labels:
+          severity: warning
+          service: stream-pipeline
+        annotations:
+          summary: "Low stream processing rate"
+          description: "Processing rate is {{ $value }} msgs/s (threshold 100 msgs/s) for 10 minutes."
+
+      - alert: HighFilterRate
+        expr: rate(stream_pipeline_filtered_total[5m]) / rate(stream_pipeline_processed_total[5m]) > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          service: stream-pipeline
+        annotations:
+          summary: "High filter rate"
+          description: "Filter rate is {{ $value | humanizePercentage }} of processed logs (threshold 80%) for 10 minutes."
+
+  - name: PatternDetectorAlerts
+    interval: 15s
+    rules:
+      - alert: DetectorDown
+        expr: up{job="pattern-detector"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: pattern-detector
+        annotations:
+          summary: "Pattern Detector is down"
+          description: "Pattern Detector pod {{ $labels.pod }} has been down for more than 2 minutes."
+
+      - alert: HighAnomalyRate
+        expr: rate(detector_anomalies_detected_total[5m]) > 50
+        for: 0m
+        labels:
+          severity: warning
+          service: pattern-detector
+        annotations:
+          summary: "High anomaly detection rate"
+          description: "Anomaly detection rate is {{ $value }} anomalies/s (threshold 50/s)."
+
+      - alert: PatternExplosion
+        expr: detector_active_patterns > 10000
+        for: 0m
+        labels:
+          severity: warning
+          service: pattern-detector
+        annotations:
+          summary: "Pattern explosion detected"
+          description: "Active pattern count is {{ $value }} (threshold 10000). Possible pattern explosion."
+
+  - name: MetricsAggregatorAlerts
+    interval: 15s
+    rules:
+      - alert: AggregatorDown
+        expr: up{job="metrics-aggregator"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: metrics-aggregator
+        annotations:
+          summary: "Metrics Aggregator is down"
+          description: "Metrics Aggregator pod {{ $labels.pod }} has been down for more than 2 minutes."
+
+      - alert: HighPendingQueue
+        expr: metrics_pending_count > 5000
+        for: 5m
+        labels:
+          severity: warning
+          service: metrics-aggregator
+        annotations:
+          summary: "High pending metrics queue"
+          description: "Pending queue size is {{ $value }} (threshold 5000) for 5 minutes."
+
+      - alert: WriteErrors
+        expr: rate(metrics_write_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          service: metrics-aggregator
+        annotations:
+          summary: "Metrics write errors detected"
+          description: "Write error rate is {{ $value }} errors/s for 5 minutes."
+
+  - name: APIServerAlerts
+    interval: 15s
+    rules:
+      - alert: APIServerDown
+        expr: up{job="api-server"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: api-server
+        annotations:
+          summary: "API Server is down"
+          description: "API Server pod {{ $labels.pod }} has been down for more than 2 minutes."
+
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) / rate(http_server_requests_seconds_count[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          service: api-server
+        annotations:
+          summary: "High API server error rate"
+          description: "5xx error rate is {{ $value | humanizePercentage }} of total requests (threshold 5%) for 5 minutes."
+
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_server_requests_seconds_bucket[5m])) > 2
+        for: 0m
+        labels:
+          severity: warning
+          service: api-server
+        annotations:
+          summary: "High API server latency"
+          description: "p95 latency is {{ $value }}s (threshold 2s)."

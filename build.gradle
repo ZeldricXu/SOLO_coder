@@ -2,6 +2,8 @@ plugins {
     id 'java'
     id 'eclipse'
     id 'idea'
+    id 'checkstyle'
+    id 'com.github.spotbugs' version '6.0.18' apply false
 }
 
 allprojects {
@@ -18,7 +20,7 @@ subprojects {
 
     java {
         toolchain {
-            languageVersion = JavaLanguageVersion.of(17)
+            languageVersion = JavaLanguageVersion.of(21)
         }
     }
 
@@ -42,6 +44,41 @@ subprojects {
         useJUnitPlatform()
         testLogging {
             events 'PASSED', 'SKIPPED', 'FAILED'
+        }
+    }
+
+    apply plugin: 'checkstyle'
+    apply plugin: 'com.github.spotbugs'
+
+    checkstyle {
+        toolVersion = '10.17.0'
+        configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+        maxWarnings = 0
+    }
+
+    spotbugs {
+        toolVersion = '4.8.6.4'
+        excludeFilter = rootProject.file('config/spotbugs/spotbugs-exclude.xml')
+    }
+
+    tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+        reports {
+            xml.required = true
+            html.required = true
+        }
+    }
+
+    afterEvaluate { Project project ->
+        if (project.plugins.hasPlugin('application') && project.name != 'api-server') {
+            project.jar {
+                manifest {
+                    attributes 'Main-Class': project.extensions.application.mainClass.get()
+                }
+                duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+                from {
+                    configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+                }
+            }
         }
     }
 }
