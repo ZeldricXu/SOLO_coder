@@ -398,12 +398,11 @@ export class Pathfinder {
   private reconstructPath(node: PathNode): PathResult {
     const path: CubeCoords[] = [];
     let current: PathNode | null = node;
-    let totalCost = 0;
+    const totalMoveCost = node.moveCost;
     let startTileCost = 0;
 
     while (current) {
       path.unshift({ ...current.coords });
-      totalCost = current.moveCost;
       if (!current.parent) {
         const startTile = this.grid.getTile(current.coords);
         if (startTile) {
@@ -418,7 +417,7 @@ export class Pathfinder {
 
     return {
       path,
-      totalCost: totalCost > 0 ? totalCost : (path.length > 1 ? path.length - 1 : 0),
+      totalCost: totalMoveCost,
       reachable: true,
       distance: path.length - 1,
     };
