@@ -1,0 +1,34 @@
+- op: replace
+  path: /spec/replicas
+  target:
+    kind: Deployment
+    name: stream-pipeline
+  value: 4
+
+- op: replace
+  path: /spec/replicas
+  target:
+    kind: Deployment
+    name: pattern-detector
+  value: 4
+
+- op: replace
+  path: /spec/replicas
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+  value: 3
+
+- op: replace
+  path: /spec/replicas
+  target:
+    kind: Deployment
+    name: api-server
+  value: 3
+
+- op: replace
+  path: /spec/replicas
+  target:
+    kind: Deployment
+    name: storage-index
+  value: 2

@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pattern-detector
+  labels:
+    app: pattern-detector
+    app.kubernetes.io/component: pattern-detector
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: pattern-detector
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: pattern-detector
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9400"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: log-analytics-sa
+      containers:
+        - name: pattern-detector
+          image: ghcr.io/log-analytics-platform/pattern-detector:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: metrics
+              containerPort: 9400
+              protocol: TCP
+          env:
+            - name: LOGANALYTICS_KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-bootstrap.kafka:9092"
+            - name: LOGANALYTICS_DETECTOR_PARTITION_COUNT
+              value: "4"
+            - name: LOGANALYTICS_DETECTOR_SIMILARITY_THRESHOLD
+              value: "0.7"
+            - name: LOGANALYTICS_DETECTOR_MAX_TREE_DEPTH
+              value: "4"
+            - name: LOGANALYTICS_DETECTOR_MAX_CHILDREN
+              value: "100"
+            - name: LOGANALYTICS_DETECTOR_SIGMA_THRESHOLD
+              value: "3.0"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+            - name: detector-state
+              mountPath: /data/detector
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9400
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9400
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: platform-config
+        - name: detector-state
+          emptyDir: {}

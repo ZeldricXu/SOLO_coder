@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stream-pipeline
+  labels:
+    app: stream-pipeline
+    app.kubernetes.io/component: stream-pipeline
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: stream-pipeline
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app: stream-pipeline
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9400"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: log-analytics-sa
+      containers:
+        - name: stream-pipeline
+          image: ghcr.io/log-analytics-platform/stream-pipeline:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - "-c"
+            - "/app/config/app.properties"
+            - "-k"
+            - "kafka-bootstrap.kafka:9092"
+            - "-a"
+            - "stream-pipeline"
+            - "-t"
+            - "4"
+          ports:
+            - name: metrics
+              containerPort: 9400
+              protocol: TCP
+          env:
+            - name: LOGANALYTICS_KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-bootstrap.kafka:9092"
+            - name: LOGANALYTICS_PIPELINE_APP_ID
+              value: "stream-pipeline"
+            - name: LOGANALYTICS_PIPELINE_THREADS
+              value: "4"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+            - name: streams-state
+              mountPath: /data/kafka-streams
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9400
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9400
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: platform-config
+        - name: streams-state
+          emptyDir: {}

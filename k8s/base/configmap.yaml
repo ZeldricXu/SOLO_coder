@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: platform-config
+  labels:
+    app: log-analytics
+data:
+  app.properties: |
+    kafka.bootstrap.servers=kafka-bootstrap.kafka:9092
+    log.agent.service.name=default
+    log.agent.log.paths=/var/log/containers/*.log
+    log.agent.socket.port=9401
+    log.agent.stdout.capture.enabled=false
+    pipeline.app.id=stream-pipeline
+    pipeline.threads=4
+    detector.partition.count=4
+    detector.similarity.threshold=0.7
+    detector.max.tree.depth=4
+    detector.max.children=100
+    detector.sigma.threshold=3.0
+    metrics.chunk.time.interval=1 hour
+    metrics.batch.size=1000
+    metrics.batch.flush.interval.seconds=5
+    metrics.max.retry.attempts=3
+    metrics.timescale.pool.size=4
+    metrics.raw.data.retention.days=7
+    metrics.enable.continuous.aggregation=true
+    metrics.windows=1min_tumbling:PT1M:PT1M:TUMBLING,5min_tumbling:PT5M:PT5M:TUMBLING,15min_tumbling:PT15M:PT15M:TUMBLING,1h_tumbling:PT1H:PT1H:TUMBLING
+    storage.timescale.url=jdbc:postgresql://pg-cluster-rw.cnpg:5432/loganalytics
+    storage.minio.endpoint=http://minio.default:9000
+    storage.archive.retention.days=30
+    storage.query.timeout.seconds=30
+
+  pipeline-processors.yaml: |
+    processors:
+      - type: parse
+        params:
+          grok.pattern.common_log: "%{COMMONAPACHELOG}"
+          grok.pattern.error: "%{TIMESTAMP_ISO8601:timestamp} %{LOGLEVEL:level} %{GREEDYDATA:message}"
+      - type: filter
+        params:
+          excludedLevels: "DEBUG,TRACE"
+          excludeHealthChecks: "true"
+          excludePatterns: "health,ready,alive,metrics"
+      - type: enrich
+        params:
+          geoip.enabled: "true"
+          cmdb.lookup.enabled: "true"
+      - type: route
+        params:
+          INFO: "parsed-logs"
+          WARN: "parsed-logs"
+          ERROR: "error-logs"
+          FATAL: "error-logs"
+
+  application.properties: |
+    server.port=8080
+    server.servlet.context-path=/
+    spring.application.name=log-analytics-api
+    management.endpoints.web.exposure.include=health,info,metrics,prometheus
+    management.endpoint.health.show-details=always
+    management.endpoint.metrics.tags.application=log-analytics-api
+    kafka.bootstrap.servers=kafka-bootstrap.kafka:9092
+    kafka.topic.logs=structured-logs
+    spring.jackson.serialization.write-dates-as-timestamps=false
+    spring.jackson.time-zone=UTC
+    spring.servlet.multipart.max-file-size=50MB
+    spring.servlet.multipart.max-request-size=50MB
+    logging.level.root=INFO
+    logging.level.com.loganalytics=INFO
+    logging.pattern.console=%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n

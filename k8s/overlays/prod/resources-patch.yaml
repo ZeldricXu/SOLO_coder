@@ -1,0 +1,111 @@
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/cpu
+  target:
+    kind: Deployment
+    name: stream-pipeline
+  value: "1"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/memory
+  target:
+    kind: Deployment
+    name: stream-pipeline
+  value: "2Gi"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/cpu
+  target:
+    kind: Deployment
+    name: stream-pipeline
+  value: "4"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/memory
+  target:
+    kind: Deployment
+    name: stream-pipeline
+  value: "4Gi"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/cpu
+  target:
+    kind: Deployment
+    name: pattern-detector
+  value: "1"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/memory
+  target:
+    kind: Deployment
+    name: pattern-detector
+  value: "2Gi"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/cpu
+  target:
+    kind: Deployment
+    name: pattern-detector
+  value: "4"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/memory
+  target:
+    kind: Deployment
+    name: pattern-detector
+  value: "4Gi"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/cpu
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+  value: "1"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/memory
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+  value: "2Gi"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/cpu
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+  value: "4"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/memory
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+  value: "4Gi"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/cpu
+  target:
+    kind: Deployment
+    name: api-server
+  value: "1"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/requests/memory
+  target:
+    kind: Deployment
+    name: api-server
+  value: "2Gi"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/cpu
+  target:
+    kind: Deployment
+    name: api-server
+  value: "3"
+
+- op: replace
+  path: /spec/template/spec/containers/0/resources/limits/memory
+  target:
+    kind: Deployment
+    name: api-server
+  value: "4Gi"

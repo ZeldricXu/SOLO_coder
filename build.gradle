@@ -68,15 +68,15 @@ subprojects {
         }
     }
 
-    afterEvaluate { Project project ->
-        if (project.plugins.hasPlugin('application') && project.name != 'api-server') {
-            project.jar {
+    afterEvaluate { proj ->
+        if (proj.plugins.hasPlugin('application') && proj.name != 'api-server') {
+            proj.jar {
                 manifest {
-                    attributes 'Main-Class': project.extensions.application.mainClass.get()
+                    attributes 'Main-Class': proj.extensions.application.mainClass.get()
                 }
                 duplicatesStrategy = DuplicatesStrategy.EXCLUDE
                 from {
-                    configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+                    proj.configurations.runtimeClasspath.collect { dep -> dep.isDirectory() ? dep : zipTree(dep) }
                 }
             }
         }

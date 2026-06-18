@@ -1,0 +1,53 @@
+- op: replace
+  path: /spec/template/spec/containers/0/env/3/value
+  target:
+    kind: Deployment
+    name: stream-pipeline
+    containerName: stream-pipeline
+  value: "8"
+
+- op: replace
+  path: /spec/template/spec/containers/0/env/1/value
+  target:
+    kind: Deployment
+    name: pattern-detector
+    containerName: pattern-detector
+  value: "8"
+
+- op: replace
+  path: /spec/template/spec/containers/0/env/9/value
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+    containerName: metrics-aggregator
+  value: "2000"
+
+- op: replace
+  path: /spec/template/spec/containers/0/env/11/value
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+    containerName: metrics-aggregator
+  value: "3"
+
+- op: replace
+  path: /spec/template/spec/containers/0/env/14/value
+  target:
+    kind: Deployment
+    name: metrics-aggregator
+    containerName: metrics-aggregator
+  value: "30"
+
+- op: replace
+  path: /spec/minReplicas
+  target:
+    kind: HorizontalPodAutoscaler
+    name: api-server-hpa
+  value: 3
+
+- op: replace
+  path: /spec/maxReplicas
+  target:
+    kind: HorizontalPodAutoscaler
+    name: api-server-hpa
+  value: 20

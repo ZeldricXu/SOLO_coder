@@ -1,0 +1,44 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: api-server-ingress
+  labels:
+    app: api-server
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "60"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: api.log-analytics.local
+      http:
+        paths:
+          - path: /api/(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-server
+                port:
+                  name: http
+          - path: /actuator/(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-server
+                port:
+                  name: http
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: api-server
+                port:
+                  name: http

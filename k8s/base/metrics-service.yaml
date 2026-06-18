@@ -1,0 +1,84 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: stream-pipeline-metrics
+  labels:
+    app: stream-pipeline
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: stream-pipeline
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pattern-detector-metrics
+  labels:
+    app: pattern-detector
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: pattern-detector
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: metrics-aggregator-metrics
+  labels:
+    app: metrics-aggregator
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: metrics-aggregator
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: storage-index-metrics
+  labels:
+    app: storage-index
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: storage-index
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: log-agent-metrics
+  labels:
+    app: log-agent
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: log-agent
+  ports:
+    - name: metrics
+      port: 9400
+      targetPort: 9400
+      protocol: TCP

@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: storage-index
+  labels:
+    app: storage-index
+    app.kubernetes.io/component: storage-index
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: storage-index
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: storage-index
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9400"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: log-analytics-sa
+      containers:
+        - name: storage-index
+          image: ghcr.io/log-analytics-platform/storage-index:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: metrics
+              containerPort: 9400
+              protocol: TCP
+          env:
+            - name: LOGANALYTICS_KAFKA_BOOTSTRAP_SERVERS
+              value: "kafka-bootstrap.kafka:9092"
+            - name: LOGANALYTICS_TIMESCALE_URL
+              value: "jdbc:postgresql://pg-cluster-rw.cnpg:5432/loganalytics"
+            - name: LOGANALYTICS_TIMESCALE_USER
+              value: "postgres"
+            - name: LOGANALYTICS_TIMESCALE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: postgres-password
+            - name: LOGANALYTICS_MINIO_ENDPOINT
+              value: "http://minio.default:9000"
+            - name: LOGANALYTICS_MINIO_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: minio-access-key
+            - name: LOGANALYTICS_MINIO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: database-credentials
+                  key: minio-secret-key
+            - name: LOGANALYTICS_STORAGE_ARCHIVE_RETENTION_DAYS
+              value: "30"
+            - name: LOGANALYTICS_STORAGE_QUERY_TIMEOUT_SECONDS
+              value: "30"
+            - name: JAVA_OPTS
+              value: "-XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:+ExitOnOutOfMemoryError -Djava.security.egd=file:/dev/./urandom"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9400
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9400
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: config
+          configMap:
+            name: platform-config

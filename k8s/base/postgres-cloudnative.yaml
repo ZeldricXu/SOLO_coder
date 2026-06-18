@@ -1,0 +1,89 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: pg-cluster
+  namespace: cnpg
+  labels:
+    app: log-analytics
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.2-timescaledb
+  primaryUpdateStrategy: unsupervised
+  storage:
+    size: 100Gi
+    storageClass: standard
+  monitoring:
+    enablePodMonitor: true
+  bootstrap:
+    initdb:
+      database: loganalytics
+      owner: postgres
+      secret:
+        name: database-credentials
+      postInitApplicationSQL:
+        - CREATE EXTENSION IF NOT EXISTS timescaledb;
+        - CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+  configuration:
+    shared_preload_libraries:
+      - timescaledb
+      - pg_stat_statements
+    max_connections: "500"
+    shared_buffers: "2GB"
+    effective_cache_size: "6GB"
+    work_mem: "16MB"
+    maintenance_work_mem: "512MB"
+    checkpoint_completion_target: "0.9"
+    random_page_cost: "1.1"
+    effective_io_concurrency: "200"
+    max_wal_size: "4GB"
+    min_wal_size: "80MB"
+    archive_timeout: "300s"
+    log_min_duration_statement: "1000"
+    log_lock_waits: "on"
+    log_temp_files: "0"
+  affinity:
+    enablePodAntiAffinity: true
+    topologyKey: kubernetes.io/hostname
+  replicationSlots:
+    highAvailability:
+      enabled: true
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: "s3://log-analytics-pg-backups/"
+      endpointURL: "http://minio.default:9000"
+      s3Credentials:
+        accessKeyId:
+          name: database-credentials
+          key: minio-access-key
+        secretAccessKey:
+          name: database-credentials
+          key: minio-secret-key
+      wal:
+        compression: gzip
+      data:
+        compression: gzip
+  resources:
+    requests:
+      cpu: "1"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Pooler
+metadata:
+  name: pg-cluster-pooler
+  namespace: cnpg
+spec:
+  cluster:
+    name: pg-cluster
+  instances: 2
+  type: rw
+  pgbouncer:
+    poolMode: transaction
+    parameters:
+      max_client_conn: "1000"
+      default_pool_size: "50"
+      reserve_pool: "10"
