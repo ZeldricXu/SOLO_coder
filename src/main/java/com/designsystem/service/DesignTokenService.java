@@ -5,11 +5,13 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.designsystem.common.PageQuery;
 import com.designsystem.common.enums.ExportFormat;
 import com.designsystem.common.enums.TokenLevel;
+import com.designsystem.common.util.TokenInheritanceUtil;
 import com.designsystem.entity.Component;
 import com.designsystem.entity.DesignToken;
 import com.designsystem.entity.TokenChange;
 import com.designsystem.entity.TokenOverride;
 import com.designsystem.mapper.*;
+import jakarta.annotation.PostConstruct;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +31,7 @@ public class DesignTokenService {
     private final TokenChangeMapper changeMapper;
     private final ComponentMapper componentMapper;
     private final RabbitTemplate rabbitTemplate;
+    private TokenInheritanceUtil inheritanceUtil;
 
     public DesignTokenService(DesignTokenMapper tokenMapper, TokenOverrideMapper overrideMapper,
                               ComponentTokenUsageMapper usageMapper, TokenChangeMapper changeMapper,
@@ -39,6 +42,11 @@ public class DesignTokenService {
         this.changeMapper = changeMapper;
         this.componentMapper = componentMapper;
         this.rabbitTemplate = rabbitTemplate;
+    }
+
+    @PostConstruct
+    public void init() {
+        this.inheritanceUtil = new TokenInheritanceUtil(tokenMapper);
     }
 
     public IPage<DesignToken> getTokenPage(PageQuery query, String tokenType, String tokenLevel, String category) {
@@ -94,6 +102,11 @@ public class DesignTokenService {
         if (oldToken == null) {
             throw new RuntimeException("Token not found");
         }
+
+        if (token.getInheritsFrom() != null && checkCircularReference(token.getTokenName(), token.getInheritsFrom())) {
+            throw new IllegalArgumentException("Circular reference detected in token inheritance chain");
+        }
+        inheritanceUtil.clearCache();
 
         TokenChange change = new TokenChange();
         change.setTokenId(token.getId());
@@ -185,9 +198,24 @@ public class DesignTokenService {
         return result;
     }
 
-    private void enrichToken(DesignToken token) {
-        token.setOverrides(overrideMapper.selectByTokenId(token.getId()));
-        token.setComponentUsages(usageMapper.selectByTokenId(token.getId()));
+    public boolean checkCircularReference(String tokenName, String inheritsFrom) {
+        return inheritanceUtil.hasCircularReference(tokenName, inheritsFrom);
+    }
+
+    public List<String> detectAllCircularReferences() {
+        return inheritanceUtil.detectAllCircularReferences();
+    }
+
+    public String resolveTokenValue(String tokenName) {
+        return inheritanceUtil.resolveTokenValue(tokenName);
+    }
+
+    public Set<String> getAffectedTokens(String modifiedTokenName) {
+        return inheritanceUtil.getAffectedTokens(modifiedTokenName);
+    }
+
+    public Set<String> getInheritanceChain(String tokenName) {
+        return inheritanceUtil.getInheritanceChain(tokenName);
     }
 
     private void resolveTokenValue(DesignToken token) {

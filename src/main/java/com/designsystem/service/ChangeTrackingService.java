@@ -1,6 +1,7 @@
 package com.designsystem.service;
 
 import com.designsystem.common.enums.ApprovalStatus;
+import com.designsystem.common.util.SemverUtil;
 import com.designsystem.entity.Changelog;
 import com.designsystem.entity.Project;
 import com.designsystem.entity.TokenChange;
@@ -14,6 +15,7 @@ import org.springframework.amqp.rabbit.annotation.RabbitListener;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 
+import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -229,6 +231,34 @@ public class ChangeTrackingService {
 
     public List<TokenChange> getPendingMigrations() {
         return tokenChangeMapper.selectPendingMigration();
+    }
+
+    public String calculateNextVersion(Long componentId, String currentVersion) {
+        List<Changelog> unreleased = changelogMapper.selectUnreleasedByComponentId(componentId);
+        List<String> commitMessages = unreleased.stream()
+                .map(c -> c.getCommitType() + ": " + c.getCommitSubject())
+                .toList();
+        return SemverUtil.getNextVersionFromChangelogs(currentVersion, commitMessages);
+    }
+
+    public SemverUtil.BumpType determineBumpType(Long componentId) {
+        List<Changelog> unreleased = changelogMapper.selectUnreleasedByComponentId(componentId);
+        SemverUtil.BumpType maxBump = SemverUtil.BumpType.NONE;
+
+        for (Changelog changelog : unreleased) {
+            SemverUtil.BumpType bump = SemverUtil.determineBumpType(
+                    changelog.getCommitType() + ": " + changelog.getCommitSubject()
+            );
+            if (bump.ordinal() > maxBump.ordinal()) {
+                maxBump = bump;
+            }
+            if (changelog.getBreakingChange() != null && !changelog.getBreakingChange().isEmpty()) {
+                maxBump = SemverUtil.BumpType.MAJOR;
+                break;
+            }
+        }
+
+        return maxBump;
     }
 
     private Changelog parseConventionalCommit(RevCommit commit) {

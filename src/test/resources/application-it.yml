@@ -1,0 +1,72 @@
+spring:
+  application:
+    name: design-system-platform-it
+
+  thymeleaf:
+    cache: false
+    prefix: classpath:/templates/
+    suffix: .html
+    mode: HTML
+    encoding: UTF-8
+
+  datasource:
+    hikari:
+      minimum-idle: 1
+      maximum-pool-size: 10
+      idle-timeout: 60000
+      connection-timeout: 30000
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: true
+
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data.sql
+
+  data:
+    redis:
+      connect-timeout: 1000
+
+  servlet:
+    multipart:
+      max-file-size: 50MB
+      max-request-size: 100MB
+
+  freemarker:
+    template-loader-path: classpath:/templates/codegen/
+    suffix: .ftl
+    content-type: text/plain
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: com.designsystem.entity
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      logic-delete-field: deleted
+      logic-delete-value: 1
+      logic-not-delete-value: 0
+
+server:
+  port: 0
+  servlet:
+    context-path: /
+
+logging:
+  level:
+    root: INFO
+    com.designsystem: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.test.context: DEBUG
+    org.testcontainers: INFO
+    com.github.dockerjava: WARN

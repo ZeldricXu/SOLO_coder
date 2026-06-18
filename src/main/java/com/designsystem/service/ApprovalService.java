@@ -4,15 +4,21 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.designsystem.common.PageQuery;
 import com.designsystem.common.enums.ApprovalStatus;
+import com.designsystem.common.util.SemverUtil;
 import com.designsystem.entity.ApprovalRequest;
+import com.designsystem.entity.Changelog;
 import com.designsystem.entity.Component;
+import com.designsystem.entity.ComponentVersion;
 import com.designsystem.entity.DesignToken;
 import com.designsystem.entity.SysUser;
 import com.designsystem.mapper.ApprovalRequestMapper;
+import com.designsystem.mapper.ChangelogMapper;
 import com.designsystem.mapper.ComponentMapper;
+import com.designsystem.mapper.ComponentVersionMapper;
 import com.designsystem.mapper.DesignTokenMapper;
 import com.designsystem.mapper.SysUserMapper;
 import com.designsystem.security.CustomUserDetails;
+import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,6 +28,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static com.designsystem.config.RabbitMQConfig.*;
+
 @Service
 public class ApprovalService {
 
@@ -29,13 +37,21 @@ public class ApprovalService {
     private final ComponentMapper componentMapper;
     private final DesignTokenMapper tokenMapper;
     private final SysUserMapper userMapper;
+    private final ComponentVersionMapper versionMapper;
+    private final ChangelogMapper changelogMapper;
+    private final RabbitTemplate rabbitTemplate;
 
     public ApprovalService(ApprovalRequestMapper approvalMapper, ComponentMapper componentMapper,
-                           DesignTokenMapper tokenMapper, SysUserMapper userMapper) {
+                           DesignTokenMapper tokenMapper, SysUserMapper userMapper,
+                           ComponentVersionMapper versionMapper, ChangelogMapper changelogMapper,
+                           RabbitTemplate rabbitTemplate) {
         this.approvalMapper = approvalMapper;
         this.componentMapper = componentMapper;
         this.tokenMapper = tokenMapper;
         this.userMapper = userMapper;
+        this.versionMapper = versionMapper;
+        this.changelogMapper = changelogMapper;
+        this.rabbitTemplate = rabbitTemplate;
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -215,10 +231,46 @@ public class ApprovalService {
         if ("COMPONENT_PUBLISH".equals(request.getRequestType())) {
             Component component = componentMapper.selectById(request.getTargetId());
             if (component != null) {
+                List<Changelog> unreleasedLogs = changelogMapper.selectUnreleasedByComponentId(component.getId());
+                List<String> commitMessages = unreleasedLogs.stream()
+                        .map(log -> log.getCommitType() + ": " + log.getCommitSubject())
+                        .toList();
+
+                String currentVersion = component.getLatestVersion() != null ? component.getLatestVersion() : "1.0.0";
+                String newVersion = SemverUtil.getNextVersionFromChangelogs(currentVersion, commitMessages);
+                if (newVersion.equals(currentVersion)) {
+                    newVersion = SemverUtil.incrementVersion(currentVersion, SemverUtil.BumpType.PATCH);
+                }
+
+                ComponentVersion newVersionObj = new ComponentVersion();
+                newVersionObj.setComponentId(component.getId());
+                newVersionObj.setVersion(newVersion);
+                newVersionObj.setChangelog(request.getChangeContent());
+                newVersionObj.setIsLatest(1);
+                newVersionObj.setIsPrerelease(0);
+                versionMapper.insert(newVersionObj);
+
+                component.setLatestVersion(newVersion);
                 component.setPublished(1);
                 componentMapper.updateById(component);
+
+                ComponentVersion previousLatest = versionMapper.selectLatestVersion(component.getId());
+                if (previousLatest != null && !previousLatest.getId().equals(newVersionObj.getId())) {
+                    previousLatest.setIsLatest(0);
+                    versionMapper.updateById(previousLatest);
+                }
+
+                rabbitTemplate.convertAndSend(EXCHANGE_DESIGN_SYSTEM, ROUTING_KEY_COMPONENT_PUBLISH, component.getId());
+                rabbitTemplate.convertAndSend(EXCHANGE_DESIGN_SYSTEM, ROUTING_KEY_NOTIFICATION,
+                        "Component " + component.getName() + " v" + newVersion + " has been published");
             }
         } else if (request.getRequestType().startsWith("TOKEN_")) {
+            DesignToken token = tokenMapper.selectById(request.getTargetId());
+            if (token != null) {
+                rabbitTemplate.convertAndSend(EXCHANGE_DESIGN_SYSTEM, ROUTING_KEY_TOKEN_CHANGE, token.getId());
+                rabbitTemplate.convertAndSend(EXCHANGE_DESIGN_SYSTEM, ROUTING_KEY_NOTIFICATION,
+                        "Token " + token.getTokenName() + " has been updated");
+            }
         }
     }
 }
