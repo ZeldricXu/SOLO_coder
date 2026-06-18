@@ -107,6 +107,86 @@ impl ClientClock {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "value")]
+pub enum AttributeValue {
+    String(String),
+    Number(f64),
+    Bool(bool),
+    Null,
+}
+
+impl AttributeValue {
+    pub fn as_str(&self) -> Option<&str> {
+        match self {
+            AttributeValue::String(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    pub fn as_bool(&self) -> Option<bool> {
+        match self {
+            AttributeValue::Bool(b) => Some(*b),
+            _ => None,
+        }
+    }
+
+    pub fn as_number(&self) -> Option<f64> {
+        match self {
+            AttributeValue::Number(n) => Some(*n),
+            _ => None,
+        }
+    }
+}
+
+impl From<String> for AttributeValue {
+    fn from(s: String) -> Self {
+        AttributeValue::String(s)
+    }
+}
+
+impl From<&str> for AttributeValue {
+    fn from(s: &str) -> Self {
+        AttributeValue::String(s.to_string())
+    }
+}
+
+impl From<bool> for AttributeValue {
+    fn from(b: bool) -> Self {
+        AttributeValue::Bool(b)
+    }
+}
+
+impl From<f64> for AttributeValue {
+    fn from(n: f64) -> Self {
+        AttributeValue::Number(n)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AttributeRecord {
+    pub value: AttributeValue,
+    pub timestamp: i64,
+    pub client_id: u64,
+}
+
+impl AttributeRecord {
+    pub fn new(value: AttributeValue, timestamp: i64, client_id: u64) -> Self {
+        Self {
+            value,
+            timestamp,
+            client_id,
+        }
+    }
+
+    pub fn compare_lww(&self, other: &AttributeRecord) -> std::cmp::Ordering {
+        other
+            .timestamp
+            .cmp(&self.timestamp)
+            .then_with(|| other.client_id.cmp(&self.client_id))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsertOp {
     pub id: YataId,
@@ -121,9 +201,20 @@ pub struct DeleteOp {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FormatOp {
+    pub range_start: YataId,
+    pub range_end: YataId,
+    pub key: String,
+    pub value: AttributeValue,
+    pub timestamp: i64,
+    pub format_id: YataId,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum OpType {
     Insert(InsertOp),
     Delete(DeleteOp),
+    Format(FormatOp),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,11 +256,42 @@ impl Op {
         }
     }
 
+    pub fn format(
+        document_id: Uuid,
+        client_id: u64,
+        format_id: YataId,
+        range_start: YataId,
+        range_end: YataId,
+        key: String,
+        value: AttributeValue,
+        timestamp: i64,
+    ) -> Self {
+        Self {
+            op_type: OpType::Format(FormatOp {
+                range_start,
+                range_end,
+                key,
+                value,
+                timestamp,
+                format_id,
+            }),
+            document_id,
+            client_id,
+            timestamp,
+        }
+    }
+
     pub fn yata_id(&self) -> YataId {
         match &self.op_type {
             OpType::Insert(ins) => ins.id,
             OpType::Delete(del) => del.id,
+            OpType::Format(fmt) => fmt.format_id,
         }
+    }
+
+    pub fn dedup_key(&self) -> (u64, u32) {
+        let id = self.yata_id();
+        (id.client, id.clock)
     }
 }
 
@@ -180,6 +302,7 @@ struct Item {
     left: Option<YataId>,
     right: Option<YataId>,
     deleted: bool,
+    attributes: BTreeMap<String, AttributeRecord>,
 }
 
 impl Item {
@@ -190,6 +313,7 @@ impl Item {
             left,
             right,
             deleted: false,
+            attributes: BTreeMap::new(),
         }
     }
 }
@@ -210,6 +334,8 @@ pub struct SnapshotItem {
     pub left: Option<YataId>,
     pub right: Option<YataId>,
     pub deleted: bool,
+    #[serde(default)]
+    pub attributes: BTreeMap<String, AttributeRecord>,
 }
 
 #[derive(Debug)]
@@ -330,6 +456,100 @@ impl YataDocument {
         Ok(op)
     }
 
+    pub fn format_local(
+        &mut self,
+        start_position: usize,
+        end_position: usize,
+        key: String,
+        value: AttributeValue,
+    ) -> CrdtResult<Op> {
+        if start_position >= end_position {
+            return Err(CrdtError::Invalid("Empty format range".into()));
+        }
+        if end_position > self.content_length() {
+            return Err(CrdtError::Invalid("End position out of bounds".into()));
+        }
+
+        let range_start = self
+            .find_position(start_position)?
+            .ok_or_else(|| CrdtError::Invalid("Invalid start position".into()))?;
+        let range_end = self
+            .find_position(end_position)?
+            .ok_or_else(|| CrdtError::Invalid("Invalid end position".into()))?;
+
+        let format_id = self.next_id();
+        let timestamp = chrono::Utc::now().timestamp_millis();
+
+        let fmt_op = FormatOp {
+            range_start,
+            range_end,
+            key: key.clone(),
+            value: value.clone(),
+            timestamp,
+            format_id,
+        };
+
+        self.apply_format(&fmt_op)?;
+
+        let op = Op::format(
+            self.document_id,
+            self.client_id,
+            format_id,
+            range_start,
+            range_end,
+            key,
+            value,
+            timestamp,
+        );
+
+        self.cache_valid = false;
+        Ok(op)
+    }
+
+    pub fn get_attribute_at(&self, position: usize, key: &str) -> Option<&AttributeRecord> {
+        let id = self.find_position(position + 1).ok()??;
+        let item = self.items.get(&id)?;
+        item.attributes.get(key)
+    }
+
+    pub fn get_all_attributes_at(&self, position: usize) -> Option<&BTreeMap<String, AttributeRecord>> {
+        let id = self.find_position(position + 1).ok()??;
+        let item = self.items.get(&id)?;
+        Some(&item.attributes)
+    }
+
+    pub fn format_runs(&self, key: &str) -> Vec<(usize, usize, Option<&AttributeRecord>)> {
+        let mut runs = Vec::new();
+        let mut current_pos = 0usize;
+        let mut current_val: Option<&AttributeRecord> = None;
+        let mut run_start = 0usize;
+
+        let mut current = Some(self.start_id);
+        while let Some(id) = current {
+            if let Some(item) = self.items.get(&id) {
+                if id != self.start_id && id != self.end_id && !item.deleted {
+                    let val = item.attributes.get(key);
+                    if val != current_val {
+                        if current_pos > run_start {
+                            runs.push((run_start, current_pos, current_val));
+                        }
+                        run_start = current_pos;
+                        current_val = val;
+                    }
+                    current_pos += 1;
+                }
+                current = item.right;
+            } else {
+                break;
+            }
+        }
+
+        if current_pos > run_start {
+            runs.push((run_start, current_pos, current_val));
+        }
+        runs
+    }
+
     pub fn apply_op(&mut self, op: &Op) -> CrdtResult<()> {
         if op.document_id != self.document_id {
             return Err(CrdtError::Invalid(format!(
@@ -354,6 +574,9 @@ impl YataDocument {
             }
             OpType::Delete(del) => {
                 self.apply_delete(del.id)?;
+            }
+            OpType::Format(fmt) => {
+                self.apply_format(fmt)?;
             }
         }
 
@@ -413,6 +636,48 @@ impl YataDocument {
             item.deleted = true;
             self.ops_count += 1;
         }
+        Ok(())
+    }
+
+    fn apply_format(&mut self, fmt: &FormatOp) -> CrdtResult<()> {
+        if !self.items.contains_key(&fmt.range_start) {
+            return Err(CrdtError::IdNotFound(fmt.range_start.client, fmt.range_start.clock));
+        }
+        if !self.items.contains_key(&fmt.range_end) {
+            return Err(CrdtError::IdNotFound(fmt.range_end.client, fmt.range_end.clock));
+        }
+
+        let new_record = AttributeRecord::new(
+            fmt.value.clone(),
+            fmt.timestamp,
+            fmt.format_id.client,
+        );
+
+        let mut current = Some(fmt.range_start);
+        while let Some(id) = current {
+            if id == fmt.range_end {
+                break;
+            }
+
+            if let Some(item) = self.items.get_mut(&id) {
+                if id != self.start_id && id != self.end_id && !item.deleted {
+                    let should_apply = match item.attributes.get(&fmt.key) {
+                        None => true,
+                        Some(existing) => {
+                            new_record.compare_lww(existing).is_lt()
+                        }
+                    };
+                    if should_apply {
+                        item.attributes.insert(fmt.key.clone(), new_record.clone());
+                    }
+                }
+                current = item.right;
+            } else {
+                break;
+            }
+        }
+
+        self.ops_count += 1;
         Ok(())
     }
 
@@ -490,6 +755,7 @@ impl YataDocument {
                 left: item.left,
                 right: item.right,
                 deleted: item.deleted,
+                attributes: item.attributes.clone(),
             })
             .collect();
 
@@ -514,6 +780,7 @@ impl YataDocument {
                     left: si.left,
                     right: si.right,
                     deleted: si.deleted,
+                    attributes: si.attributes,
                 },
             );
         }
@@ -645,5 +912,100 @@ mod tests {
         let restored = YataDocument::from_snapshot(snapshot).unwrap();
 
         assert_eq!(restored.content_length(), doc.content_length());
+    }
+
+    #[test]
+    fn test_snapshot_backward_compatibility() {
+        let doc_id = Uuid::new_v4();
+        let mut doc = YataDocument::new(doc_id, 1);
+
+        for c in "Hello".chars() {
+            doc.insert_local(doc.content_length(), c).unwrap();
+        }
+
+        let snapshot = doc.snapshot();
+        let json = serde_json::to_string(&snapshot.items).unwrap();
+
+        let items_no_attrs: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        let items_no_attrs: Vec<serde_json::Value> = items_no_attrs
+            .into_iter()
+            .map(|mut item| {
+                item.as_object_mut().unwrap().remove("attributes");
+                item
+            })
+            .collect();
+
+        let json_no_attrs = serde_json::to_string(&items_no_attrs).unwrap();
+        let items: Vec<SnapshotItem> = serde_json::from_str(&json_no_attrs).unwrap();
+
+        for item in &items {
+            assert!(item.attributes.is_empty());
+        }
+
+        let mut restored = YataDocument::from_snapshot(CrdtSnapshot {
+            document_id: doc_id,
+            created_at: chrono::Utc::now(),
+            vector_clock: BTreeMap::new(),
+            items,
+            ops_count: 5,
+        }).unwrap();
+
+        assert_eq!(restored.get_content(), "Hello");
+    }
+
+    #[test]
+    fn test_format_basic() {
+        let doc_id = Uuid::new_v4();
+        let mut doc = YataDocument::new(doc_id, 1);
+
+        for c in "Hello".chars() {
+            doc.insert_local(doc.content_length(), c).unwrap();
+        }
+
+        doc.format_local(0, 5, "bold".into(), AttributeValue::Bool(true)).unwrap();
+
+        let attr = doc.get_attribute_at(2, "bold").unwrap();
+        assert_eq!(attr.value, AttributeValue::Bool(true));
+        assert_eq!(attr.client_id, 1);
+    }
+
+    #[test]
+    fn test_format_lww_converges() {
+        let doc_id = Uuid::new_v4();
+        let mut doc_a = YataDocument::new(doc_id, 1);
+        let mut doc_b = YataDocument::new(doc_id, 2);
+
+        let ops_a: Vec<Op> = "Hello".chars()
+            .enumerate()
+            .map(|(i, c)| doc_a.insert_local(i, c).unwrap())
+            .collect();
+
+        for op in &ops_a {
+            doc_b.apply_op(op).unwrap();
+        }
+
+        assert_eq!(doc_a.get_content(), doc_b.get_content());
+        assert_eq!(doc_a.content_length(), 5);
+
+        let fmt_a = doc_a.format_local(
+            0,
+            5,
+            "bold".into(),
+            AttributeValue::Bool(true),
+        ).unwrap();
+
+        let fmt_b = doc_b.format_local(
+            0,
+            5,
+            "bold".into(),
+            AttributeValue::Bool(false),
+        ).unwrap();
+
+        doc_a.apply_op(&fmt_b).unwrap();
+        doc_b.apply_op(&fmt_a).unwrap();
+
+        let attr_a = doc_a.get_attribute_at(2, "bold").unwrap();
+        let attr_b = doc_b.get_attribute_at(2, "bold").unwrap();
+        assert_eq!(attr_a.value, attr_b.value);
     }
 }

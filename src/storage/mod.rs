@@ -306,6 +306,7 @@ impl OplogRepository {
         let op_type = match &op.op_type {
             crate::crdt::OpType::Insert(_) => "insert",
             crate::crdt::OpType::Delete(_) => "delete",
+            crate::crdt::OpType::Format(_) => "format",
         };
 
         let yata_id = op.yata_id();

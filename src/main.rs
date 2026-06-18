@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::collections::HashMap;
 use std::time::Duration;
 
 use axum::{
@@ -19,6 +20,7 @@ use uuid::Uuid;
 
 use realtime_collab_engine::*;
 use realtime_collab_engine::auth::{AuthService, JwtClaims, Role};
+use realtime_collab_engine::broadcast::{BroadcastEvent, StreamPublisher};
 use realtime_collab_engine::crdt::Op;
 use realtime_collab_engine::health::{HealthChecker, HealthCheckResponse, ReadyCheckResponse};
 use realtime_collab_engine::presence::{CursorPosition, SelectionRange, PresenceUpdate};
@@ -30,6 +32,7 @@ struct AppRouterState {
     app: Arc<AppState>,
     auth: Arc<AuthService>,
     health: Arc<HealthChecker>,
+    broadcaster: Arc<StreamPublisher>,
     node_id: String,
 }
 
@@ -48,6 +51,12 @@ impl FromRef<AppRouterState> for Arc<AuthService> {
 impl FromRef<AppRouterState> for Arc<HealthChecker> {
     fn from_ref(state: &AppRouterState) -> Self {
         state.health.clone()
+    }
+}
+
+impl FromRef<AppRouterState> for Arc<StreamPublisher> {
+    fn from_ref(state: &AppRouterState) -> Self {
+        state.broadcaster.clone()
     }
 }
 
@@ -139,6 +148,19 @@ async fn async_main() {
     let rate_limiter = ratelimit::RateLimiter::new(config.ratelimit.clone());
     let snapshot_service = snapshot::SnapshotService::new(config.clone(), repo);
 
+    let stream_prefix = config.redis.pubsub_channel_prefix.clone();
+    let broadcaster = Arc::new(StreamPublisher::new(redis_pool.clone(), stream_prefix));
+
+    let (consumer, subscribe_tx) = broadcast::StreamConsumer::new(
+        redis_pool.clone(),
+        config.redis.pubsub_channel_prefix.clone(),
+        node_id.clone(),
+        ws_manager.clone(),
+    );
+    tokio::spawn(async move {
+        consumer.consume_loop().await;
+    });
+
     let app_state = Arc::new(AppState {
         config: config.clone(),
         db_pool: db_pool.clone(),
@@ -147,6 +169,7 @@ async fn async_main() {
         presence_tracker: presence.clone(),
         rate_limiter: rate_limiter.clone(),
         snapshot_service: snapshot_service.clone(),
+        broadcaster: broadcaster.clone(),
         active_connections: std::sync::atomic::AtomicUsize::new(0),
         started_at: chrono::Utc::now(),
     });
@@ -165,6 +188,7 @@ async fn async_main() {
         app: app_state.clone(),
         auth: auth_service.clone(),
         health: health_checker.clone(),
+        broadcaster: broadcaster.clone(),
         node_id: node_id.clone(),
     };
 
@@ -175,13 +199,10 @@ async fn async_main() {
         rate_limiter.clone(),
         snapshot_service.clone(),
         app_state.clone(),
+        subscribe_tx.clone(),
     );
 
-    let redis_pubsub_state = router_state.clone();
-    let redis_config = config.clone();
-    tokio::spawn(async move {
-        redis_pubsub_loop(redis_pubsub_state, redis_config).await;
-    });
+    drop(broadcaster);
 
     let app = build_router(router_state.clone());
 
@@ -562,33 +583,60 @@ async fn handle_websocket(
         users,
     });
 
+    let user = RoomUser {
+        user_id: user_id.clone(),
+        client_id,
+        joined_at: info.connected_at.timestamp_millis(),
+        session_id,
+    };
+
     app.ws_manager.broadcast_to_room(
         &document_id,
         WsMessage::UserJoined {
-            user: RoomUser {
-                user_id: user_id.clone(),
-                client_id,
-                joined_at: info.connected_at.timestamp_millis(),
-                session_id,
-            },
+            user: user.clone(),
         },
         Some(&session_id),
     );
+
+    let presence_update = PresenceUpdate::Joined {
+        user_id: user_id.clone(),
+        display_name: claims.name.clone(),
+        color: color.clone(),
+        avatar: None,
+        session_id,
+    };
 
     app.ws_manager.broadcast_to_room(
         &document_id,
         WsMessage::Presence {
             user_id: user_id.clone(),
-            update: PresenceUpdate::Joined {
-                user_id: user_id.clone(),
-                display_name: claims.name.clone(),
-                color: color.clone(),
-                avatar: None,
-                session_id,
-            },
+            update: presence_update.clone(),
         },
         None,
     );
+
+    {
+        let app_clone = app.clone();
+        let node_id_str = node_id.clone();
+        let uid = user_id.clone();
+        let user_clone = user.clone();
+        let update_clone = presence_update.clone();
+        tokio::spawn(async move {
+            let _ = app_clone.broadcaster.publish(
+                document_id,
+                &node_id_str,
+                &BroadcastEvent::UserJoined { user: user_clone },
+            ).await;
+            let _ = app_clone.broadcaster.publish(
+                document_id,
+                &node_id_str,
+                &BroadcastEvent::Presence {
+                    user_id: uid,
+                    update: update_clone,
+                },
+            ).await;
+        });
+    }
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
 
@@ -636,6 +684,7 @@ async fn handle_websocket(
     let user_id_recv = user_id.clone();
     let session_id_recv = session_id;
     let doc_id_recv = document_id;
+    let node_id_recv = node_id.clone();
     let running = send_loop_running.clone();
 
     let recv_task = tokio::spawn(async move {
@@ -678,7 +727,7 @@ async fn handle_websocket(
                                 client_id,
                                 can_write,
                                 msg,
-                                &node_id,
+                                &node_id_recv,
                             ).await;
                         }
                     }
@@ -699,6 +748,22 @@ async fn handle_websocket(
         },
         Some(&session_id),
     );
+
+    {
+        let app_clone = app.clone();
+        let node_id_str = node_id.clone();
+        let uid = user_id.clone();
+        tokio::spawn(async move {
+            let _ = app_clone.broadcaster.publish(
+                document_id,
+                &node_id_str,
+                &BroadcastEvent::UserLeft {
+                    user_id: uid,
+                    reason: "disconnected".into(),
+                },
+            ).await;
+        });
+    }
 
     if let Some(room) = app.ws_manager.get_room(&document_id) {
         if room.connections.is_empty() {
@@ -767,6 +832,7 @@ async fn handle_incoming_ws(
             app.track_op(match &op.op_type {
                 crate::crdt::OpType::Insert(_) => "insert",
                 crate::crdt::OpType::Delete(_) => "delete",
+                crate::crdt::OpType::Format(_) => "format",
             });
 
             let _ = app.ws_manager.send_to_session(
@@ -781,12 +847,20 @@ async fn handle_incoming_ws(
             );
 
             let app_clone = app.clone();
-            let node_id = node_id.to_string();
+            let node_id_str = node_id.to_string();
             let user = user_id.to_string();
             let sess = *session_id;
+            let op_clone = op.clone();
+            let op_for_stream = op.clone();
             tokio::spawn(async move {
+                let event = BroadcastEvent::Op {
+                    sequence: seq,
+                    op: op_for_stream,
+                };
+                let _ = app_clone.broadcaster.publish(document_id, &node_id_str, &event).await;
+
                 let repo = OplogRepository::new(app_clone.db_pool.clone());
-                let _ = repo.append_op(&op, seq, Some(sess), &user).await;
+                let _ = repo.append_op(&op_clone, seq, Some(sess), &user).await;
                 let prev = if let Ok(Some(m)) = repo.get_document(document_id).await {
                     m.current_version
                 } else { 0 };
@@ -845,6 +919,43 @@ async fn handle_incoming_ws(
                 session_id,
                 WsMessage::Ack { sequence, applied: true },
             );
+
+            if !applied.is_empty() {
+                let app_clone = app.clone();
+                let node_id_str = node_id.to_string();
+                let user = user_id.to_string();
+                let sess = *session_id;
+                let applied_clone = applied.clone();
+                tokio::spawn(async move {
+                    let repo = OplogRepository::new(app_clone.db_pool.clone());
+                    for (seq, op) in &applied_clone {
+                        let event = BroadcastEvent::Op {
+                            sequence: *seq,
+                            op: op.clone(),
+                        };
+                        let _ = app_clone.broadcaster.publish(document_id, &node_id_str, &event).await;
+                        let _ = repo.append_op(op, *seq, Some(sess), &user).await;
+                    }
+                    let prev = if let Ok(Some(m)) = repo.get_document(document_id).await {
+                        m.current_version
+                    } else { 0 };
+                    let last_seq = applied_clone.last().map(|(s, _)| *s).unwrap_or(0);
+                    if last_seq as i64 > prev {
+                        let content_preview = {
+                            let r = app_clone.ws_manager.get_or_create_room(document_id, client_id);
+                            let mut d = r.document.write();
+                            let c = d.get_content().to_string();
+                            if c.len() > 200 { c[..200].to_string() } else { c }
+                        };
+                        let _ = repo.update_document_version(
+                            document_id,
+                            last_seq as i64,
+                            &user,
+                            Some(&content_preview),
+                        ).await;
+                    }
+                });
+            }
         }
         WsMessage::Cursor { position, .. } => {
             app.presence_tracker.update_cursor(document_id, user_id, position.clone());
@@ -852,10 +963,21 @@ async fn handle_incoming_ws(
                 &document_id,
                 WsMessage::Cursor {
                     user_id: user_id.to_string(),
-                    position,
+                    position: position.clone(),
                 },
                 Some(session_id),
             );
+
+            let app_clone = app.clone();
+            let node_id_str = node_id.to_string();
+            let uid = user_id.to_string();
+            tokio::spawn(async move {
+                let event = BroadcastEvent::Cursor {
+                    user_id: uid,
+                    position,
+                };
+                let _ = app_clone.broadcaster.publish(document_id, &node_id_str, &event).await;
+            });
         }
         WsMessage::Selection { range, .. } => {
             app.presence_tracker.update_selection(document_id, user_id, range.clone());
@@ -863,20 +985,42 @@ async fn handle_incoming_ws(
                 &document_id,
                 WsMessage::Selection {
                     user_id: user_id.to_string(),
-                    range,
+                    range: range.clone(),
                 },
                 Some(session_id),
             );
+
+            let app_clone = app.clone();
+            let node_id_str = node_id.to_string();
+            let uid = user_id.to_string();
+            tokio::spawn(async move {
+                let event = BroadcastEvent::Selection {
+                    user_id: uid,
+                    range,
+                };
+                let _ = app_clone.broadcaster.publish(document_id, &node_id_str, &event).await;
+            });
         }
         WsMessage::Presence { update, .. } => {
             app.ws_manager.broadcast_to_room(
                 &document_id,
                 WsMessage::Presence {
                     user_id: user_id.to_string(),
-                    update,
+                    update: update.clone(),
                 },
                 Some(session_id),
             );
+
+            let app_clone = app.clone();
+            let node_id_str = node_id.to_string();
+            let uid = user_id.to_string();
+            tokio::spawn(async move {
+                let event = BroadcastEvent::Presence {
+                    user_id: uid,
+                    update,
+                };
+                let _ = app_clone.broadcaster.publish(document_id, &node_id_str, &event).await;
+            });
         }
         WsMessage::SnapshotRequest { from_version } => {
             let room = app.ws_manager.get_or_create_room(document_id, client_id);
@@ -894,6 +1038,113 @@ async fn handle_incoming_ws(
                 },
             );
         }
+        WsMessage::SyncRequest { vector_clock } => {
+            let room = app.ws_manager.get_or_create_room(document_id, client_id);
+            let server_version = *room.current_version.lock();
+            let server_vc: HashMap<u64, u32> = {
+                let doc = room.document.read();
+                doc.vector_clock().clone().into_iter().collect()
+            };
+            let client_missing_ops = room.get_ops_for_clients(&vector_clock);
+            let server_missing_clients = room.missing_clients(&vector_clock);
+
+            let _ = app.ws_manager.send_to_session(
+                session_id,
+                WsMessage::SyncResponse {
+                    server_version,
+                    server_vector_clock: server_vc,
+                    client_missing_ops,
+                    server_missing_clients,
+                },
+            );
+        }
+        WsMessage::BatchSubmit { ops } if can_write => {
+            let start = std::time::Instant::now();
+            let total = ops.len() as u64;
+            if let Err((_, retry)) = app.rate_limiter.check_both(*session_id, document_id, total) {
+                let _ = app.ws_manager.send_to_session(
+                    session_id,
+                    WsMessage::Error {
+                        code: "RATE_LIMITED".into(),
+                        message: format!("Retry after {:.0}s", retry.ceil()),
+                    },
+                );
+                return;
+            }
+
+            let room = app.ws_manager.get_or_create_room(document_id, client_id);
+            let mut applied = 0u64;
+            let mut duplicates = 0u64;
+
+            {
+                let mut doc = room.document.write();
+                for op in &ops {
+                    let key = op.dedup_key();
+                    if room.has_op(key.0, key.1) {
+                        duplicates += 1;
+                        continue;
+                    }
+                    if doc.apply_op(op).is_ok() {
+                        room.add_op(op.clone());
+                        applied += 1;
+                    }
+                }
+            }
+
+            if applied > 0 {
+                histogram!("collab_batch_size").record(applied as f64);
+            }
+            if duplicates > 0 {
+                counter!("collab_dedup_skipped_total").increment(duplicates);
+            }
+
+            let server_version = *room.current_version.lock();
+            let _ = app.ws_manager.send_to_session(
+                session_id,
+                WsMessage::BatchAck {
+                    applied,
+                    duplicates,
+                    server_version,
+                },
+            );
+
+            for op in ops.iter() {
+                let key = op.dedup_key();
+                if room.has_op(key.0, key.1) {
+                    continue;
+                }
+                app.ws_manager.broadcast_to_room(
+                    &document_id,
+                    WsMessage::Op { sequence: 0, op: op.clone() },
+                    Some(session_id),
+                );
+            }
+
+            let app_clone = app.clone();
+            let node_id_str = node_id.to_string();
+            let user = user_id.to_string();
+            let sess = *session_id;
+            tokio::spawn(async move {
+                let repo = OplogRepository::new(app_clone.db_pool.clone());
+                for op in ops.iter() {
+                    let key = op.dedup_key();
+                    if app_clone.ws_manager.get_room(&document_id)
+                        .map(|r| r.has_op(key.0, key.1))
+                        .unwrap_or(false)
+                    {
+                        continue;
+                    }
+                    let event = BroadcastEvent::Op {
+                        sequence: 0,
+                        op: op.clone(),
+                    };
+                    let _ = app_clone.broadcaster.publish(document_id, &node_id_str, &event).await;
+                    let _ = repo.append_op(op, 0, Some(sess), &user).await;
+                }
+            });
+
+            histogram!("collab_batch_latency_seconds").record(start.elapsed().as_secs_f64());
+        }
         _ => {}
     }
 }
@@ -905,9 +1156,11 @@ fn start_background_tasks(
     rate_limiter: ratelimit::RateLimiter,
     snapshot_service: snapshot::SnapshotService,
     app: Arc<AppState>,
+    subscribe_tx: mpsc::UnboundedSender<Uuid>,
 ) {
     {
         let ws = ws_manager.clone();
+        let tx = subscribe_tx.clone();
         let interval = Duration::from_secs(config.websocket.heartbeat_interval_secs);
         tokio::spawn(async move {
             let mut ticker = tokio::time::interval(interval * 2);
@@ -921,6 +1174,10 @@ fn start_background_tasks(
                 presence.cleanup_stale();
                 gauge!("collab_active_connections").set(ws.total_connections() as f64);
                 gauge!("collab_active_documents").set(ws.total_rooms() as f64);
+
+                for entry in ws.rooms.iter() {
+                    let _ = tx.send(*entry.key());
+                }
             }
         });
     }

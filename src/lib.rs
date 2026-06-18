@@ -8,12 +8,15 @@ pub mod storage;
 pub mod snapshot;
 pub mod ratelimit;
 pub mod health;
+pub mod broadcast;
 
 pub use error::{AppError, AppResult};
 pub use config::{AppConfig, StorageBackend};
 
+use crate::broadcast::StreamPublisher;
 use metrics::{counter, gauge, histogram};
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 pub struct AppState {
     pub config: AppConfig,
@@ -23,6 +26,7 @@ pub struct AppState {
     pub presence_tracker: presence::PresenceTracker,
     pub rate_limiter: ratelimit::RateLimiter,
     pub snapshot_service: snapshot::SnapshotService,
+    pub broadcaster: Arc<StreamPublisher>,
     pub active_connections: AtomicUsize,
     pub started_at: chrono::DateTime<chrono::Utc>,
 }

@@ -89,6 +89,23 @@ pub enum WsMessage {
         sequence: u64,
         ops: Vec<Op>,
     },
+    SyncRequest {
+        vector_clock: HashMap<u64, u32>,
+    },
+    SyncResponse {
+        server_version: u64,
+        server_vector_clock: HashMap<u64, u32>,
+        client_missing_ops: Vec<Op>,
+        server_missing_clients: Vec<(u64, u32)>,
+    },
+    BatchSubmit {
+        ops: Vec<Op>,
+    },
+    BatchAck {
+        applied: u64,
+        duplicates: u64,
+        server_version: u64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,6 +149,7 @@ pub struct Room {
     pub current_version: Arc<Mutex<u64>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub last_activity: Arc<Mutex<chrono::DateTime<chrono::Utc>>>,
+    pub seen_ops: Arc<Mutex<HashSet<(u64, u32)>>>,
 }
 
 impl Room {
@@ -144,6 +162,7 @@ impl Room {
             current_version: Arc::new(Mutex::new(0)),
             created_at: chrono::Utc::now(),
             last_activity: Arc::new(Mutex::new(chrono::Utc::now())),
+            seen_ops: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -151,9 +170,32 @@ impl Room {
         let mut ver = self.current_version.lock();
         *ver += 1;
         let seq = *ver;
+        let key = op.dedup_key();
+        self.seen_ops.lock().insert(key);
         self.ops_history.lock().push((seq, op));
         *self.last_activity.lock() = chrono::Utc::now();
         seq
+    }
+
+    pub fn add_op_dedup(&self, op: Op) -> (u64, bool) {
+        let key = op.dedup_key();
+        let mut seen = self.seen_ops.lock();
+        if seen.contains(&key) {
+            (0, false)
+        } else {
+            seen.insert(key);
+            drop(seen);
+            let mut ver = self.current_version.lock();
+            *ver += 1;
+            let seq = *ver;
+            self.ops_history.lock().push((seq, op));
+            *self.last_activity.lock() = chrono::Utc::now();
+            (seq, true)
+        }
+    }
+
+    pub fn has_op(&self, client: u64, clock: u32) -> bool {
+        self.seen_ops.lock().contains(&(client, clock))
     }
 
     pub fn get_ops_since(&self, from: u64) -> Vec<(u64, Op)> {
@@ -162,6 +204,31 @@ impl Room {
             .filter(|(s, _)| *s > from)
             .cloned()
             .collect()
+    }
+
+    pub fn get_ops_for_clients(&self, client_clocks: &HashMap<u64, u32>) -> Vec<Op> {
+        let history = self.ops_history.lock();
+        history.iter()
+            .filter(|(_, op)| {
+                let key = op.dedup_key();
+                let last_seen = client_clocks.get(&key.0).copied().unwrap_or(0);
+                key.1 > last_seen
+            })
+            .map(|(_, op)| op.clone())
+            .collect()
+    }
+
+    pub fn missing_clients(&self, remote_clock: &HashMap<u64, u32>) -> Vec<(u64, u32)> {
+        let doc = self.document.read();
+        let server_clock = doc.vector_clock();
+        let mut missing = Vec::new();
+        for (client, clock) in server_clock {
+            let remote = remote_clock.get(client).copied().unwrap_or(0);
+            if *clock > remote {
+                missing.push((*client, remote + 1));
+            }
+        }
+        missing
     }
 }
 
