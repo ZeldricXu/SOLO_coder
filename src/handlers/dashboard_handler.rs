@@ -411,3 +411,10 @@ pub async fn recent_activity_api(
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(activity)))
 }
+
+pub async fn health_check() -> impl Responder {
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    }))
+}

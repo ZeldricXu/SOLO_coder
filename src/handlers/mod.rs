@@ -49,7 +49,7 @@ pub use comment_handler::{
 };
 
 pub use dashboard_handler::{
-    dashboard_page, dashboard_stats_api, recent_activity_api,
+    dashboard_page, dashboard_stats_api, recent_activity_api, health_check,
 };
 
 pub use issue_handler::{
@@ -114,6 +114,10 @@ pub fn configure_auth_routes(cfg: &mut web::ServiceConfig) {
 
 pub fn configure_dashboard_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
+        web::resource("/health")
+            .route(web::get().to(health_check)),
+    )
+    .service(
         web::resource("/")
             .route(web::get().to(dashboard_page)),
     )
