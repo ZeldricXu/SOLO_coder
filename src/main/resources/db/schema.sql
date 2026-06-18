@@ -169,6 +169,29 @@ CREATE TABLE `ds_component_doc` (
     KEY `idx_deleted` (`deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='组件文档表';
 
+DROP TABLE IF EXISTS `ds_doc_parse_record`;
+CREATE TABLE `ds_doc_parse_record` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `component_id` bigint DEFAULT NULL COMMENT '组件ID',
+    `version_id` bigint DEFAULT NULL COMMENT '组件版本ID',
+    `file_path` varchar(512) NOT NULL COMMENT '文件路径',
+    `file_hash` varchar(128) DEFAULT NULL COMMENT '文件内容哈希(SHA-256)',
+    `file_size` bigint DEFAULT 0 COMMENT '文件大小(字节)',
+    `parse_status` tinyint DEFAULT 0 COMMENT '解析状态: 1成功 2失败 3跳过',
+    `parse_error` text COMMENT '解析错误信息',
+    `last_parsed_commit` varchar(64) DEFAULT NULL COMMENT '上次解析的Git提交哈希',
+    `last_parsed_at` datetime DEFAULT NULL COMMENT '上次解析时间',
+    `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `deleted` tinyint DEFAULT 0 COMMENT '逻辑删除',
+    PRIMARY KEY (`id`),
+    KEY `idx_component_id` (`component_id`),
+    KEY `idx_version_id` (`version_id`),
+    KEY `idx_file_path` (`file_path`),
+    KEY `idx_file_hash` (`file_hash`),
+    KEY `idx_deleted` (`deleted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档解析记录表';
+
 -- ------------------------------------------------------------
 -- 设计令牌相关表
 -- ------------------------------------------------------------

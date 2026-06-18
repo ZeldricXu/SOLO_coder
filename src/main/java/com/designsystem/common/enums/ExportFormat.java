@@ -1,5 +1,6 @@
 package com.designsystem.common.enums;
 
+import com.baomidou.mybatisplus.annotation.EnumValue;
 import lombok.Getter;
 
 @Getter
@@ -12,6 +13,7 @@ public enum ExportFormat {
     ANDROID("android", "Android XML"),
     IOS("ios", "iOS Swift");
 
+    @EnumValue
     private final String code;
     private final String name;
 

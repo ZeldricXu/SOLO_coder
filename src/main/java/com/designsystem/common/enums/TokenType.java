@@ -1,5 +1,6 @@
 package com.designsystem.common.enums;
 
+import com.baomidou.mybatisplus.annotation.EnumValue;
 import lombok.Getter;
 
 @Getter
@@ -13,6 +14,7 @@ public enum TokenType {
     SIZING("sizing", "尺寸"),
     MOTION("motion", "动效");
 
+    @EnumValue
     private final String code;
     private final String name;
 

@@ -43,3 +43,8 @@ logging:
 springdoc:
   api-docs:
     enabled: false
+
+jwt:
+  secret: test-secret-key-for-jwt-validation-should-be-at-least-256-bits
+  expiration:
+    hours: 1

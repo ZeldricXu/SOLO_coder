@@ -9,15 +9,21 @@
 <main class="ml-64 pt-16 min-h-screen">
     <div class="p-6">
 
-        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+        <div x-data="tokenToolbar()"
+             x-init="init()"
+             class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
             <div class="flex items-center gap-4 flex-1">
                 <div class="relative flex-1 max-w-md">
                     <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
                     <input type="text"
-                           class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                           x-model="searchQuery"
+                           @input.debounce.300ms="searchTokens()"
+                           class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow"
                            placeholder="搜索令牌名称...">
                 </div>
-                <select class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                <select x-model="filterType"
+                        @change="applyFilters()"
+                        class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow">
                     <option value="">所有类型</option>
                     <option value="COLOR">颜色</option>
                     <option value="SPACING">间距</option>
@@ -25,7 +31,9 @@
                     <option value="BORDER_RADIUS">圆角</option>
                     <option value="BOX_SHADOW">阴影</option>
                 </select>
-                <select class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                <select x-model="filterLevel"
+                        @change="applyFilters()"
+                        class="px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow">
                     <option value="">所有层级</option>
                     <option value="BASE">基础令牌</option>
                     <option value="SEMANTIC">语义令牌</option>
@@ -33,10 +41,36 @@
                 </select>
             </div>
             <div class="flex items-center gap-3">
-                <button class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center">
-                    <i class="fas fa-download mr-2"></i>导出
-                </button>
-                <a href="/tokens/new" class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center">
+                <div class="relative" x-data="{ showExportMenu: false }">
+                    <button @click="showExportMenu = !showExportMenu"
+                            @click.away="showExportMenu = false"
+                            class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center transition-colors">
+                        <i class="fas fa-download mr-2"></i>
+                        导出
+                        <i class="fas fa-chevron-down ml-2 text-xs"></i>
+                    </button>
+                    <div x-show="showExportMenu" x-cloak x-transition
+                         class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-20">
+                        <button @click="exportTokens('CSS'); showExportMenu = false;"
+                                class="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700">
+                            CSS Variables
+                        </button>
+                        <button @click="exportTokens('JS'); showExportMenu = false;"
+                                class="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700">
+                            JavaScript Module
+                        </button>
+                        <button @click="exportTokens('JSON'); showExportMenu = false;"
+                                class="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700">
+                            JSON
+                        </button>
+                        <button @click="exportTokens('SCSS'); showExportMenu = false;"
+                                class="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm text-gray-700">
+                            SCSS
+                        </button>
+                    </div>
+                </div>
+                <a href="/tokens/new"
+                   class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 flex items-center transition-colors">
                     <i class="fas fa-plus mr-2"></i>新建令牌
                 </a>
             </div>
@@ -44,77 +78,109 @@
 
         <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div class="lg:col-span-1">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sticky top-20">
+                <div x-data="tokenSidebar()"
+                     x-init="loadStats()"
+                     class="bg-white rounded-xl shadow-sm border border-gray-100 p-4 sticky top-20">
                     <h3 class="font-semibold text-gray-900 mb-4">令牌层级</h3>
                     <nav class="space-y-1">
-                        <a href="#" class="flex items-center justify-between p-3 bg-indigo-50 text-indigo-700 rounded-lg">
+                        <a href="#"
+                           @click.prevent="selectLevel('')"
+                           :class="selectedLevel === '' ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50 text-gray-700'"
+                           class="flex items-center justify-between p-3 rounded-lg transition-colors">
+                            <div class="flex items-center">
+                                <div class="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center mr-3">
+                                    <i class="fas fa-th-large text-gray-600 text-sm"></i>
+                                </div>
+                                <div>
+                                    <p class="font-medium">全部令牌</p>
+                                    <p class="text-xs text-gray-500" x-text="stats.total + ' 个'">0 个</p>
+                                </div>
+                            </div>
+                            <i class="fas fa-chevron-right text-sm" :class="selectedLevel === '' ? 'text-indigo-600' : 'text-gray-400'"></i>
+                        </a>
+                        <a href="#"
+                           @click.prevent="selectLevel('BASE')"
+                           :class="selectedLevel === 'BASE' ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-50 text-gray-700'"
+                           class="flex items-center justify-between p-3 rounded-lg transition-colors">
                             <div class="flex items-center">
                                 <div class="w-8 h-8 bg-indigo-200 rounded-lg flex items-center justify-center mr-3">
                                     <i class="fas fa-palette text-indigo-600 text-sm"></i>
                                 </div>
                                 <div>
                                     <p class="font-medium">基础令牌</p>
-                                    <p class="text-xs text-indigo-500">128 个</p>
+                                    <p class="text-xs text-indigo-500" x-text="stats.base + ' 个'">0 个</p>
                                 </div>
                             </div>
-                            <i class="fas fa-chevron-right text-sm"></i>
+                            <i class="fas fa-chevron-right text-sm" :class="selectedLevel === 'BASE' ? 'text-indigo-600' : 'text-gray-400'"></i>
                         </a>
-                        <a href="#" class="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
+                        <a href="#"
+                           @click.prevent="selectLevel('SEMANTIC')"
+                           :class="selectedLevel === 'SEMANTIC' ? 'bg-purple-50 text-purple-700' : 'hover:bg-gray-50 text-gray-700'"
+                           class="flex items-center justify-between p-3 rounded-lg transition-colors">
                             <div class="flex items-center">
                                 <div class="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center mr-3">
                                     <i class="fas fa-layer-group text-purple-600 text-sm"></i>
                                 </div>
                                 <div>
-                                    <p class="font-medium text-gray-900">语义令牌</p>
-                                    <p class="text-xs text-gray-500">96 个</p>
+                                    <p class="font-medium">语义令牌</p>
+                                    <p class="text-xs text-gray-500" x-text="stats.semantic + ' 个'">0 个</p>
                                 </div>
                             </div>
-                            <i class="fas fa-chevron-right text-sm text-gray-400"></i>
+                            <i class="fas fa-chevron-right text-sm" :class="selectedLevel === 'SEMANTIC' ? 'text-purple-600' : 'text-gray-400'"></i>
                         </a>
-                        <a href="#" class="flex items-center justify-between p-3 hover:bg-gray-50 rounded-lg">
+                        <a href="#"
+                           @click.prevent="selectLevel('COMPONENT')"
+                           :class="selectedLevel === 'COMPONENT' ? 'bg-green-50 text-green-700' : 'hover:bg-gray-50 text-gray-700'"
+                           class="flex items-center justify-between p-3 rounded-lg transition-colors">
                             <div class="flex items-center">
                                 <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center mr-3">
                                     <i class="fas fa-puzzle-piece text-green-600 text-sm"></i>
                                 </div>
                                 <div>
-                                    <p class="font-medium text-gray-900">组件令牌</p>
-                                    <p class="text-xs text-gray-500">100 个</p>
+                                    <p class="font-medium">组件令牌</p>
+                                    <p class="text-xs text-gray-500" x-text="stats.component + ' 个'">0 个</p>
                                 </div>
                             </div>
-                            <i class="fas fa-chevron-right text-sm text-gray-400"></i>
+                            <i class="fas fa-chevron-right text-sm" :class="selectedLevel === 'COMPONENT' ? 'text-green-600' : 'text-gray-400'"></i>
                         </a>
                     </nav>
 
                     <div class="mt-6 pt-6 border-t border-gray-200">
                         <h4 class="font-medium text-gray-900 mb-3">分类</h4>
                         <div class="space-y-2">
-                            <a href="#" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                                <span class="text-sm text-gray-700">颜色系统</span>
-                                <span class="text-xs text-gray-500">48</span>
+                            <a href="#"
+                               @click.prevent="selectCategory('')"
+                               :class="selectedCategory === '' ? 'text-indigo-600 font-medium' : 'text-gray-700'"
+                               class="flex items-center justify-between p-2 rounded hover:bg-gray-50 transition-colors">
+                                <span class="text-sm">全部分类</span>
                             </a>
-                            <a href="#" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                                <span class="text-sm text-gray-700">间距系统</span>
-                                <span class="text-xs text-gray-500">24</span>
-                            </a>
-                            <a href="#" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                                <span class="text-sm text-gray-700">字体系统</span>
-                                <span class="text-xs text-gray-500">32</span>
-                            </a>
-                            <a href="#" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                                <span class="text-sm text-gray-700">圆角系统</span>
-                                <span class="text-xs text-gray-500">8</span>
-                            </a>
-                            <a href="#" class="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                                <span class="text-sm text-gray-700">阴影系统</span>
-                                <span class="text-xs text-gray-500">16</span>
-                            </a>
+                            <template x-for="cat in categories" :key="cat.name">
+                                <a href="#"
+                                   @click.prevent="selectCategory(cat.name)"
+                                   :class="selectedCategory === cat.name ? 'text-indigo-600 font-medium' : 'text-gray-700'"
+                                   class="flex items-center justify-between p-2 rounded hover:bg-gray-50 transition-colors">
+                                    <span class="text-sm" x-text="cat.name">颜色系统</span>
+                                    <span class="text-xs text-gray-500" x-text="cat.count">48</span>
+                                </a>
+                            </template>
                         </div>
                     </div>
                 </div>
             </div>
 
             <div class="lg:col-span-3">
-                <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                <div x-data="tokenTable()"
+                     x-init="loadTokens(1)"
+                     class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
+
+                    <div x-show="loading" x-transition.opacity
+                         class="absolute inset-0 bg-white/80 flex items-center justify-center z-10">
+                        <div class="flex flex-col items-center">
+                            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+                            <p class="mt-2 text-sm text-gray-500">加载中...</p>
+                        </div>
+                    </div>
+
                     <table class="w-full">
                         <thead class="bg-gray-50 border-b border-gray-200">
                             <tr>
@@ -127,40 +193,92 @@
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
-                            <tr th:each="token : ${page.records}" class="hover:bg-gray-50">
-                                <td class="px-6 py-4">
-                                    <code class="text-sm text-indigo-600 font-mono" th:text="${token.name}">--color-primary</code>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span th:if="${token.type.code == 'COLOR'}" class="px-2 py-1 bg-pink-100 text-pink-700 text-xs rounded">颜色</span>
-                                    <span th:if="${token.type.code == 'SPACING'}" class="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">间距</span>
-                                    <span th:if="${token.type.code == 'FONT'}" class="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">字体</span>
-                                    <span th:if="${token.type.code == 'BORDER_RADIUS'}" class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">圆角</span>
-                                    <span th:if="${token.type.code == 'BOX_SHADOW'}" class="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">阴影</span>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span th:if="${token.level.code == 'BASE'}" class="px-2 py-1 bg-indigo-100 text-indigo-700 text-xs rounded">基础</span>
-                                    <span th:if="${token.level.code == 'SEMANTIC'}" class="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded">语义</span>
-                                    <span th:if="${token.level.code == 'COMPONENT'}" class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">组件</span>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="flex items-center">
-                                        <div th:if="${token.type.code == 'COLOR'}"
-                                             class="w-6 h-6 rounded-full mr-2 border border-gray-200"
-                                             th:style="'background-color: ' + ${token.baseValue}"></div>
-                                        <code class="text-sm text-gray-700 font-mono" th:text="${token.baseValue}">#6366f1</code>
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-sm text-gray-500" th:text="${token.parent?.name ?: '-'}">-</td>
-                                <td class="px-6 py-4 text-right">
-                                    <a th:href="@{'/tokens/' + ${token.id}}"
-                                       class="text-indigo-600 hover:text-indigo-700 text-sm mr-3">查看</a>
-                                    <a th:href="@{'/tokens/' + ${token.id} + '/edit'}"
-                                       class="text-gray-600 hover:text-gray-700 text-sm">编辑</a>
+                            <template x-for="token in tokens" :key="token.id">
+                                <tr class="hover:bg-gray-50 transition-colors group">
+                                    <td class="px-6 py-4">
+                                        <code class="text-sm text-indigo-600 font-mono"
+                                              x-text="token.tokenName"
+                                              @click="copyTokenName(token.tokenName)"
+                                              class="cursor-pointer hover:text-indigo-800"
+                                              title="点击复制">
+                                            --color-primary
+                                        </code>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span :class="getTypeClass(token.tokenType)"
+                                              class="px-2 py-1 text-xs rounded">
+                                            <span x-text="getTypeName(token.tokenType)">颜色</span>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span :class="getLevelClass(token.tokenLevel)"
+                                              class="px-2 py-1 text-xs rounded">
+                                            <span x-text="getLevelName(token.tokenLevel)">基础</span>
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <div class="flex items-center">
+                                            <div x-show="token.tokenType === 'COLOR'"
+                                                 class="w-6 h-6 rounded-full mr-2 border border-gray-200 flex-shrink-0"
+                                                 :style="'background-color: ' + (token.resolvedValue || token.baseValue)">
+                                            </div>
+                                            <code class="text-sm text-gray-700 font-mono truncate max-w-[120px]"
+                                                  x-text="token.resolvedValue || token.baseValue"
+                                                  :title="token.resolvedValue || token.baseValue">
+                                                #6366f1
+                                            </code>
+                                        </div>
+                                    </td>
+                                    <td class="px-6 py-4 text-sm text-gray-500"
+                                        x-text="token.inheritsFrom || '-'">
+                                        -
+                                    </td>
+                                    <td class="px-6 py-4 text-right">
+                                        <div class="flex items-center justify-end space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button @click="viewToken(token.id)"
+                                                    class="text-indigo-600 hover:text-indigo-700 text-sm">
+                                                查看
+                                            </button>
+                                            <button @click="editToken(token)"
+                                                    class="text-gray-600 hover:text-gray-700 text-sm">
+                                                编辑
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            </template>
+                            <tr x-show="tokens.length === 0 && !loading">
+                                <td colspan="6" class="px-6 py-12 text-center text-gray-500">
+                                    <i class="fas fa-palette text-4xl text-gray-300 mb-3"></i>
+                                    <p x-text="searchQuery ? '没有找到匹配的令牌' : '暂无令牌数据'">暂无令牌数据</p>
                                 </td>
                             </tr>
                         </tbody>
                     </table>
+
+                    <div x-show="total > 0"
+                         class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+                        <p class="text-sm text-gray-500">
+                            共 <span x-text="total">0</span> 个令牌
+                        </p>
+                        <div class="flex items-center space-x-2">
+                            <button @click="loadTokens(currentPage - 1)"
+                                    :disabled="currentPage === 1"
+                                    :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }"
+                                    class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 transition-colors">
+                                上一页
+                            </button>
+                            <span class="px-3 py-1 text-sm text-gray-600">
+                                <span x-text="currentPage">1</span> / <span x-text="totalPages">1</span>
+                            </span>
+                            <button @click="loadTokens(currentPage + 1)"
+                                    :disabled="currentPage === totalPages"
+                                    :class="{ 'opacity-50 cursor-not-allowed': currentPage === totalPages }"
+                                    class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 transition-colors">
+                                下一页
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -170,16 +288,20 @@
                             <i class="fas fa-download text-gray-400"></i>
                         </div>
                         <div class="space-y-2">
-                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700">
+                            <button @click="window.open('/api/public/tokens/export/CSS', '_blank')"
+                                    class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors">
                                 CSS Variables
                             </button>
-                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700">
+                            <button @click="window.open('/api/public/tokens/export/JS', '_blank')"
+                                    class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors">
                                 JavaScript Module
                             </button>
-                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700">
+                            <button @click="window.open('/api/public/tokens/export/JSON', '_blank')"
+                                    class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors">
                                 JSON
                             </button>
-                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700">
+                            <button @click="window.open('/api/public/tokens/export/SCSS', '_blank')"
+                                    class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors">
                                 SCSS
                             </button>
                         </div>
@@ -191,13 +313,13 @@
                             <i class="fas fa-bolt text-amber-400"></i>
                         </div>
                         <div class="space-y-2">
-                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700">
+                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors">
                                 查看变更历史
                             </button>
-                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700">
+                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors">
                                 影响分析报告
                             </button>
-                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700">
+                            <button class="w-full text-left px-3 py-2 bg-gray-50 hover:bg-gray-100 rounded-lg text-sm text-gray-700 transition-colors">
                                 迁移指南
                             </button>
                         </div>
@@ -206,7 +328,7 @@
                     <div class="bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-sm p-5 text-white">
                         <h4 class="font-medium mb-3">需要修改？</h4>
                         <p class="text-white/80 text-sm mb-4">设计令牌的修改需要设计负责人审批</p>
-                        <button class="w-full px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition">
+                        <button class="w-full px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-medium transition-colors">
                             提交修改申请
                         </button>
                     </div>
@@ -214,8 +336,405 @@
             </div>
         </div>
 
+        <div x-data="editTokenModal()"
+             x-show="showModal" x-cloak
+             class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div x-show="showModal"
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0"
+                 x-transition:enter-end="opacity-100"
+                 @click="closeModal()"
+                 class="absolute inset-0 bg-black/50"></div>
+
+            <div x-show="showModal"
+                 x-transition:enter="transition ease-out duration-200"
+                 x-transition:enter-start="opacity-0 scale-95"
+                 x-transition:enter-end="opacity-100 scale-100"
+                 class="relative bg-white rounded-xl shadow-2xl w-full max-w-lg">
+                <div class="flex items-center justify-between p-6 border-b border-gray-200">
+                    <h3 class="text-lg font-semibold text-gray-900" x-text="editing ? '编辑令牌' : '新建令牌'">
+                        编辑令牌
+                    </h3>
+                    <button @click="closeModal()" class="text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="p-6 space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">令牌名称</label>
+                        <input type="text" x-model="form.tokenName"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                               placeholder="--color-primary">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">显示名称</label>
+                        <input type="text" x-model="form.displayName"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                               placeholder="主色调">
+                    </div>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">类型</label>
+                            <select x-model="form.tokenType"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                <option value="COLOR">颜色</option>
+                                <option value="SPACING">间距</option>
+                                <option value="FONT">字体</option>
+                                <option value="BORDER_RADIUS">圆角</option>
+                                <option value="BOX_SHADOW">阴影</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">层级</label>
+                            <select x-model="form.tokenLevel"
+                                    class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
+                                <option value="BASE">基础令牌</option>
+                                <option value="SEMANTIC">语义令牌</option>
+                                <option value="COMPONENT">组件令牌</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">值</label>
+                        <input type="text" x-model="form.baseValue"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                               placeholder="#3b82f6">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">继承自</label>
+                        <input type="text" x-model="form.inheritsFrom"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent font-mono"
+                               placeholder="--base-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">描述</label>
+                        <textarea x-model="form.description" rows="2"
+                                  class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                                  placeholder="令牌用途说明"></textarea>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 p-6 border-t border-gray-200 bg-gray-50 rounded-b-xl">
+                    <button @click="closeModal()"
+                            class="px-4 py-2 text-gray-600 hover:text-gray-800">
+                        取消
+                    </button>
+                    <button @click="saveToken()"
+                            :disabled="saving"
+                            class="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 flex items-center transition-colors">
+                        <i x-show="saving" class="fas fa-spinner fa-spin mr-2"></i>
+                        <span x-text="saving ? '保存中...' : '保存'">保存</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div x-data="tokenToast()"
+             x-show="showToast"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 translate-y-4"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             class="fixed bottom-6 right-6 z-50">
+            <div :class="toastType === 'success' ? 'bg-green-600' : 'bg-red-600'"
+                 class="text-white px-6 py-3 rounded-lg shadow-lg flex items-center">
+                <i :class="toastType === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'"
+                   class="fas mr-2"></i>
+                <span x-text="toastMessage">操作成功</span>
+            </div>
+        </div>
+
     </div>
 </main>
+
+<script>
+function tokenToolbar() {
+    return {
+        searchQuery: '',
+        filterType: '',
+        filterLevel: '',
+
+        init() {
+        },
+
+        searchTokens() {
+            this.refreshTable();
+        },
+
+        applyFilters() {
+            this.refreshTable();
+        },
+
+        refreshTable() {
+            const tableEl = document.querySelector('[x-data="tokenTable()"]');
+            if (tableEl && tableEl.__x) {
+                tableEl.__x.$data.loadTokens(1);
+            }
+        },
+
+        exportTokens(format) {
+            const params = new URLSearchParams();
+            if (this.filterType) params.set('tokenType', this.filterType);
+            if (this.filterLevel) params.set('tokenLevel', this.filterLevel);
+
+            const url = '/api/public/tokens/export/' + format
+                + (params.toString() ? '?' + params.toString() : '');
+            window.open(url, '_blank');
+        }
+    };
+}
+
+function tokenSidebar() {
+    return {
+        selectedLevel: '',
+        selectedCategory: '',
+        stats: { total: 0, base: 0, semantic: 0, component: 0 },
+        categories: [
+            { name: '颜色系统', count: 48 },
+            { name: '间距系统', count: 24 },
+            { name: '字体系统', count: 32 },
+            { name: '圆角系统', count: 8 },
+            { name: '阴影系统', count: 16 }
+        ],
+
+        loadStats() {
+        },
+
+        selectLevel(level) {
+            this.selectedLevel = level;
+            const toolbar = document.querySelector('[x-data="tokenToolbar()"]');
+            if (toolbar && toolbar.__x) {
+                toolbar.__x.$data.filterLevel = level;
+            }
+            const table = document.querySelector('[x-data="tokenTable()"]');
+            if (table && table.__x) {
+                table.__x.$data.loadTokens(1);
+            }
+        },
+
+        selectCategory(category) {
+            this.selectedCategory = category;
+            const table = document.querySelector('[x-data="tokenTable()"]');
+            if (table && table.__x) {
+                table.__x.$data.category = category;
+                table.__x.$data.loadTokens(1);
+            }
+        }
+    };
+}
+
+function tokenTable() {
+    return {
+        tokens: [],
+        loading: false,
+        currentPage: 1,
+        totalPages: 1,
+        total: 0,
+        pageSize: 20,
+        category: '',
+
+        async loadTokens(page) {
+            if (page < 1 || (this.totalPages > 0 && page > this.totalPages)) return;
+
+            this.loading = true;
+            try {
+                const toolbar = this.getToolbarState();
+                const params = new URLSearchParams({
+                    pageNum: page,
+                    pageSize: this.pageSize,
+                    keyword: toolbar.searchQuery || '',
+                    tokenType: toolbar.filterType || '',
+                    tokenLevel: toolbar.filterLevel || '',
+                    category: this.category || ''
+                });
+
+                const response = await fetch('/api/tokens?' + params.toString(), {
+                    headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+                });
+
+                if (!response.ok) throw new Error('加载失败');
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    this.tokens = result.data.records || [];
+                    this.currentPage = result.data.current || page;
+                    this.totalPages = result.data.pages || 1;
+                    this.total = result.data.total || 0;
+                }
+            } catch (error) {
+                console.error('Load tokens error:', error);
+                this.showToast('error', '加载失败，请稍后重试');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        getToolbarState() {
+            const toolbar = document.querySelector('[x-data="tokenToolbar()"]');
+            if (toolbar && toolbar.__x) return toolbar.__x.$data;
+            return { searchQuery: '', filterType: '', filterLevel: '' };
+        },
+
+        viewToken(id) {
+            window.location.href = '/tokens/' + id;
+        },
+
+        editToken(token) {
+            const modal = document.querySelector('[x-data="editTokenModal()"]');
+            if (modal && modal.__x) {
+                modal.__x.$data.openEdit(token);
+            }
+        },
+
+        getTypeClass(type) {
+            const classes = {
+                'COLOR': 'bg-pink-100 text-pink-700',
+                'SPACING': 'bg-blue-100 text-blue-700',
+                'FONT': 'bg-purple-100 text-purple-700',
+                'BORDER_RADIUS': 'bg-green-100 text-green-700',
+                'BOX_SHADOW': 'bg-gray-100 text-gray-700'
+            };
+            return classes[type] || 'bg-gray-100 text-gray-700';
+        },
+
+        getTypeName(type) {
+            const names = {
+                'COLOR': '颜色', 'SPACING': '间距', 'FONT': '字体',
+                'BORDER_RADIUS': '圆角', 'BOX_SHADOW': '阴影'
+            };
+            return names[type] || type;
+        },
+
+        getLevelClass(level) {
+            const classes = {
+                'BASE': 'bg-indigo-100 text-indigo-700',
+                'SEMANTIC': 'bg-purple-100 text-purple-700',
+                'COMPONENT': 'bg-green-100 text-green-700'
+            };
+            return classes[level] || 'bg-gray-100 text-gray-700';
+        },
+
+        getLevelName(level) {
+            const names = { 'BASE': '基础', 'SEMANTIC': '语义', 'COMPONENT': '组件' };
+            return names[level] || level;
+        },
+
+        copyTokenName(name) {
+            navigator.clipboard.writeText(name).then(() => {
+                this.showToast('success', '已复制到剪贴板');
+            });
+        },
+
+        showToast(type, message) {
+            const toastEl = document.querySelector('[x-data="tokenToast()"]');
+            if (toastEl && toastEl.__x) {
+                toastEl.__x.$data.show(type, message);
+            }
+        }
+    };
+}
+
+function editTokenModal() {
+    return {
+        showModal: false,
+        editing: false,
+        saving: false,
+        form: {
+            id: null,
+            tokenName: '',
+            displayName: '',
+            tokenType: 'COLOR',
+            tokenLevel: 'BASE',
+            baseValue: '',
+            inheritsFrom: '',
+            description: ''
+        },
+
+        openEdit(token) {
+            this.editing = true;
+            this.form = {
+                id: token.id,
+                tokenName: token.tokenName,
+                displayName: token.displayName,
+                tokenType: token.tokenType,
+                tokenLevel: token.tokenLevel,
+                baseValue: token.baseValue,
+                inheritsFrom: token.inheritsFrom || '',
+                description: token.description || ''
+            };
+            this.showModal = true;
+        },
+
+        closeModal() {
+            this.showModal = false;
+            this.saving = false;
+        },
+
+        async saveToken() {
+            this.saving = true;
+            try {
+                const method = this.editing ? 'PUT' : 'POST';
+                const url = this.editing ? '/api/tokens/' + this.form.id : '/api/tokens';
+
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify(this.form)
+                });
+
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    this.showToast('success', this.editing ? '保存成功' : '创建成功');
+                    this.closeModal();
+                    const table = document.querySelector('[x-data="tokenTable()"]');
+                    if (table && table.__x) {
+                        table.__x.$data.loadTokens(table.__x.$data.currentPage);
+                    }
+                } else {
+                    this.showToast('error', result.message || '保存失败');
+                }
+            } catch (error) {
+                console.error('Save token error:', error);
+                this.showToast('error', '保存失败，请稍后重试');
+            } finally {
+                this.saving = false;
+            }
+        },
+
+        showToast(type, message) {
+            const toastEl = document.querySelector('[x-data="tokenToast()"]');
+            if (toastEl && toastEl.__x) {
+                toastEl.__x.$data.show(type, message);
+            }
+        }
+    };
+}
+
+function tokenToast() {
+    return {
+        showToast: false,
+        toastType: 'success',
+        toastMessage: '',
+        timer: null,
+
+        show(type, message) {
+            this.toastType = type;
+            this.toastMessage = message;
+            this.showToast = true;
+
+            if (this.timer) clearTimeout(this.timer);
+            this.timer = setTimeout(() => {
+                this.showToast = false;
+            }, 3000);
+        }
+    };
+}
+</script>
 
 </body>
 </html>

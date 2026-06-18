@@ -81,4 +81,11 @@ public class ComponentApiController {
     public Result<List<Component>> getByTokenId(@PathVariable Long tokenId) {
         return Result.success(componentService.getComponentsByTokenId(tokenId));
     }
+
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DEVELOPER')")
+    public Result<Void> delete(@PathVariable Long id) {
+        componentService.deleteComponent(id);
+        return Result.success();
+    }
 }

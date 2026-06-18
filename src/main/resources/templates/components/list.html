@@ -9,13 +9,16 @@
 <main class="ml-64 pt-16 min-h-screen">
     <div class="p-6">
 
-        <div x-data="{ showFilters: false }" class="mb-6">
+        <div x-data="componentList()"
+             x-init="init([(${page.current}), ${page.total}, ${page.pages}])"
+             class="mb-6">
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                 <div class="flex flex-1 items-center gap-4">
                     <div class="relative flex-1 max-w-md">
                         <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="text" x-model="$wire.search"
-                               @input.debounce.300ms="$dispatch('search', $event.target.value)"
+                        <input type="text"
+                               x-model="searchQuery"
+                               @input.debounce.300ms="searchComponents()"
                                class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
                                placeholder="搜索组件名称、描述...">
                     </div>
@@ -23,6 +26,9 @@
                             class="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 flex items-center">
                         <i class="fas fa-filter mr-2"></i>
                         筛选
+                        <span x-show="activeFilters > 0"
+                              class="ml-2 inline-flex items-center justify-center w-5 h-5 bg-indigo-600 text-white text-xs rounded-full"
+                              x-text="activeFilters"></span>
                     </button>
                 </div>
                 <a href="/components/new"
@@ -32,12 +38,12 @@
                 </a>
             </div>
 
-            <div x-show="showFilters" x-cloak
+            <div x-show="showFilters" x-cloak x-transition
                  class="mt-4 p-4 bg-white rounded-lg border border-gray-200 grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">分类</label>
-                    <select th:value="${category}"
-                            @change="window.location.search = 'category=' + $event.target.value"
+                    <select x-model="filterCategory"
+                            @change="applyFilters()"
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
                         <option value="">全部分类</option>
                         <option value="基础组件">基础组件</option>
@@ -50,18 +56,35 @@
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-1">技术栈</label>
-                    <select th:value="${framework}"
-                            @change="window.location.search = 'framework=' + $event.target.value"
+                    <select x-model="filterFramework"
+                            @change="applyFilters()"
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent">
                         <option value="">全部</option>
                         <option value="react">React</option>
                         <option value="vue">Vue</option>
                     </select>
                 </div>
+                <div class="flex items-end">
+                    <button @click="resetFilters()"
+                            class="px-4 py-2 text-gray-600 hover:text-gray-800 text-sm">
+                        <i class="fas fa-redo mr-1"></i>重置筛选
+                    </button>
+                </div>
             </div>
         </div>
 
-        <div class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+        <div x-data="componentTable()"
+             x-init="loadComponents(1)"
+             class="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden relative">
+
+            <div x-show="loading" x-transition.opacity
+                 class="absolute inset-0 bg-white/80 flex items-center justify-center z-10">
+                <div class="flex flex-col items-center">
+                    <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
+                    <p class="mt-2 text-sm text-gray-500">加载中...</p>
+                </div>
+            </div>
+
             <table class="w-full">
                 <thead class="bg-gray-50 border-b border-gray-200">
                     <tr>
@@ -75,88 +98,329 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-200">
-                    <tr th:each="component : ${page.records}" class="hover:bg-gray-50">
-                        <td class="px-6 py-4">
-                            <div class="flex items-center">
-                                <div class="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center mr-3">
-                                    <i class="fas fa-puzzle-piece text-indigo-600"></i>
+                    <template x-for="component in components" :key="component.id">
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-6 py-4">
+                                <div class="flex items-center">
+                                    <div class="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center mr-3">
+                                        <i class="fas fa-puzzle-piece text-indigo-600"></i>
+                                    </div>
+                                    <div>
+                                        <p class="font-medium text-gray-900" x-text="component.displayName">Button</p>
+                                        <p class="text-sm text-gray-500" x-text="component.name">button</p>
+                                    </div>
                                 </div>
-                                <div>
-                                    <p class="font-medium text-gray-900" th:text="${component.displayName}">Button</p>
-                                    <p class="text-sm text-gray-500" th:text="${component.name}">button</p>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span class="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded"
+                                      x-text="component.category">基础组件</span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span x-show="component.framework === 'react'"
+                                      class="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
+                                    <i class="fab fa-react mr-1"></i>React
+                                </span>
+                                <span x-show="component.framework === 'vue'"
+                                      class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
+                                    <i class="fab fa-vuejs mr-1"></i>Vue
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-900"
+                                x-text="component.latestVersion || '-'"
+                                :class="{ 'text-gray-400': !component.latestVersion }">v2.1.0</td>
+                            <td class="px-6 py-4">
+                                <div class="flex items-center">
+                                    <div class="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center mr-2">
+                                        <span class="text-xs text-indigo-600 font-medium"
+                                              x-text="component.maintainer?.nickname?.charAt(0) || 'U'">张</span>
+                                    </div>
+                                    <span class="text-sm text-gray-700"
+                                          x-text="component.maintainer?.nickname || '-'">张三</span>
                                 </div>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <span class="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded" th:text="${component.category}">基础组件</span>
-                        </td>
-                        <td class="px-6 py-4">
-                            <span th:if="${component.framework.code == 'react'}" class="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
-                                <i class="fab fa-react mr-1"></i>React
-                            </span>
-                            <span th:if="${component.framework.code == 'vue'}" class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">
-                                <i class="fab fa-vuejs mr-1"></i>Vue
-                            </span>
-                        </td>
-                        <td class="px-6 py-4 text-sm text-gray-900" th:text="${component.latestVersion ?: '-'}">v2.1.0</td>
-                        <td class="px-6 py-4">
-                            <div class="flex items-center">
-                                <div class="w-6 h-6 bg-indigo-100 rounded-full flex items-center justify-center mr-2">
-                                    <span class="text-xs text-indigo-600 font-medium"
-                                          th:text="${component.maintainer?.nickname?.substring(0,1) ?: 'U'}">张</span>
+                            </td>
+                            <td class="px-6 py-4">
+                                <span x-show="component.published === 1"
+                                      class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">已发布</span>
+                                <span x-show="component.published !== 1"
+                                      class="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">草稿</span>
+                            </td>
+                            <td class="px-6 py-4 text-right">
+                                <div class="flex items-center justify-end space-x-2">
+                                    <a :href="'/components/' + component.id"
+                                       class="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                                       title="查看">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    <a :href="'/components/' + component.id + '/edit'"
+                                       class="p-2 text-gray-400 hover:text-indigo-600 transition-colors"
+                                       title="编辑">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    <button @click="deleteComponent(component.id, component.displayName)"
+                                            class="p-2 text-gray-400 hover:text-red-600 transition-colors"
+                                            title="删除">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
                                 </div>
-                                <span class="text-sm text-gray-700" th:text="${component.maintainer?.nickname ?: '-'}">张三</span>
-                            </div>
-                        </td>
-                        <td class="px-6 py-4">
-                            <span th:if="${component.published == 1}" class="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">已发布</span>
-                            <span th:if="${component.published == 0}" class="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">草稿</span>
-                        </td>
-                        <td class="px-6 py-4 text-right">
-                            <div class="flex items-center justify-end space-x-2">
-                                <a th:href="@{'/components/' + ${component.id}}"
-                                   class="p-2 text-gray-400 hover:text-indigo-600" title="查看">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                <a th:href="@{'/components/' + ${component.id} + '/edit'}"
-                                   class="p-2 text-gray-400 hover:text-indigo-600" title="编辑">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                <button class="p-2 text-gray-400 hover:text-red-600" title="删除">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    <tr th:if="${#lists.isEmpty(page.records)}">
+                            </td>
+                        </tr>
+                    </template>
+                    <tr x-show="components.length === 0 && !loading"
+                        class="animate-fade-in">
                         <td colspan="7" class="px-6 py-12 text-center text-gray-500">
                             <i class="fas fa-inbox text-4xl text-gray-300 mb-3"></i>
-                            <p>暂无组件数据</p>
+                            <p x-text="searchQuery ? '没有找到匹配的组件' : '暂无组件数据'">暂无组件数据</p>
                         </td>
                     </tr>
                 </tbody>
             </table>
 
-            <div th:if="${page.total > 10}" class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
+            <div x-show="total > 0"
+                 class="px-6 py-4 border-t border-gray-200 flex items-center justify-between">
                 <p class="text-sm text-gray-500">
-                    共 <span th:text="${page.total}">0</span> 条记录
+                    共 <span x-text="total">0</span> 条记录，
+                    第 <span x-text="currentPage">1</span> / <span x-text="totalPages">1</span> 页
                 </p>
                 <div class="flex items-center space-x-2">
-                    <a th:href="@{'/components?pageNum=' + (page.current - 1)}"
-                       th:class="${page.current == 1} ? 'opacity-50 cursor-not-allowed' : ''"
-                       class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">上一页</a>
-                    <span class="px-3 py-1 text-sm text-gray-600">
-                        <span th:text="${page.current}">1</span> / <span th:text="${page.pages}">1</span>
-                    </span>
-                    <a th:href="@{'/components?pageNum=' + (page.current + 1)}"
-                       th:class="${page.current == page.pages} ? 'opacity-50 cursor-not-allowed' : ''"
-                       class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50">下一页</a>
+                    <button @click="loadComponents(currentPage - 1)"
+                            :disabled="currentPage === 1"
+                            :class="{ 'opacity-50 cursor-not-allowed': currentPage === 1 }"
+                            class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 transition-colors">
+                        上一页
+                    </button>
+                    <div class="flex items-center space-x-1">
+                        <template x-for="page in visiblePages" :key="page">
+                            <button @click="loadComponents(page)"
+                                    :class="page === currentPage
+                                            ? 'bg-indigo-600 text-white'
+                                            : 'border border-gray-300 hover:bg-gray-50 text-gray-700'"
+                                    class="w-8 h-8 rounded text-sm transition-colors"
+                                    x-text="page">1</button>
+                        </template>
+                    </div>
+                    <button @click="loadComponents(currentPage + 1)"
+                            :disabled="currentPage === totalPages"
+                            :class="{ 'opacity-50 cursor-not-allowed': currentPage === totalPages }"
+                            class="px-3 py-1 border border-gray-300 rounded hover:bg-gray-50 transition-colors">
+                        下一页
+                    </button>
                 </div>
+            </div>
+        </div>
+
+        <div x-data="componentListToast()"
+             x-show="showToast"
+             x-transition:enter="transition ease-out duration-300"
+             x-transition:enter-start="opacity-0 translate-y-4"
+             x-transition:enter-end="opacity-100 translate-y-0"
+             class="fixed bottom-6 right-6 z-50">
+            <div :class="toastType === 'success' ? 'bg-green-600' : 'bg-red-600'"
+                 class="text-white px-6 py-3 rounded-lg shadow-lg flex items-center">
+                <i :class="toastType === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'"
+                   class="fas mr-2"></i>
+                <span x-text="toastMessage">操作成功</span>
             </div>
         </div>
 
     </div>
 </main>
+
+<script>
+function componentList() {
+    return {
+        showFilters: false,
+        searchQuery: '',
+        filterCategory: '',
+        filterFramework: '',
+        activeFilters: 0,
+
+        init() {
+            this.updateActiveFilters();
+        },
+
+        searchComponents() {
+            const tableEl = document.querySelector('[x-data="componentTable()"]');
+            if (tableEl && tableEl.__x) {
+                tableEl.__x.$data.loadComponents(1);
+            }
+        },
+
+        applyFilters() {
+            this.updateActiveFilters();
+            const tableEl = document.querySelector('[x-data="componentTable()"]');
+            if (tableEl && tableEl.__x) {
+                tableEl.__x.$data.loadComponents(1);
+            }
+        },
+
+        resetFilters() {
+            this.filterCategory = '';
+            this.filterFramework = '';
+            this.searchQuery = '';
+            this.updateActiveFilters();
+            const tableEl = document.querySelector('[x-data="componentTable()"]');
+            if (tableEl && tableEl.__x) {
+                tableEl.__x.$data.loadComponents(1);
+            }
+        },
+
+        updateActiveFilters() {
+            this.activeFilters = 0;
+            if (this.filterCategory) this.activeFilters++;
+            if (this.filterFramework) this.activeFilters++;
+        }
+    };
+}
+
+function componentTable() {
+    return {
+        components: [],
+        loading: false,
+        currentPage: 1,
+        totalPages: 1,
+        total: 0,
+        pageSize: 10,
+        visiblePages: [],
+
+        async loadComponents(page) {
+            if (page < 1 || (this.totalPages > 0 && page > this.totalPages)) {
+                return;
+            }
+
+            this.loading = true;
+
+            try {
+                const listState = this.getListState();
+                const params = new URLSearchParams({
+                    pageNum: page,
+                    pageSize: this.pageSize,
+                    keyword: listState.searchQuery || '',
+                    category: listState.filterCategory || '',
+                    framework: listState.filterFramework || ''
+                });
+
+                const response = await fetch('/api/components?' + params.toString(), {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (!response.ok) throw new Error('加载失败');
+
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    this.components = result.data.records || [];
+                    this.currentPage = result.data.current || page;
+                    this.totalPages = result.data.pages || 1;
+                    this.total = result.data.total || 0;
+                    this.calculateVisiblePages();
+                    this.updateUrlState(page);
+                } else {
+                    this.showToast('error', result.message || '加载失败');
+                }
+            } catch (error) {
+                console.error('Load components error:', error);
+                this.showToast('error', '加载失败，请稍后重试');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        getListState() {
+            const listEl = document.querySelector('[x-data="componentList()"]');
+            if (listEl && listEl.__x) {
+                return listEl.__x.$data;
+            }
+            return { searchQuery: '', filterCategory: '', filterFramework: '' };
+        },
+
+        calculateVisiblePages() {
+            const pages = [];
+            const current = this.currentPage;
+            const total = this.totalPages;
+            const delta = 2;
+
+            for (let i = Math.max(1, current - delta); i <= Math.min(total, current + delta); i++) {
+                pages.push(i);
+            }
+
+            this.visiblePages = pages;
+        },
+
+        updateUrlState(page) {
+            const listState = this.getListState();
+            const params = new URLSearchParams();
+            if (page > 1) params.set('pageNum', page);
+            if (listState.searchQuery) params.set('keyword', listState.searchQuery);
+            if (listState.filterCategory) params.set('category', listState.filterCategory);
+            if (listState.filterFramework) params.set('framework', listState.filterFramework);
+
+            const url = params.toString()
+                ? window.location.pathname + '?' + params.toString()
+                : window.location.pathname;
+
+            window.history.replaceState(null, '', url);
+        },
+
+        async deleteComponent(id, name) {
+            if (!confirm(`确定要删除组件「${name}」吗？此操作不可恢复。`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/components/' + id, {
+                    method: 'DELETE',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    this.showToast('success', '删除成功');
+                    this.loadComponents(this.currentPage);
+                } else {
+                    this.showToast('error', result.message || '删除失败');
+                }
+            } catch (error) {
+                console.error('Delete error:', error);
+                this.showToast('error', '删除失败，请稍后重试');
+            }
+        },
+
+        showToast(type, message) {
+            const toastEl = document.querySelector('[x-data="componentListToast()"]');
+            if (toastEl && toastEl.__x) {
+                toastEl.__x.$data.show(type, message);
+            }
+        }
+    };
+}
+
+function componentListToast() {
+    return {
+        showToast: false,
+        toastType: 'success',
+        toastMessage: '',
+        timer: null,
+
+        show(type, message) {
+            this.toastType = type;
+            this.toastMessage = message;
+            this.showToast = true;
+
+            if (this.timer) clearTimeout(this.timer);
+            this.timer = setTimeout(() => {
+                this.showToast = false;
+            }, 3000);
+        }
+    };
+}
+</script>
 
 </body>
 </html>

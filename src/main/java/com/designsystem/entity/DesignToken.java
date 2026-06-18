@@ -38,4 +38,7 @@ public class DesignToken extends BaseEntity {
 
     @TableField(exist = false)
     private List<DesignToken> childTokens;
+
+    @TableField(exist = false)
+    private String resolvedValue;
 }

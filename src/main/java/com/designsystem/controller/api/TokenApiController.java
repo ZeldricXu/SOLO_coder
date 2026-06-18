@@ -98,6 +98,13 @@ public class TokenApiController {
         return Result.success(tokenService.getOverridesByTokenId(id));
     }
 
+    @DeleteMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'DESIGNER')")
+    public Result<Void> delete(@PathVariable Long id) {
+        tokenService.deleteToken(id);
+        return Result.success();
+    }
+
     private String getContentType(ExportFormat format) {
         return switch (format) {
             case CSS -> "text/css";

@@ -90,3 +90,8 @@ logging:
     root: INFO
     com.designsystem: DEBUG
     org.springframework.security: DEBUG
+
+jwt:
+  secret: design-system-secret-key-should-be-at-least-256-bits-long-for-production
+  expiration:
+    hours: 24

@@ -1,5 +1,6 @@
 package com.designsystem.common.enums;
 
+import com.baomidou.mybatisplus.annotation.EnumValue;
 import lombok.Getter;
 
 @Getter
@@ -8,6 +9,7 @@ public enum TokenLevel {
     SEMANTIC("semantic", "语义化令牌"),
     COMPONENT("component", "组件级令牌");
 
+    @EnumValue
     private final String code;
     private final String name;
 

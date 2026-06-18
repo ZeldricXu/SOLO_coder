@@ -1,5 +1,6 @@
 package com.designsystem.common.enums;
 
+import com.baomidou.mybatisplus.annotation.EnumValue;
 import lombok.Getter;
 
 @Getter
@@ -9,6 +10,7 @@ public enum ApprovalStatus {
     REJECTED("rejected", "已拒绝"),
     CANCELLED("cancelled", "已取消");
 
+    @EnumValue
     private final String code;
     private final String name;
 

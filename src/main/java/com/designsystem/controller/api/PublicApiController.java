@@ -54,6 +54,13 @@ public class PublicApiController {
         return tokenService.exportTokens(ExportFormat.JSON, null, null);
     }
 
+    @GetMapping("/tokens/export/{format}")
+    public String exportTokens(@PathVariable ExportFormat format,
+                               @RequestParam(required = false) String tokenType,
+                               @RequestParam(required = false) String tokenLevel) {
+        return tokenService.exportTokens(format, tokenType, tokenLevel);
+    }
+
     @GetMapping("/tokens/{name}")
     public Result<?> getTokenByName(@PathVariable String name) {
         return Result.success(tokenService.getTokenByName(name));
