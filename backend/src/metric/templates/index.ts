@@ -1,0 +1,105 @@
+import { Aggregation, TimeWindow } from '@prisma/client';
+
+export interface MetricTemplate {
+  id: string;
+  name: string;
+  description: string;
+  category: 'ECOMMERCE' | 'ADVERTISING' | 'MEMBERSHIP';
+  sqlTemplate: string;
+  aggregation: Aggregation;
+  timeWindow: TimeWindow;
+  defaultDimensions: string[];
+}
+
+export const metricTemplates: MetricTemplate[] = [
+  {
+    id: 'ecommerce-gmv',
+    name: 'GMV (Gross Merchandise Value)',
+    description: 'Total transaction value across all orders within the selected time range',
+    category: 'ECOMMERCE',
+    sqlTemplate: `SELECT {{dimensions}}, SUM(payment_amount) AS gmv FROM orders WHERE order_status = 'completed' AND created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.SUM,
+    timeWindow: TimeWindow.DAY,
+    defaultDimensions: ['product_category'],
+  },
+  {
+    id: 'ecommerce-order-count',
+    name: 'Order Count',
+    description: 'Total number of completed orders within the selected time range',
+    category: 'ECOMMERCE',
+    sqlTemplate: `SELECT {{dimensions}}, COUNT(*) AS order_count FROM orders WHERE order_status = 'completed' AND created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.COUNT,
+    timeWindow: TimeWindow.DAY,
+    defaultDimensions: ['product_category', 'channel'],
+  },
+  {
+    id: 'ecommerce-conversion-rate',
+    name: 'Conversion Rate',
+    description: 'Percentage of visitors who completed a purchase out of total visitors',
+    category: 'ECOMMERCE',
+    sqlTemplate: `SELECT {{dimensions}}, COUNT(DISTINCT o.user_id) * 1.0 / NULLIF(COUNT(DISTINCT v.user_id), 0) AS conversion_rate FROM visits v LEFT JOIN orders o ON o.user_id = v.user_id AND o.order_status = 'completed' AND o.created_at BETWEEN '{{startDate}}' AND '{{endDate}}' WHERE v.created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.AVG,
+    timeWindow: TimeWindow.DAY,
+    defaultDimensions: ['channel', 'landing_page'],
+  },
+  {
+    id: 'ad-revenue',
+    name: 'Ad Revenue',
+    description: 'Total advertising revenue generated within the selected time range',
+    category: 'ADVERTISING',
+    sqlTemplate: `SELECT {{dimensions}}, SUM(revenue) AS ad_revenue FROM ad_impressions WHERE created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.SUM,
+    timeWindow: TimeWindow.DAY,
+    defaultDimensions: ['ad_platform', 'campaign'],
+  },
+  {
+    id: 'ad-cpm',
+    name: 'CPM (Cost Per Mille)',
+    description: 'Average cost per thousand ad impressions',
+    category: 'ADVERTISING',
+    sqlTemplate: `SELECT {{dimensions}}, SUM(cost) * 1000.0 / NULLIF(SUM(impressions), 0) AS cpm FROM ad_campaigns WHERE created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.AVG,
+    timeWindow: TimeWindow.DAY,
+    defaultDimensions: ['ad_platform', 'campaign'],
+  },
+  {
+    id: 'ad-click-rate',
+    name: 'Click-Through Rate',
+    description: 'Percentage of ad impressions that resulted in a click',
+    category: 'ADVERTISING',
+    sqlTemplate: `SELECT {{dimensions}}, SUM(clicks) * 1.0 / NULLIF(SUM(impressions), 0) AS click_rate FROM ad_campaigns WHERE created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.AVG,
+    timeWindow: TimeWindow.DAY,
+    defaultDimensions: ['ad_platform', 'creative_type'],
+  },
+  {
+    id: 'membership-count',
+    name: 'Active Member Count',
+    description: 'Total number of active members within the selected time range',
+    category: 'MEMBERSHIP',
+    sqlTemplate: `SELECT {{dimensions}}, COUNT(DISTINCT user_id) AS member_count FROM memberships WHERE status = 'active' AND created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.COUNT,
+    timeWindow: TimeWindow.MONTH,
+    defaultDimensions: ['membership_tier', 'region'],
+  },
+  {
+    id: 'membership-renewal-rate',
+    name: 'Renewal Rate',
+    description: 'Percentage of expiring memberships that were renewed within the period',
+    category: 'MEMBERSHIP',
+    sqlTemplate: `SELECT {{dimensions}}, SUM(CASE WHEN renewed = 1 THEN 1 ELSE 0 END) * 1.0 / NULLIF(COUNT(*), 0) AS renewal_rate FROM membership_periods WHERE expiry_date BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.AVG,
+    timeWindow: TimeWindow.MONTH,
+    defaultDimensions: ['membership_tier'],
+  },
+  {
+    id: 'membership-arpu',
+    name: 'ARPU (Average Revenue Per User)',
+    description: 'Average revenue generated per active member within the selected time range',
+    category: 'MEMBERSHIP',
+    sqlTemplate: `SELECT {{dimensions}}, SUM(payment_amount) * 1.0 / NULLIF(COUNT(DISTINCT user_id), 0) AS arpu FROM membership_payments WHERE status = 'completed' AND created_at BETWEEN '{{startDate}}' AND '{{endDate}}' {{groupBy}}`,
+    aggregation: Aggregation.AVG,
+    timeWindow: TimeWindow.MONTH,
+    defaultDimensions: ['membership_tier', 'region'],
+  },
+];

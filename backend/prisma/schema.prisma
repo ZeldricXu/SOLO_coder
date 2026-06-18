@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  TENANT_ADMIN
+  EDITOR
+  VIEWER
+}
+
+enum DataSourceType {
+  MYSQL
+  CLICKHOUSE
+  POSTGRESQL
+  HTTP_API
+}
+
+enum MetricType {
+  SQL
+  TEMPLATE
+}
+
+enum Aggregation {
+  SUM
+  COUNT
+  AVG
+  MAX
+  MIN
+  NONE
+}
+
+enum TimeWindow {
+  HOUR
+  DAY
+  WEEK
+  MONTH
+}
+
+enum WidgetType {
+  LINE_CHART
+  BAR_CHART
+  PIE_CHART
+  TABLE
+  NUMBER_CARD
+  FUNNEL
+}
+
+enum AlertType {
+  THRESHOLD
+  FLUCTUATION
+  STREAM_BREAK
+}
+
+enum AlertChannelType {
+  EMAIL
+  WECOM
+  DINGTALK
+}
+
+model Tenant {
+  id            String         @id @default(cuid())
+  name          String
+  slug          String         @unique
+  businessLines BusinessLine[]
+  users         User[]
+  auditLogs    AuditLog[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([slug])
+}
+
+model BusinessLine {
+  id           String       @id @default(cuid())
+  name         String
+  code         String       @unique
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  dataSources  DataSource[]
+  dashboards   Dashboard[]
+  metrics      Metric[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([tenantId])
+  @@index([code])
+}
+
+model User {
+  id         String     @id @default(cuid())
+  email      String     @unique
+  password   String
+  name       String
+  role       Role
+  tenantId   String?
+  tenant     Tenant?    @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  dashboards Dashboard[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([tenantId])
+  @@index([email])
+  @@index([role])
+}
+
+model DataSource {
+  id                  String       @id @default(cuid())
+  name                String
+  type                DataSourceType
+  config              Json
+  poolSize            Int          @default(10)
+  queryTimeout        Int          @default(30000)
+  businessLineId      String
+  businessLine        BusinessLine @relation(fields: [businessLineId], references: [id], onDelete: Cascade)
+  metrics             Metric[]
+  isActive             Boolean      @default(true)
+  lastConnectionTest  DateTime?
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+
+  @@index([businessLineId])
+  @@index([type])
+  @@index([isActive])
+}
+
+model Metric {
+  id              String       @id @default(cuid())
+  name            String
+  description     String
+  type            MetricType
+  sqlTemplate     String?
+  templateId      String?
+  aggregation     Aggregation  @default(NONE)
+  timeWindow      TimeWindow   @default(DAY)
+  dimensions      Json
+  dataSourceId    String
+  dataSource      DataSource   @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  businessLineId  String
+  businessLine    BusinessLine @relation(fields: [businessLineId], references: [id], onDelete: Cascade)
+  alerts          AlertRule[]
+  widgets         Widget[]
+  isAutoCompare   Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([dataSourceId])
+  @@index([businessLineId])
+  @@index([aggregation])
+  @@index([timeWindow])
+}
+
+model Dashboard {
+  id              String       @id @default(cuid())
+  name            String
+  description     String
+  layout          Json
+  globalFilters   Json
+  businessLineId  String
+  businessLine    BusinessLine @relation(fields: [businessLineId], references: [id], onDelete: Cascade)
+  widgets         Widget[]
+  createdBy       String
+  creator         User         @relation(fields: [createdBy], references: [id], onDelete: Cascade)
+  isPublic        Boolean      @default(false)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@index([businessLineId])
+  @@index([createdBy])
+  @@index([isPublic])
+}
+
+model Widget {
+  id              String     @id @default(cuid())
+  dashboardId     String
+  dashboard       Dashboard  @relation(fields: [dashboardId], references: [id], onDelete: Cascade)
+  type            WidgetType
+  title           String
+  metricId        String?
+  metric          Metric?    @relation(fields: [metricId], references: [id], onDelete: SetNull)
+  config          Json
+  layout          Json
+  filters         Json?
+  linkedWidgetIds Json
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([dashboardId])
+  @@index([metricId])
+  @@index([type])
+}
+
+model AlertRule {
+  id                 String       @id @default(cuid())
+  name               String
+  type               AlertType
+  condition          Json
+  metricId           String
+  metric             Metric      @relation(fields: [metricId], references: [id], onDelete: Cascade)
+  channels           Json
+  silenceMinutes     Int          @default(60)
+  escalationMinutes  Int          @default(0)
+  escalationChannels Json?
+  isActive           Boolean      @default(true)
+  lastTriggeredAt    DateTime?
+  records            AlertRecord[]
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([metricId])
+  @@index([isActive])
+  @@index([type])
+}
+
+model AlertRecord {
+  id             String    @id @default(cuid())
+  ruleId         String
+  rule           AlertRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  value          Float
+  message        String
+  notified       Boolean   @default(false)
+  notifiedAt     DateTime?
+  acknowledged   Boolean   @default(false)
+  acknowledgedBy String?
+  acknowledgedAt DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([ruleId])
+  @@index([notified])
+  @@index([acknowledged])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  userId     String
+  userEmail  String
+  action     String
+  resource   String
+  resourceId String?
+  details    Json?
+  tenantId   String?
+  tenant     Tenant?  @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+  ip         String
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+}

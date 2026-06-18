@@ -1,0 +1,252 @@
+import { AlertService } from './alert.service';
+import { CreateAlertRuleDto } from './dto/create-alert-rule.dto';
+import { UpdateAlertRuleDto } from './dto/update-alert-rule.dto';
+import { AcknowledgeDto } from './dto/acknowledge.dto';
+export declare class AlertController {
+    private readonly alertService;
+    constructor(alertService: AlertService);
+    createRule(dto: CreateAlertRuleDto): Promise<{
+        metric: {
+            name: string;
+            type: import(".prisma/client").$Enums.MetricType;
+            businessLineId: string;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            description: string;
+            sqlTemplate: string | null;
+            templateId: string | null;
+            aggregation: import(".prisma/client").$Enums.Aggregation;
+            timeWindow: import(".prisma/client").$Enums.TimeWindow;
+            dimensions: import("@prisma/client/runtime/library").JsonValue;
+            dataSourceId: string;
+            isAutoCompare: boolean;
+        };
+    } & {
+        name: string;
+        type: import(".prisma/client").$Enums.AlertType;
+        id: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+        metricId: string;
+        condition: import("@prisma/client/runtime/library").JsonValue;
+        channels: import("@prisma/client/runtime/library").JsonValue;
+        silenceMinutes: number;
+        escalationMinutes: number;
+        escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        lastTriggeredAt: Date | null;
+    }>;
+    findRules(metricId?: string, businessLineId?: string): Promise<({
+        metric: {
+            name: string;
+            type: import(".prisma/client").$Enums.MetricType;
+            businessLineId: string;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            description: string;
+            sqlTemplate: string | null;
+            templateId: string | null;
+            aggregation: import(".prisma/client").$Enums.Aggregation;
+            timeWindow: import(".prisma/client").$Enums.TimeWindow;
+            dimensions: import("@prisma/client/runtime/library").JsonValue;
+            dataSourceId: string;
+            isAutoCompare: boolean;
+        };
+    } & {
+        name: string;
+        type: import(".prisma/client").$Enums.AlertType;
+        id: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+        metricId: string;
+        condition: import("@prisma/client/runtime/library").JsonValue;
+        channels: import("@prisma/client/runtime/library").JsonValue;
+        silenceMinutes: number;
+        escalationMinutes: number;
+        escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        lastTriggeredAt: Date | null;
+    })[]>;
+    findOneRule(id: string): Promise<{
+        metric: {
+            name: string;
+            type: import(".prisma/client").$Enums.MetricType;
+            businessLineId: string;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            description: string;
+            sqlTemplate: string | null;
+            templateId: string | null;
+            aggregation: import(".prisma/client").$Enums.Aggregation;
+            timeWindow: import(".prisma/client").$Enums.TimeWindow;
+            dimensions: import("@prisma/client/runtime/library").JsonValue;
+            dataSourceId: string;
+            isAutoCompare: boolean;
+        };
+    } & {
+        name: string;
+        type: import(".prisma/client").$Enums.AlertType;
+        id: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+        metricId: string;
+        condition: import("@prisma/client/runtime/library").JsonValue;
+        channels: import("@prisma/client/runtime/library").JsonValue;
+        silenceMinutes: number;
+        escalationMinutes: number;
+        escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        lastTriggeredAt: Date | null;
+    }>;
+    updateRule(id: string, dto: UpdateAlertRuleDto): Promise<{
+        metric: {
+            name: string;
+            type: import(".prisma/client").$Enums.MetricType;
+            businessLineId: string;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            description: string;
+            sqlTemplate: string | null;
+            templateId: string | null;
+            aggregation: import(".prisma/client").$Enums.Aggregation;
+            timeWindow: import(".prisma/client").$Enums.TimeWindow;
+            dimensions: import("@prisma/client/runtime/library").JsonValue;
+            dataSourceId: string;
+            isAutoCompare: boolean;
+        };
+    } & {
+        name: string;
+        type: import(".prisma/client").$Enums.AlertType;
+        id: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+        metricId: string;
+        condition: import("@prisma/client/runtime/library").JsonValue;
+        channels: import("@prisma/client/runtime/library").JsonValue;
+        silenceMinutes: number;
+        escalationMinutes: number;
+        escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        lastTriggeredAt: Date | null;
+    }>;
+    removeRule(id: string): Promise<{
+        name: string;
+        type: import(".prisma/client").$Enums.AlertType;
+        id: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+        metricId: string;
+        condition: import("@prisma/client/runtime/library").JsonValue;
+        channels: import("@prisma/client/runtime/library").JsonValue;
+        silenceMinutes: number;
+        escalationMinutes: number;
+        escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        lastTriggeredAt: Date | null;
+    }>;
+    toggleRule(id: string): Promise<{
+        metric: {
+            name: string;
+            type: import(".prisma/client").$Enums.MetricType;
+            businessLineId: string;
+            id: string;
+            createdAt: Date;
+            updatedAt: Date;
+            description: string;
+            sqlTemplate: string | null;
+            templateId: string | null;
+            aggregation: import(".prisma/client").$Enums.Aggregation;
+            timeWindow: import(".prisma/client").$Enums.TimeWindow;
+            dimensions: import("@prisma/client/runtime/library").JsonValue;
+            dataSourceId: string;
+            isAutoCompare: boolean;
+        };
+    } & {
+        name: string;
+        type: import(".prisma/client").$Enums.AlertType;
+        id: string;
+        isActive: boolean;
+        createdAt: Date;
+        updatedAt: Date;
+        metricId: string;
+        condition: import("@prisma/client/runtime/library").JsonValue;
+        channels: import("@prisma/client/runtime/library").JsonValue;
+        silenceMinutes: number;
+        escalationMinutes: number;
+        escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        lastTriggeredAt: Date | null;
+    }>;
+    findRecords(ruleId?: string, acknowledged?: string): Promise<({
+        rule: {
+            metric: {
+                name: string;
+                type: import(".prisma/client").$Enums.MetricType;
+                businessLineId: string;
+                id: string;
+                createdAt: Date;
+                updatedAt: Date;
+                description: string;
+                sqlTemplate: string | null;
+                templateId: string | null;
+                aggregation: import(".prisma/client").$Enums.Aggregation;
+                timeWindow: import(".prisma/client").$Enums.TimeWindow;
+                dimensions: import("@prisma/client/runtime/library").JsonValue;
+                dataSourceId: string;
+                isAutoCompare: boolean;
+            };
+        } & {
+            name: string;
+            type: import(".prisma/client").$Enums.AlertType;
+            id: string;
+            isActive: boolean;
+            createdAt: Date;
+            updatedAt: Date;
+            metricId: string;
+            condition: import("@prisma/client/runtime/library").JsonValue;
+            channels: import("@prisma/client/runtime/library").JsonValue;
+            silenceMinutes: number;
+            escalationMinutes: number;
+            escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+            lastTriggeredAt: Date | null;
+        };
+    } & {
+        value: number;
+        message: string;
+        id: string;
+        createdAt: Date;
+        ruleId: string;
+        notified: boolean;
+        notifiedAt: Date | null;
+        acknowledged: boolean;
+        acknowledgedBy: string | null;
+        acknowledgedAt: Date | null;
+    })[]>;
+    acknowledgeRecord(id: string, dto: AcknowledgeDto): Promise<{
+        value: number;
+        message: string;
+        id: string;
+        createdAt: Date;
+        ruleId: string;
+        notified: boolean;
+        notifiedAt: Date | null;
+        acknowledged: boolean;
+        acknowledgedBy: string | null;
+        acknowledgedAt: Date | null;
+    }>;
+    getHistory(id: string): Promise<{
+        value: number;
+        message: string;
+        id: string;
+        createdAt: Date;
+        ruleId: string;
+        notified: boolean;
+        notifiedAt: Date | null;
+        acknowledged: boolean;
+        acknowledgedBy: string | null;
+        acknowledgedAt: Date | null;
+    }[]>;
+}
