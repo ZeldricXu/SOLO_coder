@@ -52,6 +52,8 @@ describe('DataSourceService', () => {
   };
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+
     mockConnector = {
       connect: jest.fn().mockResolvedValue(undefined),
       query: jest.fn().mockResolvedValue({

@@ -4,13 +4,17 @@ import { RealtimeService } from './realtime.service';
 import { RealtimeGateway } from './realtime.gateway';
 
 jest.mock('ioredis', () => {
-  return jest.fn().mockImplementation(() => ({
+  const mockRedis = {
     publish: jest.fn().mockResolvedValue(1),
     subscribe: jest.fn().mockResolvedValue(undefined),
     unsubscribe: jest.fn().mockResolvedValue(undefined),
     quit: jest.fn().mockResolvedValue(undefined),
     on: jest.fn(),
-  }));
+  };
+  return {
+    __esModule: true,
+    default: jest.fn().mockImplementation(() => mockRedis),
+  };
 });
 
 describe('RealtimeService', () => {
@@ -51,15 +55,21 @@ describe('RealtimeService', () => {
     service = module.get<RealtimeService>(RealtimeService);
     configService = module.get<ConfigService>(ConfigService);
     gateway = module.get<RealtimeGateway>(RealtimeGateway);
+
+    await service.onModuleInit();
   });
 
   afterEach(() => {
     jest.useRealTimers();
-    const throttleMap = (service as any).throttleMap as Map<string, any>;
-    for (const [, entry] of throttleMap) {
-      if (entry.timer) clearTimeout(entry.timer);
+    if (service) {
+      const throttleMap = (service as any).throttleMap as Map<string, any>;
+      if (throttleMap) {
+        for (const [, entry] of throttleMap) {
+          if (entry.timer) clearTimeout(entry.timer);
+        }
+        throttleMap.clear();
+      }
     }
-    throttleMap.clear();
   });
 
   describe('pushToRoom - first push', () => {

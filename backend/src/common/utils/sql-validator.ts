@@ -10,9 +10,17 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
   /\bREVOKE\b/gi,
 ];
 
+function stripComments(sql: string): string {
+  let result = sql;
+  result = result.replace(/\/\*[\s\S]*?\*\//g, ' ');
+  result = result.replace(/--[^\n]*/g, ' ');
+  result = result.replace(/#[^\n]*/g, ' ');
+  return result;
+}
+
 export class SqlValidator {
   static validate(sql: string): { safe: boolean; reason?: string } {
-    const normalized = sql.trim();
+    const normalized = stripComments(sql.trim());
 
     for (const pattern of FORBIDDEN_PATTERNS) {
       pattern.lastIndex = 0;
