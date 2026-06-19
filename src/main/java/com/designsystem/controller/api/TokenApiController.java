@@ -98,11 +98,19 @@ public class TokenApiController {
         return Result.success(tokenService.getOverridesByTokenId(id));
     }
 
-    @DeleteMapping("/{id}")
+    @PostMapping("/cache/rebuild")
     @PreAuthorize("hasAnyRole('ADMIN', 'DESIGNER')")
-    public Result<Void> delete(@PathVariable Long id) {
-        tokenService.deleteToken(id);
+    public Result<Void> rebuildCache() {
+        tokenService.rebuildCache();
         return Result.success();
+    }
+
+    @GetMapping("/cache/status")
+    public Result<Map<String, Object>> getCacheStatus() {
+        Map<String, Object> status = new java.util.HashMap<>();
+        status.put("enabled", true);
+        status.put("resolvedCount", tokenService.getAllResolvedTokenValues().size());
+        return Result.success(status);
     }
 
     private String getContentType(ExportFormat format) {

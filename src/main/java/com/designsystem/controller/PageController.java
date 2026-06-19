@@ -2,6 +2,8 @@ package com.designsystem.controller;
 
 import com.designsystem.common.PageQuery;
 import com.designsystem.service.*;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -15,13 +17,16 @@ public class PageController {
     private final DesignTokenService tokenService;
     private final ApprovalService approvalService;
     private final ChangeTrackingService changeService;
+    private final ObjectMapper objectMapper;
 
     public PageController(ComponentService componentService, DesignTokenService tokenService,
-                          ApprovalService approvalService, ChangeTrackingService changeService) {
+                          ApprovalService approvalService, ChangeTrackingService changeService,
+                          ObjectMapper objectMapper) {
         this.componentService = componentService;
         this.tokenService = tokenService;
         this.approvalService = approvalService;
         this.changeService = changeService;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping("/login")
@@ -39,9 +44,21 @@ public class PageController {
     public String components(Model model, PageQuery query,
                              @RequestParam(required = false) String category,
                              @RequestParam(required = false) String framework) {
-        model.addAttribute("page", componentService.getComponentPage(query, category, framework));
+        var page = componentService.getComponentPage(query, category, framework);
+        model.addAttribute("page", page);
         model.addAttribute("category", category);
         model.addAttribute("framework", framework);
+        try {
+            model.addAttribute("componentsJson", objectMapper.writeValueAsString(page.getRecords()));
+            model.addAttribute("totalJson", page.getTotal());
+            model.addAttribute("currentPageJson", page.getCurrent());
+            model.addAttribute("totalPagesJson", page.getPages());
+        } catch (JsonProcessingException e) {
+            model.addAttribute("componentsJson", "[]");
+            model.addAttribute("totalJson", 0);
+            model.addAttribute("currentPageJson", 1);
+            model.addAttribute("totalPagesJson", 1);
+        }
         return "components/list";
     }
 
@@ -78,11 +95,26 @@ public class PageController {
                          @RequestParam(required = false) String tokenType,
                          @RequestParam(required = false) String tokenLevel,
                          @RequestParam(required = false) String category) {
-        model.addAttribute("page", tokenService.getTokenPage(query, tokenType, tokenLevel, category));
-        model.addAttribute("tokenTree", tokenService.getTokenTree());
+        var page = tokenService.getTokenPage(query, tokenType, tokenLevel, category);
+        var tokenTree = tokenService.getTokenTree();
+        model.addAttribute("page", page);
+        model.addAttribute("tokenTree", tokenTree);
         model.addAttribute("tokenType", tokenType);
         model.addAttribute("tokenLevel", tokenLevel);
         model.addAttribute("category", category);
+        try {
+            model.addAttribute("tokensJson", objectMapper.writeValueAsString(page.getRecords()));
+            model.addAttribute("tokenTreeJson", objectMapper.writeValueAsString(tokenTree));
+            model.addAttribute("totalJson", page.getTotal());
+            model.addAttribute("currentPageJson", page.getCurrent());
+            model.addAttribute("totalPagesJson", page.getPages());
+        } catch (JsonProcessingException e) {
+            model.addAttribute("tokensJson", "[]");
+            model.addAttribute("tokenTreeJson", "[]");
+            model.addAttribute("totalJson", 0);
+            model.addAttribute("currentPageJson", 1);
+            model.addAttribute("totalPagesJson", 1);
+        }
         return "tokens/list";
     }
 
@@ -102,8 +134,14 @@ public class PageController {
 
     @GetMapping("/tokens/{id}/edit")
     public String editToken(@PathVariable Long id, Model model) {
-        model.addAttribute("token", tokenService.getTokenById(id));
+        var token = tokenService.getTokenById(id);
+        model.addAttribute("token", token);
         model.addAttribute("parentTokens", tokenService.getTokenTree());
+        try {
+            model.addAttribute("tokenJson", objectMapper.writeValueAsString(token));
+        } catch (JsonProcessingException e) {
+            model.addAttribute("tokenJson", "{}");
+        }
         return "tokens/form";
     }
 
@@ -141,5 +179,10 @@ public class PageController {
     public String preview(@PathVariable Long versionId, Model model) {
         model.addAttribute("versionId", versionId);
         return "preview/iframe";
+    }
+
+    @GetMapping("/docs/search")
+    public String docSearch() {
+        return "docs/search";
     }
 }

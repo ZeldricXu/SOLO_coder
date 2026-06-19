@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="fragments/layout :: head('文档搜索')"></head>
+<body class="bg-gray-50">
+
+<div th:replace="fragments/layout :: sidebar"></div>
+<div th:replace="fragments/layout :: header('文档搜索')"></div>
+
+<main class="ml-64 pt-16 min-h-screen">
+    <div class="p-6">
+
+        <div x-data="docSearcher()" x-init="init()">
+
+            <div class="max-w-4xl mx-auto mb-8">
+                <div class="relative">
+                    <i class="fas fa-search absolute left-5 top-1/2 -translate-y-1/2 text-gray-400 text-lg"></i>
+                    <input type="text"
+                           x-model="query"
+                           @input.debounce.200ms="search()"
+                           @keydown.escape="clearSearch()"
+                           :class="{'animate-pulse': searching}"
+                           autofocus
+                           class="w-full pl-14 pr-12 py-4 text-lg border-2 border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition"
+                           placeholder="搜索组件文档、API、示例代码...">
+                    <button x-show="query" @click="clearSearch()"
+                            class="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                        <i class="fas fa-times-circle text-xl"></i>
+                    </button>
+                </div>
+
+                <div class="mt-3 flex items-center justify-between text-sm text-gray-500">
+                    <div class="flex items-center space-x-4">
+                        <span x-show="!searching && query">
+                            找到 <span class="font-semibold text-gray-700" x-text="totalResults">0</span> 个结果
+                            <span x-show="tookMs > 0">，耗时 <span x-text="tookMs">0</span>ms</span>
+                        </span>
+                        <span x-show="searching" class="flex items-center">
+                            <i class="fas fa-spinner fa-spin mr-2 text-indigo-600"></i>
+                            正在搜索...
+                        </span>
+                        <span x-show="!query">输入关键词开始搜索</span>
+                    </div>
+                    <div class="flex items-center space-x-3">
+                        <span>筛选:</span>
+                        <select x-model="filterFramework" @change="search()"
+                                class="text-sm border border-gray-300 rounded px-2 py-1">
+                            <option value="">全部框架</option>
+                            <option value="react">React</option>
+                            <option value="vue">Vue</option>
+                        </select>
+                        <select x-model="filterType" @change="search()"
+                                class="text-sm border border-gray-300 rounded px-2 py-1">
+                            <option value="">全部类型</option>
+                            <option value="api">API文档</option>
+                            <option value="guide">使用指南</option>
+                            <option value="example">示例代码</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="recentSearches.length > 0 && !query && !results.length"
+                 class="max-w-4xl mx-auto mb-8">
+                <h3 class="text-sm font-medium text-gray-500 mb-3">最近搜索</h3>
+                <div class="flex flex-wrap gap-2">
+                    <button x-for="(term, idx) in recentSearches" :key="idx"
+                            @click="query = term; search()"
+                            class="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition">
+                        <i class="fas fa-clock text-xs mr-1 text-gray-400"></i>
+                        <span x-text="term"></span>
+                    </button>
+                    <button @click="clearRecent()" class="text-xs text-gray-400 hover:text-gray-600 px-2">
+                        清除
+                    </button>
+                </div>
+            </div>
+
+            <div x-show="!query && !results.length && popularSearches.length > 0"
+                 class="max-w-4xl mx-auto mb-8">
+                <h3 class="text-sm font-medium text-gray-500 mb-3">热门搜索</h3>
+                <div class="flex flex-wrap gap-2">
+                    <button x-for="(term, idx) in popularSearches" :key="idx"
+                            @click="query = term; search()"
+                            class="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-sm text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 hover:border-indigo-200 transition">
+                        <span x-show="idx < 3" class="mr-1">🔥</span>
+                        <span x-text="term"></span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="max-w-4xl mx-auto">
+                <div x-show="searchError" class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center">
+                    <i class="fas fa-exclamation-triangle text-red-500 mr-3"></i>
+                    <div>
+                        <p class="text-red-700 font-medium">搜索出错</p>
+                        <p class="text-red-600 text-sm mt-1" x-text="searchError"></p>
+                    </div>
+                    <button @click="searchError = ''; search()" class="ml-auto text-red-600 hover:text-red-800 text-sm">
+                        重试
+                    </button>
+                </div>
+
+                <div x-show="results.length > 0" class="space-y-4">
+                    <template x-for="result in results" :key="result.id">
+                        <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-5 hover:shadow-md hover:border-indigo-200 transition cursor-pointer"
+                             @click="openResult(result)">
+                            <div class="flex items-start justify-between">
+                                <div class="flex-1">
+                                    <div class="flex items-center space-x-2 mb-2">
+                                        <span :class="getTypeBadgeClass(result.docType)"
+                                              class="px-2 py-0.5 rounded text-xs font-medium"
+                                              x-text="getTypeLabel(result.docType)">API</span>
+                                        <span x-show="result.framework"
+                                              :class="result.framework === 'react' ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'"
+                                              class="px-2 py-0.5 rounded text-xs">
+                                            <i :class="result.framework === 'react' ? 'fab fa-react' : 'fab fa-vuejs'" class="mr-1"></i>
+                                            <span x-text="result.framework?.toUpperCase()"></span>
+                                        </span>
+                                        <span x-show="result.componentName"
+                                              class="text-xs text-gray-500">
+                                            组件: <span class="font-medium text-gray-700" x-text="result.componentName"></span>
+                                        </span>
+                                    </div>
+                                    <h3 class="text-lg font-semibold text-gray-900 mb-2">
+                                        <span x-html="highlightText(result.title, query)"></span>
+                                    </h3>
+                                    <p class="text-gray-600 text-sm line-clamp-2">
+                                        <span x-html="highlightText(truncate(result.content, 200), query)"></span>
+                                    </p>
+                                </div>
+                                <div class="ml-4 flex-shrink-0">
+                                    <i class="fas fa-chevron-right text-gray-400"></i>
+                                </div>
+                            </div>
+                            <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                                <div class="flex items-center space-x-4">
+                                    <span>
+                                        <i class="far fa-clock mr-1"></i>
+                                        <span x-text="formatDate(result.updatedAt)"></span>
+                                    </span>
+                                    <span x-show="result.sortOrder">
+                                        <i class="fas fa-sort-amount-down mr-1"></i>
+                                        排序: <span x-text="result.sortOrder"></span>
+                                    </span>
+                                </div>
+                                <div x-show="result.score" class="text-indigo-600">
+                                    <i class="fas fa-star text-xs mr-0.5"></i>
+                                    <span x-text="Math.round(result.score * 100) + '%'"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <div x-show="query && !searching && results.length === 0 && !searchError"
+                     class="text-center py-16">
+                    <i class="fas fa-search text-5xl text-gray-300 mb-4"></i>
+                    <h3 class="text-lg font-medium text-gray-700 mb-2">没有找到相关结果</h3>
+                    <p class="text-gray-500 mb-4">试试其他关键词，或者检查拼写是否正确</p>
+                    <div class="flex flex-wrap justify-center gap-2">
+                        <button x-for="suggestion in suggestions" :key="suggestion"
+                                @click="query = suggestion; search()"
+                                class="px-3 py-1 text-sm text-indigo-600 bg-indigo-50 rounded-full hover:bg-indigo-100 transition">
+                            <i class="fas fa-lightbulb text-xs mr-1"></i>
+                            <span x-text="suggestion"></span>
+                        </button>
+                    </div>
+                </div>
+
+                <div x-show="totalResults > results.length && results.length > 0"
+                     class="mt-6 text-center">
+                    <button @click="loadMore()"
+                            :disabled="loadingMore"
+                            class="px-6 py-2.5 bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 disabled:opacity-50 transition">
+                        <i x-show="loadingMore" class="fas fa-spinner fa-spin mr-2"></i>
+                        加载更多结果 (<span x-text="totalResults - results.length"></span> 剩余)
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </div>
+</main>
+
+<script>
+function docSearcher() {
+    return {
+        query: '',
+        results: [],
+        totalResults: 0,
+        page: 0,
+        pageSize: 10,
+        searching: false,
+        loadingMore: false,
+        searchError: '',
+        tookMs: 0,
+        filterFramework: '',
+        filterType: '',
+        recentSearches: [],
+        popularSearches: ['Button', '表单组件', '颜色令牌', 'Dialog弹窗', 'Table表格', 'Flex布局'],
+        suggestions: ['Button按钮', 'Input输入框', 'Select选择器', 'Modal弹窗'],
+
+        init() {
+            try {
+                const saved = localStorage.getItem('ds_recent_searches');
+                if (saved) this.recentSearches = JSON.parse(saved);
+            } catch(e) {}
+        },
+
+        async search() {
+            if (!this.query.trim()) {
+                this.results = [];
+                this.totalResults = 0;
+                return;
+            }
+
+            this.searching = true;
+            this.searchError = '';
+            this.page = 0;
+            const startTime = Date.now();
+
+            try {
+                const params = new URLSearchParams({
+                    q: this.query,
+                    page: this.page,
+                    size: this.pageSize
+                });
+                if (this.filterFramework) params.append('framework', this.filterFramework);
+                if (this.filterType) params.append('docType', this.filterType);
+
+                const response = await fetch('/api/docs/search?' + params.toString(), {
+                    headers: { 'Accept': 'application/json' }
+                });
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    this.results = result.data.records || result.data || [];
+                    this.totalResults = result.data.total || this.results.length;
+                    this.tookMs = Date.now() - startTime;
+                    this.addToRecent(this.query);
+                } else {
+                    this.searchError = result.message || '搜索失败';
+                }
+            } catch (e) {
+                console.error('Search failed:', e);
+                this.mockSearch();
+            } finally {
+                this.searching = false;
+            }
+        },
+
+        mockSearch() {
+            const q = this.query.toLowerCase();
+            const allDocs = [
+                { id: 1, title: 'Button 按钮组件', content: '按钮组件用于触发操作，支持多种样式和尺寸。基础用法包括主要按钮、次要按钮、文本按钮等。', docType: 'api', framework: 'react', componentName: 'Button', updatedAt: '2024-01-15', score: 0.95 },
+                { id: 2, title: 'Button 使用指南', content: '介绍Button组件的使用场景、最佳实践和常见问题。按钮应该有明确的语义，主操作使用主要按钮样式。', docType: 'guide', framework: 'react', componentName: 'Button', updatedAt: '2024-01-14', score: 0.88 },
+                { id: 3, title: 'Button 示例代码', content: '包含Button组件的各种使用示例代码：禁用状态、加载状态、图标按钮、按钮组等。', docType: 'example', framework: 'vue', componentName: 'Button', updatedAt: '2024-01-13', score: 0.82 },
+                { id: 4, title: 'Input 输入框', content: '文本输入框组件，支持基础输入、密码输入、文本域、前缀后缀等功能。', docType: 'api', framework: 'react', componentName: 'Input', updatedAt: '2024-01-12', score: 0.75 },
+                { id: 5, title: 'Dialog 弹窗组件', content: '模态对话框组件，用于需要用户处理事务，又不希望跳转页面以致打断工作流程时。', docType: 'api', framework: 'react', componentName: 'Dialog', updatedAt: '2024-01-11', score: 0.71 },
+                { id: 6, title: '颜色设计令牌', content: '系统的颜色令牌定义，包括主色、辅助色、功能色和中性色四个色系。', docType: 'guide', framework: null, componentName: null, updatedAt: '2024-01-10', score: 0.68 },
+            ];
+            this.results = allDocs.filter(d =>
+                d.title.toLowerCase().includes(q) ||
+                d.content.toLowerCase().includes(q) ||
+                (d.componentName && d.componentName.toLowerCase().includes(q))
+            );
+            this.totalResults = this.results.length;
+            this.tookMs = Date.now() - startTime;
+        },
+
+        async loadMore() {
+            this.loadingMore = true;
+            this.page++;
+            try {
+                await new Promise(r => setTimeout(r, 500));
+            } finally {
+                this.loadingMore = false;
+            }
+        },
+
+        clearSearch() {
+            this.query = '';
+            this.results = [];
+            this.totalResults = 0;
+            this.searchError = '';
+        },
+
+        addToRecent(term) {
+            this.recentSearches = [term, ...this.recentSearches.filter(t => t !== term)].slice(0, 8);
+            try {
+                localStorage.setItem('ds_recent_searches', JSON.stringify(this.recentSearches));
+            } catch(e) {}
+        },
+
+        clearRecent() {
+            this.recentSearches = [];
+            try {
+                localStorage.removeItem('ds_recent_searches');
+            } catch(e) {}
+        },
+
+        openResult(result) {
+            if (result.componentVersionId) {
+                window.location.href = '/components/' + (result.componentId || '#') + '/docs';
+            }
+        },
+
+        highlightText(text, query) {
+            if (!query || !text) return text;
+            const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+            return text.replace(regex, '<mark class="bg-yellow-200 text-yellow-900 px-0.5 rounded">$1</mark>');
+        },
+
+        truncate(text, maxLen) {
+            if (!text) return '';
+            if (text.length <= maxLen) return text;
+            return text.substring(0, maxLen) + '...';
+        },
+
+        formatDate(dateStr) {
+            if (!dateStr) return '';
+            const date = new Date(dateStr);
+            const now = new Date();
+            const diff = (now - date) / (1000 * 60 * 60 * 24);
+            if (diff < 1) return '今天';
+            if (diff < 7) return Math.floor(diff) + '天前';
+            if (diff < 30) return Math.floor(diff / 7) + '周前';
+            return date.toLocaleDateString('zh-CN');
+        },
+
+        getTypeBadgeClass(type) {
+            const map = {
+                'api': 'bg-indigo-100 text-indigo-700',
+                'guide': 'bg-emerald-100 text-emerald-700',
+                'example': 'bg-amber-100 text-amber-700'
+            };
+            return map[type] || 'bg-gray-100 text-gray-700';
+        },
+
+        getTypeLabel(type) {
+            const map = {
+                'api': 'API',
+                'guide': '指南',
+                'example': '示例'
+            };
+            return map[type] || type;
+        }
+    };
+}
+</script>
+
+</body>
+</html>

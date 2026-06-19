@@ -6,8 +6,6 @@ import com.designsystem.common.PageQuery;
 import com.designsystem.entity.Component;
 import com.designsystem.entity.ComponentVersion;
 import com.designsystem.mapper.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,8 +17,6 @@ import static com.designsystem.config.RabbitMQConfig.*;
 
 @Service
 public class ComponentService {
-
-    private static final Logger log = LoggerFactory.getLogger(ComponentService.class);
 
     private final ComponentMapper componentMapper;
     private final ComponentVersionMapper versionMapper;
@@ -159,16 +155,21 @@ public class ComponentService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void deleteComponent(Long id) {
-        Component component = componentMapper.selectById(id);
+    public void deleteComponent(Long componentId) {
+        Component component = componentMapper.selectById(componentId);
         if (component == null) {
             throw new RuntimeException("Component not found");
         }
 
-        component.setStatus(0);
-        componentMapper.updateById(component);
+        List<ComponentVersion> versions = versionMapper.selectByComponentId(componentId);
+        for (ComponentVersion version : versions) {
+            propMapper.deleteByVersionId(version.getId());
+            docMapper.deleteByVersionId(version.getId());
+            versionMapper.deleteById(version.getId());
+        }
 
-        log.info("Component deleted: {}", component.getName());
+        tokenUsageMapper.deleteByComponentId(componentId);
+        componentMapper.deleteById(componentId);
     }
 
     private void enrichComponent(Component component) {

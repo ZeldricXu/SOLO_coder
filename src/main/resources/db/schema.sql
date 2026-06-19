@@ -169,29 +169,6 @@ CREATE TABLE `ds_component_doc` (
     KEY `idx_deleted` (`deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='组件文档表';
 
-DROP TABLE IF EXISTS `ds_doc_parse_record`;
-CREATE TABLE `ds_doc_parse_record` (
-    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
-    `component_id` bigint DEFAULT NULL COMMENT '组件ID',
-    `version_id` bigint DEFAULT NULL COMMENT '组件版本ID',
-    `file_path` varchar(512) NOT NULL COMMENT '文件路径',
-    `file_hash` varchar(128) DEFAULT NULL COMMENT '文件内容哈希(SHA-256)',
-    `file_size` bigint DEFAULT 0 COMMENT '文件大小(字节)',
-    `parse_status` tinyint DEFAULT 0 COMMENT '解析状态: 1成功 2失败 3跳过',
-    `parse_error` text COMMENT '解析错误信息',
-    `last_parsed_commit` varchar(64) DEFAULT NULL COMMENT '上次解析的Git提交哈希',
-    `last_parsed_at` datetime DEFAULT NULL COMMENT '上次解析时间',
-    `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-    `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-    `deleted` tinyint DEFAULT 0 COMMENT '逻辑删除',
-    PRIMARY KEY (`id`),
-    KEY `idx_component_id` (`component_id`),
-    KEY `idx_version_id` (`version_id`),
-    KEY `idx_file_path` (`file_path`),
-    KEY `idx_file_hash` (`file_hash`),
-    KEY `idx_deleted` (`deleted`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档解析记录表';
-
 -- ------------------------------------------------------------
 -- 设计令牌相关表
 -- ------------------------------------------------------------
@@ -373,5 +350,32 @@ CREATE TABLE `ds_project` (
     UNIQUE KEY `uk_project_code` (`project_code`),
     KEY `idx_deleted` (`deleted`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='下游项目表';
+
+DROP TABLE IF EXISTS `ds_doc_parse_record`;
+CREATE TABLE `ds_doc_parse_record` (
+    `id` bigint NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+    `component_version_id` bigint NOT NULL COMMENT '组件版本ID',
+    `file_path` varchar(512) NOT NULL COMMENT '文件路径',
+    `file_name` varchar(255) NOT NULL COMMENT '文件名',
+    `file_hash` varchar(64) NOT NULL COMMENT '文件SHA-256哈希',
+    `file_size` bigint DEFAULT NULL COMMENT '文件大小(bytes)',
+    `framework` varchar(16) DEFAULT NULL COMMENT '框架类型: react/vue',
+    `parse_status` varchar(16) DEFAULT 'PENDING' COMMENT '解析状态: PENDING/SUCCESS/FAILED/SKIPPED',
+    `parse_message` text COMMENT '解析消息(错误信息等)',
+    `prop_count` int DEFAULT 0 COMMENT '提取的Props数量',
+    `doc_count` int DEFAULT 0 COMMENT '提取的文档数量',
+    `last_parsed_at` datetime DEFAULT NULL COMMENT '上次解析时间',
+    `last_commit_hash` varchar(64) DEFAULT NULL COMMENT '上次解析时的Git Commit Hash',
+    `created_at` datetime DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    `updated_at` datetime DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    `created_by` bigint DEFAULT NULL COMMENT '创建人',
+    `updated_by` bigint DEFAULT NULL COMMENT '更新人',
+    `deleted` tinyint DEFAULT 0 COMMENT '逻辑删除',
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `uk_version_path` (`component_version_id`, `file_path`),
+    KEY `idx_component_version_id` (`component_version_id`),
+    KEY `idx_parse_status` (`parse_status`),
+    KEY `idx_deleted` (`deleted`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='文档解析记录表';
 
 SET FOREIGN_KEY_CHECKS = 1;

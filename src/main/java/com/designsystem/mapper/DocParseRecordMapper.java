@@ -11,14 +11,15 @@ import java.util.List;
 @Mapper
 public interface DocParseRecordMapper extends BaseMapper<DocParseRecord> {
 
-    @Select("SELECT * FROM ds_doc_parse_record WHERE component_id = #{componentId} AND version_id = #{versionId}")
-    List<DocParseRecord> selectByComponentAndVersion(@Param("componentId") Long componentId,
-                                                     @Param("versionId") Long versionId);
+    @Select("SELECT * FROM ds_doc_parse_record WHERE component_version_id = #{versionId} AND file_path = #{filePath}")
+    DocParseRecord selectByVersionAndPath(@Param("versionId") Long versionId, @Param("filePath") String filePath);
 
-    @Select("SELECT * FROM ds_doc_parse_record WHERE component_id = #{componentId} AND file_path = #{filePath} ORDER BY id DESC LIMIT 1")
-    DocParseRecord selectLatestByComponentAndPath(@Param("componentId") Long componentId,
-                                                  @Param("filePath") String filePath);
+    @Select("SELECT * FROM ds_doc_parse_record WHERE component_version_id = #{versionId}")
+    List<DocParseRecord> selectByVersionId(@Param("versionId") Long versionId);
 
-    @Select("SELECT file_path FROM ds_doc_parse_record WHERE component_id = #{componentId} AND parse_status = 1")
-    List<String> selectSuccessfullyParsedPaths(@Param("componentId") Long componentId);
+    @Select("SELECT file_path FROM ds_doc_parse_record WHERE component_version_id = #{versionId} AND parse_status = 'SUCCESS'")
+    List<String> selectSuccessfullyParsedPaths(@Param("versionId") Long versionId);
+
+    @Select("SELECT file_hash FROM ds_doc_parse_record WHERE component_version_id = #{versionId} AND file_path = #{filePath}")
+    String getFileHash(@Param("versionId") Long versionId, @Param("filePath") String filePath);
 }

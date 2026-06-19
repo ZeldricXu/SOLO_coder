@@ -15,14 +15,13 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.scheduling.annotation.Async;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.*;
-import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 import static com.designsystem.config.RabbitMQConfig.*;
@@ -32,240 +31,45 @@ public class DesignTokenService {
 
     private static final Logger log = LoggerFactory.getLogger(DesignTokenService.class);
 
-    private static final String CACHE_PREFIX = "design:token:";
-    private static final String CACHE_KEY_GRAPH = CACHE_PREFIX + "graph:topology";
-    private static final String CACHE_KEY_EXPORT_CSS = CACHE_PREFIX + "export:css";
-    private static final String CACHE_KEY_EXPORT_JS = CACHE_PREFIX + "export:js";
-    private static final String CACHE_KEY_EXPORT_JSON = CACHE_PREFIX + "export:json";
-    private static final String CACHE_KEY_RESOLVED_VALUES = CACHE_PREFIX + "resolved:values";
-    private static final String CACHE_KEY_AFFECTED = CACHE_PREFIX + "affected:";
-    private static final long CACHE_TTL_HOURS = 24;
-
     private final DesignTokenMapper tokenMapper;
     private final TokenOverrideMapper overrideMapper;
     private final ComponentTokenUsageMapper usageMapper;
     private final TokenChangeMapper changeMapper;
     private final ComponentMapper componentMapper;
     private final RabbitTemplate rabbitTemplate;
-    private final RedisTemplate<String, Object> redisTemplate;
     private TokenInheritanceUtil inheritanceUtil;
+
+    @Autowired
+    @Lazy
+    private TokenCacheService tokenCacheService;
 
     public DesignTokenService(DesignTokenMapper tokenMapper, TokenOverrideMapper overrideMapper,
                               ComponentTokenUsageMapper usageMapper, TokenChangeMapper changeMapper,
-                              ComponentMapper componentMapper, RabbitTemplate rabbitTemplate,
-                              RedisTemplate<String, Object> redisTemplate) {
+                              ComponentMapper componentMapper, RabbitTemplate rabbitTemplate) {
         this.tokenMapper = tokenMapper;
         this.overrideMapper = overrideMapper;
         this.usageMapper = usageMapper;
         this.changeMapper = changeMapper;
         this.componentMapper = componentMapper;
         this.rabbitTemplate = rabbitTemplate;
-        this.redisTemplate = redisTemplate;
     }
 
     @PostConstruct
     public void init() {
         this.inheritanceUtil = new TokenInheritanceUtil(tokenMapper);
-        try {
-            refreshCache();
-            log.info("Design token cache initialized successfully");
-        } catch (Exception e) {
-            log.warn("Failed to initialize token cache on startup: {}", e.getMessage());
-        }
-    }
-
-    @Async
-    public void refreshCacheAsync() {
-        refreshCache();
-    }
-
-    public void refreshCache() {
-        log.debug("Refreshing design token cache...");
-        long startTime = System.currentTimeMillis();
-
-        try {
-            List<DesignToken> allTokens = tokenMapper.selectList(null);
-            if (allTokens.isEmpty()) {
-                return;
-            }
-
-            Map<String, String> resolvedValues = resolveAllTokenValues(allTokens);
-            redisTemplate.opsForValue().set(CACHE_KEY_RESOLVED_VALUES, resolvedValues, CACHE_TTL_HOURS, TimeUnit.HOURS);
-
-            List<String> topology = topologicalSort(allTokens);
-            redisTemplate.opsForValue().set(CACHE_KEY_GRAPH, topology, CACHE_TTL_HOURS, TimeUnit.HOURS);
-
-            pregenerateExports(allTokens, resolvedValues);
-
-            for (DesignToken token : allTokens) {
-                Set<String> affected = calculateAffectedTokens(token.getTokenName(), allTokens);
-                redisTemplate.opsForValue().set(CACHE_KEY_AFFECTED + token.getTokenName(),
-                        affected, CACHE_TTL_HOURS, TimeUnit.HOURS);
-            }
-
-            long duration = System.currentTimeMillis() - startTime;
-            log.info("Token cache refreshed successfully in {}ms for {} tokens", duration, allTokens.size());
-        } catch (Exception e) {
-            log.error("Failed to refresh token cache", e);
-            throw new RuntimeException("Token cache refresh failed", e);
-        }
-    }
-
-    private Map<String, String> resolveAllTokenValues(List<DesignToken> tokens) {
-        Map<String, String> resolved = new HashMap<>();
-        Map<String, DesignToken> tokenMap = tokens.stream()
-                .collect(Collectors.toMap(DesignToken::getTokenName, t -> t));
-
-        for (DesignToken token : tokens) {
-            resolved.put(token.getTokenName(), resolveTokenValueFromMap(token.getTokenName(), tokenMap, new HashSet<>()));
-        }
-
-        return resolved;
-    }
-
-    private String resolveTokenValueFromMap(String tokenName, Map<String, DesignToken> tokenMap, Set<String> visited) {
-        if (visited.contains(tokenName)) {
-            return null;
-        }
-        visited.add(tokenName);
-
-        DesignToken token = tokenMap.get(tokenName);
-        if (token == null) {
-            return null;
-        }
-
-        String value = token.getBaseValue();
-        if (value != null && !value.isEmpty()) {
-            return value;
-        }
-
-        if (token.getInheritsFrom() != null && !token.getInheritsFrom().isEmpty()) {
-            return resolveTokenValueFromMap(token.getInheritsFrom(), tokenMap, visited);
-        }
-
-        return value;
-    }
-
-    public List<String> topologicalSort(List<DesignToken> tokens) {
-        Map<String, List<String>> adjacencyList = new HashMap<>();
-        Map<String, Integer> inDegree = new HashMap<>();
-
-        for (DesignToken token : tokens) {
-            adjacencyList.put(token.getTokenName(), new ArrayList<>());
-            inDegree.put(token.getTokenName(), 0);
-        }
-
-        for (DesignToken token : tokens) {
-            if (token.getInheritsFrom() != null && !token.getInheritsFrom().isEmpty()) {
-                String parent = token.getInheritsFrom();
-                if (adjacencyList.containsKey(parent)) {
-                    adjacencyList.get(parent).add(token.getTokenName());
-                    inDegree.merge(token.getTokenName(), 1, Integer::sum);
-                }
-            }
-        }
-
-        Queue<String> queue = new LinkedList<>();
-        for (Map.Entry<String, Integer> entry : inDegree.entrySet()) {
-            if (entry.getValue() == 0) {
-                queue.offer(entry.getKey());
-            }
-        }
-
-        List<String> result = new ArrayList<>();
-        while (!queue.isEmpty()) {
-            String current = queue.poll();
-            result.add(current);
-
-            for (String child : adjacencyList.getOrDefault(current, Collections.emptyList())) {
-                inDegree.merge(child, -1, Integer::sum);
-                if (inDegree.get(child) == 0) {
-                    queue.offer(child);
-                }
-            }
-        }
-
-        if (result.size() != tokens.size()) {
-            log.warn("Topological sort detected cycle: processed {}/{} tokens", result.size(), tokens.size());
-        }
-
-        return result;
-    }
-
-    private Set<String> calculateAffectedTokens(String tokenName, List<DesignToken> tokens) {
-        Set<String> affected = new HashSet<>();
-        Map<String, List<String>> children = new HashMap<>();
-
-        for (DesignToken token : tokens) {
-            if (token.getInheritsFrom() != null && !token.getInheritsFrom().isEmpty()) {
-                children.computeIfAbsent(token.getInheritsFrom(), k -> new ArrayList<>())
-                        .add(token.getTokenName());
-            }
-        }
-
-        Queue<String> queue = new LinkedList<>();
-        queue.offer(tokenName);
-        affected.add(tokenName);
-
-        while (!queue.isEmpty()) {
-            String current = queue.poll();
-            for (String child : children.getOrDefault(current, Collections.emptyList())) {
-                if (!affected.contains(child)) {
-                    affected.add(child);
-                    queue.offer(child);
-                }
-            }
-        }
-
-        affected.remove(tokenName);
-        return affected;
-    }
-
-    private void pregenerateExports(List<DesignToken> tokens, Map<String, String> resolvedValues) {
-        List<DesignToken> enrichedTokens = tokens.stream()
-                .peek(this::enrichToken)
-                .peek(t -> {
-                    String resolved = resolvedValues.get(t.getTokenName());
-                    if (resolved != null && (t.getBaseValue() == null || t.getBaseValue().isEmpty())) {
-                        t.setBaseValue(resolved);
-                    }
-                })
-                .collect(Collectors.toList());
-
-        redisTemplate.opsForValue().set(CACHE_KEY_EXPORT_CSS,
-                exportToCss(enrichedTokens), CACHE_TTL_HOURS, TimeUnit.HOURS);
-        redisTemplate.opsForValue().set(CACHE_KEY_EXPORT_JS,
-                exportToJs(enrichedTokens), CACHE_TTL_HOURS, TimeUnit.HOURS);
-        redisTemplate.opsForValue().set(CACHE_KEY_EXPORT_JSON,
-                exportToJson(enrichedTokens), CACHE_TTL_HOURS, TimeUnit.HOURS);
     }
 
     public IPage<DesignToken> getTokenPage(PageQuery query, String tokenType, String tokenLevel, String category) {
         Page<DesignToken> page = new Page<>(query.getPageNum(), query.getPageSize());
         IPage<DesignToken> result = tokenMapper.selectTokenPage(page, query.getKeyword(), tokenType, tokenLevel, category);
         result.getRecords().forEach(this::enrichToken);
-        result.getRecords().forEach(this::applyCachedValue);
         return result;
-    }
-
-    private void applyCachedValue(DesignToken token) {
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, String> cachedValues = (Map<String, String>) redisTemplate.opsForValue()
-                    .get(CACHE_KEY_RESOLVED_VALUES);
-            if (cachedValues != null && cachedValues.containsKey(token.getTokenName())) {
-                token.setResolvedValue(cachedValues.get(token.getTokenName()));
-            }
-        } catch (Exception e) {
-            log.debug("Cache not available for token: {}", token.getTokenName());
-        }
     }
 
     public DesignToken getTokenById(Long id) {
         DesignToken token = tokenMapper.selectById(id);
         if (token != null) {
             enrichToken(token);
-            applyCachedValue(token);
             if (token.getInheritsFrom() != null) {
                 token.setParentToken(tokenMapper.selectByName(token.getInheritsFrom()));
             }
@@ -278,7 +82,6 @@ public class DesignTokenService {
         DesignToken token = tokenMapper.selectByName(tokenName);
         if (token != null) {
             enrichToken(token);
-            applyCachedValue(token);
         }
         return token;
     }
@@ -291,7 +94,6 @@ public class DesignTokenService {
 
     private void buildTokenTree(DesignToken token) {
         enrichToken(token);
-        applyCachedValue(token);
         List<DesignToken> children = tokenMapper.selectByParentId(token.getTokenName());
         token.setChildTokens(children);
         children.forEach(this::buildTokenTree);
@@ -301,10 +103,10 @@ public class DesignTokenService {
     public DesignToken createToken(DesignToken token) {
         token.setStatus(1);
         tokenMapper.insert(token);
-
-        refreshCacheAsync();
-        rabbitTemplate.convertAndSend(EXCHANGE_DESIGN_SYSTEM, ROUTING_KEY_TOKEN_CHANGE, token.getId());
-
+        log.info("Created new token: {}, triggering cache rebuild", token.getTokenName());
+        if (tokenCacheService != null) {
+            tokenCacheService.handleTokenChange(token.getTokenName());
+        }
         return token;
     }
 
@@ -340,7 +142,13 @@ public class DesignTokenService {
         changeMapper.insert(change);
         tokenMapper.updateById(token);
 
-        refreshCacheAsync();
+        log.info("Updated token: {}, triggering cache rebuild", token.getTokenName());
+        if (tokenCacheService != null) {
+            tokenCacheService.handleTokenChange(token.getTokenName());
+            if (!oldToken.getTokenName().equals(token.getTokenName())) {
+                tokenCacheService.handleTokenChange(oldToken.getTokenName());
+            }
+        }
 
         Map<String, Object> changeEvent = new HashMap<>();
         changeEvent.put("tokenId", token.getId());
@@ -351,29 +159,24 @@ public class DesignTokenService {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public void deleteToken(Long id) {
-        DesignToken token = tokenMapper.selectById(id);
-        if (token == null) {
-            throw new RuntimeException("Token not found");
+    public void deleteToken(Long tokenId) {
+        DesignToken token = tokenMapper.selectById(tokenId);
+        if (token != null) {
+            tokenMapper.deleteById(tokenId);
+            log.info("Deleted token: {}, triggering cache rebuild", token.getTokenName());
+            if (tokenCacheService != null) {
+                tokenCacheService.handleTokenChange(token.getTokenName());
+            }
         }
-
-        token.setStatus(0);
-        tokenMapper.updateById(token);
-
-        refreshCacheAsync();
-
-        log.info("Token deleted: {}", token.getTokenName());
     }
 
     public String exportTokens(ExportFormat format, String tokenType, String tokenLevel) {
-        if (tokenType == null && tokenLevel == null) {
-            String cached = getCachedExport(format);
-            if (cached != null) {
-                log.debug("Cache hit for token export: {}", format);
-                return cached;
-            }
+        if (tokenCacheService != null && tokenLevel == null) {
+            log.debug("Export requested: {} {} {}, checking cache", format, tokenType, tokenLevel);
+            return tokenCacheService.getExportFormat(format, tokenType, null);
         }
 
+        log.debug("Export cache miss or level filter specified, generating on the fly");
         List<DesignToken> tokens;
         if (tokenLevel != null) {
             tokens = tokenMapper.selectByLevel(tokenLevel);
@@ -386,7 +189,7 @@ public class DesignTokenService {
         tokens.forEach(this::enrichToken);
         tokens.forEach(this::resolveTokenValue);
 
-        String result = switch (format) {
+        return switch (format) {
             case CSS -> exportToCss(tokens);
             case JS -> exportToJs(tokens);
             case JSON -> exportToJson(tokens);
@@ -395,65 +198,16 @@ public class DesignTokenService {
             case ANDROID -> exportToAndroid(tokens);
             case IOS -> exportToIos(tokens);
         };
-
-        if (tokenType == null && tokenLevel == null) {
-            cacheExport(format, result);
-        }
-
-        return result;
-    }
-
-    private String getCachedExport(ExportFormat format) {
-        try {
-            String cacheKey = switch (format) {
-                case CSS -> CACHE_KEY_EXPORT_CSS;
-                case JS -> CACHE_KEY_EXPORT_JS;
-                case JSON -> CACHE_KEY_EXPORT_JSON;
-                default -> null;
-            };
-            if (cacheKey == null) {
-                return null;
-            }
-            Object cached = redisTemplate.opsForValue().get(cacheKey);
-            return cached != null ? cached.toString() : null;
-        } catch (Exception e) {
-            log.debug("Cache not available for export: {}", format);
-            return null;
-        }
-    }
-
-    private void cacheExport(ExportFormat format, String content) {
-        try {
-            String cacheKey = switch (format) {
-                case CSS -> CACHE_KEY_EXPORT_CSS;
-                case JS -> CACHE_KEY_EXPORT_JS;
-                case JSON -> CACHE_KEY_EXPORT_JSON;
-                default -> null;
-            };
-            if (cacheKey != null) {
-                redisTemplate.opsForValue().set(cacheKey, content, CACHE_TTL_HOURS, TimeUnit.HOURS);
-            }
-        } catch (Exception e) {
-            log.debug("Failed to cache export: {}", format);
-        }
     }
 
     public List<Component> getAffectedComponents(Long tokenId) {
-        DesignToken token = tokenMapper.selectById(tokenId);
-        if (token == null) {
-            return Collections.emptyList();
-        }
-
-        Set<String> affectedTokenNames = getAffectedTokens(token.getTokenName());
-        affectedTokenNames.add(token.getTokenName());
+        List<DesignToken> tokenChain = tokenMapper.selectTokenChain(tokenId);
+        Set<Long> tokenIds = tokenChain.stream().map(DesignToken::getId).collect(Collectors.toSet());
+        tokenIds.add(tokenId);
 
         Set<Long> componentIds = new HashSet<>();
-        for (String tokenName : affectedTokenNames) {
-            DesignToken t = tokenMapper.selectByName(tokenName);
-            if (t != null) {
-                usageMapper.selectByTokenId(t.getId())
-                        .forEach(usage -> componentIds.add(usage.getComponentId()));
-            }
+        for (Long tid : tokenIds) {
+            usageMapper.selectByTokenId(tid).forEach(usage -> componentIds.add(usage.getComponentId()));
         }
 
         return componentIds.isEmpty() ? new ArrayList<>() : componentMapper.selectBatchIds(componentIds);
@@ -462,7 +216,12 @@ public class DesignTokenService {
     @Transactional(rollbackFor = Exception.class)
     public TokenOverride addOverride(TokenOverride override) {
         overrideMapper.insert(override);
-        refreshCacheAsync();
+        if (tokenCacheService != null) {
+            DesignToken token = tokenMapper.selectById(override.getTokenId());
+            if (token != null) {
+                tokenCacheService.handleTokenChange(token.getTokenName());
+            }
+        }
         return override;
     }
 
@@ -473,20 +232,19 @@ public class DesignTokenService {
     public Map<String, Object> getTokenImpactAnalysis(Long tokenId) {
         DesignToken token = getTokenById(tokenId);
         List<Component> affectedComponents = getAffectedComponents(tokenId);
+        List<DesignToken> affectedTokens;
 
-        Set<String> affectedTokenNames = Collections.emptySet();
-        if (token != null) {
-            affectedTokenNames = getAffectedTokens(token.getTokenName());
-        }
-
-        List<DesignToken> affectedTokens = new ArrayList<>();
-        for (String name : affectedTokenNames) {
-            DesignToken t = tokenMapper.selectByName(name);
-            if (t != null) {
-                enrichToken(t);
-                applyCachedValue(t);
-                affectedTokens.add(t);
+        if (tokenCacheService != null && token != null) {
+            Set<String> affectedTokenNames = tokenCacheService.getAffectedTokens(token.getTokenName());
+            affectedTokens = new ArrayList<>();
+            for (String name : affectedTokenNames) {
+                DesignToken t = tokenMapper.selectByName(name);
+                if (t != null) {
+                    affectedTokens.add(t);
+                }
             }
+        } else {
+            affectedTokens = tokenMapper.selectByParentId(token != null ? token.getTokenName() : null);
         }
 
         List<TokenChange> changeHistory = changeMapper.selectByTokenId(tokenId);
@@ -508,64 +266,63 @@ public class DesignTokenService {
     }
 
     public String resolveTokenValue(String tokenName) {
-        try {
-            @SuppressWarnings("unchecked")
-            Map<String, String> cachedValues = (Map<String, String>) redisTemplate.opsForValue()
-                    .get(CACHE_KEY_RESOLVED_VALUES);
-            if (cachedValues != null && cachedValues.containsKey(tokenName)) {
-                return cachedValues.get(tokenName);
+        if (tokenCacheService != null) {
+            String cached = tokenCacheService.getResolvedTokenValue(tokenName);
+            if (cached != null) {
+                return cached;
             }
-        } catch (Exception e) {
-            log.debug("Cache miss for token value: {}", tokenName);
         }
-
         return inheritanceUtil.resolveTokenValue(tokenName);
     }
 
-    @SuppressWarnings("unchecked")
     public Set<String> getAffectedTokens(String modifiedTokenName) {
-        try {
-            Object cached = redisTemplate.opsForValue().get(CACHE_KEY_AFFECTED + modifiedTokenName);
-            if (cached != null) {
-                return (Set<String>) cached;
-            }
-        } catch (Exception e) {
-            log.debug("Cache miss for affected tokens: {}", modifiedTokenName);
+        if (tokenCacheService != null) {
+            return tokenCacheService.getAffectedTokens(modifiedTokenName);
         }
-
         return inheritanceUtil.getAffectedTokens(modifiedTokenName);
     }
 
     public Set<String> getInheritanceChain(String tokenName) {
+        if (tokenCacheService != null) {
+            return tokenCacheService.getInheritanceChain(tokenName);
+        }
         return inheritanceUtil.getInheritanceChain(tokenName);
     }
 
-    @SuppressWarnings("unchecked")
-    public List<String> getTopologicalOrder() {
-        try {
-            Object cached = redisTemplate.opsForValue().get(CACHE_KEY_GRAPH);
-            if (cached != null) {
-                return (List<String>) cached;
-            }
-        } catch (Exception e) {
-            log.debug("Cache miss for topology graph");
+    public Map<String, String> getAllResolvedTokenValues() {
+        if (tokenCacheService != null) {
+            return tokenCacheService.getAllResolvedValues();
         }
-
-        List<DesignToken> tokens = tokenMapper.selectList(null);
-        return topologicalSort(tokens);
+        return inheritanceUtil.resolveAllTokenValues();
     }
 
-    private void enrichToken(DesignToken token) {
-        token.setOverrides(overrideMapper.selectByTokenId(token.getId()));
-        token.setComponentUsages(usageMapper.selectByTokenId(token.getId()));
+    public void rebuildCache() {
+        if (tokenCacheService != null) {
+            tokenCacheService.rebuildAllCaches();
+        } else {
+            inheritanceUtil.clearCache();
+        }
     }
 
     private void resolveTokenValue(DesignToken token) {
+        if (tokenCacheService != null) {
+            String resolved = tokenCacheService.getResolvedTokenValue(token.getTokenName());
+            if (resolved != null) {
+                token.setResolvedValue(resolved);
+                if (token.getBaseValue() == null || token.getBaseValue().isEmpty()
+                        || token.getBaseValue().startsWith("{")) {
+                    token.setBaseValue(resolved);
+                }
+                return;
+            }
+        }
+
         if (token.getInheritsFrom() != null && !token.getInheritsFrom().isEmpty()) {
             DesignToken parent = tokenMapper.selectByName(token.getInheritsFrom());
             if (parent != null && (token.getBaseValue() == null || token.getBaseValue().isEmpty())) {
                 resolveTokenValue(parent);
                 token.setBaseValue(parent.getBaseValue());
+                token.setResolvedValue(parent.getBaseValue());
             }
         }
     }
@@ -608,7 +365,8 @@ public class DesignTokenService {
     private String exportToCss(List<DesignToken> tokens) {
         StringBuilder sb = new StringBuilder(":root {\n");
         for (DesignToken token : tokens) {
-            sb.append("  ").append(token.getTokenName()).append(": ").append(token.getBaseValue()).append(";\n");
+            String value = token.getResolvedValue() != null ? token.getResolvedValue() : token.getBaseValue();
+            sb.append("  ").append(token.getTokenName()).append(": ").append(value).append(";\n");
         }
         sb.append("}\n");
         return sb.toString();
@@ -617,8 +375,9 @@ public class DesignTokenService {
     private String exportToJs(List<DesignToken> tokens) {
         StringBuilder sb = new StringBuilder("export const designTokens = {\n");
         for (DesignToken token : tokens) {
+            String value = token.getResolvedValue() != null ? token.getResolvedValue() : token.getBaseValue();
             String jsName = token.getTokenName().replace("--", "").replace("-", "_").toUpperCase();
-            sb.append("  ").append(jsName).append(": '").append(token.getBaseValue()).append("',\n");
+            sb.append("  ").append(jsName).append(": '").append(value).append("',\n");
         }
         sb.append("};\n");
         return sb.toString();
@@ -628,9 +387,10 @@ public class DesignTokenService {
         StringBuilder sb = new StringBuilder("{\n  \"tokens\": [\n");
         for (int i = 0; i < tokens.size(); i++) {
             DesignToken token = tokens.get(i);
+            String value = token.getResolvedValue() != null ? token.getResolvedValue() : token.getBaseValue();
             sb.append("    {\n");
             sb.append("      \"name\": \"").append(token.getTokenName()).append("\",\n");
-            sb.append("      \"value\": \"").append(token.getBaseValue()).append("\",\n");
+            sb.append("      \"value\": \"").append(value).append("\",\n");
             sb.append("      \"type\": \"").append(token.getTokenType()).append("\",\n");
             sb.append("      \"level\": \"").append(token.getTokenLevel()).append("\"\n");
             sb.append("    }").append(i < tokens.size() - 1 ? "," : "").append("\n");
@@ -642,8 +402,9 @@ public class DesignTokenService {
     private String exportToScss(List<DesignToken> tokens) {
         StringBuilder sb = new StringBuilder();
         for (DesignToken token : tokens) {
+            String value = token.getResolvedValue() != null ? token.getResolvedValue() : token.getBaseValue();
             String scssName = token.getTokenName().replace("--", "$").replace("-", "_");
-            sb.append(scssName).append(": ").append(token.getBaseValue()).append(";\n");
+            sb.append(scssName).append(": ").append(value).append(";\n");
         }
         return sb.toString();
     }
@@ -651,8 +412,9 @@ public class DesignTokenService {
     private String exportToLess(List<DesignToken> tokens) {
         StringBuilder sb = new StringBuilder();
         for (DesignToken token : tokens) {
+            String value = token.getResolvedValue() != null ? token.getResolvedValue() : token.getBaseValue();
             String lessName = token.getTokenName().replace("--", "@").replace("-", "_");
-            sb.append(lessName).append(": ").append(token.getBaseValue()).append(";\n");
+            sb.append(lessName).append(": ").append(value).append(";\n");
         }
         return sb.toString();
     }
@@ -660,11 +422,12 @@ public class DesignTokenService {
     private String exportToAndroid(List<DesignToken> tokens) {
         StringBuilder sb = new StringBuilder("<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<resources>\n");
         for (DesignToken token : tokens) {
+            String value = token.getResolvedValue() != null ? token.getResolvedValue() : token.getBaseValue();
             String androidName = token.getTokenName().replace("--", "").replace("-", "_");
             if (token.getTokenType() != null && token.getTokenType().getCode().equals("color")) {
-                sb.append("  <color name=\"").append(androidName).append("\">").append(token.getBaseValue()).append("</color>\n");
+                sb.append("  <color name=\"").append(androidName).append("\">").append(value).append("</color>\n");
             } else {
-                sb.append("  <dimen name=\"").append(androidName).append("\">").append(token.getBaseValue()).append("</dimen>\n");
+                sb.append("  <dimen name=\"").append(androidName).append("\">").append(value).append("</dimen>\n");
             }
         }
         sb.append("</resources>\n");
@@ -674,11 +437,12 @@ public class DesignTokenService {
     private String exportToIos(List<DesignToken> tokens) {
         StringBuilder sb = new StringBuilder("import UIKit\n\nenum DesignTokens {\n");
         for (DesignToken token : tokens) {
+            String value = token.getResolvedValue() != null ? token.getResolvedValue() : token.getBaseValue();
             String iosName = toCamelCase(token.getTokenName().replace("--", ""));
             if (token.getTokenType() != null && token.getTokenType().getCode().equals("color")) {
-                sb.append("  static let ").append(iosName).append(" = UIColor(hex: \"").append(token.getBaseValue()).append("\")\n");
+                sb.append("  static let ").append(iosName).append(" = UIColor(hex: \"").append(value).append("\")\n");
             } else {
-                sb.append("  static let ").append(iosName).append(" = ").append(token.getBaseValue()).append("\n");
+                sb.append("  static let ").append(iosName).append(" = ").append(value).append("\n");
             }
         }
         sb.append("}\n");
@@ -692,17 +456,5 @@ public class DesignTokenService {
             result.append(Character.toUpperCase(parts[i].charAt(0))).append(parts[i].substring(1));
         }
         return result.toString();
-    }
-
-    public void clearCache() {
-        try {
-            Set<String> keys = redisTemplate.keys(CACHE_PREFIX + "*");
-            if (keys != null && !keys.isEmpty()) {
-                redisTemplate.delete(keys);
-            }
-            log.info("Token cache cleared");
-        } catch (Exception e) {
-            log.warn("Failed to clear token cache", e);
-        }
     }
 }
