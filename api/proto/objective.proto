@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package distcomp.v1;
+
+option go_package = "github.com/lab/distcomp/pkg/grpcapi/distcomp/v1";
+
+import "parameter.proto";
+
+enum FunctionType {
+  FUNCTION_TYPE_UNSPECIFIED = 0;
+  FUNCTION_TYPE_LINEAR = 1;
+  FUNCTION_TYPE_QUADRATIC = 2;
+  FUNCTION_TYPE_NONLINEAR = 3;
+  FUNCTION_TYPE_BLACKBOX = 4;
+}
+
+enum OptimizationDirection {
+  OPTIMIZATION_DIRECTION_UNSPECIFIED = 0;
+  OPTIMIZATION_DIRECTION_MINIMIZE = 1;
+  OPTIMIZATION_DIRECTION_MAXIMIZE = 2;
+}
+
+enum ConstraintType {
+  CONSTRAINT_TYPE_UNSPECIFIED = 0;
+  CONSTRAINT_TYPE_EQUALITY = 1;
+  CONSTRAINT_TYPE_INEQUALITY_LESS = 2;
+  CONSTRAINT_TYPE_INEQUALITY_GREATER = 3;
+}
+
+message GradientRequirement {
+  bool required = 1;
+  int32 order = 2;
+  bool numerical = 3;
+  double epsilon = 4;
+}
+
+message Constraint {
+  string name = 1;
+  ConstraintType type = 2;
+  double tolerance = 3;
+  string expression = 4;
+}
+
+message ObjectiveFunction {
+  string name = 1;
+  string description = 2;
+  FunctionType type = 3;
+  OptimizationDirection direction = 4;
+  ParameterSpace parameter_space = 5;
+  repeated Constraint constraints = 6;
+  GradientRequirement gradient_requirement = 7;
+  string expression = 8;
+  map<string, string> metadata = 9;
+}
+
+message EvaluateRequest {
+  string task_id = 1;
+  ObjectiveFunction objective = 2;
+  ParameterCombination parameters = 3;
+  bool compute_gradient = 4;
+}
+
+message EvaluateResponse {
+  string task_id = 1;
+  double objective_value = 2;
+  repeated double gradient = 3;
+  repeated ConstraintViolation constraint_violations = 4;
+  bool feasible = 5;
+  double compute_time_ms = 6;
+  string error = 7;
+}
+
+message ConstraintViolation {
+  string constraint_name = 1;
+  double value = 2;
+  double violation = 3;
+}
+
+message ValidateObjectiveRequest {
+  ObjectiveFunction objective = 1;
+}
+
+message ValidateObjectiveResponse {
+  bool valid = 1;
+  repeated string errors = 2;
+}
+
+service ObjectiveService {
+  rpc Evaluate(EvaluateRequest) returns (EvaluateResponse);
+  rpc ValidateObjective(ValidateObjectiveRequest) returns (ValidateObjectiveResponse);
+  rpc StreamEvaluate(stream EvaluateRequest) returns (stream EvaluateResponse);
+}

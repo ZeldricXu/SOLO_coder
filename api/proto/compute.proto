@@ -1,0 +1,161 @@
+syntax = "proto3";
+
+package distcomp.v1;
+
+option go_package = "github.com/lab/distcomp/pkg/grpcapi/distcomp/v1";
+
+import "task.proto";
+import "objective.proto";
+import "google/protobuf/timestamp.proto";
+
+enum ComputeStatusCode {
+  COMPUTE_STATUS_CODE_UNSPECIFIED = 0;
+  COMPUTE_STATUS_CODE_SUCCESS = 1;
+  COMPUTE_STATUS_CODE_ERROR = 2;
+  COMPUTE_STATUS_CODE_TIMEOUT = 3;
+  COMPUTE_STATUS_CODE_CANCELLED = 4;
+  COMPUTE_STATUS_CODE_OUT_OF_MEMORY = 5;
+  COMPUTE_STATUS_CODE_INVALID_INPUT = 6;
+}
+
+message CheckpointData {
+  bytes data = 1;
+  string format = 2;
+  google.protobuf.Timestamp created_at = 3;
+  int32 iteration = 4;
+}
+
+message IntermediateState {
+  int32 iteration = 1;
+  double current_objective = 2;
+  repeated double current_gradient = 3;
+  ParameterCombination current_parameters = 4;
+  map<string, double> metrics = 5;
+  CheckpointData checkpoint = 6;
+  google.protobuf.Timestamp timestamp = 7;
+}
+
+message ProgressUpdate {
+  string task_id = 1;
+  int32 shard_id = 2;
+  int32 completed_count = 3;
+  int32 total_count = 4;
+  double percentage = 5;
+  google.protobuf.Timestamp estimated_completion = 6;
+  int32 retry_count = 7;
+  string message = 8;
+}
+
+message Heartbeat {
+  string worker_id = 1;
+  string task_id = 2;
+  int32 shard_id = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  uint64 memory_usage_bytes = 5;
+  double cpu_usage_percent = 6;
+  bool healthy = 7;
+}
+
+message ComputeRequest {
+  oneof request {
+    TaskAssignment assignment = 1;
+    Heartbeat heartbeat = 2;
+    ProgressUpdate progress = 3;
+    ComputeResult result = 4;
+    IntermediateState intermediate = 5;
+    ComputeError error = 6;
+  }
+}
+
+message ComputeResponse {
+  oneof response {
+    TaskAssignmentAck ack = 1;
+    TaskStatusUpdate status_update = 2;
+    TaskCancellation cancellation = 3;
+    CheckpointRequest checkpoint_request = 4;
+  }
+}
+
+message TaskAssignment {
+  TaskShard shard = 1;
+  ObjectiveFunction objective = 2;
+  google.protobuf.Timestamp assigned_at = 3;
+}
+
+message TaskAssignmentAck {
+  string task_id = 1;
+  int32 shard_id = 2;
+  bool accepted = 3;
+  string message = 4;
+}
+
+message TaskStatusUpdate {
+  string task_id = 1;
+  int32 shard_id = 2;
+  TaskStatus status = 3;
+  string message = 4;
+}
+
+message TaskCancellation {
+  string task_id = 1;
+  int32 shard_id = 2;
+  string reason = 3;
+  google.protobuf.Timestamp cancelled_at = 4;
+}
+
+message CheckpointRequest {
+  string task_id = 1;
+  int32 shard_id = 2;
+  bool immediate = 3;
+}
+
+message ComputeResult {
+  string task_id = 1;
+  int32 shard_id = 2;
+  repeated EvaluateResponse evaluations = 3;
+  int32 total_evaluations = 4;
+  int32 successful_evaluations = 5;
+  int32 failed_evaluations = 6;
+  google.protobuf.Timestamp started_at = 7;
+  google.protobuf.Timestamp completed_at = 8;
+  ComputeStatusCode status_code = 9;
+  string error_message = 10;
+  CheckpointData final_checkpoint = 11;
+}
+
+message ComputeError {
+  string task_id = 1;
+  int32 shard_id = 2;
+  ComputeStatusCode code = 3;
+  string message = 4;
+  string stack_trace = 5;
+  google.protobuf.Timestamp timestamp = 6;
+  ParameterCombination failed_parameters = 7;
+}
+
+message SubmitResultRequest {
+  ComputeResult result = 1;
+}
+
+message SubmitResultResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message GetShardRequest {
+  string worker_id = 1;
+  string task_id = 2;
+}
+
+message GetShardResponse {
+  TaskShard shard = 1;
+  ObjectiveFunction objective = 2;
+}
+
+service ComputeService {
+  rpc SubmitResult(SubmitResultRequest) returns (SubmitResultResponse);
+  rpc GetShard(GetShardRequest) returns (GetShardResponse);
+  rpc StreamCompute(stream ComputeRequest) returns (stream ComputeResponse);
+  rpc StreamHeartbeat(stream Heartbeat) returns (stream TaskStatusUpdate);
+  rpc StreamProgress(stream ProgressUpdate) returns (stream TaskCancellation);
+}

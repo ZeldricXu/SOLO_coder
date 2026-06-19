@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: experiment-worker
+  labels:
+    app: experiment
+    component: worker
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: experiment
+      component: worker
+  template:
+    metadata:
+      labels:
+        app: experiment
+        component: worker
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: worker
+          image: df1-96/worker:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: EXP_DATABASE_HOST
+              value: "postgres"
+            - name: EXP_DATABASE_PORT
+              value: "5432"
+            - name: EXP_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: experiment-secrets
+                  key: postgres-user
+            - name: EXP_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: experiment-secrets
+                  key: postgres-password
+            - name: EXP_DATABASE_DBNAME
+              value: "experiment"
+            - name: EXP_WORKER_WORKER_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          resources:
+            requests:
+              cpu: "1000m"
+              memory: "1Gi"
+            limits:
+              cpu: "4000m"
+              memory: "4Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+            - name: plugins
+              mountPath: /app/plugins
+      volumes:
+        - name: config
+          configMap:
+            name: experiment-config
+        - name: plugins
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: experiment-worker
+  labels:
+    app: experiment
+    component: worker
+spec:
+  selector:
+    app: experiment
+    component: worker
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP

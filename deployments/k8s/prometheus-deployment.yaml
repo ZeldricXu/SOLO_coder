@@ -1,0 +1,182 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  labels:
+    app: experiment
+    component: monitoring
+    monitoring: prometheus
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: experiment
+      component: monitoring
+      monitoring: prometheus
+  template:
+    metadata:
+      labels:
+        app: experiment
+        component: monitoring
+        monitoring: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:v2.52.0
+          args:
+            - '--config.file=/etc/prometheus/prometheus.yml'
+            - '--storage.tsdb.path=/prometheus'
+            - '--storage.tsdb.retention.time=7d'
+            - '--web.enable-lifecycle'
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /etc/prometheus
+            - name: data
+              mountPath: /prometheus
+      volumes:
+        - name: config
+          configMap:
+            name: prometheus-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: prometheus-data
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus
+  labels:
+    app: experiment
+    component: monitoring
+    monitoring: prometheus
+spec:
+  selector:
+    app: experiment
+    component: monitoring
+    monitoring: prometheus
+  ports:
+    - name: http
+      port: 9090
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: prometheus-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s
+      evaluation_interval: 15s
+
+    scrape_configs:
+      - job_name: 'experiment-scheduler'
+        kubernetes_sd_configs:
+          - role: pod
+            selectors:
+              - role: pod
+                label: 'app=experiment,component=scheduler'
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: 8080
+
+      - job_name: 'experiment-worker'
+        kubernetes_sd_configs:
+          - role: pod
+            selectors:
+              - role: pod
+                label: 'app=experiment,component=worker'
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: 8080
+
+      - job_name: 'experiment-api'
+        kubernetes_sd_configs:
+          - role: pod
+            selectors:
+              - role: pod
+                label: 'app=experiment,component=api'
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_container_port_number]
+            action: keep
+            regex: 8080
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: experiment-config
+data:
+  config.prod.yaml: |
+    server:
+      grpc_port: 50051
+      http_port: 8080
+
+    scheduler:
+      heartbeat_timeout: 30s
+      sharding_strategy: by_hash
+      max_retries: 3
+      task_timeout: 10m
+      chunk_size: 1000
+
+    worker:
+      cache_size: 10000
+      heartbeat_interval: 5s
+      concurrent_tasks: 10
+      worker_id: 0
+
+    database:
+      host: postgres
+      port: 5432
+      user: experiment
+      password: experiment
+      dbname: experiment
+      sslmode: disable
+      timezone: UTC
+
+    log:
+      level: info
+      format: json
+      output_path: stdout
+      max_size: 100
+      max_backups: 3
+      max_age: 28
+      compress: true

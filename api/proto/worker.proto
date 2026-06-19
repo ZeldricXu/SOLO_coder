@@ -1,0 +1,192 @@
+syntax = "proto3";
+
+package distcomp.v1;
+
+option go_package = "github.com/lab/distcomp/pkg/grpcapi/distcomp/v1";
+
+import "google/protobuf/timestamp.proto";
+
+enum WorkerStatus {
+  WORKER_STATUS_UNSPECIFIED = 0;
+  WORKER_STATUS_OFFLINE = 1;
+  WORKER_STATUS_IDLE = 2;
+  WORKER_STATUS_BUSY = 3;
+  WORKER_STATUS_PAUSED = 4;
+  WORKER_STATUS_ERROR = 5;
+  WORKER_STATUS_DRAINING = 6;
+}
+
+enum WorkerType {
+  WORKER_TYPE_UNSPECIFIED = 0;
+  WORKER_TYPE_CPU = 1;
+  WORKER_TYPE_GPU = 2;
+  WORKER_TYPE_TPU = 3;
+  WORKER_TYPE_FPGA = 4;
+  WORKER_TYPE_HYBRID = 5;
+}
+
+message ResourceInfo {
+  uint64 total_memory_bytes = 1;
+  uint64 available_memory_bytes = 2;
+  int32 total_cpu_cores = 3;
+  double cpu_usage_percent = 4;
+  int32 gpu_count = 5;
+  double gpu_usage_percent = 6;
+  uint64 gpu_memory_bytes = 7;
+  uint64 available_gpu_memory_bytes = 8;
+  uint64 disk_usage_bytes = 9;
+  uint64 total_disk_bytes = 10;
+  double network_bandwidth_mbps = 11;
+}
+
+message LoadInfo {
+  int32 active_tasks = 1;
+  int32 pending_tasks = 2;
+  int32 completed_tasks = 3;
+  int32 failed_tasks = 4;
+  double average_task_duration_ms = 5;
+  ResourceInfo resources = 6;
+  google.protobuf.Timestamp last_updated = 7;
+}
+
+message WorkerCapabilities {
+  repeated string supported_functions = 1;
+  repeated string supported_frameworks = 2;
+  int32 max_parallel_tasks = 3;
+  double max_memory_gb = 4;
+  double performance_score = 5;
+  map<string, string> tags = 6;
+}
+
+message WorkerInfo {
+  string worker_id = 1;
+  string name = 2;
+  string address = 3;
+  WorkerType type = 4;
+  WorkerStatus status = 5;
+  WorkerCapabilities capabilities = 6;
+  LoadInfo load = 7;
+  google.protobuf.Timestamp registered_at = 8;
+  google.protobuf.Timestamp last_heartbeat = 9;
+  string version = 10;
+  string zone = 11;
+}
+
+message RegisterWorkerRequest {
+  string name = 1;
+  string address = 2;
+  WorkerType type = 3;
+  WorkerCapabilities capabilities = 4;
+  string version = 5;
+  string zone = 6;
+  map<string, string> tags = 7;
+}
+
+message RegisterWorkerResponse {
+  string worker_id = 1;
+  bool success = 2;
+  string message = 3;
+  google.protobuf.Timestamp assigned_at = 4;
+}
+
+message UnregisterWorkerRequest {
+  string worker_id = 1;
+  string reason = 2;
+}
+
+message UnregisterWorkerResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message HeartbeatRequest {
+  string worker_id = 1;
+  WorkerStatus status = 2;
+  LoadInfo load = 3;
+  google.protobuf.Timestamp timestamp = 4;
+  string message = 5;
+}
+
+message HeartbeatResponse {
+  bool acknowledged = 1;
+  WorkerStatus desired_status = 2;
+  string message = 3;
+  google.protobuf.Timestamp next_heartbeat_deadline = 4;
+}
+
+message GetWorkerRequest {
+  string worker_id = 1;
+}
+
+message GetWorkerResponse {
+  WorkerInfo worker = 1;
+}
+
+message ListWorkersRequest {
+  WorkerStatus status = 1;
+  WorkerType type = 2;
+  string zone = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListWorkersResponse {
+  repeated WorkerInfo workers = 1;
+  int32 total_count = 2;
+  string next_page_token = 3;
+}
+
+message UpdateWorkerStatusRequest {
+  string worker_id = 1;
+  WorkerStatus status = 2;
+  string message = 3;
+}
+
+message UpdateWorkerStatusResponse {
+  bool success = 1;
+}
+
+message WorkerStreamRequest {
+  oneof request {
+    RegisterWorkerRequest register = 1;
+    HeartbeatRequest heartbeat = 2;
+    UnregisterWorkerRequest unregister = 3;
+    LoadInfo load_update = 4;
+  }
+}
+
+message WorkerStreamResponse {
+  oneof response {
+    RegisterWorkerResponse register_ack = 1;
+    HeartbeatResponse heartbeat_ack = 2;
+    UpdateWorkerStatusResponse status_update = 3;
+    WorkerCommand command = 4;
+  }
+}
+
+message WorkerCommand {
+  enum CommandType {
+    COMMAND_TYPE_UNSPECIFIED = 0;
+    COMMAND_TYPE_PAUSE = 1;
+    COMMAND_TYPE_RESUME = 2;
+    COMMAND_TYPE_DRAIN = 3;
+    COMMAND_TYPE_SHUTDOWN = 4;
+    COMMAND_TYPE_UPDATE_CAPABILITIES = 5;
+  }
+  CommandType type = 1;
+  string worker_id = 2;
+  string message = 3;
+  google.protobuf.Timestamp issued_at = 4;
+  map<string, string> parameters = 5;
+}
+
+service WorkerService {
+  rpc RegisterWorker(RegisterWorkerRequest) returns (RegisterWorkerResponse);
+  rpc UnregisterWorker(UnregisterWorkerRequest) returns (UnregisterWorkerResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc GetWorker(GetWorkerRequest) returns (GetWorkerResponse);
+  rpc ListWorkers(ListWorkersRequest) returns (ListWorkersResponse);
+  rpc UpdateWorkerStatus(UpdateWorkerStatusRequest) returns (UpdateWorkerStatusResponse);
+  rpc StreamWorker(stream WorkerStreamRequest) returns (stream WorkerStreamResponse);
+  rpc StreamHeartbeat(stream HeartbeatRequest) returns (stream HeartbeatResponse);
+}

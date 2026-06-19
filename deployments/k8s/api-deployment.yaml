@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: experiment-api
+  labels:
+    app: experiment
+    component: api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: experiment
+      component: api
+  template:
+    metadata:
+      labels:
+        app: experiment
+        component: api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+    spec:
+      containers:
+        - name: api
+          image: df1-96/api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: EXP_DATABASE_HOST
+              value: "postgres"
+            - name: EXP_DATABASE_PORT
+              value: "5432"
+            - name: EXP_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: experiment-secrets
+                  key: postgres-user
+            - name: EXP_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: experiment-secrets
+                  key: postgres-password
+            - name: EXP_DATABASE_DBNAME
+              value: "experiment"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: config
+              mountPath: /app/configs
+            - name: dashboards
+              mountPath: /app/dashboards
+      volumes:
+        - name: config
+          configMap:
+            name: experiment-config
+        - name: dashboards
+          configMap:
+            name: experiment-dashboards
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: experiment-api
+  labels:
+    app: experiment
+    component: api
+spec:
+  selector:
+    app: experiment
+    component: api
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+      protocol: TCP
+  type: LoadBalancer

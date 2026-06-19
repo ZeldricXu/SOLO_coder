@@ -1,0 +1,129 @@
+syntax = "proto3";
+
+package distcomp.v1;
+
+option go_package = "github.com/lab/distcomp/pkg/grpcapi/distcomp/v1";
+
+import "parameter.proto";
+import "objective.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+
+enum TaskStatus {
+  TASK_STATUS_UNSPECIFIED = 0;
+  TASK_STATUS_PENDING = 1;
+  TASK_STATUS_QUEUED = 2;
+  TASK_STATUS_RUNNING = 3;
+  TASK_STATUS_PAUSED = 4;
+  TASK_STATUS_COMPLETED = 5;
+  TASK_STATUS_FAILED = 6;
+  TASK_STATUS_CANCELLED = 7;
+  TASK_STATUS_TIMED_OUT = 8;
+}
+
+enum TaskPriority {
+  TASK_PRIORITY_UNSPECIFIED = 0;
+  TASK_PRIORITY_LOW = 1;
+  TASK_PRIORITY_MEDIUM = 2;
+  TASK_PRIORITY_HIGH = 3;
+  TASK_PRIORITY_CRITICAL = 4;
+}
+
+message TaskConfig {
+  int32 max_retries = 1;
+  google.protobuf.Duration timeout = 2;
+  int32 max_parallel_shards = 3;
+  bool enable_checkpointing = 4;
+  string resource_requirements = 5;
+}
+
+message Task {
+  string task_id = 1;
+  string experiment_name = 2;
+  string description = 3;
+  TaskPriority priority = 4;
+  TaskStatus status = 5;
+  ObjectiveFunction objective = 6;
+  repeated ParameterCombination parameter_combinations = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+  google.protobuf.Timestamp deadline = 10;
+  TaskConfig config = 11;
+  string created_by = 12;
+  map<string, string> tags = 13;
+}
+
+message TaskShard {
+  string task_id = 1;
+  int32 shard_id = 2;
+  int32 total_shards = 3;
+  repeated ParameterCombination parameter_combinations = 4;
+}
+
+message CreateTaskRequest {
+  string experiment_name = 1;
+  string description = 2;
+  TaskPriority priority = 3;
+  ObjectiveFunction objective = 4;
+  repeated ParameterCombination parameter_combinations = 5;
+  google.protobuf.Timestamp deadline = 6;
+  TaskConfig config = 7;
+  string created_by = 8;
+  map<string, string> tags = 9;
+}
+
+message CreateTaskResponse {
+  string task_id = 1;
+  TaskStatus status = 2;
+}
+
+message GetTaskRequest {
+  string task_id = 1;
+}
+
+message GetTaskResponse {
+  Task task = 1;
+}
+
+message ListTasksRequest {
+  string experiment_name = 1;
+  TaskStatus status = 2;
+  string created_by = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+}
+
+message ListTasksResponse {
+  repeated Task tasks = 1;
+  int32 total_count = 2;
+  string next_page_token = 3;
+}
+
+message UpdateTaskStatusRequest {
+  string task_id = 1;
+  TaskStatus status = 2;
+  string message = 3;
+}
+
+message UpdateTaskStatusResponse {
+  bool success = 1;
+}
+
+message CancelTaskRequest {
+  string task_id = 1;
+  string reason = 2;
+}
+
+message CancelTaskResponse {
+  bool success = 1;
+}
+
+service TaskService {
+  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse);
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse);
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse);
+  rpc UpdateTaskStatus(UpdateTaskStatusRequest) returns (UpdateTaskStatusResponse);
+  rpc CancelTask(CancelTaskRequest) returns (CancelTaskResponse);
+  rpc StreamTaskStatus(stream GetTaskRequest) returns (stream Task);
+  rpc StreamCreateTask(stream CreateTaskRequest) returns (stream CreateTaskResponse);
+}

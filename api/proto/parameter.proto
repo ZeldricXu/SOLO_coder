@@ -1,0 +1,72 @@
+syntax = "proto3";
+
+package distcomp.v1;
+
+option go_package = "github.com/lab/distcomp/pkg/grpcapi/distcomp/v1";
+
+enum ParameterType {
+  PARAMETER_TYPE_UNSPECIFIED = 0;
+  PARAMETER_TYPE_CONTINUOUS = 1;
+  PARAMETER_TYPE_DISCRETE = 2;
+  PARAMETER_TYPE_CATEGORICAL = 3;
+}
+
+message ContinuousParameter {
+  double lower_bound = 1;
+  double upper_bound = 2;
+  double default_value = 3;
+  bool log_scale = 4;
+}
+
+message DiscreteParameter {
+  repeated int64 values = 1;
+  int64 default_value = 2;
+}
+
+message CategoricalParameter {
+  repeated string categories = 1;
+  string default_value = 2;
+}
+
+message Parameter {
+  string name = 1;
+  ParameterType type = 2;
+  string description = 3;
+  oneof parameter {
+    ContinuousParameter continuous = 4;
+    DiscreteParameter discrete = 5;
+    CategoricalParameter categorical = 6;
+  }
+}
+
+message ParameterValue {
+  string name = 1;
+  oneof value {
+    double double_value = 2;
+    int64 int_value = 3;
+    string string_value = 4;
+  }
+}
+
+message ParameterSpace {
+  repeated Parameter parameters = 1;
+}
+
+message ParameterCombination {
+  repeated ParameterValue values = 1;
+}
+
+message ValidateParameterRequest {
+  ParameterSpace space = 1;
+  ParameterCombination combination = 2;
+}
+
+message ValidateParameterResponse {
+  bool valid = 1;
+  repeated string errors = 2;
+}
+
+service ParameterService {
+  rpc ValidateParameter(ValidateParameterRequest) returns (ValidateParameterResponse);
+  rpc StreamValidate(stream ValidateParameterRequest) returns (stream ValidateParameterResponse);
+}

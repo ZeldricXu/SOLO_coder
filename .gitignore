@@ -1,0 +1,91 @@
+# Binaries
+/bin/
+/bin/plugins/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+/var/log/
+
+# Config overrides
+config.local.yaml
+config.override.yaml
+
+# Data
+*.db
+*.sqlite
+*.sqlite3
+/postgres-data/
+/prometheus-data/
+/grafana-data/
+
+# Plugins compiled
+/plugins/*.so
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Kubernetes
+*.local.yaml
+*.secret.yaml
+
+# Docker volumes
+docker-compose.override.yml
+
+# Generated protobuf
+# Note: Protobuf generated files are checked in, but if you want to
+# ignore them, uncomment the following lines:
+# pkg/grpcapi/**/*.pb.go
+# pkg/grpcapi/**/*_grpc.pb.go
+
+# IDE configurations
+*.iml
+*.ipr
+*.iws
+
+# Local test data
+/testdata/
+/test-output/
+
+# Benchmark outputs
+*.bench
+pprof/

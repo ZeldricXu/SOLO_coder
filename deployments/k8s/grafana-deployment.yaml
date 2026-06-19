@@ -1,0 +1,155 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+  labels:
+    app: experiment
+    component: monitoring
+    monitoring: grafana
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: experiment
+      component: monitoring
+      monitoring: grafana
+  template:
+    metadata:
+      labels:
+        app: experiment
+        component: monitoring
+        monitoring: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:10.4.0
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+          env:
+            - name: GF_SECURITY_ADMIN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-secrets
+                  key: admin-user
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: grafana-secrets
+                  key: admin-password
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "256Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/grafana
+            - name: dashboards
+              mountPath: /etc/grafana/provisioning/dashboards
+            - name: datasources
+              mountPath: /etc/grafana/provisioning/datasources
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: grafana-data
+        - name: dashboards
+          configMap:
+            name: experiment-dashboards
+        - name: datasources
+          configMap:
+            name: grafana-datasources
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  labels:
+    app: experiment
+    component: monitoring
+    monitoring: grafana
+spec:
+  selector:
+    app: experiment
+    component: monitoring
+    monitoring: grafana
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      protocol: TCP
+  type: LoadBalancer
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: grafana-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+  storageClassName: standard
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: grafana-secrets
+type: Opaque
+stringData:
+  admin-user: "admin"
+  admin-password: "admin"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-datasources
+data:
+  datasources.yml: |
+    apiVersion: 1
+    datasources:
+      - name: Prometheus
+        type: prometheus
+        access: proxy
+        url: http://prometheus:9090
+        isDefault: true
+        editable: true
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: experiment-dashboards
+data:
+  grafana-experiment-dashboard.json: |
+    {
+      "apiVersion": 1,
+      "providers": [
+        {
+          "name": "default",
+          "orgId": 1,
+          "folder": "",
+          "type": "file",
+          "disableDeletion": false,
+          "editable": true,
+          "options": {
+            "path": "/etc/grafana/provisioning/dashboards"
+          }
+        }
+      ]
+    }
