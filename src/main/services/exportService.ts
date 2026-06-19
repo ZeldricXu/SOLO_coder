@@ -273,16 +273,72 @@ ${note.frontmatter && Object.keys(note.frontmatter).length > 0 ? `
 <head>
   <style>
     body { margin: 0; padding: 0; background: white; }
-    svg { width: 100%; height: 100%; }
+    #svg-container { width: 100%; height: 100%; }
+    svg { width: 100%; height: 100%; display: block; }
   </style>
 </head>
-<body>${svgData}</body>
+<body>
+  <div id="svg-container">${svgData}</div>
+</body>
 </html>`;
     
     await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
     
-    const pngBuffer = await win.webContents.capturePage();
-    fs.writeFileSync(result.filePath, pngBuffer.toPNG());
+    const pngDataUrl = await win.webContents.executeJavaScript(`
+      (function() {
+        return new Promise((resolve, reject) => {
+          const container = document.getElementById('svg-container');
+          const svg = container.querySelector('svg');
+          
+          if (!svg) {
+            reject(new Error('SVG element not found'));
+            return;
+          }
+          
+          const svgRect = svg.getBoundingClientRect();
+          const width = svgRect.width;
+          const height = svgRect.height;
+          
+          const svgData = new XMLSerializer().serializeToString(svg);
+          const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+          const url = URL.createObjectURL(svgBlob);
+          
+          const img = new Image();
+          img.onload = function() {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+              URL.revokeObjectURL(url);
+              reject(new Error('Canvas context not available'));
+              return;
+            }
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
+            
+            const dataUrl = canvas.toDataURL('image/png');
+            URL.revokeObjectURL(url);
+            resolve(dataUrl);
+          };
+          
+          img.onerror = function() {
+            URL.revokeObjectURL(url);
+            reject(new Error('Failed to load SVG image'));
+          };
+          
+          img.src = url;
+        });
+      })();
+    `);
+    
+    const base64Data = pngDataUrl.replace(/^data:image\/png;base64,/, '');
+    const pngBuffer = Buffer.from(base64Data, 'base64');
+    
+    fs.writeFileSync(result.filePath, pngBuffer);
     win.close();
     
     return result.filePath;

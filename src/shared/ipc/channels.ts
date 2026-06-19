@@ -33,6 +33,10 @@ export const enum IpcChannelName {
   VAULT_RESCAN = 'vault:rescan',
   VAULT_NOTE_CHANGED = 'vault:note-changed',
   VAULT_NOTE_DELETED = 'vault:note-deleted',
+  VAULT_CHECK_PERMISSIONS = 'vault:checkPermissions',
+  VAULT_REQUEST_PERMISSIONS = 'vault:requestPermissions',
+  VAULT_GET_WATCHER_STATUS = 'vault:getWatcherStatus',
+  VAULT_WATCHER_ERROR = 'vault:watcher-error',
 
   ATTACHMENTS_LIST = 'attachments:list',
   ATTACHMENTS_UPLOAD = 'attachments:upload',
@@ -83,6 +87,10 @@ export interface IpcChannels {
   [IpcChannelName.VAULT_RESCAN]: { request: void; response: void };
   [IpcChannelName.VAULT_NOTE_CHANGED]: { request: void; response: Note };
   [IpcChannelName.VAULT_NOTE_DELETED]: { request: void; response: string };
+  [IpcChannelName.VAULT_CHECK_PERMISSIONS]: { request: [targetPath: string]; response: { accessible: boolean; isProtectedPath: boolean; error?: string } };
+  [IpcChannelName.VAULT_REQUEST_PERMISSIONS]: { request: [targetPath: string]; response: boolean };
+  [IpcChannelName.VAULT_GET_WATCHER_STATUS]: { request: void; response: { watching: boolean; error?: string } };
+  [IpcChannelName.VAULT_WATCHER_ERROR]: { request: void; response: { message: string; code: string; isPermissionError: boolean } };
 
   [IpcChannelName.ATTACHMENTS_LIST]: { request: void; response: AttachmentFile[] };
   [IpcChannelName.ATTACHMENTS_UPLOAD]: { request: [fileData: string | { name: string; type: string; size: number; data: Buffer }, targetDir?: string]; response: AttachmentFile | { success: boolean; relativePath: string; attachment: AttachmentFile } };

@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import type { PluginDefinition, PluginCommand, Note, SearchResult } from '@shared/types';
 import { useAppStore } from '../stores/appStore';
+import { useSearch } from '../hooks/useSearch';
+import { SearchSkeleton } from '../components/SearchSkeleton';
 
 interface CommandPaletteProps {
   isOpen: boolean;
@@ -12,10 +14,10 @@ interface CommandPaletteProps {
 const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, commands, notes }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const setCurrentNote = useAppStore(state => state.setCurrentNote);
   const setShowCommandPalette = useAppStore(state => state.setShowCommandPalette);
+  const { results: searchResults, isLoading, search } = useSearch(notes);
   
   useEffect(() => {
     if (isOpen) {
@@ -49,19 +51,11 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
   
   useEffect(() => {
     if (query.startsWith('>') || query === '') {
-      setSearchResults([]);
       return;
     }
     
-    const timeout = setTimeout(async () => {
-      if (query.trim()) {
-        const results = await window.api.search.query(query, { limit: 10, highlight: true });
-        setSearchResults(results);
-      }
-    }, 150);
-    
-    return () => clearTimeout(timeout);
-  }, [query]);
+    search(query, { limit: 10, highlight: true });
+  }, [query, search]);
   
   const filteredCommands = useMemo(() => {
     if (!query.startsWith('>')) return [];
@@ -124,7 +118,9 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({ isOpen, onClose, comman
         </div>
         
         <div className="command-palette-results">
-          {items.length === 0 ? (
+          {isLoading && !query.startsWith('>') && query.trim() !== '' ? (
+            <SearchSkeleton count={5} />
+          ) : items.length === 0 ? (
             <div className="command-palette-empty">
               {query.startsWith('>') ? '无匹配命令' : '输入关键词搜索笔记'}
             </div>

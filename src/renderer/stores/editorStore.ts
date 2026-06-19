@@ -15,6 +15,7 @@ interface EditorState {
   isDragging: boolean;
   cursorPosition: Point | null;
   documentContent: string;
+  _subscriptions: Set<() => void>;
 
   setAutocompletePos: (pos: { top: number; left: number } | null) => void;
   setAutocompleteSearch: (search: string) => void;
@@ -26,6 +27,9 @@ interface EditorState {
   handleLinkAutocomplete: (editor: ReactEditor) => void;
   handleSelectLink: (target: string) => void;
   insertImage: (src: string, alt?: string) => void;
+  clearSubscriptions: () => void;
+  dispose: () => void;
+  addSubscription: (cb: () => void) => () => void;
 }
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -37,6 +41,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   isDragging: false,
   cursorPosition: null,
   documentContent: '',
+  _subscriptions: new Set(),
 
   setAutocompletePos: (pos) => set({ autocompletePos: pos }),
   setAutocompleteSearch: (search) => set({ autocompleteSearch: search }),
@@ -46,7 +51,42 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   updateContent: (content) => set({ documentContent: content }),
 
   resetEditor: (noteId) => {
-    set({ currentNoteId: noteId, autocompletePos: null, autocompleteSearch: '', wikiLinkStart: null });
+    set({
+      currentNoteId: noteId,
+      autocompletePos: null,
+      autocompleteSearch: '',
+      wikiLinkStart: null,
+      cursorPosition: null,
+      documentContent: '',
+      isDragging: false,
+    });
+  },
+
+  clearSubscriptions: () => {
+    const { _subscriptions } = get();
+    _subscriptions.forEach(cb => cb());
+    _subscriptions.clear();
+  },
+
+  dispose: () => {
+    get().clearSubscriptions();
+    set({
+      currentNoteId: null,
+      autocompletePos: null,
+      autocompleteSearch: '',
+      wikiLinkStart: null,
+      cursorPosition: null,
+      documentContent: '',
+      isDragging: false,
+    });
+  },
+
+  addSubscription: (cb) => {
+    const { _subscriptions } = get();
+    _subscriptions.add(cb);
+    return () => {
+      _subscriptions.delete(cb);
+    };
   },
 
   handleLinkAutocomplete: (editor) => {

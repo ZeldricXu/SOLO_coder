@@ -192,8 +192,12 @@ export interface IpcRendererApi {
     setPath: (path: string) => Promise<boolean>;
     getPath: () => Promise<string>;
     rescan: () => Promise<void>;
+    checkPermissions: (targetPath: string) => Promise<{ accessible: boolean; isProtectedPath: boolean; error?: string }>;
+    requestPermissions: (targetPath: string) => Promise<boolean>;
+    getWatcherStatus: () => Promise<{ watching: boolean; error?: string }>;
     onNoteChanged: (callback: (event: any, note: Note) => void) => () => void;
     onNoteDeleted: (callback: (event: any, path: string) => void) => () => void;
+    onWatcherError: (callback: (event: any, error: { message: string; code: string; isPermissionError: boolean }) => void) => () => void;
   };
   attachments: {
     list: () => Promise<AttachmentFile[]>;

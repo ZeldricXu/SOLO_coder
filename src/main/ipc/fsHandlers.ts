@@ -119,6 +119,13 @@ export function registerFsHandlers(deps: FsHandlerDeps): void {
       setTimeout(() => {
         searchService.rebuildIndex(noteService.getAll());
       }, 500);
+      
+      const permResult = vaultService.checkPermissions(vaultPath);
+      if (!permResult.accessible && permResult.isProtectedPath) {
+        setTimeout(() => {
+          vaultService.showPermissionDialog();
+        }, 500);
+      }
     }
     return success;
   });
@@ -130,6 +137,18 @@ export function registerFsHandlers(deps: FsHandlerDeps): void {
   ipcMain.handle(IpcChannelName.VAULT_RESCAN, async () => {
     vaultService.rescan();
     searchService.rebuildIndex(noteService.getAll());
+  });
+
+  ipcMain.handle(IpcChannelName.VAULT_CHECK_PERMISSIONS, (_event, targetPath: string) => {
+    return vaultService.checkPermissions(targetPath);
+  });
+
+  ipcMain.handle(IpcChannelName.VAULT_REQUEST_PERMISSIONS, async (_event, targetPath: string) => {
+    return vaultService.requestPermissions(targetPath);
+  });
+
+  ipcMain.handle(IpcChannelName.VAULT_GET_WATCHER_STATUS, () => {
+    return vaultService.getWatcherStatus();
   });
 
   ipcMain.handle(IpcChannelName.ATTACHMENTS_LIST, () => {

@@ -35,6 +35,9 @@ const api: IpcRendererApi = {
     setPath: (path: string) => ipcRenderer.invoke(IpcChannelName.VAULT_SET_PATH, path),
     getPath: () => ipcRenderer.invoke(IpcChannelName.VAULT_GET_PATH),
     rescan: () => ipcRenderer.invoke(IpcChannelName.VAULT_RESCAN),
+    checkPermissions: (targetPath: string) => ipcRenderer.invoke(IpcChannelName.VAULT_CHECK_PERMISSIONS, targetPath),
+    requestPermissions: (targetPath: string) => ipcRenderer.invoke(IpcChannelName.VAULT_REQUEST_PERMISSIONS, targetPath),
+    getWatcherStatus: () => ipcRenderer.invoke(IpcChannelName.VAULT_GET_WATCHER_STATUS),
     onNoteChanged: (callback: any) => {
       const handler = (_event: any, note: any) => callback(_event, note);
       ipcRenderer.on(IpcChannelName.VAULT_NOTE_CHANGED, handler);
@@ -44,6 +47,11 @@ const api: IpcRendererApi = {
       const handler = (_event: any, notePath: string) => callback(_event, notePath);
       ipcRenderer.on(IpcChannelName.VAULT_NOTE_DELETED, handler);
       return () => ipcRenderer.removeListener(IpcChannelName.VAULT_NOTE_DELETED, handler);
+    },
+    onWatcherError: (callback: any) => {
+      const handler = (_event: any, error: any) => callback(_event, error);
+      ipcRenderer.on(IpcChannelName.VAULT_WATCHER_ERROR, handler);
+      return () => ipcRenderer.removeListener(IpcChannelName.VAULT_WATCHER_ERROR, handler);
     },
   },
   attachments: {

@@ -97,6 +97,9 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({ note, onSave, onLink
     insertImage,
   } = useEditorStore();
 
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+
   const initialValue = useMemo(() => {
     return parseMarkdownToSlate(note.content);
   }, [note.id]);
@@ -106,6 +109,31 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({ note, onSave, onLink
       Transforms.deselect(editorInstance as any);
     }
   }, [note.id]);
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      (window as any)._editorMountCount = ((window as any)._editorMountCount || 0) + 1;
+    }
+    return () => {
+      if (import.meta.env.DEV) {
+        (window as any)._editorMountCount = ((window as any)._editorMountCount || 0) - 1;
+        if ((window as any)._editorMountCount < 0) {
+          console.warn('[Memory Leak] EditorCanvas unmount count exceeds mount count - possible leak');
+        }
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const renderElement = useCallback((props: any) => {
     const { element } = props;
@@ -175,11 +203,15 @@ export const EditorCanvas: React.FC<EditorCanvasProps> = ({ note, onSave, onLink
   const onChange = useCallback((value: Descendant[]) => {
     handleLinkAutocomplete(editorInstance as ReactEditor);
 
-    if (note && onSave) {
-      clearTimeout((window as any)._saveTimeout);
-      (window as any)._saveTimeout = setTimeout(() => {
-        const markdown = slateToMarkdown(value);
-        onSave(markdown);
+    if (note && onSave && isMountedRef.current) {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+      saveTimeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current) {
+          const markdown = slateToMarkdown(value);
+          onSave(markdown);
+        }
       }, 500);
     }
   }, [note, onSave, editorInstance, handleLinkAutocomplete]);

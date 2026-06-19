@@ -4,6 +4,7 @@ import './editor.css';
 import './brokenLinkFixer.css';
 import { EditorToolbar, EditorCanvas, BacklinkPanel } from './editor';
 import { useEditorStore } from '../stores/editorStore';
+import { useMemoryCheck } from '../hooks/useMemoryCheck';
 
 interface EditorProps {
   note: Note | null;
@@ -15,10 +16,20 @@ interface EditorProps {
 
 const NoteEditor: React.FC<EditorProps> = ({ note, allNotes, onSave, onLinkClick, onInsertImage }) => {
   const resetEditor = useEditorStore(state => state.resetEditor);
+  const dispose = useEditorStore(state => state.dispose);
+
+  useMemoryCheck(note?.id);
 
   React.useEffect(() => {
     resetEditor(note?.id ?? null);
   }, [note?.id, resetEditor]);
+
+  React.useEffect(() => {
+    return () => {
+      resetEditor(null);
+      dispose();
+    };
+  }, [resetEditor, dispose]);
 
   if (!note) {
     return (
@@ -34,6 +45,7 @@ const NoteEditor: React.FC<EditorProps> = ({ note, allNotes, onSave, onLinkClick
     <div className="editor-container">
       <EditorToolbar note={note} />
       <EditorCanvas
+        key={note.id}
         note={note}
         onSave={onSave}
         onLinkClick={onLinkClick}
