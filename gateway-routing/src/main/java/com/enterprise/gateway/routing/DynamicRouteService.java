@@ -22,6 +22,17 @@ import java.util.Map;
 public class DynamicRouteService {
 
     private final InMemoryRouteDefinitionRepository routeDefinitionRepository;
+    private final RouteMapper routeMapper;
+
+    public void refreshAll() {
+        List<RouteDefinition> entities = routeMapper.selectList(new LambdaQueryWrapper<RouteDefinition>()
+                .eq(RouteDefinition::getStatus, 1));
+        List<org.springframework.cloud.gateway.route.RouteDefinition> definitions = new ArrayList<>();
+        for (RouteDefinition entity : entities) {
+            definitions.add(convertToGatewayRoute(entity));
+        }
+        refreshRoutes(definitions);
+    }
 
     public void refreshRoutes(List<org.springframework.cloud.gateway.route.RouteDefinition> definitions) {
         routeDefinitionRepository.getRouteDefinitions()

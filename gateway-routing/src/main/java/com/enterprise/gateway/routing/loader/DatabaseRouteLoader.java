@@ -16,6 +16,7 @@ import java.util.List;
 public class DatabaseRouteLoader {
 
     private final DynamicRouteService dynamicRouteService;
+    private final RouteMapper routeMapper;
 
     @PostConstruct
     public void loadRoutesFromDatabase() {
@@ -35,6 +36,7 @@ public class DatabaseRouteLoader {
     }
 
     protected List<RouteDefinition> queryAllRoutes() {
-        return new ArrayList<>();
+        return routeMapper.selectList(new LambdaQueryWrapper<RouteDefinition>()
+                .eq(RouteDefinition::getStatus, 1));
     }
 }
