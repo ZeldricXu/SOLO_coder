@@ -137,6 +137,10 @@ const AppContent: React.FC = () => {
     }
   };
   
+  const handleInsertImage = (relativePath: string) => {
+    console.log('Image inserted:', relativePath);
+  };
+  
   if (isLoading) {
     return (
       <div className="app-loading">
@@ -185,8 +189,10 @@ const AppContent: React.FC = () => {
           <div className={clsx('editor-section', { 'with-graph': showGraph })}>
             <NoteEditor
               note={currentNote}
+              allNotes={allNotes}
               onSave={handleSaveNote}
               onLinkClick={handleLinkClick}
+              onInsertImage={handleInsertImage}
             />
           </div>
           

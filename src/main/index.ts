@@ -7,6 +7,8 @@ import { SettingsService } from './db/settingsService';
 import { VaultService } from './services/vaultService';
 import { SearchService } from './services/searchService';
 import { ExportService } from './services/exportService';
+import { LinkRepairService } from './services/linkRepairService';
+import { AttachmentService } from './services/attachmentService';
 import fs from 'fs';
 
 let mainWindow: BrowserWindow | null = null;
@@ -48,6 +50,7 @@ app.whenReady().then(() => {
   
   if (settings.vaultPath && fs.existsSync(settings.vaultPath)) {
     VaultService.init(settings.vaultPath);
+    AttachmentService.init(settings.vaultPath);
     SearchService.init(NoteService.getAll());
   }
   
@@ -122,6 +125,18 @@ function registerIpcHandlers() {
     return result;
   });
 
+  ipcMain.handle('notes:findSimilarNotes', (_event, title: string, threshold?: number) => {
+    return LinkRepairService.findSimilarNotes(title, threshold);
+  });
+
+  ipcMain.handle('notes:updateLinkTarget', (_event, sourceNoteId: string, oldTarget: string, newTargetId: string) => {
+    return LinkRepairService.updateLinkTarget(sourceNoteId, oldTarget, newTargetId);
+  });
+
+  ipcMain.handle('notes:scanBrokenLinks', (_event, noteId?: string) => {
+    return LinkRepairService.scanBrokenLinks(noteId);
+  });
+
   ipcMain.handle('links:getAll', () => {
     return LinkService.getAll();
   });
@@ -134,8 +149,16 @@ function registerIpcHandlers() {
     return LinkService.getForwardLinks(noteId);
   });
 
+  ipcMain.handle('links:migrateBacklinks', (_event, oldNoteId: string, newNoteId: string) => {
+    return LinkRepairService.migrateBacklinks(oldNoteId, newNoteId);
+  });
+
   ipcMain.handle('graph:getGraphData', () => {
     return LinkService.getGraphData();
+  });
+
+  ipcMain.handle('graph:getFocusGraphData', (_event, options: any) => {
+    return LinkService.getFocusGraphData(options);
   });
 
   ipcMain.handle('search:query', (_event, q: string, options?: any) => {
@@ -146,6 +169,7 @@ function registerIpcHandlers() {
     const success = VaultService.setVaultPath(vaultPath);
     if (success) {
       SettingsService.setVaultPath(vaultPath);
+      AttachmentService.init(vaultPath);
       setTimeout(() => {
         SearchService.rebuildIndex(NoteService.getAll());
       }, 500);
@@ -160,6 +184,36 @@ function registerIpcHandlers() {
   ipcMain.handle('vault:rescan', async () => {
     VaultService.rescan();
     SearchService.rebuildIndex(NoteService.getAll());
+  });
+
+  ipcMain.handle('attachments:list', () => {
+    return AttachmentService.list();
+  });
+
+  ipcMain.handle('attachments:upload', async (_event, fileData: any, targetDir?: string) => {
+    if (typeof fileData === 'string') {
+      return AttachmentService.upload(fileData, targetDir);
+    } else if (fileData && fileData.name && fileData.data) {
+      const buffer = Buffer.from(fileData.data);
+      return AttachmentService.uploadFromData(fileData.name, buffer, targetDir);
+    }
+    throw new Error('Invalid upload data');
+  });
+
+  ipcMain.handle('attachments:delete', (_event, attachmentId: string) => {
+    return AttachmentService.delete(attachmentId);
+  });
+
+  ipcMain.handle('attachments:rename', (_event, attachmentId: string, newName: string) => {
+    return AttachmentService.rename(attachmentId, newName);
+  });
+
+  ipcMain.handle('attachments:getThumbnail', (_event, attachmentId: string) => {
+    return AttachmentService.getThumbnail(attachmentId);
+  });
+
+  ipcMain.handle('attachments:getAssetsPath', () => {
+    return AttachmentService.getAssetsPath();
   });
 
   ipcMain.handle('settings:get', () => {

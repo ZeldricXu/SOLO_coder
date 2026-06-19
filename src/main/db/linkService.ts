@@ -1,5 +1,5 @@
 import { getDatabase } from './index';
-import type { NoteLink, GraphData, GraphNode, GraphEdge } from '../../shared/types';
+import type { NoteLink, GraphData, GraphNode, GraphEdge, FocusGraphOptions } from '../../shared/types';
 import { randomUUID } from 'crypto';
 
 export const LinkService = {
@@ -116,6 +116,150 @@ export const LinkService = {
     }
     
     return 'default';
+  },
+
+  getFocusGraphData(options: FocusGraphOptions): GraphData {
+    const { centerNoteId, depth = 1, includeTags = true, includeExternal = false } = options;
+    const db = getDatabase();
+    
+    const visited = new Set<string>();
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
+    
+    function getNoteById(id: string): any {
+      return db.prepare('SELECT id, title, path, tags FROM notes WHERE id = ?').get(id);
+    }
+    
+    function addNode(note: any, nodeType: GraphNode['nodeType'] = 'note') {
+      if (!note || visited.has(note.id)) return;
+      visited.add(note.id);
+      
+      const tags = JSON.parse(note.tags || '[]');
+      const outgoingCount = (db.prepare(
+        'SELECT COUNT(*) as count FROM links WHERE source_id = ?'
+      ).get(note.id) as any).count;
+      
+      nodes.push({
+        id: note.id,
+        label: note.title,
+        path: note.path,
+        tags,
+        size: note.id === centerNoteId ? 25 : 12 + outgoingCount * 0.5,
+        cluster: tags[0] || 'default',
+        nodeType,
+      });
+    }
+    
+    function addEdge(sourceId: string, targetId: string, weight: number = 1) {
+      const existingEdge = edges.find(
+        e => (e.source === sourceId && e.target === targetId) ||
+             (e.source === targetId && e.target === sourceId)
+      );
+      if (!existingEdge && visited.has(sourceId) && visited.has(targetId)) {
+        edges.push({
+          id: `edge-${sourceId}-${targetId}`,
+          source: sourceId,
+          target: targetId,
+          weight,
+        });
+      }
+    }
+    
+    const centerNote = getNoteById(centerNoteId);
+    if (!centerNote) {
+      return { nodes: [], edges: [] };
+    }
+    
+    addNode(centerNote);
+    
+    let currentLevelIds = [centerNoteId];
+    
+    for (let level = 0; level < depth; level++) {
+      const nextLevelIds = new Set<string>();
+      
+      for (const currentId of currentLevelIds) {
+        const forwardLinks = db.prepare(`
+          SELECT target_id, COUNT(*) as weight 
+          FROM links 
+          WHERE source_id = ? AND target_id IS NOT NULL
+          GROUP BY target_id
+        `).all(currentId);
+        
+        const backLinks = db.prepare(`
+          SELECT source_id, COUNT(*) as weight
+          FROM links
+          WHERE target_id = ? AND source_id IS NOT NULL
+          GROUP BY source_id
+        `).all(currentId);
+        
+        for (const link of forwardLinks as any[]) {
+          const targetNote = getNoteById(link.target_id);
+          if (targetNote) {
+            addNode(targetNote);
+            addEdge(currentId, link.target_id, link.weight);
+            nextLevelIds.add(link.target_id);
+          }
+        }
+        
+        for (const link of backLinks as any[]) {
+          const sourceNote = getNoteById(link.source_id);
+          if (sourceNote) {
+            addNode(sourceNote);
+            addEdge(link.source_id, currentId, link.weight);
+            nextLevelIds.add(link.source_id);
+          }
+        }
+      }
+      
+      currentLevelIds = Array.from(nextLevelIds);
+    }
+    
+    if (includeTags) {
+      const allTags = new Set<string>();
+      nodes.forEach(node => {
+        node.tags.forEach(tag => allTags.add(tag));
+      });
+      
+      let tagIndex = 0;
+      for (const tag of allTags) {
+        const tagId = `tag-${tagIndex}`;
+        if (!visited.has(tagId)) {
+          visited.add(tagId);
+          nodes.push({
+            id: tagId,
+            label: `#${tag}`,
+            path: `tag:${tag}`,
+            tags: [tag],
+            size: 10,
+            cluster: 'tag',
+            nodeType: 'tag',
+          });
+          
+          nodes.forEach(node => {
+            if (node.tags.includes(tag) && node.nodeType === 'note') {
+              edges.push({
+                id: `edge-tag-${tagIndex}-${node.id}`,
+                source: tagId,
+                target: node.id,
+                weight: 0.5,
+              });
+            }
+          });
+          tagIndex++;
+        }
+      }
+    }
+    
+    nodes.forEach(node => {
+      const degree = edges.filter(
+        e => e.source === node.id || e.target === node.id
+      ).length;
+      if (node.id !== centerNoteId) {
+        node.size = Math.max(8, Math.min(25, 10 + degree * 1.2));
+      }
+    });
+    
+    return { nodes, edges };
   },
 };
 

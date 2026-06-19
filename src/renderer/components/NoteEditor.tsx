@@ -1,10 +1,13 @@
 import React, { useCallback, useMemo, useState, useEffect, useRef } from 'react';
-import { createEditor, Descendant, Element as SlateElement, Text, Transforms, Range, Editor, Point } from 'slate';
+import { createEditor, Descendant, Element as SlateElement, Text, Transforms, Range, Editor, Point, Node } from 'slate';
 import { Slate, Editable, withReact, ReactEditor, useSlate, useFocused } from 'slate-react';
 import { withHistory } from 'slate-history';
 import clsx from 'clsx';
-import type { Note } from '@shared/types';
+import type { Note, LinkSuggestion } from '@shared/types';
 import './editor.css';
+import './brokenLinkFixer.css';
+import { BrokenLinkFixer } from './BrokenLinkFixer';
+import type { BrokenLinkInfo } from '../utils/editorUtils';
 
 interface WikiLinkElement {
   type: 'wiki-link';
@@ -52,22 +55,34 @@ type CustomElement =
   | BlockquoteElement
   | ListElement
   | ListItemElement
-  | ParagraphElement;
+  | ParagraphElement
+  | ImageElement;
 
 interface EditorProps {
   note: Note | null;
+  allNotes: Note[];
   onSave?: (content: string) => void;
   onLinkClick?: (target: string) => void;
+  onInsertImage?: (relativePath: string) => void;
+}
+
+interface ImageElement {
+  type: 'image';
+  src: string;
+  alt: string;
+  children: { text: string }[];
 }
 
 const withWikiLinks = (editor: ReactEditor) => {
   const { isInline, isVoid } = editor;
   
   editor.isInline = (element: any) => {
+    if (element.type === 'image') return true;
     return element.type === 'wiki-link' ? true : isInline(element);
   };
   
   editor.isVoid = (element: any) => {
+    if (element.type === 'image') return true;
     return element.type === 'wiki-link' ? false : isVoid(element);
   };
   
@@ -174,6 +189,18 @@ function parseMarkdownToSlate(markdown: string): Descendant[] {
       continue;
     }
     
+    const imageMatch = line.match(/!\[([^\]]*)\]\(([^)]+)\)/);
+    if (imageMatch && imageMatch[0] === line.trim()) {
+      nodes.push({
+        type: 'image',
+        src: imageMatch[2],
+        alt: imageMatch[1],
+        children: [{ text: '' }],
+      } as any);
+      i++;
+      continue;
+    }
+    
     if (line.trim() === '') {
       nodes.push({ type: 'paragraph', children: [{ text: '' }] } as any);
       i++;
@@ -245,7 +272,7 @@ function slateToMarkdown(nodes: Descendant[]): string {
         break;
       case 'blockquote':
         const quoteText = element.children.map((c: any) => c.text).join('\n');
-        lines.push(quoteText.split('\n').map(l => `> ${l}`).join('\n'));
+        lines.push(quoteText.split('\n').map((l: string) => `> ${l}`).join('\n'));
         break;
       case 'code-block':
         lines.push(`\`\`\`${element.language || ''}`);
@@ -261,6 +288,9 @@ function slateToMarkdown(nodes: Descendant[]): string {
         element.children.forEach((item: any, idx: number) => {
           lines.push(`${idx + 1}. ${inlineToMarkdown(item.children)}`);
         });
+        break;
+      case 'image':
+        lines.push(`![${element.alt || ''}](${element.src})`);
         break;
       default:
         if (element.text !== undefined) {
@@ -436,7 +466,7 @@ const LinkAutocomplete: React.FC<{
   );
 };
 
-const NoteEditor: React.FC<EditorProps> = ({ note, onSave, onLinkClick }) => {
+const NoteEditor: React.FC<EditorProps> = ({ note, allNotes, onSave, onLinkClick, onInsertImage }) => {
   const editor = useMemo(
     () => withWikiLinks(withReact(withHistory(createEditor()))),
     []
@@ -445,12 +475,13 @@ const NoteEditor: React.FC<EditorProps> = ({ note, onSave, onLinkClick }) => {
   const [autocompletePos, setAutocompletePos] = useState<{ top: number; left: number } | null>(null);
   const [autocompleteSearch, setAutocompleteSearch] = useState('');
   const [wikiLinkStart, setWikiLinkStart] = useState<Point | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
   
   const initialValue = useMemo(() => {
     if (note) {
       return parseMarkdownToSlate(note.content);
     }
-    return [{ type: 'paragraph', children: [{ text: '' }] }] as Descendant[];
+    return [{ type: 'paragraph', children: [{ text: '' }] }] as unknown as Descendant[];
   }, [note?.id]);
   
   useEffect(() => {
@@ -466,6 +497,19 @@ const NoteEditor: React.FC<EditorProps> = ({ note, onSave, onLinkClick }) => {
     switch (element.type) {
       case 'wiki-link':
         return <WikiLinkElement {...props} />;
+      case 'image':
+        return (
+          <div {...props.attributes} className="image-block">
+            <img 
+              src={element.src} 
+              alt={element.alt} 
+              className="editor-image"
+            />
+            {element.alt && (
+              <div className="image-caption">{element.alt}</div>
+            )}
+          </div>
+        );
       case 'heading':
         const Tag = `h${element.level}` as keyof JSX.IntrinsicElements;
         return React.createElement(Tag, { className: `heading heading-${element.level}`, ...props.attributes }, props.children);
@@ -595,6 +639,94 @@ const NoteEditor: React.FC<EditorProps> = ({ note, onSave, onLinkClick }) => {
     }
   }, [note, onSave, editor, handleLinkAutocomplete]);
   
+  const insertImage = useCallback((src: string, alt = '') => {
+    const { selection } = editor;
+    if (!selection) return;
+    
+    const imageElement = {
+      type: 'image',
+      src,
+      alt,
+      children: [{ text: '' }],
+    };
+    
+    Transforms.insertNodes(editor, imageElement as any);
+    Transforms.move(editor);
+    
+    if (onInsertImage) {
+      onInsertImage(src);
+    }
+  }, [editor, onInsertImage]);
+  
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'copy';
+    setIsDragging(true);
+  }, []);
+  
+  const handleDragLeave = useCallback(() => {
+    setIsDragging(false);
+  }, []);
+  
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files || []);
+    if (files.length === 0) return;
+    
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+    if (imageFiles.length === 0) return;
+    
+    try {
+      for (const file of imageFiles) {
+        const arrayBuffer = await file.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        
+        const result = await window.api.attachments.upload({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: buffer,
+        });
+        
+        const uploadResult = result as { success?: boolean; relativePath?: string };
+        if (uploadResult.success && uploadResult.relativePath) {
+          insertImage(uploadResult.relativePath, file.name);
+        }
+      }
+    } catch (err) {
+      console.error('Error uploading images:', err);
+    }
+  }, [insertImage]);
+  
+  const handleFixLink = useCallback(async (brokenLink: any, newTargetNoteId: string): Promise<boolean> => {
+    if (!note) return false;
+    
+    try {
+      const currentContent = slateToMarkdown(editor.children);
+      const result = await window.api.notes.updateLinkTarget(
+        note.id,
+        brokenLink.target,
+        newTargetNoteId
+      );
+      
+      if (result && result.success && result.newContent) {
+        const newValue = parseMarkdownToSlate(result.newContent);
+        Transforms.deselect(editor);
+        editor.children = newValue as any;
+        editor.onChange();
+        onSave?.(result.newContent);
+        return true;
+      }
+      
+      return false;
+    } catch (err) {
+      console.error('Error fixing link:', err);
+      return false;
+    }
+  }, [note, editor, onSave]);
+  
   useEffect(() => {
     const handleLinkClick = (e: any) => {
       if (onLinkClick) {
@@ -631,12 +763,23 @@ const NoteEditor: React.FC<EditorProps> = ({ note, onSave, onLinkClick }) => {
           <span className="note-path">{note.path}</span>
         </div>
       </div>
-      <div className="editor-content">
+      <div 
+        className={clsx('editor-content', { 'editor-dragging': isDragging })}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        {isDragging && (
+          <div className="editor-drop-overlay">
+            <div className="editor-drop-icon">🖼️</div>
+            <div className="editor-drop-text">释放以插入图片</div>
+          </div>
+        )}
         <Slate editor={editor as any} initialValue={initialValue} onChange={onChange}>
           <Editable
             renderElement={renderElement}
             renderLeaf={renderLeaf}
-            placeholder="开始写作，使用 [[ 创建双链..."
+            placeholder="开始写作，使用 [[ 创建双链... 或拖入图片"
             className="slate-editor"
             spellCheck={false}
           />
@@ -646,6 +789,13 @@ const NoteEditor: React.FC<EditorProps> = ({ note, onSave, onLinkClick }) => {
             onSelect={handleSelectLink}
           />
         </Slate>
+        {note && (
+          <BrokenLinkFixer
+            note={note}
+            allNotes={allNotes}
+            onFixLink={handleFixLink}
+          />
+        )}
       </div>
     </div>
   );

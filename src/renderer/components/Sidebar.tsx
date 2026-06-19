@@ -3,6 +3,8 @@ import { useAppStore } from '../stores/appStore';
 import { SidebarWidget } from './SidebarWidget';
 import { usePluginHost } from '../plugins/PluginHost';
 import type { Note } from '@shared/types';
+import { FocusGraph } from './FocusGraph';
+import { AttachmentBrowser } from './AttachmentBrowser';
 import clsx from 'clsx';
 
 interface SidebarProps {
@@ -46,6 +48,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ position }) => {
   return (
     <div className="sidebar sidebar-right">
       {widgetComponents.filter((_, i) => i % 2 === 1)}
+      <SidebarWidget id="focus-graph" title="聚焦图谱" icon="🌐" defaultOpen={true}>
+        <FocusGraph centerNote={currentNote} />
+      </SidebarWidget>
+      <SidebarWidget id="attachment-browser" title="附件" icon="📎" defaultOpen={false}>
+        <AttachmentBrowser />
+      </SidebarWidget>
       <SidebarWidget id="outgoing-links" title="出链" icon="➡️" defaultOpen={false}>
         <OutgoingLinks note={currentNote} onSelect={setCurrentNote} allNotes={allNotes} />
       </SidebarWidget>

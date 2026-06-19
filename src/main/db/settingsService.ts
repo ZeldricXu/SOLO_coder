@@ -6,6 +6,8 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
   layouts: [],
   activePlugins: ['backlinks', 'tags', 'command-palette'],
+  linkFixThreshold: 0.6,
+  focusGraphDefaultDepth: 1,
 };
 
 export const SettingsService = {

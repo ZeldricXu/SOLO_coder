@@ -214,19 +214,19 @@ const KnowledgeGraph: React.FC<KnowledgeGraphProps> = ({
     
     function dragstarted(event: d3.D3DragEvent<SVGCircleElement, GraphNode, GraphNode>, d: GraphNode) {
       if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = d.x;
-      d.fy = d.y;
+      (d as any).fx = d.x;
+      (d as any).fy = d.y;
     }
     
     function dragged(event: d3.D3DragEvent<SVGCircleElement, GraphNode, GraphNode>, d: GraphNode) {
-      d.fx = event.x;
-      d.fy = event.y;
+      (d as any).fx = event.x;
+      (d as any).fy = event.y;
     }
     
     function dragended(event: d3.D3DragEvent<SVGCircleElement, GraphNode, GraphNode>, d: GraphNode) {
       if (!event.active) simulation.alphaTarget(0);
-      d.fx = null;
-      d.fy = null;
+      (d as any).fx = null;
+      (d as any).fy = null;
     }
     
     return () => {

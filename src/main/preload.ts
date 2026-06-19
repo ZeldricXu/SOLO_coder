@@ -10,14 +10,22 @@ const api: IpcRendererApi = {
     update: (id: string, updates: any) => ipcRenderer.invoke('notes:update', id, updates),
     delete: (id: string) => ipcRenderer.invoke('notes:delete', id),
     saveContent: (id: string, content: string) => ipcRenderer.invoke('notes:saveContent', id, content),
+    findSimilarNotes: (title: string, threshold?: number) =>
+      ipcRenderer.invoke('notes:findSimilarNotes', title, threshold),
+    updateLinkTarget: (sourceNoteId: string, oldTarget: string, newTargetId: string) =>
+      ipcRenderer.invoke('notes:updateLinkTarget', sourceNoteId, oldTarget, newTargetId),
+    scanBrokenLinks: (noteId?: string) => ipcRenderer.invoke('notes:scanBrokenLinks', noteId),
   },
   links: {
     getAll: () => ipcRenderer.invoke('links:getAll'),
     getBacklinks: (noteId: string) => ipcRenderer.invoke('links:getBacklinks', noteId),
     getForwardLinks: (noteId: string) => ipcRenderer.invoke('links:getForwardLinks', noteId),
+    migrateBacklinks: (oldNoteId: string, newNoteId: string) =>
+      ipcRenderer.invoke('links:migrateBacklinks', oldNoteId, newNoteId),
   },
   graph: {
     getGraphData: () => ipcRenderer.invoke('graph:getGraphData'),
+    getFocusGraphData: (options: any) => ipcRenderer.invoke('graph:getFocusGraphData', options),
   },
   search: {
     query: (q: string, options?: any) => ipcRenderer.invoke('search:query', q, options),
@@ -36,6 +44,17 @@ const api: IpcRendererApi = {
       ipcRenderer.on('vault:note-deleted', handler);
       return () => ipcRenderer.removeListener('vault:note-deleted', handler);
     },
+  },
+  attachments: {
+    list: () => ipcRenderer.invoke('attachments:list'),
+    upload: (fileData: string | { name: string; type: string; size: number; data: Buffer }, targetDir?: string) =>
+      ipcRenderer.invoke('attachments:upload', fileData, targetDir),
+    delete: (attachmentId: string) => ipcRenderer.invoke('attachments:delete', attachmentId),
+    rename: (attachmentId: string, newName: string) =>
+      ipcRenderer.invoke('attachments:rename', attachmentId, newName),
+    getThumbnail: (attachmentId: string) =>
+      ipcRenderer.invoke('attachments:getThumbnail', attachmentId),
+    getAssetsPath: () => ipcRenderer.invoke('attachments:getAssetsPath'),
   },
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),

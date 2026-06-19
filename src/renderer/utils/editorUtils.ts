@@ -1,5 +1,6 @@
 import matter from 'gray-matter';
 import type { Descendant } from 'slate';
+import type { LinkSuggestion, Note } from '../../shared/types';
 
 const WIKILINK_REGEX = /\[\[([^\[\]|]+)(?:\|([^\[\]]+))?\]\]/g;
 
@@ -224,6 +225,178 @@ function serializeInline(children: any[]): string {
     
     return text;
   }).join('');
+}
+
+export function levenshteinDistance(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase();
+  const s2 = str2.toLowerCase();
+  
+  if (s1 === s2) return 0;
+  if (s1.length === 0) return s2.length;
+  if (s2.length === 0) return s1.length;
+  
+  const matrix: number[][] = [];
+  
+  for (let i = 0; i <= s2.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= s1.length; j++) {
+    matrix[0][j] = j;
+  }
+  
+  for (let i = 1; i <= s2.length; i++) {
+    for (let j = 1; j <= s1.length; j++) {
+      const cost = s1[j - 1] === s2[i - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+  
+  return matrix[s2.length][s1.length];
+}
+
+export function levenshteinSimilarity(str1: string, str2: string): number {
+  const distance = levenshteinDistance(str1, str2);
+  const maxLength = Math.max(str1.length, str2.length);
+  if (maxLength === 0) return 1;
+  return 1 - distance / maxLength;
+}
+
+export function jaccardSimilarity(str1: string, str2: string): number {
+  const s1 = new Set(str1.toLowerCase().split(/\s+/).filter(w => w.length > 0));
+  const s2 = new Set(str2.toLowerCase().split(/\s+/).filter(w => w.length > 0));
+  
+  if (s1.size === 0 && s2.size === 0) return 1;
+  if (s1.size === 0 || s2.size === 0) return 0;
+  
+  const intersection = new Set([...s1].filter(x => s2.has(x)));
+  const union = new Set([...s1, ...s2]);
+  
+  return intersection.size / union.size;
+}
+
+export function combinedSimilarity(str1: string, str2: string): number {
+  const levenshtein = levenshteinSimilarity(str1, str2);
+  const jaccard = jaccardSimilarity(str1, str2);
+  return levenshtein * 0.6 + jaccard * 0.4;
+}
+
+export function findSimilarNotes(
+  targetTitle: string,
+  allNotes: Array<{ id: string; title: string; path: string; tags: string[] }>,
+  threshold: number = 0.6,
+  limit: number = 5
+): LinkSuggestion[] {
+  const results: LinkSuggestion[] = [];
+  
+  for (const note of allNotes) {
+    const similarity = combinedSimilarity(targetTitle, note.title);
+    
+    if (similarity >= threshold) {
+      results.push({
+        noteId: note.id,
+        title: note.title,
+        path: note.path,
+        similarity,
+        similarityType: 'combined',
+      });
+    }
+  }
+  
+  results.sort((a, b) => b.similarity - a.similarity);
+  return results.slice(0, limit);
+}
+
+export function checkBrokenLink(
+  linkTarget: string,
+  allNotes: Note[],
+  currentNotePath: string
+): { isBroken: boolean; targetNote: Note | null } {
+  const noteDir = currentNotePath.split('/').slice(0, -1).join('/');
+  let targetPath = '';
+  
+  if (linkTarget.endsWith('.md')) {
+    targetPath = noteDir ? `${noteDir}/${linkTarget}` : linkTarget;
+  } else {
+    targetPath = noteDir ? `${noteDir}/${linkTarget}.md` : `${linkTarget}.md`;
+  }
+  
+  const targetNote = allNotes.find(n => 
+    n.path === targetPath || 
+    n.title.toLowerCase() === linkTarget.toLowerCase()
+  ) || null;
+  
+  return {
+    isBroken: !targetNote,
+    targetNote,
+  };
+}
+
+export interface BrokenLinkInfo {
+  target: string;
+  displayText: string;
+  startIndex: number;
+  endIndex: number;
+  originalLink: string;
+  context: string;
+  suggestions: LinkSuggestion[];
+}
+
+export function scanNoteForBrokenLinks(
+  content: string,
+  allNotes: Array<{ id: string; title: string; path: string; tags: string[] }>,
+  currentNotePath: string,
+  threshold: number = 0.6
+): BrokenLinkInfo[] {
+  const links = extractWikiLinks(content);
+  const brokenLinks: BrokenLinkInfo[] = [];
+  
+  for (const link of links) {
+    const { isBroken } = checkBrokenLink(link.target, allNotes as any, currentNotePath);
+    
+    if (isBroken) {
+      const suggestions = findSimilarNotes(link.target, allNotes, threshold);
+      const context = extractLinkContext(content, link.startIndex, 80);
+      
+      brokenLinks.push({
+        target: link.target,
+        displayText: link.displayText,
+        startIndex: link.startIndex,
+        endIndex: link.endIndex,
+        originalLink: link.displayText !== link.target 
+          ? `[[${link.target}|${link.displayText}]]` 
+          : `[[${link.target}]]`,
+        context,
+        suggestions,
+      });
+    }
+  }
+  
+  return brokenLinks;
+}
+
+export function replaceLinkInContent(
+  content: string,
+  oldLink: BrokenLinkInfo,
+  newTargetTitle: string
+): { newContent: string; newLinkText: string } {
+  const newDisplayText = oldLink.displayText !== oldLink.target 
+    ? `[[${newTargetTitle}|${oldLink.displayText}]]` 
+    : `[[${newTargetTitle}]]`;
+  
+  const newContent = 
+    content.slice(0, oldLink.startIndex) + 
+    newDisplayText + 
+    content.slice(oldLink.endIndex);
+  
+  return {
+    newContent,
+    newLinkText: newDisplayText,
+  };
 }
 
 export { WIKILINK_REGEX };

@@ -400,3 +400,67 @@
   border-right: none;
   border-left: 1px solid var(--border-color);
 }
+
+.editor-content {
+  flex: 1;
+  overflow-y: auto;
+  position: relative;
+}
+
+.editor-dragging {
+  outline: 2px dashed var(--accent-primary);
+  outline-offset: -4px;
+}
+
+.editor-drop-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(59, 130, 246, 0.1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  z-index: 100;
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+}
+
+.editor-drop-icon {
+  font-size: 48px;
+  opacity: 0.8;
+}
+
+.editor-drop-text {
+  font-size: var(--font-size-lg);
+  font-weight: 500;
+  color: var(--accent-primary);
+}
+
+.image-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: var(--spacing-md) 0;
+  padding: var(--spacing-sm);
+  background-color: var(--bg-tertiary);
+  border-radius: var(--radius-md);
+}
+
+.editor-image {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--radius-sm);
+  display: block;
+}
+
+.image-caption {
+  margin-top: var(--spacing-sm);
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
