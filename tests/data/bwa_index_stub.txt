@@ -1,0 +1,2 @@
+Run `bwa index genome_reference.fa` to create BWA index files.
+This stub file is used as a marker in test environments.
