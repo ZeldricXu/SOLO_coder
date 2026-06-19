@@ -35,6 +35,16 @@ _SAFE_BUILTINS = {
     "True": True,
     "False": False,
     "None": None,
+    "Exception": Exception,
+    "ValueError": ValueError,
+    "TypeError": TypeError,
+    "KeyError": KeyError,
+    "IndexError": IndexError,
+    "AttributeError": AttributeError,
+    "RuntimeError": RuntimeError,
+    "ZeroDivisionError": ZeroDivisionError,
+    "AssertionError": AssertionError,
+    "NameError": NameError,
 }
 
 

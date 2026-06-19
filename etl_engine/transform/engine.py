@@ -5,6 +5,7 @@ import logging
 import dask.dataframe as dd
 import pandas as pd
 
+from etl_engine.exceptions import TransformStepError
 from etl_engine.transform.schema_inference import infer_schema
 from etl_engine.transform.sql_transform import SQLTransform
 from etl_engine.transform.udf_transform import UDFTransform
@@ -35,28 +36,37 @@ class TransformEngine:
             t_type = t.get("type")
             expression = t.get("expression")
             params = t.get("params")
+            expr_str = str(expression) if expression is not None else ""
 
-            if t_type == "sql":
-                if self.use_dask:
-                    current = current.map_partitions(
-                        lambda partition: self._sql.apply_sql(partition, expression, params),
-                        meta=current._meta,
-                    )
+            try:
+                if t_type == "sql":
+                    if self.use_dask:
+                        current = current.map_partitions(
+                            lambda partition: self._sql.apply_sql(partition, expression, params),
+                            meta=current._meta,
+                        )
+                    else:
+                        current = self._apply_sql(current, expression, params)
+                elif t_type == "udf":
+                    if self.use_dask:
+                        current = current.map_partitions(
+                            lambda partition: self._udf.apply_udf(partition, expression, params),
+                            meta=current._meta,
+                        )
+                    else:
+                        current = self._apply_udf(current, expression, params)
                 else:
-                    current = self._apply_sql(current, expression, params)
-            elif t_type == "udf":
-                if self.use_dask:
-                    current = current.map_partitions(
-                        lambda partition: self._udf.apply_udf(partition, expression, params),
-                        meta=current._meta,
+                    raise ValueError(
+                        f"Unknown transformation type '{t_type}' at index {i}. "
+                        f"Supported types: 'sql', 'udf'"
                     )
-                else:
-                    current = self._apply_udf(current, expression, params)
-            else:
-                raise ValueError(
-                    f"Unknown transformation type '{t_type}' at index {i}. "
-                    f"Supported types: 'sql', 'udf'"
-                )
+            except Exception as e:
+                raise TransformStepError(
+                    step_index=i,
+                    step_type=t_type or "unknown",
+                    expression=expr_str,
+                    cause=e,
+                ) from e
 
             logger.info("Applied transformation %d: type=%s", i, t_type)
 

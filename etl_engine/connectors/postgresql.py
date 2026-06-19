@@ -30,6 +30,7 @@ class PostgreSQLSource(BaseSource):
     async def connect(self) -> None:
         params = self._get_pool_params()
         pool_size = params.pop("pool_size")
+        last_error: Exception | None = None
         for attempt in range(3):
             try:
                 self._pool = pool.SimpleConnectionPool(
@@ -47,12 +48,17 @@ class PostgreSQLSource(BaseSource):
                 logger.info("PostgreSQL connection pool created successfully")
                 return
             except Exception as e:
+                last_error = e
                 wait_time = 2 ** attempt
                 logger.warning(
                     "PostgreSQL connect attempt %d/3 failed: %s. Retrying in %ds...",
                     attempt + 1, e, wait_time,
                 )
                 await asyncio.sleep(wait_time)
+        if last_error is not None:
+            raise ConnectionError(
+                f"Failed to connect to PostgreSQL after 3 attempts. Last error: {last_error}"
+            ) from last_error
         raise ConnectionError("Failed to connect to PostgreSQL after 3 attempts")
 
     async def disconnect(self) -> None:

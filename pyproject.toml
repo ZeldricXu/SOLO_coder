@@ -61,3 +61,18 @@ test = [
 
 [tool.setuptools.packages.find]
 include = ["etl_engine*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+pythonpath = ["."]
+testpaths = ["tests"]
+markers = [
+    "unit: Unit tests",
+    "integration: Integration tests requiring docker/testcontainers",
+    "concurrency: Concurrency tests",
+    "slow: Tests that are slow to run",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]

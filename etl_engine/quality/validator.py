@@ -180,24 +180,45 @@ class QualityValidator:
                 strategy=rule.strategy,
             )
 
-        in_range = float(((series >= min_value) & (series <= max_value)).sum() / len(series))
-        passed = in_range >= rule.threshold
+        try:
+            comparison_ge = series >= min_value
+            comparison_le = series <= max_value
+            in_range = float(((comparison_ge) & (comparison_le)).sum() / len(series))
+            passed = in_range >= rule.threshold
 
-        return RuleResult(
-            rule_type=rule.rule_type,
-            column=col,
-            passed=passed,
-            actual_value=in_range,
-            expected_threshold=rule.threshold,
-            details={
-                "min_value": min_value,
-                "max_value": max_value,
-                "in_range_rate": in_range,
-                "actual_min": float(series.min()),
-                "actual_max": float(series.max()),
-            },
-            strategy=rule.strategy,
-        )
+            actual_min = float(series.min())
+            actual_max = float(series.max())
+
+            return RuleResult(
+                rule_type=rule.rule_type,
+                column=col,
+                passed=passed,
+                actual_value=in_range,
+                expected_threshold=rule.threshold,
+                details={
+                    "min_value": min_value,
+                    "max_value": max_value,
+                    "in_range_rate": in_range,
+                    "actual_min": actual_min,
+                    "actual_max": actual_max,
+                },
+                strategy=rule.strategy,
+            )
+        except (TypeError, ValueError) as e:
+            return RuleResult(
+                rule_type=rule.rule_type,
+                column=col,
+                passed=False,
+                actual_value=None,
+                expected_threshold=rule.threshold,
+                details={
+                    "error": f"type mismatch or comparison error: {e}",
+                    "column_dtype": str(series.dtype),
+                    "expected_min_type": type(min_value).__name__,
+                    "expected_max_type": type(max_value).__name__,
+                },
+                strategy=rule.strategy,
+            )
 
     def _check_distribution_drift(
         self,
