@@ -527,9 +527,12 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "physics-collision",
+ "physics-constraints",
  "physics-core",
- "physics-engine",
+ "physics-dynamics",
  "physics-math",
+ "physics-spatial",
+ "physics-types",
  "rand",
  "slotmap",
 ]
@@ -540,9 +543,9 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "nalgebra",
- "physics-core",
  "physics-math",
  "physics-spatial",
+ "physics-types",
  "serde",
  "slotmap",
 ]
@@ -554,8 +557,8 @@ dependencies = [
  "approx",
  "nalgebra",
  "physics-collision",
- "physics-core",
  "physics-math",
+ "physics-types",
  "serde",
  "slotmap",
 ]
@@ -566,13 +569,22 @@ version = "0.1.0"
 dependencies = [
  "approx",
  "nalgebra",
+ "physics-collision",
+ "physics-constraints",
+ "physics-dynamics",
+ "physics-events",
  "physics-math",
+ "physics-particles",
+ "physics-serialization",
+ "physics-spatial",
+ "physics-types",
+ "rand",
  "serde",
  "slotmap",
 ]
 
 [[package]]
-name = "physics-debug-render"
+name = "physics-debug"
 version = "0.1.0"
 dependencies = [
  "ecolor",
@@ -582,9 +594,9 @@ dependencies = [
  "nalgebra",
  "physics-collision",
  "physics-constraints",
- "physics-core",
  "physics-math",
  "physics-particles",
+ "physics-types",
  "slotmap",
 ]
 
@@ -595,27 +607,8 @@ dependencies = [
  "approx",
  "nalgebra",
  "physics-collision",
- "physics-core",
  "physics-math",
- "serde",
- "slotmap",
-]
-
-[[package]]
-name = "physics-engine"
-version = "0.1.0"
-dependencies = [
- "approx",
- "nalgebra",
- "physics-collision",
- "physics-constraints",
- "physics-core",
- "physics-dynamics",
- "physics-events",
- "physics-math",
- "physics-particles",
- "physics-serialization",
- "physics-spatial",
+ "physics-types",
  "serde",
  "slotmap",
 ]
@@ -627,8 +620,8 @@ dependencies = [
  "approx",
  "nalgebra",
  "physics-collision",
- "physics-core",
  "physics-math",
+ "physics-types",
  "serde",
  "slotmap",
 ]
@@ -661,8 +654,8 @@ dependencies = [
  "approx",
  "nalgebra",
  "physics-constraints",
- "physics-core",
  "physics-math",
+ "physics-types",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -673,7 +666,18 @@ name = "physics-spatial"
 version = "0.1.0"
 dependencies = [
  "nalgebra",
- "physics-core",
+ "physics-math",
+ "physics-types",
+ "serde",
+ "slotmap",
+]
+
+[[package]]
+name = "physics-types"
+version = "0.1.0"
+dependencies = [
+ "approx",
+ "nalgebra",
  "physics-math",
  "serde",
  "slotmap",

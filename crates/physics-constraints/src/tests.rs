@@ -3,7 +3,7 @@ mod tests {
     use approx::assert_abs_diff_eq;
     use slotmap::SlotMap;
 
-    use physics_core::{Body, BodyHandle, BodyType, Circle, Material, Shape};
+    use physics_types::{Body, BodyHandle, BodyType, Circle, Material, Shape};
     use physics_math::{Transform, Vec2};
 
     use crate::constraint::{Constraint, ConstraintSolverData};

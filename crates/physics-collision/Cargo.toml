@@ -1,11 +1,17 @@
 [package]
 name = "physics-collision"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "碰撞检测系统，包含宽相检测、窄相GJK/EPA算法和接触流形生成"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["collision", "gjk", "epa", "detection", "physics"]
+categories = ["simulation", "game-development"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }
-physics-core = { path = "../physics-core" }
+physics-types = { path = "../physics-types" }
 physics-spatial = { path = "../physics-spatial" }
 nalgebra = { workspace = true }
 serde = { workspace = true }

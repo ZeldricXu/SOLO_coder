@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use physics_core::{BodyType, Material};
+use physics_types::{BodyType, Material};
 use physics_math::Vec2;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

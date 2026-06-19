@@ -1,18 +1,39 @@
 [package]
 name = "physics-benches"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
 publish = false
+description = "物理引擎性能基准测试套件，包含碰撞检测、动力学求解等核心模块的性能测试"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["benchmarks", "performance", "physics", "criterion", "profiling"]
+categories = ["development-tools::profiling"]
 
 [dependencies]
 criterion = { workspace = true }
 rand = { workspace = true }
 slotmap = { workspace = true }
 physics-math = { path = "../physics-math" }
-physics-core = { path = "../physics-core" }
+physics-types = { path = "../physics-types" }
+physics-spatial = { path = "../physics-spatial" }
 physics-collision = { path = "../physics-collision" }
-physics-engine = { path = "../physics-engine" }
+physics-constraints = { path = "../physics-constraints" }
+physics-dynamics = { path = "../physics-dynamics" }
+physics-core = { path = "../physics-core" }
 
 [[bench]]
 name = "broad_phase"
+harness = false
+
+[[bench]]
+name = "physics_step"
+harness = false
+
+[[bench]]
+name = "gjk_epa"
+harness = false
+
+[[bench]]
+name = "constraint_solver"
 harness = false

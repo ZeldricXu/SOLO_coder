@@ -1,11 +1,17 @@
 [package]
 name = "physics-events"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "物理事件分发系统，处理碰撞事件、触发器和自定义事件回调机制"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["events", "collision", "dispatcher", "physics", "callback"]
+categories = ["simulation", "game-development", "asynchronous"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }
-physics-core = { path = "../physics-core" }
+physics-types = { path = "../physics-types" }
 physics-collision = { path = "../physics-collision" }
 nalgebra = { workspace = true }
 serde = { workspace = true }

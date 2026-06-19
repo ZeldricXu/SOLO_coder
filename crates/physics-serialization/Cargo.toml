@@ -1,11 +1,17 @@
 [package]
 name = "physics-serialization"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "物理场景序列化与反序列化，支持JSON和YAML格式的场景导入导出"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["serialization", "json", "yaml", "physics", "scene"]
+categories = ["simulation", "game-development", "encoding"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }
-physics-core = { path = "../physics-core" }
+physics-types = { path = "../physics-types" }
 physics-constraints = { path = "../physics-constraints" }
 nalgebra = { workspace = true }
 serde = { workspace = true }

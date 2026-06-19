@@ -1,6 +1,6 @@
 use physics_math::{Transform, Vec2};
 
-use physics_core::{BodyHandle, Shape};
+use physics_types::{BodyHandle, Shape};
 
 use slotmap::Key;
 
@@ -157,9 +157,9 @@ impl Collide for Shape {
 }
 
 fn half_space_vs_circle(
-    half_space: &physics_core::HalfSpace,
+    half_space: &physics_types::HalfSpace,
     th: &Transform,
-    circle: &physics_core::Circle,
+    circle: &physics_types::Circle,
     tc: &Transform,
 ) -> Option<ContactManifold> {
     let center = tc.position;
@@ -183,7 +183,7 @@ fn half_space_vs_circle(
 }
 
 fn half_space_vs_polygon(
-    half_space: &physics_core::HalfSpace,
+    half_space: &physics_types::HalfSpace,
     th: &Transform,
     vertices: &[Vec2],
     tp: &Transform,
@@ -232,9 +232,9 @@ fn half_space_vs_polygon(
 }
 
 fn circle_vs_circle(
-    a: &physics_core::Circle,
+    a: &physics_types::Circle,
     ta: &Transform,
-    b: &physics_core::Circle,
+    b: &physics_types::Circle,
     tb: &Transform,
 ) -> Option<ContactManifold> {
     let pa = ta.position;
@@ -260,7 +260,7 @@ fn circle_vs_circle(
 }
 
 fn circle_vs_polygon(
-    circle: &physics_core::Circle,
+    circle: &physics_types::Circle,
     tc: &Transform,
     vertices: &[Vec2],
     tp: &Transform,
@@ -483,12 +483,12 @@ fn clip(v1: Vec2, v2: Vec2, tangent: Vec2, offset: f32) -> Vec2 {
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
-    use physics_core::Rectangle;
+    use physics_types::Rectangle;
     use physics_math::Rot2;
 
     #[test]
     fn test_circle_vs_circle_overlap() {
-        let circle = physics_core::Circle { radius: 1.0 };
+        let circle = physics_types::Circle { radius: 1.0 };
         let ta = Transform::new(Vec2::new(0.0, 0.0), Rot2::new(0.0));
         let tb = Transform::new(Vec2::new(1.5, 0.0), Rot2::new(0.0));
 
@@ -504,7 +504,7 @@ mod tests {
 
     #[test]
     fn test_circle_vs_circle_no_overlap() {
-        let circle = physics_core::Circle { radius: 1.0 };
+        let circle = physics_types::Circle { radius: 1.0 };
         let ta = Transform::new(Vec2::new(0.0, 0.0), Rot2::new(0.0));
         let tb = Transform::new(Vec2::new(3.0, 0.0), Rot2::new(0.0));
 
@@ -528,9 +528,9 @@ mod tests {
 
     #[test]
     fn test_half_space_vs_circle_overlap() {
-        use physics_core::HalfSpace;
+        use physics_types::HalfSpace;
         let half_space = HalfSpace::ground();
-        let circle = physics_core::Circle { radius: 1.0 };
+        let circle = physics_types::Circle { radius: 1.0 };
         let th = Transform::IDENTITY;
         let tc = Transform::new(Vec2::new(0.0, -0.5), Rot2::new(0.0));
 
@@ -546,9 +546,9 @@ mod tests {
 
     #[test]
     fn test_half_space_vs_circle_no_overlap() {
-        use physics_core::HalfSpace;
+        use physics_types::HalfSpace;
         let half_space = HalfSpace::ground();
-        let circle = physics_core::Circle { radius: 1.0 };
+        let circle = physics_types::Circle { radius: 1.0 };
         let th = Transform::IDENTITY;
         let tc = Transform::new(Vec2::new(0.0, 2.0), Rot2::new(0.0));
 
@@ -558,7 +558,7 @@ mod tests {
 
     #[test]
     fn test_half_space_vs_polygon_overlap() {
-        use physics_core::HalfSpace;
+        use physics_types::HalfSpace;
         let half_space = HalfSpace::ground();
         let square = Rectangle::new(2.0, 2.0);
         let th = Transform::IDENTITY;

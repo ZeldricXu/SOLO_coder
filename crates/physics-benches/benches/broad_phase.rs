@@ -2,7 +2,7 @@ use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rand::Rng;
 
 use physics_collision::{AABBTreeBroadPhase, BroadPhase, BruteForceBroadPhase};
-use physics_core::{Body, BodyHandle, BodyType, Material, Shape, Circle};
+use physics_types::{Body, BodyHandle, BodyType, Material, Shape, Circle};
 use physics_math::Vec2;
 use slotmap::SlotMap;
 
@@ -210,7 +210,7 @@ fn benchmark_full_step_500(c: &mut Criterion) {
     group.measurement_time(std::time::Duration::from_secs(5));
 
     group.bench_function("BruteForce - full step", |b| {
-        let mut world: physics_engine::PhysicsWorld<BruteForceBroadPhase> = physics_engine::PhysicsWorld::new();
+        let mut world: physics_core::PhysicsWorld<BruteForceBroadPhase> = physics_core::PhysicsWorld::new();
         let mut rng = rand::thread_rng();
         for _ in 0..500 {
             let x = rng.gen_range(-20.0..20.0);
@@ -226,7 +226,7 @@ fn benchmark_full_step_500(c: &mut Criterion) {
     });
 
     group.bench_function("AABBTree - full step", |b| {
-        let mut world: physics_engine::PhysicsWorld<AABBTreeBroadPhase> = physics_engine::PhysicsWorld::new();
+        let mut world: physics_core::PhysicsWorld<AABBTreeBroadPhase> = physics_core::PhysicsWorld::new();
         let mut rng = rand::thread_rng();
         for _ in 0..500 {
             let x = rng.gen_range(-20.0..20.0);
@@ -288,7 +288,7 @@ fn benchmark_full_step_1000(c: &mut Criterion) {
     group.measurement_time(std::time::Duration::from_secs(8));
 
     group.bench_function("BruteForce - full step", |b| {
-        let mut world: physics_engine::PhysicsWorld<BruteForceBroadPhase> = physics_engine::PhysicsWorld::new();
+        let mut world: physics_core::PhysicsWorld<BruteForceBroadPhase> = physics_core::PhysicsWorld::new();
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
             let x = rng.gen_range(-30.0..30.0);
@@ -304,7 +304,7 @@ fn benchmark_full_step_1000(c: &mut Criterion) {
     });
 
     group.bench_function("AABBTree - full step", |b| {
-        let mut world: physics_engine::PhysicsWorld<AABBTreeBroadPhase> = physics_engine::PhysicsWorld::new();
+        let mut world: physics_core::PhysicsWorld<AABBTreeBroadPhase> = physics_core::PhysicsWorld::new();
         let mut rng = rand::thread_rng();
         for _ in 0..1000 {
             let x = rng.gen_range(-30.0..30.0);

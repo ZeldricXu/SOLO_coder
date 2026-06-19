@@ -1,5 +1,5 @@
 use physics_collision::ContactManifold;
-use physics_core::{Body, BodyHandle, Material};
+use physics_types::{Body, BodyHandle, Material};
 use physics_math::Vec2;
 
 use crate::constraint::{Constraint, ConstraintSolverData, Jacobian};

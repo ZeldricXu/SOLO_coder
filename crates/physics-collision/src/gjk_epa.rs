@@ -23,7 +23,7 @@ impl SimplexPoint {
 
 pub struct GJKResult {
     pub collision: bool,
-    pub simplex: Vec<SimplexPoint>,
+    pub(crate) simplex: Vec<SimplexPoint>,
 }
 
 pub struct EPAResult {

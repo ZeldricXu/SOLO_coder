@@ -1,11 +1,17 @@
 [package]
 name = "physics-dynamics"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "刚体动力学求解器，支持多种积分方法和物理参数配置的运动模拟"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["dynamics", "rigid-body", "physics", "solver", "integrator"]
+categories = ["simulation", "game-development"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }
-physics-core = { path = "../physics-core" }
+physics-types = { path = "../physics-types" }
 physics-collision = { path = "../physics-collision" }
 nalgebra = { workspace = true }
 serde = { workspace = true }

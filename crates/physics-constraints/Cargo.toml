@@ -1,11 +1,17 @@
 [package]
 name = "physics-constraints"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "约束求解器，支持接触约束和多种关节类型（距离、铰链、滑块等）"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["constraints", "joints", "solver", "physics", "contact"]
+categories = ["simulation", "game-development"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }
-physics-core = { path = "../physics-core" }
+physics-types = { path = "../physics-types" }
 physics-collision = { path = "../physics-collision" }
 nalgebra = { workspace = true }
 serde = { workspace = true }

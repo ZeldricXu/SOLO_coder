@@ -1,16 +1,46 @@
-use physics_core::{Body, BodyType};
+use physics_types::{Body, BodyType};
 use physics_math::Vec2;
 
+/// 物理积分器 trait。
+///
+/// 积分器负责更新物理体的速度和位置，是物理模拟的核心组件之一。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_dynamics::integrator::{Integrator, SemiImplicitEuler};
+/// use physics_types::{Body, BodyType, Material, Shape};
+/// use physics_types::shape::Circle;
+/// use physics_math::Vec2;
+/// use slotmap::SlotMap;
+///
+/// let mut bodies = SlotMap::with_key();
+/// let shape = Shape::Circle(Circle::new(1.0));
+/// let handle = bodies.insert_with_key(|handle| {
+///     Body::new(handle, shape, Vec2::ZERO, 0.0, BodyType::Dynamic, Material::DEFAULT)
+/// });
+///
+/// let mut integrator = SemiImplicitEuler::new();
+/// let mut body_refs: Vec<&mut Body> = bodies.iter_mut().map(|(_, b)| b).collect();
+///
+/// // 施加重力并积分速度
+/// integrator.apply_gravity(&mut body_refs, Vec2::new(0.0, -9.81));
+/// integrator.integrate_velocities(&mut body_refs, Vec2::new(0.0, -9.81), 1.0 / 60.0);
+/// ```
 pub trait Integrator {
+    /// 积分物理体的速度。
     fn integrate_velocities(&mut self, bodies: &mut [&mut Body], gravity: Vec2, dt: f32);
+    /// 积分物理体的位置。
     fn integrate_positions(&mut self, bodies: &mut [&mut Body], dt: f32);
 
+    /// 步进前的准备工作，通常用于保存上一帧的变换。
     fn pre_step(&mut self, bodies: &mut [&mut Body]) {
         for body in bodies.iter_mut() {
             body.prev_transform = body.transform;
         }
     }
 
+    /// 对所有动态物理体施加重力。
     fn apply_gravity(&mut self, bodies: &mut [&mut Body], gravity: Vec2) {
         for body in bodies.iter_mut() {
             if body.is_dynamic() && body.is_active {
@@ -20,6 +50,7 @@ pub trait Integrator {
         }
     }
 
+    /// 对物理体速度应用阻尼。
     fn apply_damping(&mut self, bodies: &mut [&mut Body], dt: f32, global_linear: f32, global_angular: f32) {
         for body in bodies.iter_mut() {
             if !body.is_dynamic() {
@@ -35,13 +66,36 @@ pub trait Integrator {
     }
 }
 
+/// 半隐式欧拉积分器（也称为 Symplectic Euler）。
+///
+/// 先积分速度再积分位置，是物理引擎中最常用的积分方法。
+/// 相比显式欧拉更稳定，能量守恒性更好。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_dynamics::integrator::SemiImplicitEuler;
+///
+/// let integrator = SemiImplicitEuler::new();
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct SemiImplicitEuler {
+    /// 线性阻尼系数。
     pub linear_damping: f32,
+    /// 角速度阻尼系数。
     pub angular_damping: f32,
 }
 
 impl SemiImplicitEuler {
+    /// 创建一个新的半隐式欧拉积分器。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_dynamics::integrator::SemiImplicitEuler;
+    ///
+    /// let integrator = SemiImplicitEuler::new();
+    /// ```
     pub fn new() -> Self {
         SemiImplicitEuler {
             linear_damping: 0.0,
@@ -49,6 +103,20 @@ impl SemiImplicitEuler {
         }
     }
 
+    /// 创建一个带有阻尼参数的半隐式欧拉积分器。
+    ///
+    /// # 参数
+    ///
+    /// * `linear_damping` - 线性阻尼系数
+    /// * `angular_damping` - 角速度阻尼系数
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_dynamics::integrator::SemiImplicitEuler;
+    ///
+    /// let integrator = SemiImplicitEuler::with_damping(0.1, 0.05);
+    /// ```
     pub fn with_damping(linear_damping: f32, angular_damping: f32) -> Self {
         SemiImplicitEuler {
             linear_damping,
@@ -85,13 +153,36 @@ impl Integrator for SemiImplicitEuler {
     }
 }
 
+/// 四阶龙格-库塔（RK4）积分器。
+///
+/// 精度更高的积分方法，但计算成本也更高。
+/// 适用于对精度要求高的场景。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_dynamics::integrator::RK4;
+///
+/// let integrator = RK4::new();
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct RK4 {
+    /// 线性阻尼系数。
     pub linear_damping: f32,
+    /// 角速度阻尼系数。
     pub angular_damping: f32,
 }
 
 impl RK4 {
+    /// 创建一个新的 RK4 积分器。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_dynamics::integrator::RK4;
+    ///
+    /// let integrator = RK4::new();
+    /// ```
     pub fn new() -> Self {
         RK4 {
             linear_damping: 0.0,
@@ -158,13 +249,36 @@ impl Integrator for RK4 {
     }
 }
 
+/// Verlet 积分器。
+///
+/// 使用位置的历史信息进行积分，能量守恒性好，适用于布料、绳索等模拟。
+/// 需要在每帧开始时调用 `pre_step` 保存变换。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_dynamics::integrator::Verlet;
+///
+/// let integrator = Verlet::new();
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct Verlet {
+    /// 线性阻尼系数。
     pub linear_damping: f32,
+    /// 角速度阻尼系数。
     pub angular_damping: f32,
 }
 
 impl Verlet {
+    /// 创建一个新的 Verlet 积分器。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_dynamics::integrator::Verlet;
+    ///
+    /// let integrator = Verlet::new();
+    /// ```
     pub fn new() -> Self {
         Verlet {
             linear_damping: 0.0,
@@ -220,17 +334,18 @@ impl Integrator for Verlet {
     }
 }
 
+/// 默认积分器的类型别名（半隐式欧拉）。
 pub type IntegratorDefault = SemiImplicitEuler;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
-    use physics_core::{Body, BodyType, Material, Shape, Circle};
+    use physics_types::{Body, BodyType, Material, Shape, Circle};
     use physics_math::Vec2;
     use slotmap::SlotMap;
 
-    fn create_test_bodies() -> (SlotMap<physics_core::BodyHandle, Body>, Vec<physics_core::BodyHandle>) {
+    fn create_test_bodies() -> (SlotMap<physics_types::BodyHandle, Body>, Vec<physics_types::BodyHandle>) {
         let mut bodies = SlotMap::with_key();
         let mut handles = Vec::new();
 

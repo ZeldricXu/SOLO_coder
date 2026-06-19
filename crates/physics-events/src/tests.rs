@@ -4,7 +4,7 @@ mod tests {
     use std::sync::Arc;
 
     use physics_collision::{ContactManifold, ContactPoint};
-    use physics_core::{Body, BodyHandle, BodyType, Circle, Material, Shape};
+    use physics_types::{Body, BodyHandle, BodyType, Circle, Material, Shape};
     use physics_math::Vec2;
     use slotmap::{Key, SlotMap};
 

@@ -9,14 +9,14 @@ path = "src/main.rs"
 
 [dependencies]
 physics-math = { path = "../../crates/physics-math" }
-physics-core = { path = "../../crates/physics-core" }
+physics-types = { path = "../../crates/physics-types" }
 physics-collision = { path = "../../crates/physics-collision" }
 physics-dynamics = { path = "../../crates/physics-dynamics" }
 physics-constraints = { path = "../../crates/physics-constraints" }
 physics-particles = { path = "../../crates/physics-particles" }
 physics-events = { path = "../../crates/physics-events" }
 physics-serialization = { path = "../../crates/physics-serialization" }
-physics-debug-render = { path = "../../crates/physics-debug-render" }
+physics-debug = { path = "../../crates/physics-debug" }
 eframe = { workspace = true }
 egui = { workspace = true }
 epaint = { workspace = true }

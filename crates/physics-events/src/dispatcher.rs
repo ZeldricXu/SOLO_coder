@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::any::Any;
 
 use physics_collision::ContactManifold;
-use physics_core::BodyHandle;
+use physics_types::BodyHandle;
 
 use crate::event::{CollisionEvent, CollisionEventType, EventData, TriggerEvent};
 

@@ -5,7 +5,7 @@ use slotmap::SlotMap;
 
 use physics_collision::ContactManifold;
 use physics_constraints::{ContactConstraint, DistanceJoint, RevoluteJoint};
-use physics_core::{Body, BodyHandle, BodyType, Shape as PhysicsShape};
+use physics_types::{Body, BodyHandle, BodyType, Shape as PhysicsShape};
 use physics_math::Vec2;
 use physics_particles::Particle;
 

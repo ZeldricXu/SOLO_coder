@@ -81,13 +81,13 @@ mod tests {
 
     #[test]
     fn test_body_type_conversion() {
-        let dynamic: physics_core::BodyType = BodyTypeConfig::Dynamic.into();
-        let static_body: physics_core::BodyType = BodyTypeConfig::Static.into();
-        let kinematic: physics_core::BodyType = BodyTypeConfig::Kinematic.into();
+        let dynamic: physics_types::BodyType = BodyTypeConfig::Dynamic.into();
+        let static_body: physics_types::BodyType = BodyTypeConfig::Static.into();
+        let kinematic: physics_types::BodyType = BodyTypeConfig::Kinematic.into();
 
-        assert!(matches!(dynamic, physics_core::BodyType::Dynamic));
-        assert!(matches!(static_body, physics_core::BodyType::Static));
-        assert!(matches!(kinematic, physics_core::BodyType::Kinematic));
+        assert!(matches!(dynamic, physics_types::BodyType::Dynamic));
+        assert!(matches!(static_body, physics_types::BodyType::Static));
+        assert!(matches!(kinematic, physics_types::BodyType::Kinematic));
     }
 
     #[test]
@@ -99,7 +99,7 @@ mod tests {
             density: 2.0,
         };
 
-        let mat: physics_core::Material = config.into();
+        let mat: physics_types::Material = config.into();
 
         assert_abs_diff_eq!(mat.restitution, 0.5);
         assert_abs_diff_eq!(mat.static_friction, 0.8);

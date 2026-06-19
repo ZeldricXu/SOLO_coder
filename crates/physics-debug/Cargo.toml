@@ -1,0 +1,23 @@
+[package]
+name = "physics-debug"
+version = { workspace = true }
+edition = { workspace = true }
+description = "物理引擎调试渲染工具，可视化刚体形状、碰撞信息、约束和粒子系统"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["debug", "rendering", "physics", "visualization", "egui"]
+categories = ["simulation", "game-development", "development-tools::debugging"]
+
+[dependencies]
+physics-math = { path = "../physics-math" }
+physics-types = { path = "../physics-types" }
+physics-collision = { path = "../physics-collision" }
+physics-constraints = { path = "../physics-constraints" }
+physics-particles = { path = "../physics-particles" }
+egui = { workspace = true }
+epaint = { workspace = true }
+emath = { workspace = true }
+ecolor = { workspace = true }
+nalgebra = { workspace = true }
+slotmap = { workspace = true }

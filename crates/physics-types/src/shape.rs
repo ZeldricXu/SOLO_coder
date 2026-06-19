@@ -1,9 +1,30 @@
 use physics_math::{polygon_moment_of_inertia, AABB, Transform, Vec2};
 
+/// 碰撞过滤器。
+///
+/// 通过位掩码和组索引控制哪些物理体之间可以发生碰撞。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_types::shape::CollisionFilter;
+///
+/// // 两个相同过滤器的物体可以碰撞
+/// let filter1 = CollisionFilter::new(0x0001, 0xFFFF);
+/// let filter2 = CollisionFilter::new(0x0001, 0xFFFF);
+/// assert!(filter1.should_collide(&filter2));
+///
+/// // 不同组的物体不能碰撞
+/// let filter3 = CollisionFilter::new(0x0002, 0x0002);
+/// assert!(!filter1.should_collide(&filter3));
+/// ```
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct CollisionFilter {
+    /// 类别位掩码，标识此物体属于哪些类别。
     pub category_bits: u16,
+    /// 掩码位掩码，标识此物体可以与哪些类别碰撞。
     pub mask_bits: u16,
+    /// 组索引。同组正数总是碰撞，同组负数总是不碰撞，不同组使用位掩码判断。
     pub group_index: i16,
 }
 
@@ -18,6 +39,22 @@ impl Default for CollisionFilter {
 }
 
 impl CollisionFilter {
+    /// 创建一个新的碰撞过滤器。
+    ///
+    /// # 参数
+    ///
+    /// * `category_bits` - 类别位掩码
+    /// * `mask_bits` - 掩码位掩码
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_types::shape::CollisionFilter;
+    ///
+    /// let filter = CollisionFilter::new(0x0001, 0xFFFF);
+    /// assert_eq!(filter.category_bits, 0x0001);
+    /// assert_eq!(filter.group_index, 0);
+    /// ```
     #[inline]
     pub fn new(category_bits: u16, mask_bits: u16) -> Self {
         CollisionFilter {
@@ -27,12 +64,30 @@ impl CollisionFilter {
         }
     }
 
+    /// 设置组索引（链式调用）。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_types::shape::CollisionFilter;
+    ///
+    /// // 同组正数总是碰撞
+    /// let filter1 = CollisionFilter::new(0x0001, 0xFFFF).with_group(1);
+    /// let filter2 = CollisionFilter::new(0x0001, 0xFFFF).with_group(1);
+    /// assert!(filter1.should_collide(&filter2));
+    ///
+    /// // 同组负数总是不碰撞
+    /// let filter3 = CollisionFilter::new(0x0001, 0xFFFF).with_group(-1);
+    /// let filter4 = CollisionFilter::new(0x0001, 0xFFFF).with_group(-1);
+    /// assert!(!filter3.should_collide(&filter4));
+    /// ```
     #[inline]
     pub fn with_group(mut self, group_index: i16) -> Self {
         self.group_index = group_index;
         self
     }
 
+    /// 判断两个过滤器是否允许碰撞。
     #[inline]
     pub fn should_collide(&self, other: &CollisionFilter) -> bool {
         if self.group_index != 0 && other.group_index != 0 {
@@ -44,22 +99,63 @@ impl CollisionFilter {
     }
 }
 
+/// 碰撞形状枚举。
+///
+/// 支持多种几何形状用于碰撞检测。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_types::shape::{Shape, Circle, Rectangle};
+/// use physics_math::Vec2;
+///
+/// let circle = Shape::Circle(Circle::new(1.0));
+/// let rect = Shape::Rectangle(Rectangle::new(2.0, 3.0));
+///
+/// assert!(circle.is_convex());
+/// assert!(rect.is_convex());
+/// ```
 #[derive(Clone, Debug, PartialEq)]
 pub enum Shape {
+    /// 圆形。
     Circle(Circle),
+    /// 矩形（轴对齐或旋转）。
     Rectangle(Rectangle),
+    /// 凸多边形。
     Polygon(Polygon),
+    /// 线段。
     Segment(Segment),
+    /// 半空间（无限大平面）。
     HalfSpace(HalfSpace),
 }
 
+/// 半空间（无限大平面）。
+///
+/// 由法线和到原点的有符号距离定义，平面方程为 `normal · x = distance`。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_types::shape::HalfSpace;
+/// use physics_math::Vec2;
+///
+/// // 创建一个标准地面（向上的法线，距离原点0）
+/// let ground = HalfSpace::ground();
+/// assert_eq!(ground.normal, Vec2::new(0.0, 1.0));
+/// assert_eq!(ground.signed_distance(Vec2::new(0.0, 1.0)), 1.0);
+/// ```
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct HalfSpace {
+    /// 平面法线（单位向量）。
     pub normal: Vec2,
+    /// 从原点到平面的有符号距离。
     pub distance: f32,
 }
 
 impl HalfSpace {
+    /// 创建一个新的半空间。
+    ///
+    /// 法线会被自动归一化。
     #[inline]
     pub fn new(normal: Vec2, distance: f32) -> Self {
         HalfSpace {
@@ -68,6 +164,21 @@ impl HalfSpace {
         }
     }
 
+    /// 通过平面上一点和法线创建半空间。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_types::shape::HalfSpace;
+    /// use physics_math::Vec2;
+    ///
+    /// let point = Vec2::new(0.0, 5.0);
+    /// let normal = Vec2::new(0.0, 1.0);
+    /// let half_space = HalfSpace::from_point_normal(point, normal);
+    ///
+    /// assert_eq!(half_space.signed_distance(Vec2::new(0.0, 6.0)), 1.0);
+    /// assert_eq!(half_space.signed_distance(point), 0.0);
+    /// ```
     #[inline]
     pub fn from_point_normal(point: Vec2, normal: Vec2) -> Self {
         let n = normal.normalize();
@@ -77,6 +188,7 @@ impl HalfSpace {
         }
     }
 
+    /// 创建一个标准地面半空间（y=0 平面，法线朝上）。
     #[inline]
     pub fn ground() -> Self {
         HalfSpace {
@@ -85,6 +197,7 @@ impl HalfSpace {
         }
     }
 
+    /// 计算半空间的 AABB（无限大）。
     #[inline]
     pub fn compute_aabb(&self, _transform: &Transform) -> AABB {
         AABB {
@@ -93,21 +206,27 @@ impl HalfSpace {
         }
     }
 
+    /// 计算质量（半空间质量为 0）。
     #[inline]
     pub fn compute_mass(&self, _density: f32) -> f32 {
         0.0
     }
 
+    /// 计算转动惯量（半空间惯量为 0）。
     #[inline]
     pub fn compute_inertia(&self, _mass: f32) -> f32 {
         0.0
     }
 
+    /// 计算点到半空间的有符号距离。
+    ///
+    /// 正数表示在平面正面（法线一侧），负数表示在背面。
     #[inline]
     pub fn signed_distance(&self, point: Vec2) -> f32 {
         point.dot(self.normal) - self.distance
     }
 
+    /// 获取支持点（用于 GJK 算法）。
     #[inline]
     pub fn support_point(&self, direction: Vec2, _transform: &Transform) -> Vec2 {
         if direction.dot(self.normal) < 0.0 {
@@ -118,38 +237,56 @@ impl HalfSpace {
     }
 }
 
+/// 圆形。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_types::shape::Circle;
+/// use approx::assert_abs_diff_eq;
+///
+/// let c = Circle::new(2.0);
+/// assert_abs_diff_eq!(c.radius(), 2.0);
+/// ```
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Circle {
+    /// 半径。
     pub radius: f32,
 }
 
 impl Circle {
+    /// 创建一个新的圆形。
     #[inline]
     pub fn new(radius: f32) -> Self {
         Circle { radius }
     }
 
+    /// 获取半径。
     #[inline]
     pub fn radius(&self) -> f32 {
         self.radius
     }
 
+    /// 计算圆形的 AABB。
     #[inline]
     pub fn compute_aabb(&self, transform: &Transform) -> AABB {
         let r = Vec2::splat(self.radius);
         AABB::from_center_extents(transform.position, r)
     }
 
+    /// 计算圆形的质量。
     #[inline]
     pub fn compute_mass(&self, density: f32) -> f32 {
         std::f32::consts::PI * self.radius * self.radius * density
     }
 
+    /// 计算圆形的转动惯量。
     #[inline]
     pub fn compute_inertia(&self, mass: f32) -> f32 {
         0.5 * mass * self.radius * self.radius
     }
 
+    /// 获取支持点（用于 GJK 算法）。
     #[inline]
     pub fn support_point(&self, direction: Vec2, transform: &Transform) -> Vec2 {
         let dir = transform.rotation.inv_mul_vec(direction).normalize();
@@ -157,12 +294,26 @@ impl Circle {
     }
 }
 
+/// 矩形。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_types::shape::Rectangle;
+/// use approx::assert_abs_diff_eq;
+///
+/// let r = Rectangle::new(4.0, 2.0);
+/// assert_abs_diff_eq!(r.width(), 4.0);
+/// assert_abs_diff_eq!(r.height(), 2.0);
+/// ```
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Rectangle {
+    /// 半长/半宽（从中心到边的距离）。
     pub half_extents: Vec2,
 }
 
 impl Rectangle {
+    /// 通过宽度和高度创建矩形。
     #[inline]
     pub fn new(width: f32, height: f32) -> Self {
         Rectangle {
@@ -170,26 +321,31 @@ impl Rectangle {
         }
     }
 
+    /// 通过半尺寸创建矩形。
     #[inline]
     pub fn from_half_extents(half_extents: Vec2) -> Self {
         Rectangle { half_extents }
     }
 
+    /// 获取半尺寸。
     #[inline]
     pub fn half_extents(&self) -> Vec2 {
         self.half_extents
     }
 
+    /// 获取宽度。
     #[inline]
     pub fn width(&self) -> f32 {
         self.half_extents.x * 2.0
     }
 
+    /// 获取高度。
     #[inline]
     pub fn height(&self) -> f32 {
         self.half_extents.y * 2.0
     }
 
+    /// 获取四个顶点（局部坐标）。
     #[inline]
     pub fn vertices(&self) -> [Vec2; 4] {
         let h = self.half_extents;
@@ -201,6 +357,7 @@ impl Rectangle {
         ]
     }
 
+    /// 计算矩形的 AABB。
     #[inline]
     pub fn compute_aabb(&self, transform: &Transform) -> AABB {
         let vertices = self.vertices();
@@ -208,11 +365,13 @@ impl Rectangle {
         AABB::from_points(&rotated)
     }
 
+    /// 计算矩形的质量。
     #[inline]
     pub fn compute_mass(&self, density: f32) -> f32 {
         self.half_extents.x * self.half_extents.y * 4.0 * density
     }
 
+    /// 计算矩形的转动惯量。
     #[inline]
     pub fn compute_inertia(&self, mass: f32) -> f32 {
         let w = self.half_extents.x * 2.0;
@@ -220,6 +379,7 @@ impl Rectangle {
         (mass / 12.0) * (w * w + h * h)
     }
 
+    /// 获取支持点（用于 GJK 算法）。
     #[inline]
     pub fn support_point(&self, direction: Vec2, transform: &Transform) -> Vec2 {
         let local_dir = transform.rotation.inv_mul_vec(direction);
@@ -239,6 +399,9 @@ impl Rectangle {
     }
 }
 
+/// 凸多边形。
+///
+/// 顶点按逆时针顺序排列。
 #[derive(Clone, Debug, PartialEq)]
 pub struct Polygon {
     vertices: Vec<Vec2>,
@@ -246,6 +409,9 @@ pub struct Polygon {
 }
 
 impl Polygon {
+    /// 通过顶点集合创建凸多边形。
+    ///
+    /// 会自动计算凸包。
     pub fn new(vertices: Vec<Vec2>) -> Self {
         let vertices = Self::compute_hull(vertices);
         let normals = Self::compute_normals(&vertices);
@@ -324,16 +490,19 @@ impl Polygon {
         normals
     }
 
+    /// 获取多边形顶点。
     #[inline]
     pub fn vertices(&self) -> &[Vec2] {
         &self.vertices
     }
 
+    /// 获取多边形各边的法线。
     #[inline]
     pub fn normals(&self) -> &[Vec2] {
         &self.normals
     }
 
+    /// 计算多边形的 AABB。
     #[inline]
     pub fn compute_aabb(&self, transform: &Transform) -> AABB {
         let transformed: Vec<Vec2> = self
@@ -344,16 +513,19 @@ impl Polygon {
         AABB::from_points(&transformed)
     }
 
+    /// 计算多边形的质量。
     #[inline]
     pub fn compute_mass(&self, density: f32) -> f32 {
         physics_math::polygon_area(&self.vertices) * density
     }
 
+    /// 计算多边形的转动惯量。
     #[inline]
     pub fn compute_inertia(&self, mass: f32) -> f32 {
         polygon_moment_of_inertia(&self.vertices, mass)
     }
 
+    /// 获取支持点（用于 GJK 算法）。
     #[inline]
     pub fn support_point(&self, direction: Vec2, transform: &Transform) -> Vec2 {
         let local_dir = transform.rotation.inv_mul_vec(direction);
@@ -372,18 +544,32 @@ impl Polygon {
     }
 }
 
+/// 线段。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_types::shape::Segment;
+/// use physics_math::Vec2;
+///
+/// let seg = Segment::new(Vec2::new(0.0, 0.0), Vec2::new(1.0, 1.0));
+/// ```
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct Segment {
+    /// 线段起点。
     pub a: Vec2,
+    /// 线段终点。
     pub b: Vec2,
 }
 
 impl Segment {
+    /// 创建一个新的线段。
     #[inline]
     pub fn new(a: Vec2, b: Vec2) -> Self {
         Segment { a, b }
     }
 
+    /// 计算线段的 AABB。
     #[inline]
     pub fn compute_aabb(&self, transform: &Transform) -> AABB {
         let ta = transform.mul_vec(self.a);
@@ -391,18 +577,21 @@ impl Segment {
         AABB::from_points(&[ta, tb])
     }
 
+    /// 计算线段的质量（基于长度和假设的厚度）。
     #[inline]
     pub fn compute_mass(&self, density: f32) -> f32 {
         let length = (self.b - self.a).length();
         length * 0.1 * density
     }
 
+    /// 计算线段的转动惯量。
     #[inline]
     pub fn compute_inertia(&self, mass: f32) -> f32 {
         let length = (self.b - self.a).length();
         mass * length * length / 12.0
     }
 
+    /// 获取支持点（用于 GJK 算法）。
     #[inline]
     pub fn support_point(&self, direction: Vec2, transform: &Transform) -> Vec2 {
         let ta = transform.mul_vec(self.a);
@@ -416,6 +605,7 @@ impl Segment {
 }
 
 impl Shape {
+    /// 计算形状的 AABB。
     #[inline]
     pub fn compute_aabb(&self, transform: &Transform) -> AABB {
         match self {
@@ -427,6 +617,7 @@ impl Shape {
         }
     }
 
+    /// 计算形状的质量。
     #[inline]
     pub fn compute_mass(&self, density: f32) -> f32 {
         match self {
@@ -438,6 +629,7 @@ impl Shape {
         }
     }
 
+    /// 计算形状的转动惯量。
     #[inline]
     pub fn compute_inertia(&self, mass: f32) -> f32 {
         match self {
@@ -449,6 +641,7 @@ impl Shape {
         }
     }
 
+    /// 获取支持点（用于 GJK 算法）。
     #[inline]
     pub fn support_point(&self, direction: Vec2, transform: &Transform) -> Vec2 {
         match self {
@@ -460,6 +653,7 @@ impl Shape {
         }
     }
 
+    /// 判断形状是否为凸形。
     #[inline]
     pub fn is_convex(&self) -> bool {
         match self {
@@ -471,6 +665,7 @@ impl Shape {
         }
     }
 
+    /// 判断是否为半空间形状。
     #[inline]
     pub fn is_half_space(&self) -> bool {
         matches!(self, Shape::HalfSpace(_))

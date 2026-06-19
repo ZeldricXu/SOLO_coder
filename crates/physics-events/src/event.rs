@@ -1,5 +1,5 @@
 use physics_collision::ContactPoint;
-use physics_core::{BodyHandle, Shape};
+use physics_types::{BodyHandle, Shape};
 use physics_math::Vec2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

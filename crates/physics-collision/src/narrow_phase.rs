@@ -1,4 +1,4 @@
-use physics_core::{Body, BodyHandle};
+use physics_types::{Body, BodyHandle};
 
 use crate::contact::{Collide, ContactManifold};
 
@@ -38,7 +38,7 @@ impl Default for NarrowPhase {
 }
 
 fn should_collide(a: &Body, b: &Body) -> bool {
-    use physics_core::BodyType::*;
+    use physics_types::BodyType::*;
 
     match (a.body_type, b.body_type) {
         (Static, Static) => return false,
@@ -58,7 +58,7 @@ fn should_collide(a: &Body, b: &Body) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use physics_core::{BodyType, Material, Shape, Circle, Rectangle};
+    use physics_types::{BodyType, Material, Shape, Circle, Rectangle};
     use physics_math::Vec2;
     use slotmap::Key;
 

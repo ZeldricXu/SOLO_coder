@@ -1,5 +1,5 @@
 use crate::integrator::Integrator;
-use physics_core::{BodyType, World};
+use physics_types::{BodyType, World};
 use physics_math::Vec2;
 
 pub struct DynamicsSolver<I: Integrator = crate::integrator::IntegratorDefault> {
@@ -80,7 +80,7 @@ impl<I: Integrator> DynamicsSolver<I> {
 mod tests {
     use super::*;
     use approx::assert_abs_diff_eq;
-    use physics_core::{BodyHandle, Circle, Material, Shape};
+    use physics_types::{BodyHandle, Circle, Material, Shape};
     use physics_math::Vec2;
 
     type TestSolver = DynamicsSolver;

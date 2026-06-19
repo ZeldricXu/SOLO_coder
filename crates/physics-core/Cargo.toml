@@ -1,11 +1,28 @@
 [package]
 name = "physics-core"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "2D物理引擎核心整合库，提供刚体、碰撞、约束和粒子系统的完整功能"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["physics", "engine", "2d", "simulation", "game"]
+categories = ["simulation", "game-development"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }
+physics-types = { path = "../physics-types" }
+physics-spatial = { path = "../physics-spatial" }
+physics-collision = { path = "../physics-collision" }
+physics-dynamics = { path = "../physics-dynamics" }
+physics-constraints = { path = "../physics-constraints" }
+physics-particles = { path = "../physics-particles" }
+physics-events = { path = "../physics-events" }
+physics-serialization = { path = "../physics-serialization" }
 nalgebra = { workspace = true }
+slotmap = { workspace = true }
 serde = { workspace = true }
-slotmap = { workspace = true, features = ["serde"] }
 approx = { workspace = true }
+
+[dev-dependencies]
+rand = { workspace = true }

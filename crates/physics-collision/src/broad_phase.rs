@@ -1,27 +1,85 @@
 use std::collections::HashMap;
 
-use physics_core::{Body, BodyHandle};
+use physics_types::{Body, BodyHandle};
 use physics_math::AABB;
 use physics_spatial::{AABBProxy, AABBTree};
 
-pub type BodyPair = (physics_core::BodyHandle, physics_core::BodyHandle);
+/// 一对可能发生碰撞的物理体句柄对。
+pub type BodyPair = (physics_types::BodyHandle, physics_types::BodyHandle);
 
+/// 宽相碰撞检测 trait。
+///
+/// 宽相检测是碰撞检测的第一阶段，用于快速剔除显然不可能碰撞的物体对，
+/// 减少需要进行精确窄相检测的物体对数量。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_collision::{BroadPhase, BruteForceBroadPhase};
+/// use physics_types::{Body, BodyType, Material, Shape};
+/// use physics_types::shape::Circle;
+/// use physics_math::{Vec2, Transform, Rot2};
+/// use slotmap::SlotMap;
+///
+/// let mut bp = BruteForceBroadPhase::new();
+/// let mut bodies = SlotMap::with_key();
+///
+/// let circle = Shape::Circle(Circle::new(1.0));
+/// let handle = bodies.insert_with_key(|handle| {
+///     Body::new(handle, circle, Vec2::new(0.0, 0.0), 0.0, BodyType::Dynamic, Material::DEFAULT)
+/// });
+///
+/// bp.add_body(handle, bodies.get(handle).unwrap());
+/// assert_eq!(bp.body_count(), 1);
+/// ```
 pub trait BroadPhase {
-    fn add_body(&mut self, handle: physics_core::BodyHandle, body: &Body);
-    fn remove_body(&mut self, handle: physics_core::BodyHandle);
-    fn update_body(&mut self, handle: physics_core::BodyHandle, body: &Body) -> bool;
+    /// 添加一个物理体到宽相检测中。
+    fn add_body(&mut self, handle: physics_types::BodyHandle, body: &Body);
+    /// 从宽相检测中移除物理体。
+    fn remove_body(&mut self, handle: physics_types::BodyHandle);
+    /// 更新物理体的 AABB。
+    ///
+    /// # 返回
+    ///
+    /// 如果物理体存在并成功更新返回 `true`，否则返回 `false`。
+    fn update_body(&mut self, handle: physics_types::BodyHandle, body: &Body) -> bool;
+    /// 获取所有可能发生碰撞的物理体对。
     fn get_potential_pairs(&self) -> Vec<BodyPair>;
-    fn query(&self, aabb: &AABB) -> Vec<physics_core::BodyHandle>;
+    /// 查询与给定 AABB 相交的所有物理体。
+    fn query(&self, aabb: &AABB) -> Vec<physics_types::BodyHandle>;
+    /// 清空所有物理体。
     fn clear(&mut self);
+    /// 获取当前管理的物理体数量。
     fn body_count(&self) -> usize;
 }
 
+/// 暴力宽相碰撞检测实现。
+///
+/// 通过双重循环检查所有物体对，时间复杂度 O(n²)。
+/// 适用于物体数量较少的场景或调试用途。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_collision::BruteForceBroadPhase;
+///
+/// let bp = BruteForceBroadPhase::new();
+/// ```
 #[derive(Clone, Debug, Default)]
 pub struct BruteForceBroadPhase {
-    bodies: HashMap<physics_core::BodyHandle, AABB>,
+    bodies: HashMap<physics_types::BodyHandle, AABB>,
 }
 
 impl BruteForceBroadPhase {
+    /// 创建一个新的暴力宽相检测器。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_collision::BruteForceBroadPhase;
+    ///
+    /// let bp = BruteForceBroadPhase::new();
+    /// ```
     pub fn new() -> Self {
         BruteForceBroadPhase {
             bodies: HashMap::new(),
@@ -30,16 +88,16 @@ impl BruteForceBroadPhase {
 }
 
 impl BroadPhase for BruteForceBroadPhase {
-    fn add_body(&mut self, handle: physics_core::BodyHandle, body: &Body) {
+    fn add_body(&mut self, handle: physics_types::BodyHandle, body: &Body) {
         let aabb = body.shape.compute_aabb(&body.transform);
         self.bodies.insert(handle, aabb);
     }
 
-    fn remove_body(&mut self, handle: physics_core::BodyHandle) {
+    fn remove_body(&mut self, handle: physics_types::BodyHandle) {
         self.bodies.remove(&handle);
     }
 
-    fn update_body(&mut self, handle: physics_core::BodyHandle, body: &Body) -> bool {
+    fn update_body(&mut self, handle: physics_types::BodyHandle, body: &Body) -> bool {
         if let Some(aabb_ref) = self.bodies.get_mut(&handle) {
             let new_aabb = body.shape.compute_aabb(&body.transform);
             *aabb_ref = new_aabb;
@@ -51,7 +109,7 @@ impl BroadPhase for BruteForceBroadPhase {
 
     fn get_potential_pairs(&self) -> Vec<BodyPair> {
         let mut pairs = Vec::new();
-        let handles: Vec<physics_core::BodyHandle> = self.bodies.keys().copied().collect();
+        let handles: Vec<physics_types::BodyHandle> = self.bodies.keys().copied().collect();
 
         for i in 0..handles.len() {
             for j in (i + 1)..handles.len() {
@@ -69,7 +127,7 @@ impl BroadPhase for BruteForceBroadPhase {
         pairs
     }
 
-    fn query(&self, aabb: &AABB) -> Vec<physics_core::BodyHandle> {
+    fn query(&self, aabb: &AABB) -> Vec<physics_types::BodyHandle> {
         let mut results = Vec::new();
         for (handle, body_aabb) in &self.bodies {
             if body_aabb.intersects(aabb) {
@@ -88,6 +146,18 @@ impl BroadPhase for BruteForceBroadPhase {
     }
 }
 
+/// 基于 AABB 树的宽相碰撞检测实现。
+///
+/// 使用动态 AABB 树空间数据结构，查询效率更高，平均时间复杂度 O(n log n)。
+/// 适用于物体数量较多的场景。
+///
+/// # 示例
+///
+/// ```rust
+/// use physics_collision::AABBTreeBroadPhase;
+///
+/// let bp = AABBTreeBroadPhase::new();
+/// ```
 #[derive(Clone, Debug)]
 pub struct AABBTreeBroadPhase {
     tree: AABBTree,
@@ -96,6 +166,15 @@ pub struct AABBTreeBroadPhase {
 }
 
 impl AABBTreeBroadPhase {
+    /// 创建一个新的 AABB 树宽相检测器。
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_collision::AABBTreeBroadPhase;
+    ///
+    /// let bp = AABBTreeBroadPhase::new();
+    /// ```
     pub fn new() -> Self {
         AABBTreeBroadPhase {
             tree: AABBTree::new(),
@@ -104,6 +183,19 @@ impl AABBTreeBroadPhase {
         }
     }
 
+    /// 创建一个带有扩展边距的 AABB 树宽相检测器。
+    ///
+    /// # 参数
+    ///
+    /// * `extension` - AABB 扩展边距，用于减少物体移动时的树更新频率
+    ///
+    /// # 示例
+    ///
+    /// ```rust
+    /// use physics_collision::AABBTreeBroadPhase;
+    ///
+    /// let bp = AABBTreeBroadPhase::with_extension(0.1);
+    /// ```
     pub fn with_extension(extension: f32) -> Self {
         AABBTreeBroadPhase {
             tree: AABBTree::with_extension(extension),
@@ -120,21 +212,21 @@ impl Default for AABBTreeBroadPhase {
 }
 
 impl BroadPhase for AABBTreeBroadPhase {
-    fn add_body(&mut self, handle: physics_core::BodyHandle, body: &Body) {
+    fn add_body(&mut self, handle: physics_types::BodyHandle, body: &Body) {
         let aabb = body.shape.compute_aabb(&body.transform);
         let proxy = self.tree.insert_proxy(aabb);
         self.body_to_proxy.insert(handle, proxy);
         self.proxy_to_body.insert(proxy, handle);
     }
 
-    fn remove_body(&mut self, handle: physics_core::BodyHandle) {
+    fn remove_body(&mut self, handle: physics_types::BodyHandle) {
         if let Some(proxy) = self.body_to_proxy.remove(&handle) {
             self.tree.remove_proxy(proxy);
             self.proxy_to_body.remove(&proxy);
         }
     }
 
-    fn update_body(&mut self, handle: physics_core::BodyHandle, body: &Body) -> bool {
+    fn update_body(&mut self, handle: physics_types::BodyHandle, body: &Body) -> bool {
         if let Some(proxy) = self.body_to_proxy.get(&handle) {
             let aabb = body.shape.compute_aabb(&body.transform);
             self.tree.update_proxy(*proxy, aabb)
@@ -156,7 +248,7 @@ impl BroadPhase for AABBTreeBroadPhase {
         pairs
     }
 
-    fn query(&self, aabb: &AABB) -> Vec<physics_core::BodyHandle> {
+    fn query(&self, aabb: &AABB) -> Vec<physics_types::BodyHandle> {
         let mut results = Vec::new();
         let proxies = self.tree.query(aabb);
 
@@ -180,20 +272,21 @@ impl BroadPhase for AABBTreeBroadPhase {
     }
 }
 
+/// 默认宽相碰撞检测实现的类型别名。
 pub type BroadPhaseDefault = AABBTreeBroadPhase;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use physics_core::{Body, BodyType, Material, Shape, Circle};
+    use physics_types::{Body, BodyType, Material, Shape, Circle};
     use physics_math::{Transform, Rot2, Vec2};
     use slotmap::SlotMap;
 
     fn create_test_body(
-        bodies: &mut SlotMap<physics_core::BodyHandle, Body>,
+        bodies: &mut SlotMap<physics_types::BodyHandle, Body>,
         shape: Shape,
         position: Vec2,
-    ) -> physics_core::BodyHandle {
+    ) -> physics_types::BodyHandle {
         let transform = Transform::new(position, Rot2::new(0.0));
         bodies.insert_with_key(|handle| {
             Body::new(handle, shape, position, 0.0, BodyType::Dynamic, Material::DEFAULT)

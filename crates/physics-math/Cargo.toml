@@ -1,7 +1,13 @@
 [package]
 name = "physics-math"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "2D物理引擎数学基础库，提供向量、矩阵、旋转和变换等核心数学原语"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["math", "physics", "2d", "vector", "matrix"]
+categories = ["simulation", "game-development", "mathematics"]
 
 [dependencies]
 nalgebra = { workspace = true }

@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/physics-math",
-    "crates/physics-core",
+    "crates/physics-types",
     "crates/physics-spatial",
     "crates/physics-collision",
     "crates/physics-dynamics",
@@ -10,10 +10,17 @@ members = [
     "crates/physics-particles",
     "crates/physics-events",
     "crates/physics-serialization",
-    "crates/physics-debug-render",
-    "crates/physics-engine",
+    "crates/physics-debug",
+    "crates/physics-core",
     "crates/physics-benches",
 ]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/example/physics-engine"
+rust-version = "1.70"
 
 [workspace.dependencies]
 nalgebra = { version = "0.32", features = ["serde"] }
@@ -35,6 +42,11 @@ opt-level = 1
 debug = true
 
 [profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+
+[profile.bench]
 opt-level = 3
 lto = true
 codegen-units = 1

@@ -1,17 +1,17 @@
 [package]
-name = "physics-spatial"
+name = "physics-types"
 version = { workspace = true }
 edition = { workspace = true }
-description = "空间索引数据结构实现，包括AABB树和哈希网格等碰撞检测加速结构"
+description = "物理引擎核心类型定义，包含刚体、形状、材质和世界配置等基础数据结构"
 license = { workspace = true }
 repository = { workspace = true }
 readme = "../../README.md"
-keywords = ["spatial", "aabb", "indexing", "collision", "optimization"]
+keywords = ["physics", "types", "rigid-body", "shape", "material"]
 categories = ["simulation", "game-development", "data-structures"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }
-physics-types = { path = "../physics-types" }
 nalgebra = { workspace = true }
 serde = { workspace = true }
-slotmap = { workspace = true }
+slotmap = { workspace = true, features = ["serde"] }
+approx = { workspace = true }

@@ -1,7 +1,13 @@
 [package]
 name = "physics-particles"
-version = "0.1.0"
-edition = "2021"
+version = { workspace = true }
+edition = { workspace = true }
+description = "粒子系统和SPH流体模拟，支持数千粒子的实时物理仿真与渲染"
+license = { workspace = true }
+repository = { workspace = true }
+readme = "../../README.md"
+keywords = ["particles", "fluid", "sph", "simulation", "physics"]
+categories = ["simulation", "game-development", "rendering"]
 
 [dependencies]
 physics-math = { path = "../physics-math" }

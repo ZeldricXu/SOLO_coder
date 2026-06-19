@@ -1,4 +1,4 @@
-use physics_core::BodyHandle;
+use physics_types::BodyHandle;
 use physics_math::{Transform, Vec2};
 
 use crate::constraint::{Constraint, ConstraintSolverData, Jacobian};
@@ -1011,7 +1011,7 @@ impl Joint for WeldJoint {}
 mod tests {
     use super::*;
     use approx::assert_relative_eq;
-    use physics_core::{Body, BodyType, Material, Shape, Circle};
+    use physics_types::{Body, BodyType, Material, Shape, Circle};
     use physics_math::Rot2;
     use slotmap::SlotMap;
 
