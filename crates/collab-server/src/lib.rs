@@ -71,8 +71,12 @@ impl AppState {
 }
 
 pub fn init_metrics() {
+    let metrics_port = std::env::var("METRICS_PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(9090);
     let recorder = metrics_exporter_prometheus::PrometheusBuilder::new()
-        .with_http_listener(([0, 0, 0, 0], 9000))
+        .with_http_listener(([0, 0, 0, 0], metrics_port))
         .set_buckets(&[0.0001, 0.0005, 0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
         .unwrap()
         .install_recorder()

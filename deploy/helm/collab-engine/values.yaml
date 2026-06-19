@@ -1,0 +1,196 @@
+# =============================================================================
+# 全局配置
+# =============================================================================
+global:
+  imageRegistry: ""
+  imagePullSecrets: []
+  namespaceOverride: ""
+  commonLabels: {}
+
+# =============================================================================
+# Pod 注解和标签
+# =============================================================================
+podAnnotations: {}
+podLabels: {}
+nameOverride: ""
+fullnameOverride: ""
+
+# =============================================================================
+# 镜像配置
+# =============================================================================
+image:
+  repository: collab/collab-engine
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# 服务模式: server (HTTP+WS) 或 worker (仅后台任务)
+# =============================================================================
+mode: server
+
+# =============================================================================
+# 副本数 & 自动扩缩容 (HPA)
+# =============================================================================
+replicaCount: 2
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  # 自定义指标: 每 Pod WebSocket 连接数阈值
+  targetWsConnectionsPerPod: 1000
+
+# =============================================================================
+# 资源限制
+# =============================================================================
+resources:
+  # --- dev 默认值 ---
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+  # --- prod 默认值 (注释示例) ---
+  # requests:
+  #   cpu: 2000m
+  #   memory: 4Gi
+  # limits:
+  #   cpu: 4000m
+  #   memory: 8Gi
+
+# =============================================================================
+# 调度 & 亲和性 (PodAntiAffinity 分散到不同节点)
+# =============================================================================
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values:
+                  - collab-engine
+          topologyKey: kubernetes.io/hostname
+
+nodeSelector: {}
+tolerations: []
+priorityClassName: ""
+
+# =============================================================================
+# 服务端口
+# =============================================================================
+service:
+  type: ClusterIP
+  httpPort: 3000
+  metricsPort: 9090
+  # headless service 用于 StatefulSet/服务发现
+  headless:
+    enabled: true
+
+# =============================================================================
+# ServiceAccount
+# =============================================================================
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+  # Automount API credentials
+  automount: true
+
+# =============================================================================
+# 非敏感配置 (ConfigMap)
+# =============================================================================
+config:
+  RUST_LOG: info
+  COLLAB_MODE: server
+  PORT: "3000"
+  METRICS_PORT: "9090"
+  JWT_ISSUER: collab-engine
+  JWT_AUDIENCE: collab-engine
+  JWT_EXPIRY_SECS: "86400"
+  # 数据库连接参数 (密码走 Secret)
+  DATABASE_HOST: postgres
+  DATABASE_PORT: "5432"
+  DATABASE_NAME: collab
+  DATABASE_USER: collab
+  DATABASE_MAX_CONNS: "50"
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_DB: "0"
+  SNAPSHOT_INTERVAL_SECS: "60"
+  SNAPSHOT_MIN_OPS: "100"
+
+# =============================================================================
+# 敏感配置 (Secret)
+# =============================================================================
+secret:
+  # 设为 true 时由 chart 创建 secret; 否则使用 existingSecret
+  create: true
+  existingSecret: ""
+  # 以下值只在 create=true 时生效
+  jwtSecret: "change-me-in-production"
+  databasePassword: "change-me-in-production"
+  # 可选: 完整的 DATABASE_URL/REDIS_URL 覆盖
+  databaseUrl: ""
+  redisUrl: ""
+
+# =============================================================================
+# 数据库迁移 Init Container
+# =============================================================================
+migration:
+  enabled: true
+  image:
+    repository: collab/collab-engine
+    tag: "latest"
+    pullPolicy: IfNotPresent
+  # 应用内已自带 schema 初始化, 此处做健康等待
+  command:
+    - /bin/sh
+    - -c
+    - "echo 'Waiting for PostgreSQL...' && sleep 15 && echo 'Schema init will run inside app' && exit 0"
+
+# =============================================================================
+# Ingress
+# =============================================================================
+ingress:
+  enabled: false
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: collab-engine
+  hosts:
+    - host: collab.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# =============================================================================
+# ServiceMonitor (Prometheus Operator)
+# =============================================================================
+serviceMonitor:
+  enabled: false
+  interval: 15s
+  scrapeTimeout: 10s
+  namespace: monitoring
+  labels:
+    release: prometheus
+
+# =============================================================================
+# Dev / Prod 切换提示
+# =============================================================================
+# 使用: helm install collab-dev . -f values.yaml (dev 默认)
+#       helm install collab-prod . -f values.yaml --set replicaCount=4 \
+#         --set resources.requests.cpu=2 --set resources.requests.memory=4Gi \
+#         --set resources.limits.cpu=4 --set resources.limits.memory=8Gi \
+#         --set secret.jwtSecret=$(openssl rand -hex 32) \
+#         --set secret.databasePassword=$PG_PASSWORD

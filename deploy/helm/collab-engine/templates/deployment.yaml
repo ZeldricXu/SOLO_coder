@@ -1,0 +1,110 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "collab-engine.fullname" . }}
+  labels:
+    {{- include "collab-engine.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  selector:
+    matchLabels:
+      {{- include "collab-engine.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "collab-engine.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "collab-engine.serviceAccountName" . }}
+      {{- if .Values.priorityClassName }}
+      priorityClassName: {{ .Values.priorityClassName }}
+      {{- end }}
+      securityContext:
+        fsGroup: 1000
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.migration.enabled }}
+      initContainers:
+        - name: migration
+          image: {{ include "collab-engine.migrationImage" . }}
+          imagePullPolicy: {{ .Values.migration.image.pullPolicy }}
+          command:
+            {{- toYaml .Values.migration.command | nindent 12 }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "collab-engine.fullname" . }}
+            - secretRef:
+                name: {{ include "collab-engine.secretName" . }}
+      {{- end }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "collab-engine.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 3000
+              protocol: TCP
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "collab-engine.fullname" . }}
+            - secretRef:
+                name: {{ include "collab-engine.secretName" . }}
+          env:
+            - name: COLLAB_MODE
+              value: {{ .Values.mode | quote }}
+            {{- if not .Values.secret.databaseUrl }}
+            - name: DATABASE_URL
+              value: "postgresql://$(DATABASE_USER):$(DATABASE_PASSWORD)@$(DATABASE_HOST):$(DATABASE_PORT)/$(DATABASE_NAME)"
+            {{- end }}
+            {{- if not .Values.secret.redisUrl }}
+            - name: REDIS_URL
+              value: "redis://$(REDIS_HOST):$(REDIS_PORT)/$(REDIS_DB)"
+            {{- end }}
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 10
+            initialDelaySeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true

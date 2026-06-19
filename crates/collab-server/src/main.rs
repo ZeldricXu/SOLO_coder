@@ -114,7 +114,95 @@ fn main() {
         .build()
         .unwrap();
 
-    rt.block_on(async_main());
+    let mode = std::env::var("COLLAB_MODE").unwrap_or_else(|_| "server".to_string());
+    match mode.as_str() {
+        "worker" => rt.block_on(async_worker()),
+        _ => rt.block_on(async_main()),
+    }
+}
+
+async fn async_worker() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "info,collab_engine=debug,tower_http=warn,sqlx=warn".into()),
+        )
+        .with_target(true)
+        .json()
+        .init();
+
+    init_metrics();
+
+    let config = AppConfig::from_env();
+    tracing::info!("Starting collab-engine in WORKER mode (background tasks only)");
+
+    let node_id = format!("worker-{}", Uuid::new_v4().simple());
+    tracing::info!("Worker Node ID: {}", node_id);
+
+    let db_pool = setup_database(&config).await;
+    let redis_pool = setup_redis(&config).await;
+
+    let auth_service = Arc::new(AuthService::new(
+        config.auth.clone(),
+        redis_pool.clone(),
+        config.redis.pubsub_channel_prefix.clone(),
+    ));
+    let repo = OplogRepository::new(db_pool.clone());
+    repo.init_schema().await.expect("Failed to init DB schema");
+
+    let oplog_writer = Arc::new(storage::BatchingOplogWriter::new(db_pool.clone()));
+    Arc::clone(&oplog_writer).run();
+
+    let ws_manager = ConnectionManager::new(config.clone());
+    let presence = presence::PresenceTracker::new();
+    let rate_limiter = ratelimit::RateLimiter::new(config.ratelimit.clone());
+    let snapshot_service = snapshot::SnapshotService::new(config.clone(), repo);
+
+    let stream_prefix = config.redis.pubsub_channel_prefix.clone();
+    let broadcaster = Arc::new(StreamPublisher::new(redis_pool.clone(), stream_prefix));
+
+    let (_consumer, subscribe_tx) = broadcast::StreamConsumer::new(
+        redis_pool.clone(),
+        config.redis.pubsub_channel_prefix.clone(),
+        node_id.clone(),
+        ws_manager.clone(),
+    );
+
+    let app_state = Arc::new(AppState {
+        config: config.clone(),
+        db_pool: db_pool.clone(),
+        redis_pool: redis_pool.clone(),
+        ws_manager: ws_manager.clone(),
+        presence_tracker: presence.clone(),
+        rate_limiter: rate_limiter.clone(),
+        snapshot_service: snapshot_service.clone(),
+        broadcaster: broadcaster.clone(),
+        auth_service: auth_service.clone(),
+        oplog_writer: oplog_writer.clone(),
+        active_connections: std::sync::atomic::AtomicUsize::new(0),
+        started_at: chrono::Utc::now(),
+    });
+
+    start_background_tasks(
+        config.clone(),
+        ws_manager.clone(),
+        presence.clone(),
+        rate_limiter.clone(),
+        snapshot_service.clone(),
+        app_state.clone(),
+        subscribe_tx.clone(),
+    );
+
+    start_permission_invalidation_listener(
+        redis_pool.clone(),
+        auth_service.clone(),
+        config.redis.pubsub_channel_prefix.clone(),
+    );
+
+    tracing::info!("Worker started; waiting forever for background tasks");
+    loop {
+        tokio::time::sleep(Duration::from_secs(60)).await;
+    }
 }
 
 async fn async_main() {
@@ -130,7 +218,7 @@ async fn async_main() {
     init_metrics();
 
     let config = AppConfig::from_env();
-    tracing::info!("Starting collab-engine on {}:{}", config.server.host, config.server.port);
+    tracing::info!("Starting collab-engine SERVER mode on {}:{}", config.server.host, config.server.port);
 
     let node_id = format!("node-{}", Uuid::new_v4().simple());
     tracing::info!("Node ID: {}", node_id);

@@ -92,7 +92,7 @@ impl Default for AppConfig {
         AppConfig {
             server: ServerConfig {
                 host: "0.0.0.0".to_string(),
-                port: 8080,
+                port: 3000,
                 workers: num_cpus::get(),
             },
             database: DatabaseConfig {

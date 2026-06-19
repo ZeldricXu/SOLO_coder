@@ -1,0 +1,19 @@
+# Prometheus 监控采集配置
+# 采集协作引擎实例的 Metrics 指标
+
+global:
+  scrape_interval: 5s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # 协作引擎实例 A
+  - job_name: collab-engine-a
+    static_configs:
+      - targets: ['collab-engine-a:9090']
+    metrics_path: /metrics
+
+  # 协作引擎实例 B
+  - job_name: collab-engine-b
+    static_configs:
+      - targets: ['collab-engine-b:9090']
+    metrics_path: /metrics

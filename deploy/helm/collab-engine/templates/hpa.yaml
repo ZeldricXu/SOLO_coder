@@ -1,0 +1,33 @@
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "collab-engine.fullname" . }}
+  labels:
+    {{- include "collab-engine.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "collab-engine.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.targetWsConnectionsPerPod }}
+    - type: Pods
+      pods:
+        metric:
+          name: collab_active_connections
+        target:
+          type: AverageValue
+          averageValue: {{ .Values.autoscaling.targetWsConnectionsPerPod }}
+    {{- end }}
+{{- end }}

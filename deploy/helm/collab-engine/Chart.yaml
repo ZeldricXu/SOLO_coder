@@ -1,0 +1,12 @@
+apiVersion: v2
+name: collab-engine
+description: 实时协同编辑引擎 K8s 部署 Chart
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+icon: ""
+keywords:
+  - collaborative
+  - crdt
+  - websocket
+  - rust

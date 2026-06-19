@@ -1,0 +1,26 @@
+1. 获取应用 URL:
+{{- if .Values.ingress.enabled }}
+  运行以下命令获取 Ingress 地址:
+  kubectl get ingress {{ include "collab-engine.fullname" . }} --namespace {{ .Release.Namespace }}
+{{- else }}
+  通过端口转发访问服务:
+  kubectl port-forward svc/{{ include "collab-engine.fullname" . }} {{ .Values.service.httpPort }}:{{ .Values.service.httpPort }} --namespace {{ .Release.Namespace }}
+  然后打开: http://127.0.0.1:{{ .Values.service.httpPort }}
+{{- end }}
+
+2. 健康检查:
+   Liveness:  curl http://<service>:{{ .Values.service.httpPort }}/health
+   Readiness: curl http://<service>:{{ .Values.service.httpPort }}/ready
+
+3. 监控指标 (Prometheus):
+   curl http://<service>:{{ .Values.service.metricsPort }}/metrics
+
+4. 当前运行模式: {{ .Values.mode }}
+   - server: HTTP + WebSocket 服务
+   - worker: 后台任务处理模式
+
+5. 查看 Pod 状态:
+   kubectl get pods -l app.kubernetes.io/instance={{ .Release.Name }} --namespace {{ .Release.Namespace }}
+
+6. 查看日志:
+   kubectl logs -f -l app.kubernetes.io/instance={{ .Release.Name }} --namespace {{ .Release.Namespace }}
