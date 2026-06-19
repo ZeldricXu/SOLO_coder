@@ -1,0 +1,104 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/common",
+    "crates/db",
+    "crates/model-registry",
+    "crates/inference-runtime",
+    "crates/traffic-router",
+    "crates/ab-test",
+    "crates/observability",
+    "crates/scheduler",
+    "crates/security",
+    "crates/api-gateway",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.75"
+
+[workspace.dependencies]
+# Web framework
+axum = { version = "0.7", features = ["json", "multipart", "ws", "tokio"] }
+tokio = { version = "1.35", features = ["full"] }
+tokio-stream = "0.1"
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "compression-br", "compression-gzip", "compression-deflate", "compression-zstd", "auth"] }
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+
+# gRPC
+tonic = { version = "0.11", features = ["tls"] }
+prost = "0.12"
+prost-types = "0.12"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_with = "3.4"
+bytes = "1.5"
+
+# Async & utilities
+anyhow = "1.0"
+thiserror = "1.0"
+async-trait = "0.1"
+futures = "0.3"
+once_cell = "1.19"
+parking_lot = "0.12"
+dashmap = "5.5"
+rustc-hash = "2.0"
+
+# Database
+sqlx = { version = "0.7", features = ["runtime-tokio", "postgres", "uuid", "chrono", "json", "macros"] }
+redis = { version = "0.25", features = ["aio", "tokio-comp", "connection-manager"] }
+bb8 = "0.8"
+
+# Object storage
+s3 = { version = "0.34", package = "rust-s3" }
+
+# Configuration
+dotenvy = "0.15"
+config = "0.14"
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+tracing-opentelemetry = "0.23"
+opentelemetry = { version = "0.22", features = ["metrics"] }
+opentelemetry-otlp = { version = "0.15", features = ["grpc-tonic", "http-proto"] }
+opentelemetry_sdk = { version = "0.22", features = ["trace", "metrics"] }
+opentelemetry-semantic-conventions = "0.14"
+metrics = "0.23"
+metrics-exporter-prometheus = "0.15"
+histogram = "0.1"
+
+# Web utilities
+uuid = { version = "1.6", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+reqwest = { version = "0.11", features = ["json", "stream", "rustls-tls"] }
+url = "2.5"
+utoipa = { version = "4", features = ["axum_extras", "chrono", "uuid"] }
+utoipa-swagger-ui = { version = "7", features = ["axum"] }
+
+# Security
+aes-gcm = "0.10"
+rand = "0.8"
+sha2 = "0.10"
+hmac = "0.12"
+base64 = "0.21"
+ring = "0.17"
+
+# CLI
+clap = { version = "4.4", features = ["derive", "env"] }
+
+# Math & stats
+statrs = "0.16"
+rand_distr = "0.4"
+
+# ML inference (optional backends, feature-gated)
+ort = { version = "2.0.0-rc.12", default-features = false, features = ["load-dynamic"] }
+
+# Testing
+tokio-test = "0.4"

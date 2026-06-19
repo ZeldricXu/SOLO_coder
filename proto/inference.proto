@@ -1,0 +1,265 @@
+syntax = "proto3";
+
+package inference.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/struct.proto";
+
+enum DataType {
+  DATA_TYPE_UNSPECIFIED = 0;
+  DATA_TYPE_BOOL = 1;
+  DATA_TYPE_UINT8 = 2;
+  DATA_TYPE_UINT16 = 3;
+  DATA_TYPE_UINT32 = 4;
+  DATA_TYPE_UINT64 = 5;
+  DATA_TYPE_INT8 = 6;
+  DATA_TYPE_INT16 = 7;
+  DATA_TYPE_INT32 = 8;
+  DATA_TYPE_INT64 = 9;
+  DATA_TYPE_FP16 = 10;
+  DATA_TYPE_FP32 = 11;
+  DATA_TYPE_FP64 = 12;
+  DATA_TYPE_BF16 = 13;
+  DATA_TYPE_STRING = 14;
+}
+
+enum ModelStatus {
+  MODEL_STATUS_UNSPECIFIED = 0;
+  MODEL_STATUS_LOADED = 1;
+  MODEL_STATUS_LOADING = 2;
+  MODEL_STATUS_UNLOADING = 3;
+  MODEL_STATUS_UNLOADED = 4;
+  MODEL_STATUS_ERROR = 5;
+  MODEL_STATUS_WARMING_UP = 6;
+  MODEL_STATUS_READY = 7;
+}
+
+enum ModelType {
+  MODEL_TYPE_UNSPECIFIED = 0;
+  MODEL_TYPE_LLM = 1;
+  MODEL_TYPE_EMBEDDING = 2;
+  MODEL_TYPE_CV = 3;
+  MODEL_TYPE_AUDIO = 4;
+  MODEL_TYPE_MULTIMODAL = 5;
+  MODEL_TYPE_CUSTOM = 6;
+}
+
+enum RuntimeBackend {
+  RUNTIME_BACKEND_UNSPECIFIED = 0;
+  RUNTIME_BACKEND_ONNXRT = 1;
+  RUNTIME_BACKEND_TENSORRT = 2;
+  RUNTIME_BACKEND_TORCH = 3;
+  RUNTIME_BACKEND_VLLM = 4;
+  RUNTIME_BACKEND_CUSTOM = 5;
+}
+
+message Tensor {
+  string name = 1;
+  DataType dtype = 2;
+  repeated int64 shape = 3;
+  bytes data_bytes = 4;
+}
+
+message InferRequest {
+  string request_id = 1;
+  string model_name = 2;
+  string version = 3;
+  repeated Tensor inputs = 4;
+  map<string, google.protobuf.Value> params = 5;
+  string trace_id = 6;
+  string user_id = 7;
+  int32 priority = 8;
+  int64 timeout_ms = 9;
+}
+
+message InferResponse {
+  string request_id = 1;
+  repeated Tensor outputs = 2;
+  int64 latency_ms = 3;
+  int32 gpu_id = 4;
+  string trace_id = 5;
+  string error = 6;
+  string model_name = 7;
+  string version = 8;
+  google.protobuf.Timestamp started_at = 9;
+  google.protobuf.Timestamp completed_at = 10;
+}
+
+message BatchInferRequest {
+  repeated InferRequest requests = 1;
+  int64 max_batch_size = 2;
+  int64 max_wait_ms = 3;
+}
+
+message BatchInferResponse {
+  repeated InferResponse responses = 1;
+  int64 total_latency_ms = 2;
+  int32 batch_size = 3;
+}
+
+message ModelStatusRequest {
+  string model_name = 1;
+  string version = 2;
+}
+
+message ModelStatusResponse {
+  string model_name = 1;
+  string version = 2;
+  ModelStatus status = 3;
+  int32 active_instances = 4;
+  int64 total_requests = 5;
+  int64 avg_latency_ms = 6;
+  int64 p99_latency_ms = 7;
+  int64 memory_usage_mb = 8;
+  int32 gpu_id = 9;
+  string error = 10;
+  google.protobuf.Timestamp last_heartbeat = 11;
+}
+
+message LoadModelRequest {
+  string model_name = 1;
+  string version = 2;
+  RuntimeBackend backend = 3;
+  string model_path = 4;
+  int32 num_instances = 5;
+  repeated int32 gpu_ids = 6;
+  map<string, google.protobuf.Value> config = 7;
+}
+
+message LoadModelResponse {
+  string model_name = 1;
+  string version = 2;
+  ModelStatus status = 3;
+  int64 load_time_ms = 4;
+  string error = 5;
+}
+
+message UnloadModelRequest {
+  string model_name = 1;
+  string version = 2;
+  bool force = 3;
+}
+
+message UnloadModelResponse {
+  string model_name = 1;
+  string version = 2;
+  ModelStatus status = 3;
+  string error = 4;
+}
+
+message WarmupModelRequest {
+  string model_name = 1;
+  string version = 2;
+  int32 num_iterations = 3;
+  repeated InferRequest samples = 4;
+}
+
+message WarmupModelResponse {
+  string model_name = 1;
+  string version = 2;
+  int32 iterations_completed = 3;
+  int64 avg_latency_ms = 4;
+  int64 min_latency_ms = 5;
+  int64 max_latency_ms = 6;
+  string error = 7;
+}
+
+message ModelMetadata {
+  string model_id = 1;
+  string model_name = 2;
+  string version = 3;
+  ModelType model_type = 4;
+  string description = 5;
+  string author = 6;
+  repeated string tags = 7;
+  map<string, string> labels = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+  string model_uri = 11;
+  int64 model_size_bytes = 12;
+  RuntimeBackend preferred_backend = 13;
+  map<string, string> input_schema = 14;
+  map<string, string> output_schema = 15;
+  int64 max_batch_size = 16;
+  int64 max_sequence_length = 17;
+}
+
+message RegisterModelRequest {
+  ModelMetadata metadata = 1;
+  bool overwrite = 2;
+}
+
+message RegisterModelResponse {
+  string model_id = 1;
+  string model_name = 2;
+  string version = 3;
+  google.protobuf.Timestamp registered_at = 4;
+  string error = 5;
+}
+
+message GetModelRequest {
+  oneof query {
+    string model_id = 1;
+    string model_name = 2;
+  }
+  string version = 3;
+}
+
+message GetModelResponse {
+  ModelMetadata metadata = 1;
+  string error = 2;
+}
+
+message ListModelsRequest {
+  ModelType model_type = 1;
+  repeated string tags = 2;
+  map<string, string> labels = 3;
+  int32 page_size = 4;
+  string page_token = 5;
+  bool include_versions = 6;
+}
+
+message ListModelsResponse {
+  repeated ModelMetadata models = 1;
+  string next_page_token = 2;
+  int32 total_count = 3;
+  string error = 4;
+}
+
+message UpdateModelStatusRequest {
+  string model_id = 1;
+  string model_name = 2;
+  string version = 3;
+  ModelStatus status = 4;
+  map<string, google.protobuf.Value> metrics = 5;
+  string error = 6;
+}
+
+message UpdateModelStatusResponse {
+  string model_id = 1;
+  string model_name = 2;
+  string version = 3;
+  ModelStatus status = 4;
+  google.protobuf.Timestamp updated_at = 5;
+  string error = 6;
+}
+
+service InferenceService {
+  rpc Infer(InferRequest) returns (InferResponse);
+  rpc StreamInfer(stream InferRequest) returns (stream InferResponse);
+  rpc ModelStatus(ModelStatusRequest) returns (ModelStatusResponse);
+}
+
+service RuntimeService {
+  rpc LoadModel(LoadModelRequest) returns (LoadModelResponse);
+  rpc UnloadModel(UnloadModelRequest) returns (UnloadModelResponse);
+  rpc WarmupModel(WarmupModelRequest) returns (WarmupModelResponse);
+  rpc BatchInfer(BatchInferRequest) returns (BatchInferResponse);
+}
+
+service RegistryService {
+  rpc RegisterModel(RegisterModelRequest) returns (RegisterModelResponse);
+  rpc GetModel(GetModelRequest) returns (GetModelResponse);
+  rpc ListModels(ListModelsRequest) returns (ListModelsResponse);
+  rpc UpdateModelStatus(UpdateModelStatusRequest) returns (UpdateModelStatusResponse);
+}

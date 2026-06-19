@@ -1,0 +1,39 @@
+[package]
+name = "inference-runtime"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+onnxrt = ["dep:ort"]
+tensorrt = []
+
+[dependencies]
+common = { path = "../common" }
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+ort = { workspace = true, optional = true }
+dotenvy = { workspace = true }
+config = { workspace = true }
+histogram = { workspace = true }
+s3 = { workspace = true }
+rand = { workspace = true }
+
+[build-dependencies]
+tonic-build = "0.11"

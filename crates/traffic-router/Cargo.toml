@@ -1,0 +1,36 @@
+[package]
+name = "traffic-router"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+common = { path = "../common" }
+db = { path = "../db" }
+redis = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+rand = { workspace = true }
+sha2 = { workspace = true }
+utoipa = { workspace = true }
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+futures = { workspace = true }
+bytes = { workspace = true }
+sqlx = { workspace = true }
+tower = { workspace = true }
+http = "0.2"
+
+[build-dependencies]
+tonic-build = "0.11"

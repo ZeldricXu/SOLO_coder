@@ -1,0 +1,67 @@
+[package]
+name = "api-gateway"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = ["onnxrt"]
+onnxrt = ["inference-runtime/onnxrt"]
+tensorrt = ["inference-runtime/tensorrt"]
+
+[dependencies]
+common = { path = "../common" }
+db = { path = "../db" }
+model-registry = { path = "../model-registry" }
+inference-runtime = { path = "../inference-runtime" }
+traffic-router = { path = "../traffic-router" }
+ab-test = { path = "../ab-test" }
+observability = { path = "../observability" }
+scheduler = { path = "../scheduler" }
+security = { path = "../security" }
+
+# Web framework
+axum = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true }
+tower = { workspace = true }
+tower-http = { workspace = true }
+hyper = { workspace = true }
+hyper-util = { workspace = true }
+
+# gRPC
+tonic = { workspace = true }
+prost = { workspace = true }
+prost-types = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+bytes = { workspace = true }
+
+# Async
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+
+# Observability
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Web utils
+uuid = { workspace = true }
+chrono = { workspace = true }
+utoipa = { workspace = true }
+utoipa-swagger-ui = { workspace = true }
+
+# CLI
+clap = { workspace = true }
+
+# Config
+dotenvy = { workspace = true }
+config = { workspace = true }
+
+[build-dependencies]
+tonic-build = "0.11"
+prost-build = "0.12"
