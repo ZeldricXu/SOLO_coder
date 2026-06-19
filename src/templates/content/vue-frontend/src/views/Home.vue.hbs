@@ -1,0 +1,39 @@
+<script setup lang="ts">
+import { useCounterStore } from '../stores/counter';
+
+const store = useCounterStore();
+</script>
+
+<template>
+  <div class="home">
+    <h2>Welcome to {{projectNamePascal}}</h2>
+    <p>{{description}}</p>
+
+    <div class="counter">
+      <h3>Pinia Counter Demo</h3>
+      <p>Count: {{ store.count }}</p>
+      <p>Double: {{ store.doubleCount }}</p>
+      <button @click="store.decrement">-</button>
+      <button @click="store.increment">+</button>
+      <button @click="store.reset">Reset</button>
+    </div>
+
+    <div class="features">
+      <div class="feature-card">
+        <h3>⚡ Fast Development</h3>
+        <p>Powered by Vite for lightning fast HMR and builds.</p>
+      </div>
+      <div class="feature-card">
+        <h3>🔒 Type Safe</h3>
+        <p>Full TypeScript support with strict mode enabled.</p>
+      </div>
+      <div class="feature-card">
+        <h3>💚 Vue 3</h3>
+        <p>Composition API with Pinia state management.</p>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+</style>

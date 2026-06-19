@@ -1,0 +1,287 @@
+import { execa } from 'execa';
+import fs from 'fs-extra';
+import path from 'path';
+import ora from 'ora';
+import chalk from 'chalk';
+import type { PackageManagerType } from '../types.js';
+import { PackageManager } from '../package-manager.js';
+
+export interface CodeQualityOptions {
+  fix?: boolean | undefined;
+  staged?: boolean | undefined;
+}
+
+export interface LintResult {
+  success: boolean;
+  errorCount: number;
+  warningCount: number;
+  output: string;
+}
+
+export class CodeQualityChecker {
+  private cwd: string;
+  private pm: PackageManager;
+
+  constructor(cwd: string, packageManager: PackageManagerType) {
+    this.cwd = cwd;
+    this.pm = new PackageManager(packageManager, cwd);
+  }
+
+  async lint(options: CodeQualityOptions = {}): Promise<LintResult> {
+    const spinner = ora(options.fix ? 'Running ESLint with --fix...' : 'Running ESLint...').start();
+
+    try {
+      const args = ['.'];
+      if (options.fix) args.push('--fix');
+      if (options.staged) {
+        return await this.lintStaged('lint', args);
+      }
+
+      const result = await this.pm.runScriptWithOutput('lint', args);
+
+      if (result.success) {
+        spinner.succeed(chalk.green('ESLint passed!'));
+      } else {
+        spinner.fail(chalk.red('ESLint found issues'));
+      }
+
+      return result;
+    } catch (error) {
+      spinner.fail(chalk.red(`ESLint failed: ${(error as Error).message}`));
+      throw error;
+    }
+  }
+
+  async format(options: CodeQualityOptions = {}): Promise<LintResult> {
+    const spinner = ora(options.fix ? 'Running Prettier (write mode)...' : 'Running Prettier (check mode)...').start();
+
+    try {
+      const script = options.fix ? 'format' : 'format:check';
+      const result = await this.pm.runScriptWithOutput(script);
+
+      if (result.success) {
+        spinner.succeed(chalk.green('Prettier check passed!'));
+      } else {
+        spinner.fail(chalk.red('Prettier found formatting issues'));
+      }
+
+      return result;
+    } catch (error) {
+      spinner.fail(chalk.red(`Prettier failed: ${(error as Error).message}`));
+      throw error;
+    }
+  }
+
+  async runAll(options: CodeQualityOptions = {}): Promise<boolean> {
+    console.log(chalk.bold('\n📋 Running code quality checks...\n'));
+
+    const formatResult = await this.format(options);
+    const lintResult = await this.lint(options);
+
+    const allPassed = formatResult.success && lintResult.success;
+
+    console.log('\n' + chalk.bold('📊 Summary:'));
+    console.log(`  Prettier: ${formatResult.success ? chalk.green('✓ PASS') : chalk.red('✗ FAIL')}`);
+    console.log(`  ESLint:   ${lintResult.success ? chalk.green('✓ PASS') : chalk.red('✗ FAIL')}`);
+    console.log(`  Total issues: ${chalk.red(formatResult.errorCount + lintResult.errorCount)} errors, ${chalk.yellow(formatResult.warningCount + lintResult.warningCount)} warnings`);
+
+    if (!allPassed) {
+      console.log('\n' + chalk.yellow('💡 Tip: Run with --fix to auto-fix most issues'));
+    }
+
+    return allPassed;
+  }
+
+  private async lintStaged(type: 'lint' | 'format', args: string[]): Promise<LintResult> {
+    try {
+      const stagedFiles = await this.getStagedFiles();
+      if (stagedFiles.length === 0) {
+        return { success: true, errorCount: 0, warningCount: 0, output: 'No staged files' };
+      }
+
+      const script = type === 'lint' ? 'lint' : 'format:check';
+      const result = await this.pm.runScriptWithOutput(script, [...args, ...stagedFiles]);
+      return result;
+    } catch (error) {
+      return { success: false, errorCount: 1, warningCount: 0, output: (error as Error).message };
+    }
+  }
+
+  private async getStagedFiles(): Promise<string[]> {
+    try {
+      const { stdout } = await execa('git', ['diff', '--cached', '--name-only', '--diff-filter=ACM'], {
+        cwd: this.cwd,
+      });
+      return stdout.split('\n').filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
+  async installPreCommitHook(): Promise<boolean> {
+    const spinner = ora('Installing pre-commit hook...').start();
+
+    try {
+      const gitDir = path.join(this.cwd, '.git');
+      if (!await fs.pathExists(gitDir)) {
+        spinner.warn('Not a git repository, skipping pre-commit hook installation');
+        return false;
+      }
+
+      const hooksDir = path.join(gitDir, 'hooks');
+      await fs.ensureDir(hooksDir);
+
+      const hookPath = path.join(hooksDir, 'pre-commit');
+      const hookContent = this.getPreCommitHookContent();
+
+      await fs.writeFile(hookPath, hookContent, { mode: 0o755 });
+
+      await this.addHuskyConfig();
+
+      spinner.succeed(chalk.green('Pre-commit hook installed successfully!'));
+      return true;
+    } catch (error) {
+      spinner.fail(chalk.red(`Failed to install pre-commit hook: ${(error as Error).message}`));
+      return false;
+    }
+  }
+
+  private getPreCommitHookContent(): string {
+    return `#!/usr/bin/env sh
+# Pre-commit hook generated by create-solo-project
+# Runs lint and prettier on staged files
+
+echo "🔍 Running pre-commit checks..."
+
+# Stash unstaged changes
+git stash -q --keep-index
+
+# Run checks
+npx eslint --cache --cache-location .eslintcache $(git diff --cached --name-only --diff-filter=ACM | grep -E '\\.(ts|tsx|js|jsx)$' || true)
+ESLINT_EXIT=$?
+
+npx prettier --check $(git diff --cached --name-only --diff-filter=ACM | grep -vE 'package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml' || true)
+PRETTIER_EXIT=$?
+
+# Restore unstaged changes
+git stash pop -q
+
+# Check results
+if [ $ESLINT_EXIT -ne 0 ] || [ $PRETTIER_EXIT -ne 0 ]; then
+  echo ""
+  echo "❌ Pre-commit checks failed!"
+  echo "   Run 'npx csp lint --fix' to auto-fix issues, then commit again."
+  exit 1
+fi
+
+echo "✅ Pre-commit checks passed!"
+exit 0
+`;
+  }
+
+  private async addHuskyConfig(): Promise<void> {
+    try {
+      const packageJsonPath = path.join(this.cwd, 'package.json');
+      if (!await fs.pathExists(packageJsonPath)) return;
+
+      const packageJson = await fs.readJson(packageJsonPath);
+      packageJson.scripts = packageJson.scripts || {};
+      packageJson.scripts['prepare'] = 'husky install';
+
+      if (!packageJson.devDependencies || !packageJson.devDependencies.husky) {
+        await this.pm.installDevDependency('husky', '^9.0.0');
+      }
+
+      await fs.writeJson(packageJsonPath, packageJson, { spaces: 2 });
+
+      try {
+        await execa('npx', ['husky', 'install'], { cwd: this.cwd, stdio: 'ignore' });
+      } catch {
+        // husky install might fail if not a git repo, that's ok
+      }
+    } catch {
+      // Silent fail, hook is already installed
+    }
+  }
+
+  async uninstallPreCommitHook(): Promise<boolean> {
+    const spinner = ora('Uninstalling pre-commit hook...').start();
+
+    try {
+      const hookPath = path.join(this.cwd, '.git', 'hooks', 'pre-commit');
+      if (await fs.pathExists(hookPath)) {
+        await fs.remove(hookPath);
+        spinner.succeed(chalk.green('Pre-commit hook uninstalled successfully!'));
+        return true;
+      } else {
+        spinner.info('Pre-commit hook not found');
+        return false;
+      }
+    } catch (error) {
+      spinner.fail(chalk.red(`Failed to uninstall pre-commit hook: ${(error as Error).message}`));
+      return false;
+    }
+  }
+
+  isPreCommitHookInstalled(): boolean {
+    try {
+      const hookPath = path.join(this.cwd, '.git', 'hooks', 'pre-commit');
+      return fs.existsSync(hookPath);
+    } catch {
+      return false;
+    }
+  }
+}
+
+declare module '../package-manager.js' {
+  interface PackageManager {
+    runScriptWithOutput(script: string, args?: string[]): Promise<LintResult>;
+    installDevDependency(packageName: string, version?: string): Promise<void>;
+  }
+}
+
+PackageManager.prototype.runScriptWithOutput = async function(
+  this: PackageManager,
+  script: string,
+  args: string[] = []
+): Promise<LintResult> {
+  try {
+    const pmArgs = this.getType() === 'npm' ? ['run', script, ...args] : [script, ...args];
+    const result = await execa(this.getType(), pmArgs, {
+      cwd: this.cwd,
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    return {
+      success: true,
+      errorCount: 0,
+      warningCount: 0,
+      output: result.stdout,
+    };
+  } catch (error: any) {
+    const output = error.stdout || error.stderr || error.message;
+    const errorMatch = output.match(/(\d+) error/) || output.match(/✗ (\d+)/);
+    const warnMatch = output.match(/(\d+) warning/) || output.match(/⚠ (\d+)/);
+    return {
+      success: false,
+      errorCount: errorMatch ? parseInt(errorMatch[1], 10) : 1,
+      warningCount: warnMatch ? parseInt(warnMatch[1], 10) : 0,
+      output,
+    };
+  }
+};
+
+PackageManager.prototype.installDevDependency = async function(
+  this: PackageManager,
+  packageName: string,
+  version?: string
+): Promise<void> {
+  const pkg = version ? `${packageName}@${version}` : packageName;
+  const args = this.getType() === 'yarn'
+    ? ['add', '--dev', pkg]
+    : this.getType() === 'pnpm'
+    ? ['add', '-D', pkg]
+    : ['install', '--save-dev', pkg];
+
+  await execa(this.getType(), args, { cwd: this.cwd, stdio: 'ignore' });
+};

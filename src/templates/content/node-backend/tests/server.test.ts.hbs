@@ -1,0 +1,42 @@
+import request from 'supertest';
+import { createServer } from '../src/server.js';
+
+describe('Server', () => {
+  let app: ReturnType<typeof createServer>;
+
+  beforeAll(() => {
+    app = createServer();
+  });
+
+  describe('GET /', () => {
+    it('should return project info', async () => {
+      const response = await request(app).get('/');
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('name', '{{projectName}}');
+      expect(response.body).toHaveProperty('status', 'running');
+    });
+  });
+
+  describe('GET /health', () => {
+    it('should return healthy status', async () => {
+      const response = await request(app).get('/health');
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('status', 'healthy');
+    });
+  });
+
+  describe('GET /health/ping', () => {
+    it('should return pong', async () => {
+      const response = await request(app).get('/health/ping');
+      expect(response.status).toBe(200);
+      expect(response.text).toBe('pong');
+    });
+  });
+
+  describe('GET /not-exist', () => {
+    it('should return 404', async () => {
+      const response = await request(app).get('/not-exist');
+      expect(response.status).toBe(404);
+    });
+  });
+});

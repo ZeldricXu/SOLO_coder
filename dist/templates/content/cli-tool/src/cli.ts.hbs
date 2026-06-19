@@ -1,0 +1,31 @@
+import { Command } from 'commander';
+import chalk from 'chalk';
+import { exampleCommand } from './commands/example.js';
+import { logger } from './utils/logger.js';
+
+export async function cli(argv: string[]): Promise<void> {
+  const program = new Command();
+
+  program
+    .name('{{projectName}}')
+    .description('{{description}}')
+    .version('{{version}}')
+    .option('-v, --verbose', 'enable verbose output')
+    .option('-q, --quiet', 'suppress output');
+
+  program.addCommand(exampleCommand);
+
+  program.configureOutput({
+    outputError: (str, write) => write(chalk.red(str)),
+  });
+
+  program.on('option:verbose', () => {
+    logger.level = 'debug';
+  });
+
+  program.on('option:quiet', () => {
+    logger.level = 'silent';
+  });
+
+  await program.parseAsync(argv);
+}

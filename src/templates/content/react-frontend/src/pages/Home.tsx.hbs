@@ -1,0 +1,24 @@
+const Home = () => {
+  return (
+    <div className="home">
+      <h2>Welcome to {{projectNamePascal}}</h2>
+      <p>{{description}}</p>
+      <div className="features">
+        <div className="feature-card">
+          <h3>⚡ Fast Development</h3>
+          <p>Powered by Vite for lightning fast HMR and builds.</p>
+        </div>
+        <div className="feature-card">
+          <h3>🔒 Type Safe</h3>
+          <p>Full TypeScript support with strict mode enabled.</p>
+        </div>
+        <div className="feature-card">
+          <h3>🎨 Styled</h3>
+          <p>Modern CSS with best practices built in.</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default Home;

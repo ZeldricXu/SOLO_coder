@@ -1,0 +1,36 @@
+import dotenv from 'dotenv';
+import { createServer } from './server.js';
+import { logger } from './middleware/logger.js';
+
+dotenv.config();
+
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const HOST = process.env.HOST ?? '0.0.0.0';
+
+async function main(): Promise<void> {
+  try {
+    const app = createServer();
+
+    app.listen(PORT, HOST, () => {
+      logger.info(`🚀 {{projectName}} server started`);
+      logger.info(`📡 Listening on http://${HOST}:${PORT}`);
+      logger.info(`🔧 Environment: ${process.env.NODE_ENV ?? 'development'}`);
+    });
+
+    const shutdown = (signal: string): void => {
+      logger.info(`${signal} received, shutting down gracefully...`);
+      process.exit(0);
+    };
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  } catch (error) {
+    logger.error('Failed to start server:', error);
+    process.exit(1);
+  }
+}
+
+main().catch(error => {
+  logger.error('Unhandled error in main:', error);
+  process.exit(1);
+});
