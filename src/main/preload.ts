@@ -1,76 +1,81 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import type { IpcRendererApi } from '../shared/types';
+import type { IpcRendererApi } from '@shared/types';
+import { IpcChannelName } from '@shared/ipc/channels';
 
 const api: IpcRendererApi = {
   notes: {
-    getAll: () => ipcRenderer.invoke('notes:getAll'),
-    getById: (id: string) => ipcRenderer.invoke('notes:getById', id),
-    getByPath: (path: string) => ipcRenderer.invoke('notes:getByPath', path),
-    create: (note: any) => ipcRenderer.invoke('notes:create', note),
-    update: (id: string, updates: any) => ipcRenderer.invoke('notes:update', id, updates),
-    delete: (id: string) => ipcRenderer.invoke('notes:delete', id),
-    saveContent: (id: string, content: string) => ipcRenderer.invoke('notes:saveContent', id, content),
+    getAll: () => ipcRenderer.invoke(IpcChannelName.NOTES_GET_ALL),
+    getById: (id: string) => ipcRenderer.invoke(IpcChannelName.NOTES_GET_BY_ID, id),
+    getByPath: (path: string) => ipcRenderer.invoke(IpcChannelName.NOTES_GET_BY_PATH, path),
+    create: (note: any) => ipcRenderer.invoke(IpcChannelName.NOTES_CREATE, note),
+    update: (id: string, updates: any) => ipcRenderer.invoke(IpcChannelName.NOTES_UPDATE, id, updates),
+    delete: (id: string) => ipcRenderer.invoke(IpcChannelName.NOTES_DELETE, id),
+    saveContent: (id: string, content: string) => ipcRenderer.invoke(IpcChannelName.NOTES_SAVE_CONTENT, id, content),
     findSimilarNotes: (title: string, threshold?: number) =>
-      ipcRenderer.invoke('notes:findSimilarNotes', title, threshold),
+      ipcRenderer.invoke(IpcChannelName.NOTES_FIND_SIMILAR, title, threshold),
     updateLinkTarget: (sourceNoteId: string, oldTarget: string, newTargetId: string) =>
-      ipcRenderer.invoke('notes:updateLinkTarget', sourceNoteId, oldTarget, newTargetId),
-    scanBrokenLinks: (noteId?: string) => ipcRenderer.invoke('notes:scanBrokenLinks', noteId),
+      ipcRenderer.invoke(IpcChannelName.NOTES_UPDATE_LINK_TARGET, sourceNoteId, oldTarget, newTargetId),
+    scanBrokenLinks: (noteId?: string) => ipcRenderer.invoke(IpcChannelName.NOTES_SCAN_BROKEN_LINKS, noteId),
   },
   links: {
-    getAll: () => ipcRenderer.invoke('links:getAll'),
-    getBacklinks: (noteId: string) => ipcRenderer.invoke('links:getBacklinks', noteId),
-    getForwardLinks: (noteId: string) => ipcRenderer.invoke('links:getForwardLinks', noteId),
+    getAll: () => ipcRenderer.invoke(IpcChannelName.LINKS_GET_ALL),
+    getBacklinks: (noteId: string) => ipcRenderer.invoke(IpcChannelName.LINKS_GET_BACKLINKS, noteId),
+    getForwardLinks: (noteId: string) => ipcRenderer.invoke(IpcChannelName.LINKS_GET_FORWARD_LINKS, noteId),
     migrateBacklinks: (oldNoteId: string, newNoteId: string) =>
-      ipcRenderer.invoke('links:migrateBacklinks', oldNoteId, newNoteId),
+      ipcRenderer.invoke(IpcChannelName.LINKS_MIGRATE_BACKLINKS, oldNoteId, newNoteId),
   },
   graph: {
-    getGraphData: () => ipcRenderer.invoke('graph:getGraphData'),
-    getFocusGraphData: (options: any) => ipcRenderer.invoke('graph:getFocusGraphData', options),
+    getGraphData: () => ipcRenderer.invoke(IpcChannelName.GRAPH_GET_DATA),
+    getFocusGraphData: (options: any) => ipcRenderer.invoke(IpcChannelName.GRAPH_GET_FOCUS_DATA, options),
   },
   search: {
-    query: (q: string, options?: any) => ipcRenderer.invoke('search:query', q, options),
+    query: (q: string, options?: any) => ipcRenderer.invoke(IpcChannelName.SEARCH_QUERY, q, options),
   },
   vault: {
-    setPath: (path: string) => ipcRenderer.invoke('vault:setPath', path),
-    getPath: () => ipcRenderer.invoke('vault:getPath'),
-    rescan: () => ipcRenderer.invoke('vault:rescan'),
+    setPath: (path: string) => ipcRenderer.invoke(IpcChannelName.VAULT_SET_PATH, path),
+    getPath: () => ipcRenderer.invoke(IpcChannelName.VAULT_GET_PATH),
+    rescan: () => ipcRenderer.invoke(IpcChannelName.VAULT_RESCAN),
     onNoteChanged: (callback: any) => {
       const handler = (_event: any, note: any) => callback(_event, note);
-      ipcRenderer.on('vault:note-changed', handler);
-      return () => ipcRenderer.removeListener('vault:note-changed', handler);
+      ipcRenderer.on(IpcChannelName.VAULT_NOTE_CHANGED, handler);
+      return () => ipcRenderer.removeListener(IpcChannelName.VAULT_NOTE_CHANGED, handler);
     },
     onNoteDeleted: (callback: any) => {
       const handler = (_event: any, notePath: string) => callback(_event, notePath);
-      ipcRenderer.on('vault:note-deleted', handler);
-      return () => ipcRenderer.removeListener('vault:note-deleted', handler);
+      ipcRenderer.on(IpcChannelName.VAULT_NOTE_DELETED, handler);
+      return () => ipcRenderer.removeListener(IpcChannelName.VAULT_NOTE_DELETED, handler);
     },
   },
   attachments: {
-    list: () => ipcRenderer.invoke('attachments:list'),
+    list: () => ipcRenderer.invoke(IpcChannelName.ATTACHMENTS_LIST),
     upload: (fileData: string | { name: string; type: string; size: number; data: Buffer }, targetDir?: string) =>
-      ipcRenderer.invoke('attachments:upload', fileData, targetDir),
-    delete: (attachmentId: string) => ipcRenderer.invoke('attachments:delete', attachmentId),
+      ipcRenderer.invoke(IpcChannelName.ATTACHMENTS_UPLOAD, fileData, targetDir),
+    delete: (attachmentId: string) => ipcRenderer.invoke(IpcChannelName.ATTACHMENTS_DELETE, attachmentId),
     rename: (attachmentId: string, newName: string) =>
-      ipcRenderer.invoke('attachments:rename', attachmentId, newName),
+      ipcRenderer.invoke(IpcChannelName.ATTACHMENTS_RENAME, attachmentId, newName),
     getThumbnail: (attachmentId: string) =>
-      ipcRenderer.invoke('attachments:getThumbnail', attachmentId),
-    getAssetsPath: () => ipcRenderer.invoke('attachments:getAssetsPath'),
+      ipcRenderer.invoke(IpcChannelName.ATTACHMENTS_GET_THUMBNAIL, attachmentId),
+    getAssetsPath: () => ipcRenderer.invoke(IpcChannelName.ATTACHMENTS_GET_ASSETS_PATH),
   },
   settings: {
-    get: () => ipcRenderer.invoke('settings:get'),
-    update: (settings: any) => ipcRenderer.invoke('settings:update', settings),
+    get: () => ipcRenderer.invoke(IpcChannelName.SETTINGS_GET),
+    update: (settings: any) => ipcRenderer.invoke(IpcChannelName.SETTINGS_UPDATE, settings),
   },
   export: {
     exportNote: (id: string, format: 'txt' | 'html' | 'pdf') =>
-      ipcRenderer.invoke('export:exportNote', id, format),
+      ipcRenderer.invoke(IpcChannelName.EXPORT_NOTE, id, format),
     exportDomain: (noteIds: string[], format: 'markdown') =>
-      ipcRenderer.invoke('export:exportDomain', noteIds, format),
-    exportGraphPNG: (svgData: string) => ipcRenderer.invoke('export:exportGraphPNG', svgData),
+      ipcRenderer.invoke(IpcChannelName.EXPORT_DOMAIN, noteIds, format),
+    exportGraphPNG: (svgData: string) => ipcRenderer.invoke(IpcChannelName.EXPORT_GRAPH_PNG, svgData),
   },
   dialog: {
-    openFile: (options?: any) => ipcRenderer.invoke('dialog:openFile', options),
-    openDirectory: (options?: any) => ipcRenderer.invoke('dialog:openDirectory', options),
-    saveFile: (options?: any) => ipcRenderer.invoke('dialog:saveFile', options),
+    openFile: (options?: any) => ipcRenderer.invoke(IpcChannelName.DIALOG_OPEN_FILE, options),
+    openDirectory: (options?: any) => ipcRenderer.invoke(IpcChannelName.DIALOG_OPEN_DIRECTORY, options),
+    saveFile: (options?: any) => ipcRenderer.invoke(IpcChannelName.DIALOG_SAVE_FILE, options),
+  },
+  theme: {
+    get: () => ipcRenderer.invoke(IpcChannelName.THEME_GET),
+    set: (theme: string) => ipcRenderer.invoke(IpcChannelName.THEME_SET, theme),
   },
 };
 

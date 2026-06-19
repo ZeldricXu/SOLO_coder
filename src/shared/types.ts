@@ -217,6 +217,10 @@ export interface IpcRendererApi {
     openDirectory: (options?: any) => Promise<string | null>;
     saveFile: (options?: any) => Promise<string | null>;
   };
+  theme: {
+    get: () => Promise<string>;
+    set: (theme: string) => Promise<string>;
+  };
 }
 
 export interface SearchOptions {
