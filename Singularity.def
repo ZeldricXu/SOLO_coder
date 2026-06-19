@@ -1,0 +1,209 @@
+Bootstrap: docker
+From: centos:7
+Stage: build
+
+%post
+    echo "========================================"
+    echo "Stage 1: Build Environment Setup"
+    echo "========================================"
+
+    yum install -y centos-release-scl
+    yum install -y \
+        devtoolset-11 \
+        devtoolset-11-gcc \
+        devtoolset-11-gcc-c++ \
+        devtoolset-11-binutils \
+        wget \
+        curl \
+        bzip2 \
+        ca-certificates \
+        git \
+        make \
+        which \
+        file \
+        tar \
+        xz \
+        unzip
+
+    source /opt/rh/devtoolset-11/enable
+    echo "source /opt/rh/devtoolset-11/enable" >> /etc/profile.d/devtoolset.sh
+
+    yum clean all
+    rm -rf /var/cache/yum/*
+
+    echo "export PATH=/opt/maven/bin:/opt/jdk/bin:/opt/spark/bin:\$PATH" >> /etc/profile.d/env.sh
+    echo "export JAVA_HOME=/opt/jdk" >> /etc/profile.d/env.sh
+    echo "export SPARK_HOME=/opt/spark" >> /etc/profile.d/env.sh
+    echo "export M2_HOME=/opt/maven" >> /etc/profile.d/env.sh
+    echo "export LD_LIBRARY_PATH=/usr/local/lib:\$LD_LIBRARY_PATH" >> /etc/profile.d/env.sh
+
+    mkdir -p /opt
+    cd /tmp
+
+    echo "Downloading JDK 21..."
+    wget -q --no-check-certificate \
+        https://download.java.net/java/GA/jdk21.0.2/f2283984656d49d69e91c558476027ac/13/GPL/openjdk-21.0.2_linux-x64_bin.tar.gz \
+        -O jdk21.tar.gz && \
+        tar -xzf jdk21.tar.gz -C /opt/ && \
+        mv /opt/jdk-21.0.2 /opt/jdk && \
+        rm jdk21.tar.gz
+
+    echo "Downloading Maven 3.9..."
+    wget -q --no-check-certificate \
+        https://archive.apache.org/dist/maven/maven-3/3.9.6/binaries/apache-maven-3.9.6-bin.tar.gz \
+        -O maven.tar.gz && \
+        tar -xzf maven.tar.gz -C /opt/ && \
+        mv /opt/apache-maven-3.9.6 /opt/maven && \
+        rm maven.tar.gz
+
+    echo "Downloading Spark 3.5.0 with Hadoop 3..."
+    wget -q --no-check-certificate \
+        https://archive.apache.org/dist/spark/spark-3.5.0/spark-3.5.0-bin-hadoop3.tgz \
+        -O spark.tgz && \
+        tar -xzf spark.tgz -C /opt/ && \
+        mv /opt/spark-3.5.0-bin-hadoop3 /opt/spark && \
+        rm spark.tgz
+
+    echo "Downloading Miniconda3 (Python 3.11)..."
+    wget -q --no-check-certificate \
+        https://repo.anaconda.com/miniconda/Miniconda3-py311_24.1.2-0-Linux-x86_64.sh \
+        -O miniconda.sh && \
+        bash miniconda.sh -b -p /opt/conda && \
+        rm miniconda.sh
+
+    source /opt/conda/etc/profile.d/conda.sh
+    conda init bash
+    echo "source /opt/conda/etc/profile.d/conda.sh" >> /etc/profile.d/conda.sh
+    echo "conda activate nwp" >> /etc/profile.d/conda.sh
+
+    echo "Creating NWP conda environment..."
+    conda create -n nwp python=3.11 -y
+    conda activate nwp
+    conda install -y \
+        numpy=1.26.4 \
+        scipy=1.11.4 \
+        matplotlib=3.8.2 \
+        basemap-data-hires=1.3.2 \
+        netcdf4=1.6.5 \
+        xarray=2024.1.1 \
+        pygrib=2.1.5 \
+        pandas=2.2.0 \
+        metpy=1.6.2 \
+        cartopy=0.22.0 \
+        pillow=10.2.0 \
+        ipython=8.21.0
+
+    pip install --no-cache-dir \
+        pyyaml==6.0.1 \
+        jinja2==3.1.3 \
+        click==8.1.7
+
+    conda clean -afy
+
+    mkdir -p /app /data /config /output /logs
+    chmod 755 /app /data /config /output /logs
+
+    echo "Build stage completed"
+
+Bootstrap: docker
+From: centos:7
+Stage: runtime
+
+%post
+    echo "========================================"
+    echo "Stage 2: Runtime Environment Setup"
+    echo "========================================"
+
+    yum install -y \
+        ca-certificates \
+        wget \
+        curl \
+        bzip2 \
+        which \
+        file \
+        tar \
+        xz \
+        libgomp \
+        libgfortran \
+        libquadmath \
+        libstdc++ \
+        glib2 \
+        freetype \
+        libpng \
+        libjpeg-turbo \
+        libtiff \
+        libXext \
+        libSM \
+        libXrender \
+        fontconfig \
+        dejavu-sans-fonts \
+        dejavu-serif-fonts
+
+    yum clean all
+    rm -rf /var/cache/yum/*
+
+    mkdir -p /opt /app /data /config /output /logs
+
+%files from build
+    /opt/jdk /opt/jdk
+    /opt/spark /opt/spark
+    /opt/conda /opt/conda
+
+%environment
+    # Java
+    export JAVA_HOME=/opt/jdk
+    export PATH=\$JAVA_HOME/bin:\$PATH
+
+    # Spark
+    export SPARK_HOME=/opt/spark
+    export PATH=\$SPARK_HOME/bin:\$SPARK_HOME/sbin:\$PATH
+    export SPARK_CONF_DIR=/config/spark
+
+    # Conda
+    export CONDA_HOME=/opt/conda
+    export PATH=\$CONDA_HOME/bin:\$PATH
+    source \$CONDA_HOME/etc/profile.d/conda.sh
+    conda activate nwp
+
+    # Application
+    export APP_HOME=/app
+    export NWP_CONFIG=/config/application.conf
+    export NWP_OUTPUT_DIR=/output
+    export NWP_LOG_DIR=/logs
+    export NWP_DATA_DIR=/data
+    export HADOOP_USER_NAME=nwp
+    export LD_LIBRARY_PATH=\$CONDA_HOME/envs/nwp/lib:\$LD_LIBRARY_PATH
+
+    # UTF-8
+    export LANG=en_US.UTF-8
+    export LC_ALL=en_US.UTF-8
+
+%files
+    target/nwp-core-solver-*.jar /app/nwp-core-solver.jar
+    src/main/resources/* /config/
+    scripts/entrypoint.sh /app/entrypoint.sh
+    scripts/spark-defaults.conf /config/spark/spark-defaults.conf
+
+%post
+    chmod 755 /app/entrypoint.sh
+    chown -R root:root /opt /app /config
+    chmod -R a+rX /opt /app /config
+
+%runscript
+    exec /app/entrypoint.sh "$@"
+
+%startscript
+    exec /app/entrypoint.sh "$@"
+
+%labels
+    org.label-schema.name="NWP Core Solver"
+    org.label-schema.version="1.0.0"
+    org.label-schema.description="Numerical Weather Prediction Core Solver"
+    org.label-schema.schema-version="1.0"
+    maintainer="NWP Operations Team"
+
+%help
+    NWP Core Solver Singularity Image
+    Usage:
+      singularity run nwp-solver.sif [options]
+      singularity exec nwp-solver.sif java -jar /app/nwp-core-solver.jar --help

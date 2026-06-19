@@ -1,0 +1,449 @@
+#!/usr/bin/env bash
+# ============================================================
+# SLURM 作业提交脚本 - NWP 数值天气预报
+# 作业调度：SLURM
+# 计算引擎：Spark on YARN
+# 容器运行时：Singularity/Apptainer
+# 输出回传：HDFS
+# ============================================================
+
+# ============================================================
+# SLURM 指令
+# ============================================================
+
+#SBATCH --job-name=nwp-forecast
+#SBATCH --partition=cpu-hpc
+#SBATCH --qos=normal
+#SBATCH --account=nwp-group
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --cpus-per-task=16
+#SBATCH --mem=128G
+#SBATCH --time=24:00:00
+#SBATCH --output=/nwp/logs/%x-%j.out
+#SBATCH --error=/nwp/logs/%x-%j.err
+#SBATCH --mail-type=ALL
+#SBATCH --mail-user=nwp-ops@weather.gov.cn
+#SBATCH --export=ALL
+#SBATCH --requeue
+#SBATCH --priority=1000
+
+# ============================================================
+# 可配置参数（可通过命令行覆盖）
+# ============================================================
+
+# 运行环境: dev/staging/prod
+export NWP_ENV="${NWP_ENV:-prod}"
+
+# 运行模式: forecast/assimilation/cycle/benchmark/verify/visualize/test
+export NWP_MODE="${NWP_MODE:-forecast}"
+
+# 网格参数（覆盖配置文件）
+export NWP_GRID_NX="${NWP_GRID_NX:-720}"
+export NWP_GRID_NY="${NWP_GRID_NY:-361}"
+export NWP_GRID_NZ="${NWP_GRID_NZ:-60}"
+export NWP_GRID_DX="${NWP_GRID_DX:-0.5}"
+export NWP_GRID_DY="${NWP_GRID_DY:-0.5}"
+
+# 动力求解器参数
+export NWP_DYN_DT="${NWP_DYN_DT:-30}"
+export NWP_DYN_TRUNCATION="${NWP_DYN_TRUNCATION:-213}"
+
+# 预报时长
+export NWP_FORECAST_HOURS="${NWP_FORECAST_HOURS:-168}"
+
+# 起报时间（ISO格式，如 2024-01-01T00:00:00Z）
+export NWP_INIT_TIME="${NWP_INIT_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+
+# 计算区域: global/china/east-asia
+export NWP_DOMAIN="${NWP_DOMAIN:-china}"
+
+# HDFS 路径
+export HDFS_BASE_PATH="${HDFS_BASE_PATH:-/nwp/prod}"
+export HDFS_OUTPUT_DIR="${HDFS_OUTPUT_DIR:-${HDFS_BASE_PATH}/output/${NWP_INIT_TIME//[:-]/}}"
+
+# Spark 配置
+export SPARK_QUEUE="${SPARK_QUEUE:-nwp}"
+export SPARK_EXECUTOR_CORES="${SPARK_EXECUTOR_CORES:-8}"
+export SPARK_EXECUTOR_MEMORY="${SPARK_EXECUTOR_MEMORY:-16g}"
+export SPARK_NUM_EXECUTORS="${SPARK_NUM_EXECUTORS:-16}"
+export SPARK_DRIVER_CORES="${SPARK_DRIVER_CORES:-4}"
+export SPARK_DRIVER_MEMORY="${SPARK_DRIVER_MEMORY:-8g}"
+
+# Singularity 镜像路径
+export SIF_IMAGE="${SIF_IMAGE:-/nwp/images/nwp-solver-latest.sif}"
+
+# 本地工作目录
+export LOCAL_WORKDIR="${LOCAL_WORKDIR:-/nwp/work/${SLURM_JOB_ID}}"
+
+# ============================================================
+# 环境检查
+# ============================================================
+
+echo "========================================================"
+echo "NWP SLURM 作业启动"
+echo "========================================================"
+echo "作业信息:"
+echo "  作业ID:      ${SLURM_JOB_ID}"
+echo "  作业名:      ${SLURM_JOB_NAME}"
+echo "  节点:        $(hostname)"
+echo "  提交节点:    ${SLURM_SUBMIT_HOST}"
+echo "  分区:        ${SLURM_JOB_PARTITION}"
+echo "  账户:        ${SLURM_JOB_ACCOUNT}"
+echo "  任务数:      ${SLURM_NTASKS}"
+echo "  CPU核数:     ${SLURM_CPUS_PER_TASK}"
+echo "  内存:        ${SLURM_MEM_PER_NODE}MB"
+echo "  时间限制:    ${SLURM_TIMELIMIT}"
+echo ""
+echo "运行配置:"
+echo "  环境:        ${NWP_ENV}"
+echo "  模式:        ${NWP_MODE}"
+echo "  区域:        ${NWP_DOMAIN}"
+echo "  起报时间:    ${NWP_INIT_TIME}"
+echo "  预报时长:    ${NWP_FORECAST_HOURS}小时"
+echo "  网格:        ${NWP_GRID_NX}x${NWP_GRID_NY}x${NWP_GRID_NZ} (dx=${NWP_GRID_DX}°, dy=${NWP_GRID_DY}°)"
+echo "  积分步长:    ${NWP_DYN_DT}s"
+echo "  谱截断:      T${NWP_DYN_TRUNCATION}"
+echo ""
+echo "Spark配置:"
+echo "  队列:        ${SPARK_QUEUE}"
+echo "  Executors:   ${SPARK_NUM_EXECUTORS} x ${SPARK_EXECUTOR_CORES} cores, ${SPARK_EXECUTOR_MEMORY}"
+echo "  Driver:      ${SPARK_DRIVER_CORES} cores, ${SPARK_DRIVER_MEMORY}"
+echo ""
+echo "数据路径:"
+echo "  HDFS根:      ${HDFS_BASE_PATH}"
+echo "  HDFS输出:    ${HDFS_OUTPUT_DIR}"
+echo "  Singularity: ${SIF_IMAGE}"
+echo "  工作目录:    ${LOCAL_WORKDIR}"
+echo "========================================================"
+
+# ============================================================
+# 模块加载
+# ============================================================
+
+echo ""
+echo "[INFO] 加载模块..."
+
+# 检查可用的模块系统
+if command -v module &> /dev/null; then
+    # 尝试加载必要模块
+    module purge 2>/dev/null || true
+    module load java/jdk-21.0.2 2>/dev/null || true
+    module load spark/3.5.0 2>/dev/null || true
+    module load hadoop/3.3.6 2>/dev/null || true
+    module load singularity/3.11.4 2>/dev/null || module load apptainer/1.2.5 2>/dev/null || true
+
+    echo "已加载模块:"
+    module list 2>&1 || true
+fi
+
+# 检查必要命令
+check_command() {
+    if ! command -v "$1" &> /dev/null; then
+        echo "[ERROR] $1 命令不可用"
+        exit 1
+    fi
+}
+
+check_command java
+check_command hadoop
+check_command hdfs
+check_command yarn
+
+# 检查 Singularity/Apptainer
+if command -v singularity &> /dev/null; then
+    SIF_CMD="singularity"
+elif command -v apptainer &> /dev/null; then
+    SIF_CMD="apptainer"
+else
+    echo "[ERROR] 既没有 singularity 也没有 apptainer 可用"
+    exit 1
+fi
+echo "[OK] 容器运行时: ${SIF_CMD}"
+
+# 检查镜像文件
+if [ ! -f "${SIF_IMAGE}" ]; then
+    echo "[ERROR] Singularity镜像不存在: ${SIF_IMAGE}"
+    ls -la "$(dirname ${SIF_IMAGE})/" 2>/dev/null || true
+    exit 1
+fi
+echo "[OK] 镜像文件: ${SIF_IMAGE}"
+
+# ============================================================
+# 工作目录准备
+# ============================================================
+
+echo ""
+echo "[INFO] 准备工作目录..."
+mkdir -p "${LOCAL_WORKDIR}"
+mkdir -p "${LOCAL_WORKDIR}/config"
+mkdir -p "${LOCAL_WORKDIR}/output"
+mkdir -p "${LOCAL_WORKDIR}/logs"
+mkdir -p "${LOCAL_WORKDIR}/data"
+
+cd "${LOCAL_WORKDIR}"
+echo "[OK] 工作目录: ${LOCAL_WORKDIR}"
+
+# 复制配置文件
+echo "[INFO] 复制配置文件..."
+hdfs dfs -get "${HDFS_BASE_PATH}/config/*" "${LOCAL_WORKDIR}/config/" 2>/dev/null || true
+
+# ============================================================
+# 环境变量导出（给容器内使用）
+# ============================================================
+
+export HADOOP_USER_NAME="${HADOOP_USER_NAME:-nwp}"
+export HADOOP_CONF_DIR="${HADOOP_CONF_DIR:-/etc/hadoop/conf}"
+export YARN_CONF_DIR="${YARN_CONF_DIR:-/etc/hadoop/conf}"
+export SPARK_HOME="${SPARK_HOME:-/opt/spark}"
+export JAVA_HOME="${JAVA_HOME:-/opt/jdk}"
+
+# 将Hadoop配置复制到工作目录供容器使用
+if [ -d "${HADOOP_CONF_DIR}" ]; then
+    cp -r "${HADOOP_CONF_DIR}" "${LOCAL_WORKDIR}/hadoop-conf"
+    export CONTAINER_HADOOP_CONF="/config/hadoop"
+fi
+
+# ============================================================
+# HDFS 输入检查
+# ============================================================
+
+echo ""
+echo "[INFO] 检查HDFS输入..."
+
+# 检查初始场文件
+INIT_FILE=""
+if [ -n "${NWP_INIT_FILE}" ]; then
+    INIT_FILE="${NWP_INIT_FILE}"
+else
+    # 尝试从HDFS拉取最新的初始场
+    HDFS_INIT_DIR="${HDFS_BASE_PATH}/input/${NWP_INIT_TIME//[:-]/}"
+    if hdfs dfs -test -d "${HDFS_INIT_DIR}"; then
+        INIT_FILE="${LOCAL_WORKDIR}/data/input.grib2"
+        echo "[INFO] 从HDFS复制初始场: ${HDFS_INIT_DIR} -> ${INIT_FILE}"
+        hdfs dfs -get "${HDFS_INIT_DIR}/*" "${LOCAL_WORKDIR}/data/" 2>/dev/null || true
+        # 找到GRIB文件
+        INIT_FILE=$(find "${LOCAL_WORKDIR}/data" -name "*.grib*" -o -name "*.grb*" | head -1)
+    fi
+fi
+
+if [ -n "${INIT_FILE}" ] && [ -f "${INIT_FILE}" ]; then
+    echo "[OK] 初始场文件: ${INIT_FILE}"
+    INIT_ARG="-i ${INIT_FILE}"
+else
+    echo "[WARN] 未找到初始场文件，将使用理想测试个例"
+    INIT_ARG="-n standard-atmosphere"
+fi
+
+# ============================================================
+# 容器执行命令构建
+# ============================================================
+
+echo ""
+echo "[INFO] 构建容器执行命令..."
+
+# Singularity 绑定路径
+SINGULARITY_BINDS=(
+    "/etc/hosts:/etc/hosts"
+    "/etc/resolv.conf:/etc/resolv.conf"
+    "/dev/shm:/dev/shm"
+    "/tmp:/tmp"
+    "${LOCAL_WORKDIR}/config:/config"
+    "${LOCAL_WORKDIR}/output:/output"
+    "${LOCAL_WORKDIR}/logs:/logs"
+    "${LOCAL_WORKDIR}/data:/data"
+)
+
+# 如果有Hadoop配置，也绑定进去
+if [ -d "${LOCAL_WORKDIR}/hadoop-conf" ]; then
+    SINGULARITY_BINDS+=("${LOCAL_WORKDIR}/hadoop-conf:/config/hadoop")
+fi
+
+# 构建绑定参数
+BIND_ARGS=""
+for bind in "${SINGULARITY_BINDS[@]}"; do
+    BIND_ARGS="${BIND_ARGS} --bind ${bind}"
+done
+
+# 构建入口参数
+ENTRYPOINT_ARGS=(
+    "--mode" "${NWP_MODE}"
+    "--env" "${NWP_ENV}"
+    "--yarn"
+    "--hdfs"
+    "--kafka"
+    "--postgres"
+    "-d" "${NWP_DOMAIN}"
+    "-f" "${NWP_FORECAST_HOURS}"
+    "-t" "${NWP_INIT_TIME}"
+    "-o" "/output"
+    ${INIT_ARG}
+)
+
+# ============================================================
+# 信号处理 - 优雅终止
+# ============================================================
+
+trap 'echo ""; echo "[WARN] 收到终止信号，准备停止作业..."; yarn application -list 2>/dev/null | grep NWP | awk "{print \$1}" | xargs -r yarn application -kill 2>/dev/null; exit 130' SIGINT SIGTERM
+
+# ============================================================
+# 启动作业
+# ============================================================
+
+echo ""
+echo "========================================================"
+echo "启动 NWP 求解器"
+echo "时间: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "========================================================"
+
+START_TIME=$(date +%s)
+
+# 执行命令
+SIF_EXEC_CMD="${SIF_CMD} run ${BIND_ARGS} ${SIF_IMAGE} ${ENTRYPOINT_ARGS[@]}"
+
+echo "执行命令:"
+echo "  ${SIF_EXEC_CMD}"
+echo ""
+
+# 执行
+set +e
+${SIF_EXEC_CMD}
+EXIT_CODE=$?
+set -e
+
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+ELAPSED_HOURS=$((ELAPSED / 3600))
+ELAPSED_MINUTES=$(( (ELAPSED % 3600) / 60 ))
+ELAPSED_SECONDS=$((ELAPSED % 60))
+
+echo ""
+echo "========================================================"
+echo "作业执行完成"
+echo "结束时间: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "耗时:     ${ELAPSED_HOURS}h ${ELAPSED_MINUTES}m ${ELAPSED_SECONDS}s"
+echo "退出码:   ${EXIT_CODE}"
+echo "========================================================"
+
+# ============================================================
+# 输出回传到 HDFS
+# ============================================================
+
+if [ ${EXIT_CODE} -eq 0 ]; then
+    echo ""
+    echo "[INFO] 上传输出文件到HDFS..."
+
+    # 确保HDFS目录存在
+    hdfs dfs -mkdir -p "${HDFS_OUTPUT_DIR}"
+
+    # 上传所有输出文件
+    if [ -d "${LOCAL_WORKDIR}/output" ]; then
+        echo "  上传输出文件..."
+        hdfs dfs -put -f "${LOCAL_WORKDIR}/output/*" "${HDFS_OUTPUT_DIR}/"
+    fi
+
+    # 上传日志文件
+    if [ -d "${LOCAL_WORKDIR}/logs" ]; then
+        echo "  上传日志文件..."
+        hdfs dfs -mkdir -p "${HDFS_OUTPUT_DIR}/logs"
+        hdfs dfs -put -f "${LOCAL_WORKDIR}/logs/*" "${HDFS_OUTPUT_DIR}/logs/"
+    fi
+
+    # 上传SLURM输出日志
+    if [ -f "/nwp/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}.out" ]; then
+        hdfs dfs -put -f "/nwp/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}.out" "${HDFS_OUTPUT_DIR}/logs/slurm-${SLURM_JOB_ID}.out"
+    fi
+    if [ -f "/nwp/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}.err" ]; then
+        hdfs dfs -put -f "/nwp/logs/${SLURM_JOB_NAME}-${SLURM_JOB_ID}.err" "${HDFS_OUTPUT_DIR}/logs/slurm-${SLURM_JOB_ID}.err"
+    fi
+
+    # 验证上传
+    echo ""
+    echo "HDFS输出目录内容:"
+    hdfs dfs -ls -h "${HDFS_OUTPUT_DIR}/"
+
+    # 记录元数据
+    META_FILE="${LOCAL_WORKDIR}/metadata.json"
+    cat > "${META_FILE}" << EOF
+{
+  "job_id": "${SLURM_JOB_ID}",
+  "job_name": "${SLURM_JOB_NAME}",
+  "environment": "${NWP_ENV}",
+  "mode": "${NWP_MODE}",
+  "domain": "${NWP_DOMAIN}",
+  "init_time": "${NWP_INIT_TIME}",
+  "forecast_hours": ${NWP_FORECAST_HOURS},
+  "grid": {
+    "nx": ${NWP_GRID_NX},
+    "ny": ${NWP_GRID_NY},
+    "nz": ${NWP_GRID_NZ},
+    "dx": ${NWP_GRID_DX},
+    "dy": ${NWP_GRID_DY}
+  },
+  "dynamics": {
+    "time_step_s": ${NWP_DYN_DT},
+    "spectral_truncation": ${NWP_DYN_TRUNCATION}
+  },
+  "spark": {
+    "queue": "${SPARK_QUEUE}",
+    "num_executors": ${SPARK_NUM_EXECUTORS},
+    "executor_cores": ${SPARK_EXECUTOR_CORES},
+    "executor_memory": "${SPARK_EXECUTOR_MEMORY}",
+    "driver_cores": ${SPARK_DRIVER_CORES},
+    "driver_memory": "${SPARK_DRIVER_MEMORY}"
+  },
+  "slurm": {
+    "nodes": ${SLURM_NNODES:-1},
+    "cpus": ${SLURM_CPUS_PER_TASK:-16},
+    "memory_mb": ${SLURM_MEM_PER_NODE:-131072},
+    "partition": "${SLURM_JOB_PARTITION}"
+  },
+  "performance": {
+    "start_time": "${START_TIME}",
+    "end_time": "${END_TIME}",
+    "elapsed_seconds": ${ELAPSED},
+    "elapsed_hours": $(echo "scale=2; ${ELAPSED}/3600" | bc -l 2>/dev/null || echo "0"),
+    "wall_time_limit": "${SLURM_TIMELIMIT}"
+  },
+  "exit_code": ${EXIT_CODE},
+  "output_hdfs_path": "${HDFS_OUTPUT_DIR}",
+  "singularity_image": "${SIF_IMAGE}",
+  "container_runtime": "${SIF_CMD}"
+}
+EOF
+    hdfs dfs -put -f "${META_FILE}" "${HDFS_OUTPUT_DIR}/metadata.json"
+
+    echo ""
+    echo "[OK] 输出文件已上传到 HDFS"
+    echo "  HDFS路径: ${HDFS_OUTPUT_DIR}"
+else
+    echo ""
+    echo "[ERROR] 作业执行失败 (退出码: ${EXIT_CODE})"
+    # 仍然上传日志以便排错
+    if [ -d "${LOCAL_WORKDIR}/logs" ]; then
+        echo "[INFO] 上传日志文件以便排错..."
+        hdfs dfs -mkdir -p "${HDFS_OUTPUT_DIR}/logs" 2>/dev/null || true
+        hdfs dfs -put -f "${LOCAL_WORKDIR}/logs/*" "${HDFS_OUTPUT_DIR}/logs/" 2>/dev/null || true
+    fi
+fi
+
+# ============================================================
+# 清理
+# ============================================================
+
+echo ""
+echo "[INFO] 清理本地工作目录..."
+if [ "${PRESERVE_WORKDIR:-0}" -ne 1 ] && [ -d "${LOCAL_WORKDIR}" ]; then
+    rm -rf "${LOCAL_WORKDIR}"
+fi
+
+# ============================================================
+# 退出
+# ============================================================
+
+echo ""
+echo "========================================================"
+echo "作业结束"
+echo "========================================================"
+
+exit ${EXIT_CODE}
