@@ -106,7 +106,12 @@ fn contains_origin_line(simplex: &Vec<SimplexPoint>, direction: &mut Vec2) -> bo
     let ab_perp = triple_product(ab, ao, ab);
 
     if ab_perp.dot(ab_perp) < 1e-6 {
-        *direction = ab.perp();
+        let perp = ab.perp();
+        if perp.dot(ao) < 0.0 {
+            *direction = -perp;
+        } else {
+            *direction = perp;
+        }
     } else {
         *direction = ab_perp;
     }
@@ -206,7 +211,17 @@ fn find_closest_edge(polytope: &[SimplexPoint]) -> (usize, Vec2, f32) {
         let b = polytope[j].support;
 
         let edge = b - a;
-        let normal = Vec2::new(-edge.y, edge.x).normalize();
+        let mut normal = Vec2::new(-edge.y, edge.x);
+        let len = normal.length();
+        if len < f32::EPSILON {
+            continue;
+        }
+        normal = normal / len;
+
+        let midpoint = (a + b) * 0.5;
+        if midpoint.dot(normal) < 0.0 {
+            normal = -normal;
+        }
 
         let dist = normal.dot(a);
 
@@ -244,13 +259,20 @@ where
         return None;
     }
 
-    epa(
+    let mut result = epa(
         gjk_result.simplex,
         &support_a,
         &support_b,
         transform_a,
         transform_b,
-    )
+    )?;
+
+    let d = transform_b.position - transform_a.position;
+    if result.normal.dot(d) < 0.0 {
+        result.normal = -result.normal;
+    }
+
+    Some(result)
 }
 
 #[cfg(test)]
@@ -306,5 +328,72 @@ mod tests {
 
         let result = gjk(&support_a, &support_b, &ta, &tb);
         assert!(result.collision);
+    }
+
+    #[test]
+    fn test_gjk_vertex_vertex_contact_normal() {
+        let support_a = square_support(1.0);
+        let support_b = square_support(1.0);
+
+        let offset = (2.0_f32).sqrt();
+        let ta = Transform::new(Vec2::new(0.0, 0.0), Rot2::new(0.0));
+        let tb = Transform::new(
+            Vec2::new(offset - 0.01, offset - 0.01),
+            Rot2::new(std::f32::consts::FRAC_PI_4),
+        );
+
+        let result = detect_collision(support_a, support_b, &ta, &tb);
+        if let Some(epa_result) = result {
+            let d = tb.position - ta.position;
+            assert!(
+                epa_result.normal.dot(d) > 0.0,
+                "Normal should point from A to B, got normal={:?}, d={:?}",
+                epa_result.normal,
+                d
+            );
+        }
+    }
+
+    #[test]
+    fn test_gjk_degenerate_simplex_normal() {
+        let support_a = square_support(1.0);
+        let support_b = square_support(1.0);
+
+        let ta = Transform::new(Vec2::new(0.0, 0.0), Rot2::new(0.0));
+        let tb = Transform::new(Vec2::new(1.99, 0.0), Rot2::new(0.0));
+
+        let result = detect_collision(support_a, support_b, &ta, &tb);
+        if let Some(epa_result) = result {
+            assert!(
+                epa_result.normal.x > 0.5,
+                "Normal should be approximately along x-axis, got {:?}",
+                epa_result.normal
+            );
+            let d = tb.position - ta.position;
+            assert!(
+                epa_result.normal.dot(d) > 0.0,
+                "Normal should point in separation direction"
+            );
+        }
+    }
+
+    #[test]
+    fn test_epa_normal_points_away_from_a() {
+        let support_a = circle_support(1.0);
+        let support_b = square_support(1.0);
+
+        let ta = Transform::new(Vec2::new(0.0, 0.0), Rot2::new(0.0));
+        let tb = Transform::new(Vec2::new(1.5, 0.5), Rot2::new(0.0));
+
+        let result = detect_collision(support_a, support_b, &ta, &tb);
+        if let Some(epa_result) = result {
+            let d = tb.position - ta.position;
+            assert!(
+                epa_result.normal.dot(d) > 0.0,
+                "EPA normal should point from A to B, got normal={:?}, d={:?}",
+                epa_result.normal,
+                d
+            );
+        }
     }
 }

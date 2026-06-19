@@ -279,7 +279,7 @@ impl Constraint for ContactConstraint {
 
                 let mass = normal_jacobian.compute_effective_mass(body_a, body_b);
                 let impulse = if mass > f32::EPSILON {
-                    -penetration / mass
+                    -penetration / mass * (1.0 + BAUMGARTE_COEFFICIENT)
                 } else {
                     0.0
                 };

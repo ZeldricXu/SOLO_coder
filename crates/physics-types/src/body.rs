@@ -102,6 +102,8 @@ pub struct Body {
     pub is_sensor: bool,
     /// 是否处于激活状态。
     pub is_active: bool,
+    /// 是否标记为高速物体（启用CCD连续碰撞检测）。
+    pub is_bullet: bool,
 
     /// 碰撞过滤设置。
     pub collision_filter: CollisionFilter,
@@ -180,6 +182,7 @@ impl Body {
             angular_damping: 0.0,
             is_sensor: false,
             is_active: true,
+            is_bullet: false,
             collision_filter: CollisionFilter::default(),
             user_data: 0,
         }
@@ -219,6 +222,7 @@ impl Body {
             angular_damping: 0.0,
             is_sensor: false,
             is_active: true,
+            is_bullet: false,
             collision_filter: CollisionFilter::default(),
             user_data: 0,
         }
@@ -482,6 +486,21 @@ impl Body {
     #[inline]
     pub fn compute_aabb(&self) -> AABB {
         self.shape.compute_aabb(&self.transform)
+    }
+
+    /// 检查此物体是否为CCD（连续碰撞检测）候选。
+    ///
+    /// 当物体是动态的、标记为高速物体（is_bullet），且其速度在给定时间步长内
+    /// 超过自身尺寸时，需要启用CCD来防止穿透。
+    #[inline]
+    pub fn is_ccd_candidate(&self, dt: f32) -> bool {
+        if !self.is_dynamic() || !self.is_bullet {
+            return false;
+        }
+        let velocity = self.linear_velocity.length();
+        let aabb = self.compute_aabb();
+        let extent = (aabb.max - aabb.min).length() * 0.5;
+        velocity * dt > extent
     }
 
     /// 根据形状和材质重新计算质量属性。

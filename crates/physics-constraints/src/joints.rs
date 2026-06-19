@@ -3,6 +3,8 @@ use physics_math::{Transform, Vec2};
 
 use crate::constraint::{Constraint, ConstraintSolverData, Jacobian};
 
+const BAUMGARTE_POSITION: f32 = 0.2;
+
 pub trait Joint: Constraint {
     fn set_motor_enabled(&mut self, enabled: bool) {}
     fn set_motor_speed(&mut self, speed: f32) {}
@@ -19,6 +21,7 @@ pub struct RevoluteJoint {
     pub local_anchor_b: Vec2,
     pub impulse: Vec2,
     pub mass: Vec2,
+    pub mass_off_diag: f32,
     pub lower_angle: f32,
     pub upper_angle: f32,
     pub motor_speed: f32,
@@ -43,6 +46,7 @@ impl RevoluteJoint {
             local_anchor_b,
             impulse: Vec2::ZERO,
             mass: Vec2::ZERO,
+            mass_off_diag: 0.0,
             lower_angle: -std::f32::consts::PI,
             upper_angle: std::f32::consts::PI,
             motor_speed: 0.0,
@@ -100,6 +104,10 @@ impl Constraint for RevoluteJoint {
             let inv_det = 1.0 / det;
             self.mass.x = k22 * inv_det;
             self.mass.y = k11 * inv_det;
+            self.mass_off_diag = -k12 * inv_det;
+        } else {
+            self.mass = Vec2::ZERO;
+            self.mass_off_diag = 0.0;
         }
 
         self.angle_mass = i_a + i_b;
@@ -138,8 +146,8 @@ impl Constraint for RevoluteJoint {
 
         let cdot = dv;
         let impulse = Vec2::new(
-            -cdot.x * self.mass.x - cdot.y * self.mass.y,
-            -cdot.y * self.mass.y - cdot.x * self.mass.x,
+            -(self.mass.x * cdot.x + self.mass_off_diag * cdot.y),
+            -(self.mass_off_diag * cdot.x + self.mass.y * cdot.y),
         );
 
         self.impulse += impulse;
@@ -269,16 +277,16 @@ impl Constraint for RevoluteJoint {
         {
             let body_a = data.bodies.get_mut(self.body_a).unwrap();
             if is_dynamic_a {
-                body_a.transform.position -= impulse * inv_mass_a;
-                let angle_a = body_a.transform.rotation.angle() - ra.cross(impulse) * inv_inertia_a;
+                body_a.transform.position -= impulse * inv_mass_a * (1.0 + BAUMGARTE_POSITION);
+                let angle_a = body_a.transform.rotation.angle() - ra.cross(impulse) * inv_inertia_a * (1.0 + BAUMGARTE_POSITION);
                 body_a.transform.rotation.set_angle(angle_a);
             }
         }
         {
             let body_b = data.bodies.get_mut(self.body_b).unwrap();
             if is_dynamic_b {
-                body_b.transform.position += impulse * inv_mass_b;
-                let angle_b = body_b.transform.rotation.angle() + rb.cross(impulse) * inv_inertia_b;
+                body_b.transform.position += impulse * inv_mass_b * (1.0 + BAUMGARTE_POSITION);
+                let angle_b = body_b.transform.rotation.angle() + rb.cross(impulse) * inv_inertia_b * (1.0 + BAUMGARTE_POSITION);
                 body_b.transform.rotation.set_angle(angle_b);
             }
         }
@@ -449,16 +457,16 @@ impl Constraint for DistanceJoint {
         {
             let body_a = data.bodies.get_mut(self.body_a).unwrap();
             if is_dynamic_a {
-                body_a.transform.position += jacobian.linear_a * impulse * inv_mass_a;
-                let angle_a = body_a.transform.rotation.angle() + jacobian.angular_a * impulse * inv_inertia_a;
+                body_a.transform.position += jacobian.linear_a * impulse * inv_mass_a * (1.0 + BAUMGARTE_POSITION);
+                let angle_a = body_a.transform.rotation.angle() + jacobian.angular_a * impulse * inv_inertia_a * (1.0 + BAUMGARTE_POSITION);
                 body_a.transform.rotation.set_angle(angle_a);
             }
         }
         {
             let body_b = data.bodies.get_mut(self.body_b).unwrap();
             if is_dynamic_b {
-                body_b.transform.position += jacobian.linear_b * impulse * inv_mass_b;
-                let angle_b = body_b.transform.rotation.angle() + jacobian.angular_b * impulse * inv_inertia_b;
+                body_b.transform.position += jacobian.linear_b * impulse * inv_mass_b * (1.0 + BAUMGARTE_POSITION);
+                let angle_b = body_b.transform.rotation.angle() + jacobian.angular_b * impulse * inv_inertia_b * (1.0 + BAUMGARTE_POSITION);
                 body_b.transform.rotation.set_angle(angle_b);
             }
         }
@@ -729,16 +737,16 @@ impl Constraint for PrismaticJoint {
         {
             let body_a = data.bodies.get_mut(self.body_a).unwrap();
             if is_dynamic_a {
-                body_a.transform.position -= perp * impulse_perp * inv_mass_a;
-                let angle_a = body_a.transform.rotation.angle() - ra.cross(perp) * impulse_perp * inv_inertia_a;
+                body_a.transform.position -= perp * impulse_perp * inv_mass_a * (1.0 + BAUMGARTE_POSITION);
+                let angle_a = body_a.transform.rotation.angle() - ra.cross(perp) * impulse_perp * inv_inertia_a * (1.0 + BAUMGARTE_POSITION);
                 body_a.transform.rotation.set_angle(angle_a);
             }
         }
         {
             let body_b = data.bodies.get_mut(self.body_b).unwrap();
             if is_dynamic_b {
-                body_b.transform.position += perp * impulse_perp * inv_mass_b;
-                let angle_b = body_b.transform.rotation.angle() + rb.cross(perp) * impulse_perp * inv_inertia_b;
+                body_b.transform.position += perp * impulse_perp * inv_mass_b * (1.0 + BAUMGARTE_POSITION);
+                let angle_b = body_b.transform.rotation.angle() + rb.cross(perp) * impulse_perp * inv_inertia_b * (1.0 + BAUMGARTE_POSITION);
                 body_b.transform.rotation.set_angle(angle_b);
             }
         }
@@ -780,6 +788,7 @@ pub struct WeldJoint {
     pub impulse: Vec2,
     pub angular_impulse: f32,
     pub mass: Vec2,
+    pub mass_off_diag: f32,
     pub angular_mass: f32,
 }
 
@@ -798,6 +807,7 @@ impl WeldJoint {
             impulse: Vec2::ZERO,
             angular_impulse: 0.0,
             mass: Vec2::ZERO,
+            mass_off_diag: 0.0,
             angular_mass: 0.0,
         }
     }
@@ -832,6 +842,10 @@ impl Constraint for WeldJoint {
             let inv_det = 1.0 / det;
             self.mass.x = k22 * inv_det;
             self.mass.y = k11 * inv_det;
+            self.mass_off_diag = -k12 * inv_det;
+        } else {
+            self.mass = Vec2::ZERO;
+            self.mass_off_diag = 0.0;
         }
 
         self.angular_mass = i_a + i_b;
@@ -869,8 +883,8 @@ impl Constraint for WeldJoint {
 
         let cdot = dv;
         let impulse = Vec2::new(
-            -cdot.x * self.mass.x - cdot.y * self.mass.y,
-            -cdot.y * self.mass.y - cdot.x * self.mass.x,
+            -(self.mass.x * cdot.x + self.mass_off_diag * cdot.y),
+            -(self.mass_off_diag * cdot.x + self.mass.y * cdot.y),
         );
 
         self.impulse += impulse;
@@ -956,16 +970,16 @@ impl Constraint for WeldJoint {
         {
             let body_a = data.bodies.get_mut(self.body_a).unwrap();
             if is_dynamic_a {
-                body_a.transform.position -= impulse * inv_mass_a;
-                let angle_a = body_a.transform.rotation.angle() - ra.cross(impulse) * inv_inertia_a;
+                body_a.transform.position -= impulse * inv_mass_a * (1.0 + BAUMGARTE_POSITION);
+                let angle_a = body_a.transform.rotation.angle() - ra.cross(impulse) * inv_inertia_a * (1.0 + BAUMGARTE_POSITION);
                 body_a.transform.rotation.set_angle(angle_a);
             }
         }
         {
             let body_b = data.bodies.get_mut(self.body_b).unwrap();
             if is_dynamic_b {
-                body_b.transform.position += impulse * inv_mass_b;
-                let angle_b = body_b.transform.rotation.angle() + rb.cross(impulse) * inv_inertia_b;
+                body_b.transform.position += impulse * inv_mass_b * (1.0 + BAUMGARTE_POSITION);
+                let angle_b = body_b.transform.rotation.angle() + rb.cross(impulse) * inv_inertia_b * (1.0 + BAUMGARTE_POSITION);
                 body_b.transform.rotation.set_angle(angle_b);
             }
         }
@@ -989,14 +1003,14 @@ impl Constraint for WeldJoint {
         {
             let body_a = data.bodies.get_mut(self.body_a).unwrap();
             if is_dynamic_a {
-                let angle_a = body_a.transform.rotation.angle() - angular_impulse * inv_inertia_a;
+                let angle_a = body_a.transform.rotation.angle() - angular_impulse * inv_inertia_a * (1.0 + BAUMGARTE_POSITION);
                 body_a.transform.rotation.set_angle(angle_a);
             }
         }
         {
             let body_b = data.bodies.get_mut(self.body_b).unwrap();
             if is_dynamic_b {
-                let angle_b = body_b.transform.rotation.angle() + angular_impulse * inv_inertia_b;
+                let angle_b = body_b.transform.rotation.angle() + angular_impulse * inv_inertia_b * (1.0 + BAUMGARTE_POSITION);
                 body_b.transform.rotation.set_angle(angle_b);
             }
         }

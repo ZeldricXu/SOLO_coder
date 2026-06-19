@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use slotmap::SlotMap;
 
-use physics_collision::{AABBTreeBroadPhase, BroadPhase, ContactManifold, NarrowPhase};
+use physics_collision::{AABBTreeBroadPhase, BroadPhase, ContactManifold, NarrowPhase, ccd_step};
 use physics_constraints::{ConstraintSolver, ContactConstraint, DistanceJoint, RevoluteJoint, PrismaticJoint, WeldJoint};
 use physics_dynamics::integrator::{Integrator, IntegratorDefault};
 use physics_types::{Body, BodyHandle, BodyType, Material, Shape};
@@ -879,6 +879,58 @@ impl<BP: BroadPhase, I: Integrator> PhysicsWorld<BP, I> {
 
         let broad_pairs = self.broad_phase.get_potential_pairs();
 
+        // CCD: 对高速刚体执行连续碰撞检测
+        let ccd_candidates: Vec<BodyHandle> = self.bodies.iter()
+            .filter(|(_, b)| b.is_ccd_candidate(dt))
+            .map(|(h, _)| h)
+            .collect();
+
+        for ccd_handle in ccd_candidates {
+            let (velocity, position, body_aabb) = {
+                let body = match self.bodies.get(ccd_handle) {
+                    Some(b) => b,
+                    None => continue,
+                };
+                (body.linear_velocity, body.transform.position, body.compute_aabb())
+            };
+
+            let end_position = position + velocity * dt;
+            let extents = body_aabb.extents();
+            let end_aabb = AABB::from_center_extents(end_position, extents);
+            let swept_aabb = body_aabb.merged(&end_aabb);
+
+            let candidate_handles: Vec<BodyHandle> = self.bodies.iter()
+                .filter(|(h, b)| {
+                    *h != ccd_handle && b.compute_aabb().intersects(&swept_aabb)
+                })
+                .map(|(h, _)| h)
+                .collect();
+
+            if let Some(ccd_result) = ccd_step(ccd_handle, dt, &candidate_handles, &self.bodies) {
+                let mut manifold = ccd_result.manifold;
+                manifold.body_a = ccd_handle;
+                manifold.body_b = ccd_result.target_handle;
+                self.contact_manifolds.push(manifold.clone());
+
+                // 将子弹位置修正到碰撞时刻（TOI）的位置
+                if ccd_result.toi < 1.0 {
+                    if let Some(body) = self.bodies.get_mut(ccd_handle) {
+                        let start_pos = body.transform.position;
+                        let end_pos = start_pos + body.linear_velocity * dt;
+                        let clamped_pos = start_pos + (end_pos - start_pos) * ccd_result.toi;
+                        body.transform.position = clamped_pos;
+
+                        // 消除碰撞法线方向上的速度分量
+                        let normal = manifold.normal;
+                        let vel_normal = body.linear_velocity.dot(normal);
+                        if vel_normal < 0.0 {
+                            body.linear_velocity -= normal * vel_normal;
+                        }
+                    }
+                }
+            }
+        }
+
         for (handle_a, handle_b) in &broad_pairs {
             let body_a = match self.bodies.get(*handle_a) {
                 Some(b) => b,
@@ -1411,5 +1463,98 @@ mod tests {
         let body_b = world.get_body(handle_b).unwrap();
         let angle_diff = (body_b.angle() - body_a.angle()).abs();
         assert!(angle_diff < 0.1);
+    }
+
+    #[test]
+    fn test_joint_mass_ratio_stability() {
+        let mut world: TestWorld = PhysicsWorld::new().with_gravity(Vec2::ZERO);
+
+        let heavy_shape = Shape::Circle(Circle::new(2.0));
+        let ta = physics_math::Transform::new(Vec2::new(0.0, 0.0), physics_math::Rot2::new(0.0));
+        let tb = physics_math::Transform::new(Vec2::new(3.0, 0.0), physics_math::Rot2::new(0.0));
+
+        let heavy_handle = world.add_body(
+            heavy_shape,
+            Vec2::new(0.0, 0.0),
+            0.0,
+            BodyType::Static,
+            Material::DEFAULT,
+        );
+
+        let light_shape = Shape::Circle(Circle::new(0.5));
+        let light_material = Material::DEFAULT.with_density(1.0);
+        let light_handle = world.add_body(
+            light_shape,
+            Vec2::new(3.0, 0.0),
+            0.0,
+            BodyType::Dynamic,
+            light_material,
+        );
+
+        let joint = DistanceJoint::new(
+            heavy_handle,
+            light_handle,
+            Vec2::new(0.0, 0.0),
+            Vec2::new(3.0, 0.0),
+            &ta,
+            &tb,
+        );
+        world.add_distance_joint(joint);
+
+        world.get_body_mut(light_handle).unwrap().linear_velocity = Vec2::new(0.0, 10.0);
+
+        let mut max_constraint_error = 0.0_f32;
+        for _ in 0..60 {
+            world.step(1.0 / 60.0);
+            let body = world.get_body(light_handle).unwrap();
+            let distance = (body.position() - Vec2::new(0.0, 0.0)).length();
+            let constraint_error = (distance - 3.0).abs();
+            max_constraint_error = max_constraint_error.max(constraint_error);
+        }
+
+        assert!(max_constraint_error < 0.5, "Joint constraint not converging: max error = {}", max_constraint_error);
+
+        let final_body = world.get_body(light_handle).unwrap();
+        let distance = (final_body.position() - Vec2::new(0.0, 0.0)).length();
+        assert_abs_diff_eq!(distance, 3.0, epsilon = 0.5);
+    }
+
+    #[test]
+    fn test_ccd_bullet_through_thin_wall() {
+        let mut world: TestWorld = PhysicsWorld::new().with_gravity(Vec2::ZERO);
+
+        let wall_shape = Shape::Rectangle(Rectangle::new(10.0, 0.1));
+        let wall_material = Material::DEFAULT.with_restitution(0.0);
+        let _wall_handle = world.add_body(
+            wall_shape,
+            Vec2::new(0.0, 0.0),
+            0.0,
+            BodyType::Static,
+            wall_material,
+        );
+
+        let bullet_shape = Shape::Circle(Circle::new(0.5));
+        let bullet_material = Material::DEFAULT.with_density(1.0).with_restitution(0.0);
+        let bullet_handle = world.add_body(
+            bullet_shape,
+            Vec2::new(-8.0, 0.0),
+            0.0,
+            BodyType::Dynamic,
+            bullet_material,
+        );
+
+        world.get_body_mut(bullet_handle).unwrap().linear_velocity = Vec2::new(100.0, 0.0);
+        world.get_body_mut(bullet_handle).unwrap().is_bullet = true;
+
+        for _ in 0..60 {
+            world.step(1.0 / 60.0);
+        }
+
+        let bullet = world.get_body(bullet_handle).unwrap();
+        assert!(
+            bullet.position().x < 1.0,
+            "Bullet tunneled through wall! pos = {:?}",
+            bullet.position()
+        );
     }
 }
