@@ -167,6 +167,7 @@ model Dashboard {
   createdBy       String
   creator         User         @relation(fields: [createdBy], references: [id], onDelete: Cascade)
   isPublic        Boolean      @default(false)
+  version         Int          @default(1)
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 

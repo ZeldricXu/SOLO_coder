@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateDashboardDto } from './dto/create-dashboard.dto';
@@ -47,7 +47,14 @@ export class DashboardService {
   }
 
   async update(id: string, dto: UpdateDashboardDto) {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+
+    if (dto.expectedVersion !== undefined && existing.version !== dto.expectedVersion) {
+      throw new ConflictException(
+        `Dashboard was modified by another user. Expected version ${dto.expectedVersion}, current version is ${existing.version}. Please refresh and try again.`,
+      );
+    }
+
     const data: Record<string, any> = {};
     if (dto.name !== undefined) data.name = dto.name;
     if (dto.description !== undefined) data.description = dto.description;
@@ -55,6 +62,7 @@ export class DashboardService {
     if (dto.globalFilters !== undefined) data.globalFilters = dto.globalFilters;
     if (dto.isPublic !== undefined) data.isPublic = dto.isPublic;
     if (dto.businessLineId !== undefined) data.businessLineId = dto.businessLineId;
+    data.version = { increment: 1 };
 
     return this.prisma.dashboard.update({
       where: { id },

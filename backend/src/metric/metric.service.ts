@@ -195,6 +195,13 @@ export class MetricService {
     } else {
       start.setMonth(start.getMonth() - 1);
       end.setMonth(end.getMonth() - 1);
+
+      if (start.getDate() !== new Date(range.start).getDate()) {
+        start.setDate(0);
+      }
+      if (end.getDate() !== new Date(range.end).getDate()) {
+        end.setDate(0);
+      }
     }
 
     return { start: start.toISOString(), end: end.toISOString() };

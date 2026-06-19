@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  BadRequestException,
   OnModuleDestroy,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +11,7 @@ import { BaseConnector, QueryResult, SchemaTable } from './connectors/base.conne
 import { CreateDataSourceDto } from './dto/create-data-source.dto';
 import { UpdateDataSourceDto } from './dto/update-data-source.dto';
 import { QueryDto } from './dto/query.dto';
+import { SqlValidator } from '../common/utils/sql-validator';
 
 interface CircuitBreakerState {
   failures: number;
@@ -85,6 +87,11 @@ export class DataSourceService implements OnModuleDestroy {
   }
 
   async executeQuery(id: string, queryDto: QueryDto): Promise<QueryResult> {
+    const validation = SqlValidator.validate(queryDto.sql);
+    if (!validation.safe) {
+      throw new BadRequestException(validation.reason);
+    }
+
     const ds = await this.findOne(id);
     this.checkCircuitBreaker(id);
     const connector = await this.getConnector(ds.id, ds.type, ds.config as Record<string, any>, ds.poolSize, ds.queryTimeout);
