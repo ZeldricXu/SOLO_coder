@@ -10,7 +10,7 @@ services:
     ports:
       - "3306:3306"
     volumes:
-      - mysql-data:/var/lib/mysql
+      - mysql_data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-ppassword"]
@@ -24,7 +24,7 @@ services:
     ports:
       - "6379:6379"
     volumes:
-      - redis-data:/data
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -34,14 +34,15 @@ services:
   clickhouse:
     image: clickhouse/clickhouse-server:23.8
     container_name: biz-monitor-clickhouse
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: password
     ports:
       - "8123:8123"
       - "9000:9000"
     volumes:
-      - clickhouse-data:/var/lib/clickhouse
-    environment:
-      CLICKHOUSE_USER: default
-      CLICKHOUSE_PASSWORD: ""
+      - clickhouse_data:/var/lib/clickhouse
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:8123/ping"]
       interval: 30s
@@ -49,6 +50,6 @@ services:
       retries: 3
 
 volumes:
-  mysql-data:
-  redis-data:
-  clickhouse-data:
+  mysql_data:
+  redis_data:
+  clickhouse_data:

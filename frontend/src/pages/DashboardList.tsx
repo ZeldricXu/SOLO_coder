@@ -1,85 +1,75 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Card,
   Button,
-  Table,
+  Input,
   Space,
+  Typography,
   Modal,
   Form,
-  Input,
-  Select,
-  Tag,
   message,
   Popconfirm,
   Upload,
-  DatePicker,
 } from 'antd';
 import {
   PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
+  SearchOutlined,
   ExportOutlined,
   ImportOutlined,
+  DeleteOutlined,
+  EditOutlined,
   EyeOutlined,
-  LineChartOutlined,
 } from '@ant-design/icons';
+import type { UploadProps } from 'antd';
 import { useNavigate } from 'react-router-dom';
-import type { ColumnsType } from 'antd/es/table';
-import dayjs from 'dayjs';
+import type { Dashboard } from '@/types';
 import { dashboardService } from '@/services/dashboard';
-import { tenantService } from '@/services/tenant';
-import type { Dashboard, BusinessLine } from '@/types';
+import { formatDate } from '@/utils/format';
 
-const { RangePicker } = DatePicker;
-const { TextArea } = Input;
-const { Option } = Select;
+const { Title } = Typography;
 
 const DashboardList: React.FC = () => {
-  const navigate = useNavigate();
   const [dashboards, setDashboards] = useState<Dashboard[]>([]);
-  const [businessLines, setBusinessLines] = useState<BusinessLine[]>([]);
   const [loading, setLoading] = useState(false);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [createModalVisible, setCreateModalVisible] = useState(false);
   const [editingDashboard, setEditingDashboard] = useState<Dashboard | null>(null);
   const [form] = Form.useForm();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const navigate = useNavigate();
 
-  const loadDashboards = async (businessLineId?: string) => {
+  const loadDashboards = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await dashboardService.list(businessLineId);
+      const res = await dashboardService.list();
       setDashboards(res.data.data);
     } catch (err) {
       message.error('加载看板列表失败');
     } finally {
       setLoading(false);
     }
-  };
-
-  const loadBusinessLines = async () => {
-    try {
-      const res = await tenantService.listBusinessLines('default');
-      setBusinessLines(res.data.data);
-    } catch (err) {
-      console.error('加载业务线失败', err);
-    }
-  };
+  }, []);
 
   useEffect(() => {
     loadDashboards();
-    loadBusinessLines();
-  }, []);
+  }, [loadDashboards]);
+
+  const filteredDashboards = dashboards.filter((d) =>
+    d.name.toLowerCase().includes(searchText.toLowerCase()),
+  );
 
   const handleCreate = () => {
     setEditingDashboard(null);
     form.resetFields();
-    setModalVisible(true);
+    setCreateModalVisible(true);
   };
 
-  const handleEdit = (record: Dashboard) => {
-    setEditingDashboard(record);
-    form.setFieldsValue(record);
-    setModalVisible(true);
+  const handleEdit = (dashboard: Dashboard) => {
+    setEditingDashboard(dashboard);
+    form.setFieldsValue({
+      name: dashboard.name,
+      description: dashboard.description,
+    });
+    setCreateModalVisible(true);
   };
 
   const handleDelete = async (id: string) => {
@@ -102,22 +92,22 @@ const DashboardList: React.FC = () => {
         await dashboardService.create(values);
         message.success('创建成功');
       }
-      setModalVisible(false);
+      setCreateModalVisible(false);
       loadDashboards();
     } catch (err) {
-      console.error(err);
+      // validation error
     }
   };
 
-  const handleExport = async (record: Dashboard) => {
+  const handleExport = async (id: string) => {
     try {
-      const res = await dashboardService.export(record.id);
+      const res = await dashboardService.export(id);
       const dataStr = JSON.stringify(res.data.data, null, 2);
       const blob = new Blob([dataStr], { type: 'application/json' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${record.name}-${dayjs().format('YYYYMMDD')}.json`;
+      a.download = `dashboard-${id}.json`;
       a.click();
       URL.revokeObjectURL(url);
       message.success('导出成功');
@@ -126,18 +116,11 @@ const DashboardList: React.FC = () => {
     }
   };
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const handleImport: UploadProps['beforeUpload'] = (file) => {
     const reader = new FileReader();
-    reader.onload = async (event) => {
+    reader.onload = async (e) => {
       try {
-        const data = JSON.parse(event.target?.result as string);
+        const data = JSON.parse(e.target?.result as string);
         await dashboardService.import(data);
         message.success('导入成功');
         loadDashboards();
@@ -146,130 +129,117 @@ const DashboardList: React.FC = () => {
       }
     };
     reader.readAsText(file);
-    e.target.value = '';
+    return false;
   };
 
-  const columns: ColumnsType<Dashboard> = [
-    {
-      title: '看板名称',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text, record) => (
-        <Space>
-          <LineChartOutlined />
-          <a onClick={() => navigate(`/dashboards/${record.id}`)}>{text}</a>
-        </Space>
-      ),
-    },
-    {
-      title: '描述',
-      dataIndex: 'description',
-      key: 'description',
-      ellipsis: true,
-    },
-    {
-      title: '业务线',
-      dataIndex: 'businessLineId',
-      key: 'businessLineId',
-      render: (id) => {
-        const bl = businessLines.find((b) => b.id === id);
-        return bl?.name || '-';
-      },
-    },
-    {
-      title: '是否公开',
-      dataIndex: 'isPublic',
-      key: 'isPublic',
-      render: (isPublic) =>
-        isPublic ? <Tag color="green">公开</Tag> : <Tag color="default">私有</Tag>,
-    },
-    {
-      title: '创建时间',
-      dataIndex: 'createdAt',
-      key: 'createdAt',
-      render: (date) => dayjs(date).format('YYYY-MM-DD HH:mm'),
-    },
-    {
-      title: '操作',
-      key: 'actions',
-      render: (_, record) => (
-        <Space size="middle">
-          <Button
-            type="link"
-            icon={<EyeOutlined />}
-            onClick={() => navigate(`/dashboards/${record.id}`)}
-          >
-            查看
-          </Button>
-          <Button type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
-            编辑
-          </Button>
-          <Button type="link" icon={<ExportOutlined />} onClick={() => handleExport(record)}>
-            导出
-          </Button>
-          <Popconfirm title="确定删除?" onConfirm={() => handleDelete(record.id)}>
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
-
   return (
-    <div style={{ padding: 24 }}>
-      <Card
-        title="看板管理"
-        extra={
-          <Space>
-            <Button icon={<ImportOutlined />} onClick={handleImportClick}>
-              导入
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-              新建看板
-            </Button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".json"
-              style={{ display: 'none' }}
-              onChange={handleImport}
-            />
-          </Space>
-        }
+    <div>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 24,
+        }}
       >
-        <div style={{ marginBottom: 16 }}>
-          <Space>
-            <Select
-              placeholder="选择业务线"
-              style={{ width: 200 }}
-              allowClear
-              onChange={(value) => loadDashboards(value)}
-            >
-              {businessLines.map((bl) => (
-                <Option key={bl.id} value={bl.id}>
-                  {bl.name}
-                </Option>
-              ))}
-            </Select>
-            <RangePicker />
-          </Space>
+        <Title level={3} style={{ margin: 0 }}>
+          看板列表
+        </Title>
+        <Space>
+          <Input
+            placeholder="搜索看板"
+            prefix={<SearchOutlined />}
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{ width: 240 }}
+          />
+          <Upload beforeUpload={handleImport} showUploadList={false}>
+            <Button icon={<ImportOutlined />}>导入</Button>
+          </Upload>
+          <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
+            新建看板
+          </Button>
+        </Space>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+          gap: 16,
+        }}
+      >
+        {filteredDashboards.map((dashboard) => (
+          <Card
+            key={dashboard.id}
+            hoverable
+            loading={loading}
+            onClick={() => navigate(`/dashboards/${dashboard.id}`)}
+            actions={[
+              <EyeOutlined
+                key="view"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  navigate(`/dashboards/${dashboard.id}`);
+                }}
+              />,
+              <EditOutlined
+                key="edit"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEdit(dashboard);
+                }}
+              />,
+              <ExportOutlined
+                key="export"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleExport(dashboard.id);
+                }}
+              />,
+              <Popconfirm
+                key="delete"
+                title="确定删除这个看板吗？"
+                onConfirm={(e) => {
+                  e?.stopPropagation();
+                  handleDelete(dashboard.id);
+                }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <DeleteOutlined />
+              </Popconfirm>,
+            ]}
+          >
+            <Card.Meta
+              title={dashboard.name}
+              description={
+                <div style={{ marginTop: 8 }}>
+                  <p style={{ color: '#8c8c8c', marginBottom: 8 }}>
+                    {dashboard.description || '暂无描述'}
+                  </p>
+                  <p style={{ color: '#bfbfbf', fontSize: 12, margin: 0 }}>
+                    更新于 {formatDate(dashboard.updatedAt)}
+                  </p>
+                </div>
+              }
+            />
+          </Card>
+        ))}
+      </div>
+
+      {filteredDashboards.length === 0 && !loading && (
+        <div style={{ textAlign: 'center', padding: '60px 0', color: '#8c8c8c' }}>
+          {searchText ? '没有找到匹配的看板' : '暂无看板，点击右上角创建第一个'}
         </div>
-        <Table
-          columns={columns}
-          dataSource={dashboards}
-          rowKey="id"
-          loading={loading}
-        />
-      </Card>
+      )}
 
       <Modal
         title={editingDashboard ? '编辑看板' : '新建看板'}
-        open={modalVisible}
+        open={createModalVisible}
         onOk={handleSubmit}
-        onCancel={() => setModalVisible(false)}
-        destroyOnClose
+        onCancel={() => setCreateModalVisible(false)}
+        okText="确定"
+        cancelText="取消"
       >
         <Form form={form} layout="vertical">
           <Form.Item
@@ -280,26 +250,7 @@ const DashboardList: React.FC = () => {
             <Input placeholder="请输入看板名称" />
           </Form.Item>
           <Form.Item name="description" label="描述">
-            <TextArea rows={3} placeholder="请输入描述" />
-          </Form.Item>
-          <Form.Item
-            name="businessLineId"
-            label="业务线"
-            rules={[{ required: true, message: '请选择业务线' }]}
-          >
-            <Select placeholder="请选择业务线">
-              {businessLines.map((bl) => (
-                <Option key={bl.id} value={bl.id}>
-                  {bl.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item name="isPublic" label="是否公开" valuePropName="checked">
-            <Select defaultValue={false}>
-              <Option value={true}>公开</Option>
-              <Option value={false}>私有</Option>
-            </Select>
+            <Input.TextArea placeholder="请输入描述" rows={3} />
           </Form.Item>
         </Form>
       </Modal>

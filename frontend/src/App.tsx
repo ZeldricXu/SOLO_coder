@@ -8,9 +8,6 @@ const DashboardDetail = React.lazy(() => import('@/pages/DashboardDetail'));
 const DataSourcePage = React.lazy(() => import('@/pages/DataSourcePage'));
 const MetricPage = React.lazy(() => import('@/pages/MetricPage'));
 const AlertPage = React.lazy(() => import('@/pages/AlertPage'));
-const UserManagementPage = React.lazy(() => import('@/pages/UserManagementPage'));
-const AuditLogPage = React.lazy(() => import('@/pages/AuditLogPage'));
-const TenantManagementPage = React.lazy(() => import('@/pages/TenantManagementPage'));
 
 const App: React.FC = () => {
   return (
@@ -23,9 +20,6 @@ const App: React.FC = () => {
         <Route path="data-sources" element={<DataSourcePage />} />
         <Route path="metrics" element={<MetricPage />} />
         <Route path="alerts" element={<AlertPage />} />
-        <Route path="users" element={<UserManagementPage />} />
-        <Route path="audit" element={<AuditLogPage />} />
-        <Route path="tenants" element={<TenantManagementPage />} />
       </Route>
     </Routes>
   );

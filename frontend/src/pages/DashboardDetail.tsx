@@ -1,291 +1,155 @@
-import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Card,
   Button,
   Space,
-  Modal,
-  Form,
-  Input,
-  Select,
-  DatePicker,
+  Typography,
   message,
-  Dropdown,
-  MenuProps,
+  Tooltip,
   Popconfirm,
-  Tag,
-  Row,
-  Col,
-  Statistic,
+  Switch,
 } from 'antd';
 import {
-  PlusOutlined,
-  EditOutlined,
-  DeleteOutlined,
-  SettingOutlined,
-  LinkOutlined,
-  DownloadOutlined,
-  UploadOutlined,
-  ReloadOutlined,
   ArrowLeftOutlined,
-  BarChartOutlined,
-  LineChartOutlined,
-  PieChartOutlined,
-  TableOutlined,
-  FundOutlined,
+  EditOutlined,
+  PlusOutlined,
+  ExportOutlined,
   FilterOutlined,
+  SaveOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
-import { useParams, useNavigate } from 'react-router-dom';
-import { Responsive, WidthProvider, Layout } from 'react-grid-layout';
-import ReactECharts from 'echarts-for-react';
-import type { EChartsOption } from 'echarts';
-import dayjs, { Dayjs } from 'dayjs';
+import { Responsive, WidthProvider } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
-import 'react-grid-layout/css/styles.css';
-
+import 'react-resizable/css/styles.css';
 import { useDashboardStore } from '@/store/dashboard';
-import { useAuthStore } from '@/store/auth';
-import { realtimeService } from '@/services/realtime';
 import { dashboardService } from '@/services/dashboard';
-import { metricService } from '@/services/metric';
-import { tenantService } from '@/services/tenant';
-import type { Widget, WidgetType, Metric, BusinessLine } from '@/types';
+import ChartWidget from '@/components/ChartWidget';
+import AddWidgetModal from '@/components/AddWidgetModal';
+import WidgetConfigPanel from '@/components/WidgetConfigPanel';
+import GlobalFilterBar from '@/components/GlobalFilterBar';
+import type { Widget, WidgetType } from '@/types';
 
+const { Title } = Typography;
 const ResponsiveGridLayout = WidthProvider(Responsive);
-const { RangePicker } = DatePicker;
-const { TextArea } = Input;
-const { Option } = Select;
 
-interface WidgetData {
-  [widgetId: string]: Record<string, unknown>[];
+interface LayoutItem {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minW?: number;
+  minH?: number;
 }
-
-interface FilterState {
-  timeRange: [Dayjs, Dayjs];
-  businessLineId: string;
-  [key: string]: unknown;
-}
-
-const WIDGET_TYPE_CONFIG: Record<WidgetType, { label: string; icon: React.ReactNode }> = {
-  LINE_CHART: { label: '折线图', icon: <LineChartOutlined /> },
-  BAR_CHART: { label: '柱状图', icon: <BarChartOutlined /> },
-  PIE_CHART: { label: '饼图', icon: <PieChartOutlined /> },
-  TABLE: { label: '表格', icon: <TableOutlined /> },
-  NUMBER_CARD: { label: '数字卡片', icon: <FundOutlined /> },
-  FUNNEL: { label: '漏斗图', icon: <FilterOutlined /> },
-};
 
 const DashboardDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { currentDashboard, widgets, globalFilters, loading, loadDashboard, setGlobalFilters, addWidget, updateWidget, removeWidget, batchUpdateLayout, linkWidget, unlinkWidget } = useDashboardStore();
-  const { token } = useAuthStore();
+  const {
+    currentDashboard,
+    widgets,
+    globalFilters,
+    loading,
+    loadDashboard,
+    addWidget,
+    updateWidget,
+    removeWidget,
+    batchUpdateLayout,
+    setGlobalFilters,
+    linkWidget,
+    unlinkWidget,
+  } = useDashboardStore();
 
-  const [widgetData, setWidgetData] = useState<WidgetData>({});
-  const [metrics, setMetrics] = useState<Metric[]>([]);
-  const [businessLines, setBusinessLines] = useState<BusinessLine[]>([]);
-  const [addWidgetVisible, setAddWidgetVisible] = useState(false);
-  const [editWidgetVisible, setEditWidgetVisible] = useState(false);
-  const [editingWidget, setEditingWidget] = useState<Widget | null>(null);
-  const [filterState, setFilterState] = useState<FilterState>({
-    timeRange: [dayjs().subtract(7, 'day'), dayjs()],
-    businessLineId: '',
-  });
-  const [linkedFilters, setLinkedFilters] = useState<Record<string, Record<string, unknown>>>({});
-  const [form] = Form.useForm();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [addModalVisible, setAddModalVisible] = useState(false);
+  const [configPanelVisible, setConfigPanelVisible] = useState(false);
+  const [selectedWidget, setSelectedWidget] = useState<Widget | null>(null);
+  const [showFilterBar, setShowFilterBar] = useState(true);
 
   useEffect(() => {
     if (id) {
       loadDashboard(id);
     }
-    loadMetrics();
-    loadBusinessLines();
-  }, [id]);
+  }, [id, loadDashboard]);
 
-  useEffect(() => {
-    if (token) {
-      realtimeService.connect(token);
-    }
-    return () => {
-      if (id) {
-        realtimeService.unsubscribeDashboard(id);
-      }
-    };
-  }, [token, id]);
-
-  useEffect(() => {
-    if (!id) return;
-
-    realtimeService.subscribeDashboard(id);
-
-    const unsubDashboard = realtimeService.onDashboardUpdate((data) => {
-      console.log('[Realtime] dashboard update:', data);
-      loadDashboard(id);
-    });
-
-    const unsubMetric = realtimeService.onMetricUpdate((data: unknown) => {
-      const payload = data as { widgetId: string; data: Record<string, unknown>[] };
-      console.log('[Realtime] metric update:', payload);
-      if (payload.widgetId) {
-        setWidgetData((prev) => ({
-          ...prev,
-          [payload.widgetId]: payload.data,
-        }));
-      }
-    });
-
-    const unsubFilter = realtimeService.onFilterUpdate((data: unknown) => {
-      const payload = data as { widgetId: string; filters: Record<string, unknown> };
-      console.log('[Realtime] filter update:', payload);
-      setLinkedFilters((prev) => ({
-        ...prev,
-        [payload.widgetId]: payload.filters,
-      }));
-      const widget = widgets.find((w) => w.id === payload.widgetId);
-      if (widget?.linkedWidgetIds?.length) {
-        widget.linkedWidgetIds.forEach((linkedId) => {
-          fetchWidgetData(linkedId, { ...filterState, ...payload.filters });
-        });
-      }
-    });
-
-    return () => {
-      unsubDashboard();
-      unsubMetric();
-      unsubFilter();
-    };
-  }, [id, widgets, filterState]);
-
-  useEffect(() => {
-    widgets.forEach((widget) => {
-      fetchWidgetData(widget.id, filterState);
-    });
-  }, [widgets.length]);
-
-  const loadMetrics = async () => {
-    try {
-      const res = await metricService.list();
-      setMetrics(res.data.data);
-    } catch (err) {
-      console.error('加载指标失败', err);
-    }
-  };
-
-  const loadBusinessLines = async () => {
-    try {
-      const res = await tenantService.listBusinessLines('default');
-      setBusinessLines(res.data.data);
-    } catch (err) {
-      console.error('加载业务线失败', err);
-    }
-  };
-
-  const fetchWidgetData = async (widgetId: string, filters?: Partial<FilterState>) => {
-    const widget = widgets.find((w) => w.id === widgetId);
-    if (!widget?.metricId) return;
-
-    try {
-      const mergedFilters = {
-        ...filterState,
-        ...filters,
-        ...linkedFilters[widgetId],
+  const layout = useMemo<LayoutItem[]>(() => {
+    return widgets.map((widget) => {
+      const widgetLayout = widget.layout as Record<string, unknown> | undefined;
+      return {
+        i: widget.id,
+        x: (widgetLayout?.x as number) || 0,
+        y: (widgetLayout?.y as number) || 0,
+        w: (widgetLayout?.w as number) || 6,
+        h: (widgetLayout?.h as number) || 4,
+        minW: 2,
+        minH: 2,
       };
-      const params = {
-        startTime: mergedFilters.timeRange?.[0]?.toISOString(),
-        endTime: mergedFilters.timeRange?.[1]?.toISOString(),
-        businessLineId: mergedFilters.businessLineId,
-        ...(widget.filters as Record<string, unknown>),
-      };
-      const res = await metricService.execute(widget.metricId, params);
-      setWidgetData((prev) => ({
-        ...prev,
-        [widgetId]: res.data.data,
-      }));
-    } catch (err) {
-      console.error(`加载组件 ${widgetId} 数据失败`, err);
-    }
-  };
+    });
+  }, [widgets]);
 
-  const handleLayoutChange = (layouts: { [key: string]: Layout[] }) => {
-    const items = layouts.lg.map((layout) => ({
-      widgetId: layout.i,
+  const handleLayoutChange = useCallback(
+    (currentLayout: LayoutItem[]) => {
+      if (!isEditMode) return;
+
+      const items = currentLayout.map((item) => ({
+        widgetId: item.i,
+        layout: {
+          x: item.x,
+          y: item.y,
+          w: item.w,
+          h: item.h,
+        },
+      }));
+
+      batchUpdateLayout(items);
+    },
+    [isEditMode, batchUpdateLayout],
+  );
+
+  const handleAddWidget = async (data: {
+    type: WidgetType;
+    title: string;
+    metricId: string | null;
+    config: Record<string, unknown>;
+  }) => {
+    const widgetData = {
+      type: data.type,
+      title: data.title,
+      metricId: data.metricId,
+      config: data.config,
       layout: {
-        x: layout.x,
-        y: layout.y,
-        w: layout.w,
-        h: layout.h,
-        minW: layout.minW,
-        maxW: layout.maxW,
-        minH: layout.minH,
-        maxH: layout.maxH,
+        x: 0,
+        y: Infinity,
+        w: 6,
+        h: 4,
       },
-    }));
-    batchUpdateLayout(items);
-  };
+      filters: null,
+      linkedWidgetIds: [],
+    };
 
-  const handleAddWidget = () => {
-    setEditingWidget(null);
-    form.resetFields();
-    setAddWidgetVisible(true);
-  };
-
-  const handleEditWidget = (widget: Widget) => {
-    setEditingWidget(widget);
-    form.setFieldsValue({
-      ...widget,
-      config: JSON.stringify(widget.config, null, 2),
-    });
-    setEditWidgetVisible(true);
-  };
-
-  const handleSaveWidget = async () => {
     try {
-      const values = await form.validateFields();
-      const config = values.config ? JSON.parse(values.config) : {};
-
-      if (editingWidget) {
-        await updateWidget(editingWidget.id, { ...values, config });
-        message.success('更新成功');
-        setEditWidgetVisible(false);
-      } else {
-        const layout = { x: 0, y: 0, w: 6, h: 4 };
-        await addWidget({ ...values, config, layout });
-        message.success('添加成功');
-        setAddWidgetVisible(false);
-      }
+      await addWidget(widgetData);
+      message.success('组件添加成功');
+      setAddModalVisible(false);
     } catch (err) {
-      message.error('保存失败');
+      message.error('添加组件失败');
     }
   };
 
-  const handleDeleteWidget = async (widgetId: string) => {
-    try {
-      await removeWidget(widgetId);
-      message.success('删除成功');
-    } catch (err) {
-      message.error('删除失败');
+  const handleWidgetClick = (widget: Widget) => {
+    if (isEditMode) {
+      setSelectedWidget(widget);
+      setConfigPanelVisible(true);
     }
   };
 
-  const handleFilterChange = (newFilters: Partial<FilterState>) => {
-    const updated = { ...filterState, ...newFilters };
-    setFilterState(updated);
-    setGlobalFilters(updated as unknown as Record<string, unknown>);
-    widgets.forEach((widget) => fetchWidgetData(widget.id, updated));
+  const handleSaveWidget = (widgetId: string, data: Partial<Widget>) => {
+    updateWidget(widgetId, data);
   };
 
-  const handleWidgetClick = (widget: Widget, data: Record<string, unknown>) => {
-    if (widget.linkedWidgetIds?.length) {
-      const filters = { dimension: data.dimension, value: data.value };
-      realtimeService.emitFilterUpdate(id!, widget.id, filters, widget.linkedWidgetIds);
-      setLinkedFilters((prev) => ({
-        ...prev,
-        [widget.id]: filters,
-      }));
-      widget.linkedWidgetIds.forEach((linkedId) => {
-        fetchWidgetData(linkedId, { ...filterState, ...filters });
-      });
-    }
+  const handleDeleteWidget = (widgetId: string) => {
+    removeWidget(widgetId);
+    message.success('删除成功');
   };
 
   const handleExport = async () => {
@@ -297,7 +161,7 @@ const DashboardDetail: React.FC = () => {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${currentDashboard?.name}-${dayjs().format('YYYYMMDD')}.json`;
+      a.download = `dashboard-${id}.json`;
       a.click();
       URL.revokeObjectURL(url);
       message.success('导出成功');
@@ -306,491 +170,248 @@ const DashboardDetail: React.FC = () => {
     }
   };
 
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
+  const handleFilterApply = (filters: Record<string, unknown>) => {
+    setGlobalFilters(filters);
   };
 
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !id) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-        await dashboardService.import(data);
-        message.success('导入成功');
-        loadDashboard(id);
-      } catch (err) {
-        message.error('导入失败');
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
+  const handleFilterReset = () => {
+    setGlobalFilters({});
   };
 
-  const handleLinkWidget = (widgetId: string, targetWidgetId: string) => {
-    linkWidget(widgetId, targetWidgetId);
+  const widgetHeightMap: Record<number, number> = {
+    2: 120,
+    3: 180,
+    4: 240,
+    5: 300,
+    6: 360,
+    7: 420,
+    8: 480,
   };
 
-  const handleUnlinkWidget = (widgetId: string, targetWidgetId: string) => {
-    unlinkWidget(widgetId, targetWidgetId);
+  const getWidgetHeight = (h: number) => {
+    return widgetHeightMap[h] || h * 60;
   };
 
-  const gridLayout = useMemo(() => {
-    return widgets.map((widget) => {
-      const layout = widget.layout as Record<string, unknown>;
-      return {
-        i: widget.id,
-        x: (layout.x as number) || 0,
-        y: (layout.y as number) || 0,
-        w: (layout.w as number) || 6,
-        h: (layout.h as number) || 4,
-        minW: 2,
-        maxW: 24,
-        minH: 2,
-        maxH: 24,
-      };
-    });
-  }, [widgets]);
-
-  const getWidgetMenu = (widget: Widget): MenuProps => {
-    const otherWidgets = widgets.filter((w) => w.id !== widget.id);
-    const linkedIds = widget.linkedWidgetIds || [];
-
-    return {
-      items: [
-        {
-          key: 'edit',
-          icon: <EditOutlined />,
-          label: '编辑',
-          onClick: () => handleEditWidget(widget),
-        },
-        {
-          key: 'link',
-          icon: <LinkOutlined />,
-          label: '联动组件',
-          children: otherWidgets.map((w) => ({
-            key: w.id,
-            label: (
-              <Space>
-                {linkedIds.includes(w.id) && <Tag color="blue">已联动</Tag>}
-                {w.title}
-              </Space>
-            ),
-            onClick: () => {
-              if (linkedIds.includes(w.id)) {
-                handleUnlinkWidget(widget.id, w.id);
-              } else {
-                handleLinkWidget(widget.id, w.id);
-              }
-            },
-          })),
-        },
-        { type: 'divider' },
-        {
-          key: 'delete',
-          danger: true,
-          icon: <DeleteOutlined />,
-          label: '删除',
-          onClick: () => handleDeleteWidget(widget.id),
-        },
-      ],
-    };
-  };
-
-  const renderChartOption = (widget: Widget, data: Record<string, unknown>[]): EChartsOption => {
-    const config = widget.config as Record<string, unknown>;
-    const xField = (config.xField as string) || 'date';
-    const yField = (config.yField as string) || 'value';
-    const categoryField = (config.categoryField as string) || 'category';
-
-    switch (widget.type) {
-      case 'LINE_CHART':
-        return {
-          tooltip: { trigger: 'axis' },
-          legend: { data: Array.from(new Set(data.map((d) => d[categoryField] as string))) },
-          xAxis: { type: 'category', data: Array.from(new Set(data.map((d) => d[xField] as string))) },
-          yAxis: { type: 'value' },
-          series: Array.from(new Set(data.map((d) => d[categoryField] as string))).map((category) => ({
-            name: category,
-            type: 'line',
-            smooth: true,
-            data: data
-              .filter((d) => d[categoryField] === category)
-              .map((d) => d[yField] as number),
-          })),
-        };
-      case 'BAR_CHART':
-        return {
-          tooltip: { trigger: 'axis' },
-          legend: { data: Array.from(new Set(data.map((d) => d[categoryField] as string))) },
-          xAxis: { type: 'category', data: Array.from(new Set(data.map((d) => d[xField] as string))) },
-          yAxis: { type: 'value' },
-          series: Array.from(new Set(data.map((d) => d[categoryField] as string))).map((category) => ({
-            name: category,
-            type: 'bar',
-            data: data
-              .filter((d) => d[categoryField] === category)
-              .map((d) => d[yField] as number),
-          })),
-        };
-      case 'PIE_CHART':
-        return {
-          tooltip: { trigger: 'item' },
-          legend: { bottom: 0 },
-          series: [
-            {
-              type: 'pie',
-              radius: ['40%', '70%'],
-              data: data.map((d) => ({
-                name: d[categoryField] as string,
-                value: d[yField] as number,
-              })),
-            },
-          ],
-        };
-      case 'FUNNEL':
-        return {
-          tooltip: { trigger: 'item' },
-          series: [
-            {
-              type: 'funnel',
-              data: data.map((d) => ({
-                name: d[categoryField] as string,
-                value: d[yField] as number,
-              })),
-            },
-          ],
-        };
-      default:
-        return {};
-    }
-  };
-
-  const renderWidgetContent = (widget: Widget) => {
-    const data = widgetData[widget.id] || [];
-    const config = widget.config as Record<string, unknown>;
-    const yField = (config.yField as string) || 'value';
-
-    switch (widget.type) {
-      case 'NUMBER_CARD':
-        const value = data.length > 0 ? (data[0][yField] as number) : 0;
-        return (
-          <div
-            style={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '100%',
-              cursor: widget.linkedWidgetIds?.length ? 'pointer' : 'default',
-            }}
-            onClick={() => handleWidgetClick(widget, data[0] || {})}
-          >
-            <Statistic title={widget.title} value={value} />
-            {widget.linkedWidgetIds?.length > 0 && (
-              <Tag color="blue" style={{ marginTop: 8 }}>
-                已联动 {widget.linkedWidgetIds.length} 个组件
-              </Tag>
-            )}
-          </div>
-        );
-      case 'TABLE':
-        const columns = data.length > 0 ? Object.keys(data[0]) : [];
-        return (
-          <div style={{ height: '100%', overflow: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr>
-                  {columns.map((col) => (
-                    <th
-                      key={col}
-                      style={{
-                        padding: '8px',
-                        textAlign: 'left',
-                        borderBottom: '1px solid #f0f0f0',
-                        backgroundColor: '#fafafa',
-                      }}
-                    >
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((row, idx) => (
-                  <tr
-                    key={idx}
-                    style={{
-                      cursor: widget.linkedWidgetIds?.length ? 'pointer' : 'default',
-                    }}
-                    onClick={() => handleWidgetClick(widget, row)}
-                  >
-                    {columns.map((col) => (
-                      <td key={col} style={{ padding: '8px', borderBottom: '1px solid #f0f0f0' }}>
-                        {String(row[col])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            {widget.linkedWidgetIds?.length > 0 && (
-              <Tag color="blue" style={{ marginTop: 8 }}>
-                点击行联动筛选
-              </Tag>
-            )}
-          </div>
-        );
-      case 'LINE_CHART':
-      case 'BAR_CHART':
-      case 'PIE_CHART':
-      case 'FUNNEL':
-        return (
-          <ReactECharts
-            option={renderChartOption(widget, data)}
-            style={{ height: '100%', width: '100%' }}
-            onEvents={{
-              click: (params) => {
-                if (widget.linkedWidgetIds?.length) {
-                  handleWidgetClick(widget, {
-                    dimension: params.name,
-                    value: params.value,
-                  });
-                }
-              },
-            }}
-          />
-        );
-      default:
-        return <div>未知组件类型</div>;
-    }
-  };
-
-  const renderWidget = (widget: Widget) => {
-    const widgetConfig = WIDGET_TYPE_CONFIG[widget.type];
+  if (loading && !currentDashboard) {
     return (
-      <div key={widget.id}>
-        <Card
-          size="small"
-          title={
-            <Space>
-              {widgetConfig.icon}
-              {widget.title}
-            </Space>
-          }
-          extra={
-            <Space>
-              <Button
-                type="text"
-                icon={<ReloadOutlined />}
-                size="small"
-                onClick={() => fetchWidgetData(widget.id)}
-              />
-              <Dropdown menu={getWidgetMenu(widget)} trigger={['click']}>
-                <Button type="text" icon={<SettingOutlined />} size="small" />
-              </Dropdown>
-            </Space>
-          }
-          style={{ height: '100%', display: 'flex', flexDirection: 'column' }}
-          bodyStyle={{ flex: 1, padding: 8, minHeight: 0 }}
-        >
-          <div style={{ height: '100%' }}>{renderWidgetContent(widget)}</div>
-        </Card>
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>
+        <div style={{ fontSize: 16, color: '#8c8c8c' }}>加载中...</div>
       </div>
     );
-  };
-
-  if (loading) {
-    return <div style={{ padding: 24 }}>加载中...</div>;
   }
 
   return (
-    <div style={{ padding: 16, height: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <Card size="small" style={{ marginBottom: 16 }}>
-        <Space wrap style={{ width: '100%' }}>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          marginBottom: 16,
+          paddingBottom: 12,
+          borderBottom: '1px solid #f0f0f0',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/dashboards')}>
             返回
           </Button>
-          <span style={{ fontSize: 16, fontWeight: 'bold' }}>{currentDashboard?.name}</span>
+          <Title level={4} style={{ margin: 0 }}>
+            {currentDashboard?.name || '看板详情'}
+          </Title>
+        </div>
 
-          <Space style={{ marginLeft: 'auto' }} wrap>
-            <RangePicker
-              value={filterState.timeRange}
-              onChange={(dates) => {
-                if (dates) {
-                  handleFilterChange({ timeRange: dates as [Dayjs, Dayjs] });
-                }
-              }}
+        <Space>
+          <Tooltip title={showFilterBar ? '隐藏筛选栏' : '显示筛选栏'}>
+            <Button
+              icon={<FilterOutlined />}
+              onClick={() => setShowFilterBar(!showFilterBar)}
+              type={showFilterBar ? 'primary' : 'default'}
             />
-            <Select
-              placeholder="选择业务线"
-              style={{ width: 150 }}
-              value={filterState.businessLineId}
-              onChange={(value) => handleFilterChange({ businessLineId: value })}
-              allowClear
-            >
-              {businessLines.map((bl) => (
-                <Option key={bl.id} value={bl.id}>
-                  {bl.name}
-                </Option>
-              ))}
-            </Select>
-            <Button icon={<UploadOutlined />} onClick={handleImportClick}>
-              导入
-            </Button>
-            <Button icon={<DownloadOutlined />} onClick={handleExport}>
-              导出
-            </Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={handleAddWidget}>
+          </Tooltip>
+
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            编辑模式
+            <Switch
+              checked={isEditMode}
+              onChange={setIsEditMode}
+              checkedChildren={<EditOutlined />}
+            />
+          </span>
+
+          {isEditMode && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalVisible(true)}>
               添加组件
             </Button>
-          </Space>
-        </Space>
-      </Card>
+          )}
 
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <ResponsiveGridLayout
-          className="layout"
-          layouts={{ lg: gridLayout }}
-          breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
-          cols={{ lg: 24, md: 20, sm: 12, xs: 6, xxs: 2 }}
-          rowHeight={30}
-          isDraggable
-          isResizable
-          onLayoutChange={(_, allLayouts) => handleLayoutChange(allLayouts)}
-          draggableHandle=".ant-card-head"
-        >
-          {widgets.map((widget) => (
-            <div key={widget.id} style={{ padding: 8, height: '100%' }}>
-              {renderWidget(widget)}
-            </div>
-          ))}
-        </ResponsiveGridLayout>
+          <Button icon={<ExportOutlined />} onClick={handleExport}>
+            导出
+          </Button>
+        </Space>
       </div>
 
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept=".json"
-        style={{ display: 'none' }}
-        onChange={handleImport}
+      {showFilterBar && (
+        <GlobalFilterBar
+          onApply={handleFilterApply}
+          onReset={handleFilterReset}
+          dimensions={[
+            {
+              label: '业务线',
+              value: 'businessLine',
+              options: [
+                { label: '全部', value: 'all' },
+                { label: '电商业务', value: 'ecommerce' },
+                { label: '广告业务', value: 'ads' },
+                { label: '游戏业务', value: 'game' },
+              ],
+            },
+            {
+              label: '渠道',
+              value: 'channel',
+              options: [
+                { label: '全部', value: 'all' },
+                { label: 'APP', value: 'app' },
+                { label: 'H5', value: 'h5' },
+                { label: '小程序', value: 'miniapp' },
+              ],
+            },
+          ]}
+        />
+      )}
+
+      <div style={{ flex: 1, minHeight: 0 }}>
+        {widgets.length === 0 ? (
+          <div
+            style={{
+              textAlign: 'center',
+              padding: '80px 0',
+              color: '#8c8c8c',
+              border: '2px dashed #d9d9d9',
+              borderRadius: 8,
+            }}
+          >
+            <div style={{ fontSize: 48, marginBottom: 16 }}>📊</div>
+            <div style={{ fontSize: 16, marginBottom: 8 }}>暂无组件</div>
+            <div style={{ fontSize: 13, marginBottom: 24 }}>
+              {isEditMode ? '点击右上角"添加组件"按钮开始添加' : '请先进入编辑模式添加组件'}
+            </div>
+            {!isEditMode && (
+              <Button type="primary" icon={<EditOutlined />} onClick={() => setIsEditMode(true)}>
+                进入编辑模式
+              </Button>
+            )}
+          </div>
+        ) : (
+          <ResponsiveGridLayout
+            className="layout"
+            layouts={{ lg: layout }}
+            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480, xxs: 0 }}
+            cols={{ lg: 24, md: 20, sm: 12, xs: 8, xxs: 4 }}
+            rowHeight={60}
+            margin={[12, 12]}
+            containerPadding={[0, 0]}
+            isDraggable={isEditMode}
+            isResizable={isEditMode}
+            onLayoutChange={(_, allLayouts) => {
+              handleLayoutChange(allLayouts.lg as LayoutItem[]);
+            }}
+          >
+            {widgets.map((widget) => {
+              const layoutItem = layout.find((l) => l.i === widget.id);
+              const height = getWidgetHeight(layoutItem?.h || 4);
+
+              return (
+                <div
+                  key={widget.id}
+                  style={{
+                    cursor: isEditMode ? 'move' : 'default',
+                  }}
+                >
+                  <div
+                    onClick={() => handleWidgetClick(widget)}
+                    style={{
+                      height: '100%',
+                      border: isEditMode ? '2px dashed #1890ff' : 'none',
+                      borderRadius: 4,
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    <ChartWidget
+                      type={widget.type}
+                      title={widget.title}
+                      metricId={widget.metricId}
+                      config={widget.config}
+                      filters={widget.filters || globalFilters}
+                      height={height - 20}
+                    />
+                  </div>
+                  {isEditMode && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: 4,
+                        right: 4,
+                        zIndex: 10,
+                        display: 'flex',
+                        gap: 4,
+                      }}
+                    >
+                      <Tooltip title="配置">
+                        <Button
+                          size="small"
+                          type="primary"
+                          icon={<EditOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedWidget(widget);
+                            setConfigPanelVisible(true);
+                          }}
+                        />
+                      </Tooltip>
+                      <Popconfirm
+                        title="确定删除这个组件吗？"
+                        onConfirm={(e) => {
+                          e?.stopPropagation();
+                          handleDeleteWidget(widget.id);
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Button
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </Popconfirm>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </ResponsiveGridLayout>
+        )}
+      </div>
+
+      <AddWidgetModal
+        open={addModalVisible}
+        onCancel={() => setAddModalVisible(false)}
+        onOk={handleAddWidget}
       />
 
-      <Modal
-        title="添加组件"
-        open={addWidgetVisible}
-        onOk={handleSaveWidget}
-        onCancel={() => setAddWidgetVisible(false)}
-        destroyOnClose
-        width={600}
-      >
-        <Form form={form} layout="vertical">
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="type"
-                label="组件类型"
-                rules={[{ required: true, message: '请选择组件类型' }]}
-              >
-                <Select placeholder="请选择组件类型">
-                  {Object.entries(WIDGET_TYPE_CONFIG).map(([type, config]) => (
-                    <Option key={type} value={type}>
-                      <Space>
-                        {config.icon}
-                        {config.label}
-                      </Space>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="title"
-                label="组件标题"
-                rules={[{ required: true, message: '请输入组件标题' }]}
-              >
-                <Input placeholder="请输入组件标题" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item
-            name="metricId"
-            label="关联指标"
-            rules={[{ required: true, message: '请选择关联指标' }]}
-          >
-            <Select placeholder="请选择关联指标" showSearch optionFilterProp="children">
-              {metrics.map((m) => (
-                <Option key={m.id} value={m.id}>
-                  {m.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item name="config" label="配置(JSON)">
-            <TextArea rows={6} placeholder='{"xField": "date", "yField": "value"}' />
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal
-        title="编辑组件"
-        open={editWidgetVisible}
-        onOk={handleSaveWidget}
-        onCancel={() => setEditWidgetVisible(false)}
-        destroyOnClose
-        width={600}
-      >
-        <Form form={form} layout="vertical">
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item
-                name="type"
-                label="组件类型"
-                rules={[{ required: true, message: '请选择组件类型' }]}
-              >
-                <Select placeholder="请选择组件类型">
-                  {Object.entries(WIDGET_TYPE_CONFIG).map(([type, config]) => (
-                    <Option key={type} value={type}>
-                      <Space>
-                        {config.icon}
-                        {config.label}
-                      </Space>
-                    </Option>
-                  ))}
-                </Select>
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                name="title"
-                label="组件标题"
-                rules={[{ required: true, message: '请输入组件标题' }]}
-              >
-                <Input placeholder="请输入组件标题" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item
-            name="metricId"
-            label="关联指标"
-            rules={[{ required: true, message: '请选择关联指标' }]}
-          >
-            <Select placeholder="请选择关联指标" showSearch optionFilterProp="children">
-              {metrics.map((m) => (
-                <Option key={m.id} value={m.id}>
-                  {m.name}
-                </Option>
-              ))}
-            </Select>
-          </Form.Item>
-          <Form.Item name="config" label="配置(JSON)">
-            <TextArea rows={6} placeholder='{"xField": "date", "yField": "value"}' />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <WidgetConfigPanel
+        open={configPanelVisible}
+        widget={selectedWidget}
+        allWidgets={widgets}
+        onClose={() => {
+          setConfigPanelVisible(false);
+          setSelectedWidget(null);
+        }}
+        onSave={handleSaveWidget}
+        onDelete={handleDeleteWidget}
+        onLink={linkWidget}
+        onUnlink={unlinkWidget}
+      />
     </div>
   );
 };
