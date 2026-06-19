@@ -1,0 +1,30 @@
+[package]
+name = "collab-auth"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Auth service with layered caching (per-connection memory + Redis LRU + PostgreSQL) and invalidation via PubSub"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+redis = { workspace = true }
+bb8 = { workspace = true }
+bb8-redis = { workspace = true }
+
+jsonwebtoken = { workspace = true }
+rand = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+async-trait = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"

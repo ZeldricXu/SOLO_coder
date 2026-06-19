@@ -1,0 +1,82 @@
+[package]
+name = "collab-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Collab engine server: websocket, oplog batching, snapshot service, integrates crdt and auth"
+
+[[bin]]
+name = "collab-engine"
+path = "src/main.rs"
+
+[dependencies]
+collab-crdt = { path = "../collab-crdt" }
+collab-auth = { path = "../collab-auth" }
+
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["codec", "io", "rt"] }
+tokio-tungstenite = "0.21"
+tungstenite = "0.21"
+axum = { version = "0.7", features = ["ws", "query", "json", "matched-path", "original-uri", "tower-log", "tracing"] }
+axum-extra = { version = "0.9", features = ["typed-header", "cookie"] }
+tower-http = { version = "0.5", features = ["cors", "trace", "set-header", "request-id", "limit"] }
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = "0.1"
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_with = "3.4"
+bytes = "1.5"
+
+sqlx = { workspace = true }
+redis = { workspace = true }
+bb8 = { workspace = true }
+bb8-redis = { workspace = true }
+
+jsonwebtoken = { workspace = true }
+rand = { workspace = true }
+uuid = { workspace = true }
+chrono = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-opentelemetry = "0.23"
+
+futures = { workspace = true }
+futures-util = "0.3"
+async-trait = "0.1"
+thiserror = { workspace = true }
+anyhow = "1.0"
+
+parking_lot = { workspace = true }
+dashmap = { workspace = true }
+crossbeam = "0.8"
+
+metrics = "0.22"
+metrics-exporter-prometheus = "0.14"
+metrics-util = { version = "0.17", features = ["layers", "registry"] }
+
+rust-s3 = { version = "0.34", default-features = false, features = ["tokio-rustls-tls"] }
+base64 = "0.22"
+bincode = "1.3"
+sysinfo = "0.30"
+flate2 = "1.0"
+num_cpus = "1.16"
+
+[dev-dependencies]
+tokio-test = "0.4"
+criterion = "0.5"
+proptest = "1.4"
+tempfile = "3.9"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+overflow-checks = false
+
+[profile.dev]
+opt-level = 1

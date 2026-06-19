@@ -425,6 +425,100 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8d4a3bb8b1e0c1050499d1815f5ab16d04f0959b233085fb31653fbfc9d98f9"
 
 [[package]]
+name = "collab-auth"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bb8",
+ "bb8-redis",
+ "chrono",
+ "dashmap",
+ "hmac",
+ "jsonwebtoken",
+ "parking_lot",
+ "rand 0.8.6",
+ "redis",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "collab-crdt"
+version = "0.1.0"
+dependencies = [
+ "bincode",
+ "chrono",
+ "proptest",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "collab-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum",
+ "axum-extra",
+ "base64 0.22.1",
+ "bb8",
+ "bb8-redis",
+ "bincode",
+ "bytes",
+ "chrono",
+ "collab-auth",
+ "collab-crdt",
+ "criterion",
+ "crossbeam",
+ "dashmap",
+ "flate2",
+ "futures",
+ "futures-util",
+ "hmac",
+ "hyper 1.10.1",
+ "hyper-util",
+ "jsonwebtoken",
+ "metrics 0.22.4",
+ "metrics-exporter-prometheus",
+ "metrics-util 0.17.0",
+ "num_cpus",
+ "parking_lot",
+ "proptest",
+ "rand 0.8.6",
+ "redis",
+ "rust-s3",
+ "serde",
+ "serde_json",
+ "serde_with",
+ "sha2",
+ "sqlx",
+ "sysinfo",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-test",
+ "tokio-tungstenite 0.21.0",
+ "tokio-util",
+ "tower-http",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "tungstenite 0.21.0",
+ "uuid",
+]
+
+[[package]]
 name = "combine"
 version = "4.6.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2396,59 +2490,6 @@ checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
 dependencies = [
  "crossbeam-deque",
  "crossbeam-utils",
-]
-
-[[package]]
-name = "realtime-collab-engine"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum",
- "axum-extra",
- "base64 0.22.1",
- "bb8",
- "bb8-redis",
- "bincode",
- "bytes",
- "chrono",
- "criterion",
- "crossbeam",
- "dashmap",
- "flate2",
- "futures",
- "futures-util",
- "hmac",
- "hyper 1.10.1",
- "hyper-util",
- "jsonwebtoken",
- "metrics 0.22.4",
- "metrics-exporter-prometheus",
- "metrics-util 0.17.0",
- "num_cpus",
- "parking_lot",
- "proptest",
- "rand 0.8.6",
- "redis",
- "rust-s3",
- "serde",
- "serde_json",
- "serde_with",
- "sha2",
- "sqlx",
- "sysinfo",
- "tempfile",
- "thiserror 1.0.69",
- "tokio",
- "tokio-test",
- "tokio-tungstenite 0.21.0",
- "tokio-util",
- "tower-http",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "tungstenite 0.21.0",
- "uuid",
 ]
 
 [[package]]
