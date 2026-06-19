@@ -18,7 +18,7 @@ use collab_server::broadcast::{BroadcastEvent, StreamPublisher};
 use collab_server::health::{HealthChecker, HealthCheckResponse, ReadyCheckResponse};
 use collab_server::presence::{CursorPosition, PresenceUpdate, SelectionRange};
 use collab_server::storage::{OplogRepository, QueryOplogParams};
-use collab_server::ws::{ConnectionManager, Room, RoomUser, WsMessage};
+use collab_server::ws::{ConnectionManager, Room, RoomUser, WsMessage, WS_CHANNEL_CAPACITY};
 use dashmap::DashSet;
 use futures::{SinkExt, StreamExt};
 use metrics::{counter, gauge, histogram};
@@ -105,6 +105,16 @@ struct OplogEntryResponse {
     user_id: String,
     timestamp: chrono::DateTime<chrono::Utc>,
     payload: serde_json::Value,
+}
+
+#[derive(Debug, Serialize)]
+struct DocumentResponse {
+    id: Uuid,
+    title: String,
+    content: String,
+    version: i64,
+    created_at: chrono::DateTime<chrono::Utc>,
+    last_modified_at: chrono::DateTime<chrono::Utc>,
 }
 
 fn main() {
@@ -325,6 +335,7 @@ fn build_router(state: AppRouterState) -> Router {
         .route("/metrics", get(metrics_handler))
         .route("/ws/:document_id", get(ws_upgrade_handler))
         .route("/api/v1/documents", post(create_document_handler))
+        .route("/api/v1/documents/:id", get(get_document_handler))
         .route("/api/v1/documents/:id/share", post(share_document_handler))
         .route("/api/v1/documents/:id/oplog", get(oplog_query_handler))
         .route("/api/v1/documents/:id/versions", get(version_list_handler))
@@ -460,6 +471,40 @@ async fn create_document_handler(
         title: meta.title,
         created_at: meta.created_at,
         owner_id: meta.owner_id,
+    }))
+}
+
+async fn get_document_handler(
+    State(app): State<Arc<AppState>>,
+    State(auth): State<Arc<AuthService>>,
+    Path(id): Path<Uuid>,
+    headers: HeaderMap,
+) -> Result<impl IntoResponse, AppError> {
+    let claims = extract_claims(&headers, &auth)?;
+    auth.check_document_permission(&claims, &id, &Role::Viewer)
+        .await
+        .map_err(AppError::Auth)?;
+
+    let repo = OplogRepository::new(app.db_pool.clone());
+    let meta = repo.get_document(id).await?
+        .ok_or_else(|| AppError::DocumentNotFound(format!("Document {}", id)))?;
+
+    let content = if let Some((mut doc, _)) = app.snapshot_service
+        .load_document(id, rand::random::<u64>())
+        .await?
+    {
+        doc.get_content().to_string()
+    } else {
+        String::new()
+    };
+
+    Ok(Json(DocumentResponse {
+        id: meta.id,
+        title: meta.title,
+        content,
+        version: meta.current_version,
+        created_at: meta.created_at,
+        last_modified_at: meta.last_modified_at,
     }))
 }
 
@@ -645,7 +690,7 @@ async fn handle_websocket(
 
     app.auth_service.create_connection_cache(session_id);
 
-    let (tx, mut rx) = mpsc::unbounded_channel::<WsMessage>();
+    let (tx, mut rx) = mpsc::channel::<WsMessage>(WS_CHANNEL_CAPACITY);
     let info = app.ws_manager.register_connection(
         session_id,
         client_id,
@@ -672,7 +717,7 @@ async fn handle_websocket(
     );
 
     let users = app.ws_manager.room_users(&document_id);
-    let _ = info.sender.send(WsMessage::Welcome {
+    let _ = info.sender.try_send(WsMessage::Welcome {
         session_id,
         client_id,
         server_time: chrono::Utc::now().timestamp_millis(),
@@ -681,7 +726,7 @@ async fn handle_websocket(
         missing_ops: Vec::new(),
     });
 
-    let _ = info.sender.send(WsMessage::RoomJoined {
+    let _ = info.sender.try_send(WsMessage::RoomJoined {
         document_id,
         users,
     });
@@ -1363,7 +1408,25 @@ async fn run_event_subscriber(
                         }
                     }
                     CrdtEvent::AttributeChanged { .. } => {}
-                    CrdtEvent::SnapshotTaken { .. } => {}
+                    CrdtEvent::SnapshotTaken { ops_count } => {
+                        let room_clone = room.clone();
+                        tokio::spawn(async move {
+                            let mut doc = room_clone.document.write();
+                            let count = doc.prune_tombstones();
+                            let remaining = doc.tombstone_count();
+                            drop(doc);
+                            tracing::debug!(
+                                "Tombstone pruning for document {}: pruned {}, remaining {}",
+                                document_id, count, remaining
+                            );
+                            counter!("collab_tombstones_pruned_total").increment(count as u64);
+                            gauge!("collab_tombstones_remaining").set(remaining as f64);
+                        });
+                    }
+                    CrdtEvent::TombstonesPruned { count, remaining_tombstones } => {
+                        counter!("collab_tombstones_pruned_total").increment(count as u64);
+                        gauge!("collab_tombstones_remaining").set(remaining_tombstones as f64);
+                    }
                 }
             }
             Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {

@@ -189,10 +189,14 @@ impl StreamConsumer {
                         if let Some(doc_uuid) = doc_id {
                             for message in stream.ids {
                                 let msg_id = message.id.clone();
-                                if let Err(e) = self.handle_message(doc_uuid, &message).await {
-                                    tracing::warn!("Stream message handling error: {:?}", e);
+                                match self.handle_message(doc_uuid, &message).await {
+                                    Ok(_) => {
+                                        let _ = self.ack_message(&stream.key, &msg_id).await;
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Stream message handling error: {:?}, message will be retried", e);
+                                    }
                                 }
-                                let _ = self.ack_message(&stream.key, &msg_id).await;
                             }
                         }
                     }
@@ -221,6 +225,78 @@ impl StreamConsumer {
             .map_err(|e| BroadcastError::Redis(e.to_string()))?;
 
         Ok(())
+    }
+
+    pub async fn ack_pending_up_to_seq(
+        &self,
+        document_id: Uuid,
+        seq_threshold: i64,
+    ) -> Result<usize, BroadcastError> {
+        let key = format!("{}stream:{}", self.prefix, document_id);
+        let mut total_acked = 0;
+
+        loop {
+            let mut conn = self.redis_pool.get().await
+                .map_err(|e| BroadcastError::Redis(e.to_string()))?;
+
+            let reply: redis::streams::StreamReadReply = redis::cmd("XREADGROUP")
+                .arg("GROUP")
+                .arg(&self.group_name)
+                .arg(&self.consumer_name)
+                .arg("COUNT")
+                .arg(100)
+                .arg("STREAMS")
+                .arg(&key)
+                .arg("0")
+                .query_async(&mut *conn)
+                .await
+                .map_err(|e| BroadcastError::Redis(e.to_string()))?;
+
+            let mut found_any = false;
+            let mut iteration_acked = 0;
+
+            for stream in reply.keys {
+                for message in stream.ids {
+                    found_any = true;
+                    let msg_id = message.id.clone();
+
+                    let payload: Vec<u8> = message
+                        .get("payload")
+                        .unwrap_or_default();
+
+                    if payload.is_empty() {
+                        let _ = self.ack_message(&key, &msg_id).await;
+                        iteration_acked += 1;
+                        continue;
+                    }
+
+                    let should_ack = match serde_json::from_slice::<BroadcastEvent>(&payload) {
+                        Ok(BroadcastEvent::Op { sequence, .. }) => {
+                            sequence as i64 <= seq_threshold
+                        }
+                        Ok(_) => {
+                            false
+                        }
+                        Err(_) => {
+                            true
+                        }
+                    };
+
+                    if should_ack {
+                        let _ = self.ack_message(&key, &msg_id).await;
+                        iteration_acked += 1;
+                    }
+                }
+            }
+
+            total_acked += iteration_acked;
+
+            if !found_any || iteration_acked == 0 {
+                break;
+            }
+        }
+
+        Ok(total_acked)
     }
 
     async fn handle_message(

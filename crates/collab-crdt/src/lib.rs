@@ -328,6 +328,10 @@ pub enum CrdtEvent {
     SnapshotTaken {
         ops_count: u64,
     },
+    TombstonesPruned {
+        count: usize,
+        remaining_tombstones: usize,
+    },
 }
 
 #[derive(Debug, Clone)]
@@ -337,6 +341,7 @@ struct Item {
     left: Option<YataId>,
     right: Option<YataId>,
     deleted: bool,
+    pruned: bool,
     attributes: BTreeMap<String, AttributeRecord>,
 }
 
@@ -348,6 +353,7 @@ impl Item {
             left,
             right,
             deleted: false,
+            pruned: false,
             attributes: BTreeMap::new(),
         }
     }
@@ -369,6 +375,8 @@ pub struct SnapshotItem {
     pub left: Option<YataId>,
     pub right: Option<YataId>,
     pub deleted: bool,
+    #[serde(default)]
+    pub pruned: bool,
     #[serde(default)]
     pub attributes: BTreeMap<String, AttributeRecord>,
 }
@@ -866,6 +874,37 @@ impl YataDocument {
             .count()
     }
 
+    pub fn tombstone_count(&self) -> usize {
+        self.items.values()
+            .filter(|i| i.id != self.start_id && i.id != self.end_id && i.deleted)
+            .count()
+    }
+
+    pub fn pruned_count(&self) -> usize {
+        self.items.values()
+            .filter(|i| i.id != self.start_id && i.id != self.end_id && i.pruned)
+            .count()
+    }
+
+    pub fn prune_tombstones(&mut self) -> usize {
+        let mut count = 0usize;
+        for item in self.items.values_mut() {
+            if item.id != self.start_id && item.id != self.end_id && item.deleted && !item.pruned {
+                item.attributes.clear();
+                item.pruned = true;
+                count += 1;
+            }
+        }
+        if count > 0 {
+            let remaining = self.tombstone_count();
+            self.emit_event(CrdtEvent::TombstonesPruned {
+                count,
+                remaining_tombstones: remaining,
+            });
+        }
+        count
+    }
+
     pub fn snapshot(&self) -> CrdtSnapshot {
         let items: Vec<SnapshotItem> = self.items.values()
             .map(|item| SnapshotItem {
@@ -874,6 +913,7 @@ impl YataDocument {
                 left: item.left,
                 right: item.right,
                 deleted: item.deleted,
+                pruned: item.pruned,
                 attributes: item.attributes.clone(),
             })
             .collect();
@@ -905,6 +945,7 @@ impl YataDocument {
                     left: si.left,
                     right: si.right,
                     deleted: si.deleted,
+                    pruned: si.pruned,
                     attributes: si.attributes,
                 },
             );
@@ -1178,5 +1219,174 @@ mod tests {
 
         assert!(matches!(e1, CrdtEvent::OpApplied { .. }));
         assert!(matches!(e2, CrdtEvent::OpApplied { .. }));
+    }
+
+    #[test]
+    fn test_tombstone_pruning() {
+        let doc_id = Uuid::new_v4();
+        let mut doc = YataDocument::new(doc_id, 1);
+
+        for c in "Hello World".chars() {
+            doc.insert_local(doc.content_length(), c).unwrap();
+        }
+
+        assert_eq!(doc.get_content(), "Hello World");
+        assert_eq!(doc.tombstone_count(), 0);
+        assert_eq!(doc.pruned_count(), 0);
+
+        doc.delete_local(5).unwrap();
+        assert_eq!(doc.get_content(), "HelloWorld");
+        assert_eq!(doc.tombstone_count(), 1);
+        assert_eq!(doc.pruned_count(), 0);
+
+        let pruned = doc.prune_tombstones();
+        assert_eq!(pruned, 1);
+        assert_eq!(doc.tombstone_count(), 1);
+        assert_eq!(doc.pruned_count(), 1);
+        assert_eq!(doc.get_content(), "HelloWorld");
+
+        doc.insert_local(doc.content_length(), '!').unwrap();
+        assert_eq!(doc.get_content(), "HelloWorld!");
+        assert_eq!(doc.tombstone_count(), 1);
+
+        doc.delete_local(0).unwrap();
+        assert_eq!(doc.tombstone_count(), 2);
+        assert_eq!(doc.pruned_count(), 1);
+
+        let pruned2 = doc.prune_tombstones();
+        assert_eq!(pruned2, 1);
+        assert_eq!(doc.tombstone_count(), 2);
+        assert_eq!(doc.pruned_count(), 2);
+        assert_eq!(doc.get_content(), "elloWorld!");
+    }
+
+    #[test]
+    fn test_pruning_does_not_break_inserts() {
+        let doc_id = Uuid::new_v4();
+        let mut doc_a = YataDocument::new(doc_id, 1);
+        let mut doc_b = YataDocument::new(doc_id, 2);
+
+        let insert_ops: Vec<Op> = "ABC".chars()
+            .enumerate()
+            .map(|(i, c)| doc_a.insert_local(i, c).unwrap())
+            .collect();
+
+        for op in &insert_ops {
+            doc_b.apply_op(op).unwrap();
+        }
+
+        assert_eq!(doc_a.get_content(), doc_b.get_content());
+        assert_eq!(doc_a.get_content(), "ABC");
+
+        let delete_op = doc_a.delete_local(1).unwrap();
+        assert_eq!(doc_a.get_content(), "AC");
+        assert_eq!(doc_a.tombstone_count(), 1);
+
+        let pruned = doc_a.prune_tombstones();
+        assert_eq!(pruned, 1);
+        assert_eq!(doc_a.pruned_count(), 1);
+        assert_eq!(doc_a.get_content(), "AC");
+
+        doc_b.apply_op(&delete_op).unwrap();
+        assert_eq!(doc_b.get_content(), "AC");
+
+        let insert_after_pruned = doc_a.insert_local(doc_a.content_length(), 'X').unwrap();
+        assert_eq!(doc_a.get_content(), "ACX");
+
+        doc_b.apply_op(&insert_after_pruned).unwrap();
+        assert_eq!(doc_b.get_content(), "ACX");
+        assert_eq!(doc_a.get_content(), doc_b.get_content());
+
+        let snapshot = doc_a.snapshot();
+        let restored = YataDocument::from_snapshot(snapshot).unwrap();
+        assert_eq!(restored.content_length(), doc_a.content_length());
+        assert_eq!(restored.pruned_count(), 1);
+
+        let mut restored_mut = restored;
+        assert_eq!(restored_mut.get_content(), "ACX");
+
+        let insert_on_pruned_doc = doc_a.insert_local(1, 'Y').unwrap();
+        let mut doc_a_content_after = doc_a.get_content().clone();
+
+        let mut doc_c = YataDocument::new(doc_id, 3);
+        for op in &insert_ops {
+            doc_c.apply_op(op).unwrap();
+        }
+        doc_c.apply_op(&delete_op).unwrap();
+        doc_c.apply_op(&insert_after_pruned).unwrap();
+        doc_c.apply_op(&insert_on_pruned_doc).unwrap();
+        assert_eq!(doc_c.get_content(), doc_a_content_after);
+    }
+
+    #[test]
+    fn test_snapshot_pruned_backward_compatibility() {
+        let doc_id = Uuid::new_v4();
+        let mut doc = YataDocument::new(doc_id, 1);
+
+        for c in "Hello".chars() {
+            doc.insert_local(doc.content_length(), c).unwrap();
+        }
+
+        doc.delete_local(2).unwrap();
+        doc.prune_tombstones();
+
+        let snapshot = doc.snapshot();
+        let json = serde_json::to_string(&snapshot.items).unwrap();
+
+        let items_no_pruned: Vec<serde_json::Value> = serde_json::from_str(&json).unwrap();
+        let items_no_pruned: Vec<serde_json::Value> = items_no_pruned
+            .into_iter()
+            .map(|mut item| {
+                item.as_object_mut().unwrap().remove("pruned");
+                item
+            })
+            .collect();
+
+        let json_no_pruned = serde_json::to_string(&items_no_pruned).unwrap();
+        let items: Vec<SnapshotItem> = serde_json::from_str(&json_no_pruned).unwrap();
+
+        for item in &items {
+            assert!(!item.pruned);
+        }
+
+        let restored = YataDocument::from_snapshot(CrdtSnapshot {
+            document_id: doc_id,
+            created_at: chrono::Utc::now(),
+            vector_clock: BTreeMap::new(),
+            items,
+            ops_count: 6,
+        }).unwrap();
+
+        assert_eq!(restored.pruned_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_prune_event_broadcast() {
+        let doc_id = Uuid::new_v4();
+        let mut doc = YataDocument::new(doc_id, 1);
+        let mut rx = doc.subscribe();
+
+        for c in "AB".chars() {
+            doc.insert_local(doc.content_length(), c).unwrap();
+        }
+        doc.delete_local(0).unwrap();
+
+        while let Ok(_) = rx.try_recv() {}
+
+        let pruned = doc.prune_tombstones();
+        assert_eq!(pruned, 1);
+
+        let event = tokio::time::timeout(
+            std::time::Duration::from_secs(1),
+            rx.recv(),
+        ).await.unwrap().unwrap();
+
+        match event {
+            CrdtEvent::TombstonesPruned { count, remaining_tombstones } => {
+                assert_eq!(count, 1);
+                assert_eq!(remaining_tombstones, 1);
+            }
+            _ => panic!("Expected TombstonesPruned event"),
+        }
     }
 }

@@ -241,6 +241,85 @@ impl SnapshotService {
         }
     }
 
+    pub async fn load_document_with_latest_snapshot(
+        &self,
+        document_id: Uuid,
+        client_id: u64,
+    ) -> Result<Option<(YataDocument, i64)>, StorageError> {
+        let (snapshot, record) = match self.load_latest_snapshot(document_id).await? {
+            Some((s, r)) => (s, r),
+            None => return Ok(None),
+        };
+
+        let mut doc = YataDocument::from_snapshot(snapshot)
+            .map_err(|e| StorageError::Serialization(e.to_string()))?;
+        doc.set_client_id(client_id);
+
+        let latest_version = {
+            let oplogs = self.repo.query_oplogs(crate::storage::QueryOplogParams {
+                document_id,
+                from_time: None,
+                to_time: None,
+                user_id: None,
+                sequence_from: Some(record.version + 1),
+                sequence_to: None,
+                limit: None,
+                offset: None,
+            }).await?;
+
+            let mut last_seq = record.version;
+            for entry in oplogs {
+                if let Some(binary) = entry.op_binary {
+                    if let Ok(op) = bincode::deserialize::<collab_crdt::Op>(&binary) {
+                        let _ = doc.apply_op(&op);
+                    }
+                }
+                last_seq = entry.sequence;
+            }
+            last_seq
+        };
+
+        Ok(Some((doc, latest_version)))
+    }
+
+    pub async fn load_document(
+        &self,
+        document_id: Uuid,
+        client_id: u64,
+    ) -> Result<Option<(YataDocument, i64)>, StorageError> {
+        if let Some(result) = self.load_document_with_latest_snapshot(document_id, client_id).await? {
+            return Ok(Some(result));
+        }
+
+        let oplogs = self.repo.query_oplogs(crate::storage::QueryOplogParams {
+            document_id,
+            from_time: None,
+            to_time: None,
+            user_id: None,
+            sequence_from: None,
+            sequence_to: None,
+            limit: None,
+            offset: None,
+        }).await?;
+
+        if oplogs.is_empty() {
+            return Ok(None);
+        }
+
+        let mut doc = YataDocument::new(document_id, client_id);
+        let mut last_seq = 0i64;
+        for entry in oplogs {
+            if let Some(binary) = entry.op_binary {
+                if let Ok(op) = bincode::deserialize::<collab_crdt::Op>(&binary) {
+                    let _ = doc.apply_op(&op);
+                }
+            }
+            last_seq = entry.sequence;
+        }
+
+        Ok(Some((doc, last_seq)))
+    }
+
     pub async fn restore_version(
         &self,
         document_id: Uuid,

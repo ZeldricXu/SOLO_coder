@@ -3,14 +3,18 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use dashmap::{DashMap, DashSet};
+use metrics::counter;
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc;
+use tokio::sync::mpsc::error::TrySendError;
 use tokio_tungstenite::tungstenite::protocol::Message;
 use uuid::Uuid;
 
 use collab_crdt::{Op, YataDocument};
 use crate::presence::{PresenceUpdate, CursorPosition, SelectionRange};
 use crate::config::AppConfig;
+
+pub const WS_CHANNEL_CAPACITY: usize = 256;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum WsMessage {
@@ -119,7 +123,8 @@ pub struct ConnectionInfo {
     pub client_id: u64,
     pub user_id: String,
     pub document_id: Uuid,
-    pub sender: mpsc::UnboundedSender<WsMessage>,
+    pub sender: mpsc::Sender<WsMessage>,
+    pub channel_capacity: usize,
     pub last_pong: Arc<Mutex<i64>>,
     pub last_seq: Arc<Mutex<u64>>,
     pub connected_at: chrono::DateTime<chrono::Utc>,
@@ -304,7 +309,7 @@ impl ConnectionManager {
         client_id: u64,
         user_id: String,
         document_id: Uuid,
-        sender: mpsc::UnboundedSender<WsMessage>,
+        sender: mpsc::Sender<WsMessage>,
     ) -> ConnectionInfo {
         let info = ConnectionInfo {
             session_id,
@@ -312,6 +317,7 @@ impl ConnectionManager {
             user_id,
             document_id,
             sender,
+            channel_capacity: WS_CHANNEL_CAPACITY,
             last_pong: Arc::new(Mutex::new(chrono::Utc::now().timestamp_millis())),
             last_seq: Arc::new(Mutex::new(0)),
             connected_at: chrono::Utc::now(),
@@ -322,13 +328,31 @@ impl ConnectionManager {
     }
 
     pub fn broadcast_to_room(&self, document_id: &Uuid, message: WsMessage, exclude: Option<&Uuid>) {
+        counter!("collab_broadcast_messages_total").increment(1);
         if let Some(room) = self.rooms.get(document_id) {
             for session_id in room.connections.iter() {
                 if exclude.map(|e| e == session_id.key()).unwrap_or(false) {
                     continue;
                 }
                 if let Some(conn) = self.connections.get(session_id.key()) {
-                    let _ = conn.sender.send(message.clone());
+                    match conn.sender.try_send(message.clone()) {
+                        Ok(_) => {}
+                        Err(TrySendError::Full(_)) => {
+                            counter!("collab_broadcast_dropped_total").increment(1);
+                            counter!("collab_slow_consumers_kicked_total").increment(1);
+                            tracing::warn!(
+                                "Kicking slow consumer {} from room {} (channel full)",
+                                session_id.key(),
+                                document_id
+                            );
+                            drop(conn);
+                            self.remove_connection(session_id.key());
+                        }
+                        Err(TrySendError::Closed(_)) => {
+                            drop(conn);
+                            self.remove_connection(session_id.key());
+                        }
+                    }
                 }
             }
         }
@@ -336,7 +360,14 @@ impl ConnectionManager {
 
     pub fn send_to_session(&self, session_id: &Uuid, message: WsMessage) -> bool {
         if let Some(conn) = self.connections.get(session_id) {
-            conn.sender.send(message).is_ok()
+            match conn.sender.try_send(message) {
+                Ok(_) => true,
+                Err(TrySendError::Full(_)) => {
+                    tracing::warn!("send_to_session channel full for session {}", session_id);
+                    false
+                }
+                Err(TrySendError::Closed(_)) => false,
+            }
         } else {
             false
         }
@@ -422,5 +453,66 @@ impl WsMessage {
             Message::Binary(data) => serde_json::from_slice(data).map_err(|e| e.to_string()),
             _ => Err("Unsupported message type".into()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc::error::TrySendError;
+
+    #[test]
+    fn test_bounded_channel_try_send_full() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let (tx, mut rx) = mpsc::channel::<i32>(2);
+
+            assert!(tx.try_send(1).is_ok());
+            assert!(tx.try_send(2).is_ok());
+
+            let result = tx.try_send(3);
+            assert!(result.is_err());
+            match result.unwrap_err() {
+                TrySendError::Full(3) => {}
+                _ => panic!("Expected TrySendError::Full(3)"),
+            }
+
+            assert_eq!(rx.recv().await, Some(1));
+            assert!(tx.try_send(3).is_ok());
+        });
+    }
+
+    #[test]
+    fn test_broadcast_slow_consumer_kicked() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let config = crate::config::AppConfig::default();
+            let manager = ConnectionManager::new(config);
+            let doc_id = Uuid::new_v4();
+            let session_id = Uuid::new_v4();
+
+            let (tx, _rx) = mpsc::channel::<WsMessage>(1);
+            manager.register_connection(
+                session_id,
+                1,
+                "user1".to_string(),
+                doc_id,
+                tx,
+            );
+
+            let room = manager.get_or_create_room(doc_id, 1);
+            room.connections.insert(session_id);
+
+            let msg = WsMessage::Ping { timestamp: 0 };
+            manager.broadcast_to_room(&doc_id, msg.clone(), None);
+
+            assert!(manager.get_connection(&session_id).is_some(),
+                "First broadcast should succeed (channel has capacity 1)");
+
+            manager.broadcast_to_room(&doc_id, msg, None);
+
+            assert!(manager.get_connection(&session_id).is_none(),
+                "Second broadcast should fill channel and kick slow consumer");
+        });
     }
 }

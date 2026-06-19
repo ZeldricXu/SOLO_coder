@@ -498,6 +498,17 @@ impl OplogRepository {
         Ok(())
     }
 
+    pub async fn get_latest_sequence(&self, document_id: Uuid) -> Result<Option<i64>, StorageError> {
+        let result: Option<Option<i64>> = sqlx::query_scalar(
+            "SELECT MAX(sequence) FROM operation_logs WHERE document_id = $1"
+        )
+        .bind(document_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(result.flatten())
+    }
+
     pub async fn query_oplogs(
         &self,
         params: QueryOplogParams,
