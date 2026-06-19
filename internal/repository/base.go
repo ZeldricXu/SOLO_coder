@@ -1,40 +1,36 @@
 package repository
 
 import (
-	"errors"
-	"strings"
+	"context"
 
+	"github.com/enterprise/knowledgebase/internal/database"
 	"gorm.io/gorm"
 )
 
-var (
-	ErrNotFound        = errors.New("record not found")
-	ErrAlreadyExists   = errors.New("record already exists")
-	ErrInvalidArgument = errors.New("invalid argument")
-	ErrUnauthorized    = errors.New("unauthorized")
-	ErrForbidden       = errors.New("forbidden")
-)
-
-func isUniqueViolation(err error, constraintName string) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unique") &&
-		(strings.Contains(msg, strings.ToLower(constraintName)) ||
-			constraintName == "")
+type BaseRepo struct {
+	DB *gorm.DB
 }
 
-func IsNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound) || errors.Is(err, ErrNotFound)
+func NewBaseRepo(db *gorm.DB) *BaseRepo {
+	return &BaseRepo{DB: db}
 }
 
-func IsUniqueViolation(err error) bool {
-	if err == nil {
-		return false
+func (r *BaseRepo) WithTenant(ctx context.Context) *gorm.DB {
+	return r.DB.Scopes(database.TenantScope(ctx)).WithContext(ctx)
+}
+
+func (r *BaseRepo) Paginate(page, pageSize int) func(db *gorm.DB) *gorm.DB {
+	return func(db *gorm.DB) *gorm.DB {
+		if page <= 0 {
+			page = 1
+		}
+		if pageSize <= 0 {
+			pageSize = 20
+		}
+		if pageSize > 100 {
+			pageSize = 100
+		}
+		offset := (page - 1) * pageSize
+		return db.Offset(offset).Limit(pageSize)
 	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "duplicate key") ||
-		strings.Contains(msg, "unique constraint") ||
-		strings.Contains(msg, "violates unique")
 }

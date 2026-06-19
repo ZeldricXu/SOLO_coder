@@ -262,12 +262,12 @@ func BuildAttachmentMapping() mapping.IndexMapping {
 	fileSizeMapping.IncludeInAll = false
 	docMapping.AddFieldMappingsAt("file_size", fileSizeMapping)
 
-	contentMapping := bleve.NewTextFieldMapping()
-	contentMapping.Analyzer = ZhAnalyzerName
-	contentMapping.Store = true
-	contentMapping.IncludeInAll = true
-	contentMapping.IncludeTermVectors = true
-	docMapping.AddFieldMappingsAt("content", contentMapping)
+	attachmentContentMapping := bleve.NewTextFieldMapping()
+	attachmentContentMapping.Analyzer = ZhAnalyzerName
+	attachmentContentMapping.Store = true
+	attachmentContentMapping.IncludeInAll = true
+	attachmentContentMapping.IncludeTermVectors = true
+	docMapping.AddFieldMappingsAt("content", attachmentContentMapping)
 
 	langCodeMapping := bleve.NewKeywordFieldMapping()
 	langCodeMapping.Store = true

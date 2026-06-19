@@ -7,7 +7,6 @@ import (
 
 	"github.com/enterprise/knowledgebase/internal/config"
 	"github.com/enterprise/knowledgebase/internal/model"
-	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -56,9 +55,6 @@ func InitPostgreSQL(cfg config.PostgreSQLConfig) (*gorm.DB, error) {
 func AutoMigrate(db *gorm.DB) error {
 	models := []interface{}{
 		&model.Tenant{},
-		&model.TenantTheme{},
-		&model.TenantQuota{},
-		&model.TenantCustomNav{},
 		&model.Space{},
 		&model.User{},
 		&model.UserGroup{},
@@ -67,12 +63,14 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Directory{},
 		&model.Document{},
 		&model.DocumentVersion{},
-		&model.DocumentTemplate{},
 		&model.Attachment{},
 		&model.Permission{},
 		&model.ApiToken{},
 		&model.I18nDoc{},
 		&model.TranslationMemory{},
+		&model.Quota{},
+		&model.Theme{},
+		&model.SearchIndex{},
 	}
 
 	for _, m := range models {
@@ -88,18 +86,18 @@ func GetDB() *gorm.DB {
 	return globalDB
 }
 
-func WithTenant(ctx context.Context, tenantID uuid.UUID) context.Context {
+func WithTenant(ctx context.Context, tenantID string) context.Context {
 	return context.WithValue(ctx, TenantIDKey, tenantID)
 }
 
-func GetTenantID(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(TenantIDKey).(uuid.UUID)
+func GetTenantID(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(TenantIDKey).(string)
 	return id, ok
 }
 
 func TenantScope(ctx context.Context) func(db *gorm.DB) *gorm.DB {
 	return func(db *gorm.DB) *gorm.DB {
-		if tenantID, ok := GetTenantID(ctx); ok && tenantID != uuid.Nil {
+		if tenantID, ok := GetTenantID(ctx); ok && tenantID != "" {
 			return db.Where("tenant_id = ?", tenantID)
 		}
 		return db

@@ -2,468 +2,388 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"time"
 
 	"github.com/enterprise/knowledgebase/internal/database"
 	"github.com/enterprise/knowledgebase/internal/model"
-	"github.com/enterprise/knowledgebase/internal/pkg/utils"
-	"github.com/enterprise/knowledgebase/internal/repository"
 	"github.com/google/uuid"
-	"github.com/sergi/go-diff/diffmatchpatch"
+	"gorm.io/gorm"
 )
 
+type CreateDocRequest struct {
+	SpaceID     string                 `json:"space_id"`
+	DirectoryID string                 `json:"directory_id"`
+	Title       string                 `json:"title"`
+	Slug        string                 `json:"slug"`
+	Summary     string                 `json:"summary"`
+	Content     model.ProseMirrorDoc   `json:"content"`
+	ContentText string                 `json:"content_text"`
+	ContentType string                 `json:"content_type"`
+	LangCode    string                 `json:"lang_code"`
+	Category    string                 `json:"category"`
+	Tags        []string               `json:"tags"`
+	IsPublic    bool                   `json:"is_public"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
+type UpdateDocRequest struct {
+	Title       string                 `json:"title"`
+	Slug        string                 `json:"slug"`
+	Summary     string                 `json:"summary"`
+	Content     model.ProseMirrorDoc   `json:"content"`
+	ContentText string                 `json:"content_text"`
+	ContentType string                 `json:"content_type"`
+	Category    string                 `json:"category"`
+	Tags        []string               `json:"tags"`
+	Status      string                 `json:"status"`
+	IsPublic    *bool                  `json:"is_public"`
+	IsPinned    *bool                  `json:"is_pinned"`
+	ChangeLog   string                 `json:"change_log"`
+	Metadata    map[string]interface{} `json:"metadata"`
+}
+
 type DocumentService struct {
-	docRepo     *repository.DocumentRepository
-	spaceRepo   *repository.SpaceRepository
-	permRepo    *repository.PermissionRepository
-	tenantRepo  *repository.TenantRepository
-	searchSvc   *SearchService
-	minioClient *database.MinIOClient
+	db             *gorm.DB
+	tenantRepo     TenantRepository
+	tenantSvc      *TenantService
+	permissionRepo PermissionRepository
 }
 
-func NewDocumentService(
-	docRepo *repository.DocumentRepository,
-	spaceRepo *repository.SpaceRepository,
-	permRepo *repository.PermissionRepository,
-	tenantRepo *repository.TenantRepository,
-	searchSvc *SearchService,
-	minioClient *database.MinIOClient,
-) *DocumentService {
+func NewDocumentService(db *gorm.DB, tenantRepo TenantRepository, tenantSvc *TenantService, permissionRepo PermissionRepository) *DocumentService {
 	return &DocumentService{
-		docRepo:     docRepo,
-		spaceRepo:   spaceRepo,
-		permRepo:    permRepo,
-		tenantRepo:  tenantRepo,
-		searchSvc:   searchSvc,
-		minioClient: minioClient,
+		db:             db,
+		tenantRepo:     tenantRepo,
+		tenantSvc:      tenantSvc,
+		permissionRepo: permissionRepo,
 	}
 }
 
-type CreateDocumentRequest struct {
-	TenantID    uuid.UUID
-	SpaceID     uuid.UUID
-	DirectoryID *uuid.UUID
-	Title       string
-	Content     model.ProseMirrorDoc
-	Summary     string
-	Tags        []string
-	Language    string
-	AuthorID    uuid.UUID
-	TemplateID  *uuid.UUID
-	IsPinned    bool
-}
-
-func (s *DocumentService) Create(ctx context.Context, req *CreateDocumentRequest) (*model.Document, error) {
-	allowed, err := s.permRepo.CheckPermission(ctx, req.AuthorID, nil, nil,
-		model.ResourceTypeSpace, req.SpaceID, model.ActionCreate)
-	if err != nil {
-		return nil, err
+func (s *DocumentService) CreateDocument(ctx context.Context, userID uuid.UUID, req CreateDocRequest) (*model.Document, error) {
+	if req.Title == "" {
+		return nil, errors.New("document title is required")
 	}
-	if !allowed {
-		return nil, repository.ErrForbidden
+	if req.SpaceID == "" {
+		return nil, errors.New("space_id is required")
 	}
 
-	ok, err := s.tenantRepo.CheckQuotaAndIncrement(ctx, req.TenantID, "documents", 1)
+	tenantIDStr, ok := database.GetTenantID(ctx)
+	if !ok || tenantIDStr == "" {
+		return nil, errors.New("tenant context missing")
+	}
+	tenantID, err := uuid.Parse(tenantIDStr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("invalid tenant id: %w", err)
+	}
+
+	ok, err = s.tenantSvc.CheckQuota(ctx, tenantID, "documents", 1)
+	if err != nil {
+		return nil, fmt.Errorf("check quota: %w", err)
 	}
 	if !ok {
 		return nil, errors.New("document quota exceeded")
 	}
 
-	plainText := extractPlainText(req.Content)
-	wordCount := int(utils.CountWords(plainText))
-
 	doc := &model.Document{
-		TenantScoped:  model.TenantScoped{TenantID: req.TenantID},
+		TenantScoped:  model.TenantScoped{TenantID: tenantIDStr},
 		SpaceID:       req.SpaceID,
 		DirectoryID:   req.DirectoryID,
 		Title:         req.Title,
-		Slug:          utils.GenerateSlug(req.Title) + "-" + uuid.New().String()[:6],
+		Slug:          req.Slug,
 		Summary:       req.Summary,
 		Content:       req.Content,
-		PlainText:     plainText,
-		Status:        model.DocumentStatusDraft,
-		Visibility:    "private",
-		Tags:          model.StringArray(req.Tags),
-		Language:      req.Language,
-		FormatVersion: 1,
-		CurrentVersion: 1,
-		WordCount:     wordCount,
-		AuthorID:      req.AuthorID,
-		LastEditorID:  req.AuthorID,
-		IsPinned:      req.IsPinned,
-		TemplateID:    req.TemplateID,
+		ContentText:   req.ContentText,
+		ContentType:   req.ContentType,
+		LangCode:      req.LangCode,
+		Category:      req.Category,
+		Tags:          req.Tags,
+		Status:        "draft",
+		Version:       1,
+		IsPublic:      req.IsPublic,
+		CreatedBy:     userID.String(),
+		UpdatedBy:     userID.String(),
+		Metadata:      model.JSONB(req.Metadata),
 	}
 
-	if err := s.docRepo.Create(ctx, doc); err != nil {
-		return nil, err
-	}
-
-	version := &model.DocumentVersion{
-		TenantScoped: model.TenantScoped{TenantID: req.TenantID},
-		DocumentID:   doc.ID,
-		Version:      1,
-		Title:        doc.Title,
-		Content:      doc.Content,
-		PlainText:    plainText,
-		Summary:      doc.Summary,
-		Tags:         doc.Tags,
-		EditorID:     req.AuthorID,
-		ChangeLog:    "Initial version",
-		WordCount:    wordCount,
-		SizeBytes:    int64(len(plainText)),
-	}
-	if err := s.docRepo.CreateVersion(ctx, version); err != nil {
-		return nil, err
-	}
-
-	if err := s.spaceRepo.IncrementDocCount(ctx, req.SpaceID, 1); err != nil {
-		_ = err
-	}
-	if req.DirectoryID != nil {
-		if err := s.spaceRepo.IncrementDirectoryDocCount(ctx, *req.DirectoryID, 1); err != nil {
-			_ = err
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(doc).Error; err != nil {
+			return err
 		}
+
+		version := &model.DocumentVersion{
+			TenantScoped: model.TenantScoped{TenantID: tenantIDStr},
+			DocID:        doc.ID,
+			SpaceID:      doc.SpaceID,
+			Title:        doc.Title,
+			Content:      doc.Content,
+			ContentText:  doc.ContentText,
+			Version:      1,
+			ChangeLog:    "initial version",
+			CreatedBy:    userID.String(),
+		}
+		if err := tx.Create(version).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("create document: %w", err)
 	}
 
-	if req.TemplateID != nil {
-		_ = s.docRepo.IncrementTemplateUseCount(ctx, *req.TemplateID)
+	if err := s.tenantRepo.UpdateQuotaUsed(ctx, tenantID, "documents", 1); err != nil {
+		return nil, fmt.Errorf("update quota: %w", err)
 	}
-
-	_ = s.searchSvc.IndexDocument(ctx, doc)
 
 	return doc, nil
 }
 
-func (s *DocumentService) GetByID(ctx context.Context, userID uuid.UUID, groupIDs, deptIDs []uuid.UUID, id uuid.UUID) (*model.Document, error) {
-	doc, err := s.docRepo.GetByID(ctx, id)
+func (s *DocumentService) GetDocument(ctx context.Context, docID uuid.UUID) (*model.Document, error) {
+	var doc model.Document
+	err := s.db.Scopes(database.TenantScope(ctx)).WithContext(ctx).
+		Where("id = ?", docID.String()).
+		First(&doc).Error
 	if err != nil {
-		return nil, err
-	}
-
-	allowed, err := s.permRepo.CheckPermission(ctx, userID, groupIDs, deptIDs,
-		model.ResourceTypeDocument, id, model.ActionRead)
-	if err != nil {
-		return nil, err
-	}
-	if !allowed {
-		allowed, err = s.permRepo.CheckPermission(ctx, userID, groupIDs, deptIDs,
-			model.ResourceTypeSpace, doc.SpaceID, model.ActionRead)
-		if err != nil || !allowed {
-			return nil, repository.ErrForbidden
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
 		}
+		return nil, err
 	}
-
-	_ = s.docRepo.IncrementViewCount(ctx, id)
-
-	return doc, nil
+	return &doc, nil
 }
 
-type UpdateDocumentRequest struct {
-	DocID       uuid.UUID
-	Title       *string
-	Content     *model.ProseMirrorDoc
-	Summary     *string
-	Tags        *[]string
-	DirectoryID *uuid.UUID
-	Status      *model.DocumentStatus
-	IsPinned    *bool
-	EditorID    uuid.UUID
-	ChangeLog   string
+func (s *DocumentService) UpdateDocument(ctx context.Context, userID, docID uuid.UUID, req UpdateDocRequest) (*model.Document, error) {
+	tenantIDStr, _ := database.GetTenantID(ctx)
+
+	var doc model.Document
+	err := s.db.Scopes(database.TenantScope(ctx)).WithContext(ctx).
+		Where("id = ?", docID.String()).
+		First(&doc).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("document not found")
+		}
+		return nil, err
+	}
+
+	newVersion := doc.Version + 1
+
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		version := &model.DocumentVersion{
+			TenantScoped: model.TenantScoped{TenantID: tenantIDStr},
+			DocID:        doc.ID,
+			SpaceID:      doc.SpaceID,
+			Title:        doc.Title,
+			Content:      doc.Content,
+			ContentText:  doc.ContentText,
+			Version:      doc.Version,
+			ChangeLog:    req.ChangeLog,
+			CreatedBy:    userID.String(),
+		}
+		if err := tx.Create(version).Error; err != nil {
+			return err
+		}
+
+		updates := map[string]interface{}{
+			"version":    newVersion,
+			"updated_by": userID.String(),
+		}
+		if req.Title != "" {
+			updates["title"] = req.Title
+		}
+		if req.Slug != "" {
+			updates["slug"] = req.Slug
+		}
+		if req.Summary != "" {
+			updates["summary"] = req.Summary
+		}
+		if req.ContentText != "" {
+			updates["content_text"] = req.ContentText
+		}
+		if req.ContentType != "" {
+			updates["content_type"] = req.ContentType
+		}
+		if req.Category != "" {
+			updates["category"] = req.Category
+		}
+		if len(req.Tags) > 0 {
+			updates["tags"] = req.Tags
+		}
+		if req.Status != "" {
+			updates["status"] = req.Status
+		}
+		if req.IsPublic != nil {
+			updates["is_public"] = *req.IsPublic
+		}
+		if req.IsPinned != nil {
+			updates["is_pinned"] = *req.IsPinned
+		}
+		if req.Metadata != nil {
+			updates["metadata"] = model.JSONB(req.Metadata)
+		}
+
+		if req.Content.Type != "" || len(req.Content.Content) > 0 {
+			updates["content"] = req.Content
+		}
+
+		if err := tx.Model(&doc).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("update document: %w", err)
+	}
+
+	return s.GetDocument(ctx, docID)
 }
 
-func (s *DocumentService) Update(ctx context.Context, req *UpdateDocumentRequest) (*model.Document, error) {
-	doc, err := s.docRepo.GetByID(ctx, req.DocID)
-	if err != nil {
-		return nil, err
-	}
-
-	allowed, err := s.permRepo.CheckPermission(ctx, req.EditorID, nil, nil,
-		model.ResourceTypeDocument, req.DocID, model.ActionUpdate)
-	if err != nil {
-		return nil, err
-	}
-	if !allowed {
-		allowed, err = s.permRepo.CheckPermission(ctx, req.EditorID, nil, nil,
-			model.ResourceTypeSpace, doc.SpaceID, model.ActionUpdate)
-		if err != nil || !allowed {
-			return nil, repository.ErrForbidden
+func (s *DocumentService) DeleteDocument(ctx context.Context, docID uuid.UUID) error {
+	tenantIDStr, ok := database.GetTenantID(ctx)
+	if ok && tenantIDStr != "" {
+		tenantID, err := uuid.Parse(tenantIDStr)
+		if err == nil {
+			_ = s.tenantRepo.UpdateQuotaUsed(ctx, tenantID, "documents", -1)
 		}
 	}
 
-	changed := false
-
-	if req.Title != nil && *req.Title != doc.Title {
-		doc.Title = *req.Title
-		doc.Slug = utils.GenerateSlug(*req.Title) + "-" + uuid.New().String()[:6]
-		changed = true
-	}
-	if req.Summary != nil {
-		doc.Summary = *req.Summary
-		changed = true
-	}
-	if req.Tags != nil {
-		doc.Tags = model.StringArray(*req.Tags)
-		changed = true
-	}
-	if req.DirectoryID != nil && *req.DirectoryID != uuid.Nil {
-		if doc.DirectoryID != nil && *doc.DirectoryID != uuid.Nil {
-			_ = s.spaceRepo.IncrementDirectoryDocCount(ctx, *doc.DirectoryID, -1)
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Scopes(database.TenantScope(ctx)).
+			Where("doc_id = ?", docID.String()).
+			Delete(&model.DocumentVersion{}).Error; err != nil {
+			return err
 		}
-		doc.DirectoryID = req.DirectoryID
-		_ = s.spaceRepo.IncrementDirectoryDocCount(ctx, *req.DirectoryID, 1)
-		changed = true
-	}
-	if req.Status != nil {
-		doc.Status = *req.Status
-		if *req.Status == model.DocumentStatusPublished {
-			now := time.Now().UTC()
-			doc.PublishedAt = &now
+
+		if err := tx.Scopes(database.TenantScope(ctx)).
+			Where("doc_id = ?", docID.String()).
+			Delete(&model.Attachment{}).Error; err != nil {
+			return err
 		}
-		changed = true
-	}
-	if req.IsPinned != nil {
-		doc.IsPinned = *req.IsPinned
-		changed = true
-	}
-	if req.Content != nil {
-		doc.Content = *req.Content
-		plainText := extractPlainText(*req.Content)
-		doc.PlainText = plainText
-		doc.WordCount = int(utils.CountWords(plainText))
-		changed = true
-	}
 
-	if !changed {
-		return doc, nil
-	}
+		if err := tx.Scopes(database.TenantScope(ctx)).
+			Where("id = ?", docID.String()).
+			Delete(&model.Document{}).Error; err != nil {
+			return err
+		}
 
-	doc.LastEditorID = req.EditorID
-	if err := s.docRepo.Update(ctx, doc); err != nil {
-		return nil, err
-	}
-
-	nextVer, err := s.docRepo.GetNextVersionNumber(ctx, doc.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	changeLog := req.ChangeLog
-	if changeLog == "" {
-		changeLog = "Updated document"
-	}
-
-	version := &model.DocumentVersion{
-		TenantScoped: model.TenantScoped{TenantID: doc.TenantID},
-		DocumentID:   doc.ID,
-		Version:      nextVer,
-		Title:        doc.Title,
-		Content:      doc.Content,
-		PlainText:    doc.PlainText,
-		Summary:      doc.Summary,
-		Tags:         doc.Tags,
-		EditorID:     req.EditorID,
-		ChangeLog:    changeLog,
-		WordCount:    doc.WordCount,
-		SizeBytes:    int64(len(doc.PlainText)),
-	}
-	if err := s.docRepo.CreateVersion(ctx, version); err != nil {
-		_ = err
-	}
-	doc.CurrentVersion = nextVer
-
-	_ = s.searchSvc.IndexDocument(ctx, doc)
-
-	return doc, nil
+		return nil
+	})
 }
 
-func (s *DocumentService) Delete(ctx context.Context, userID, docID uuid.UUID) error {
-	doc, err := s.docRepo.GetByID(ctx, docID)
+func (s *DocumentService) GetDocumentVersion(ctx context.Context, docID uuid.UUID, version int) (*model.DocumentVersion, error) {
+	var dv model.DocumentVersion
+	err := s.db.Scopes(database.TenantScope(ctx)).WithContext(ctx).
+		Where("doc_id = ? AND version = ?", docID.String(), version).
+		First(&dv).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &dv, nil
+}
+
+func (s *DocumentService) RollbackToVersion(ctx context.Context, userID, docID uuid.UUID, version int) error {
+	dv, err := s.GetDocumentVersion(ctx, docID, version)
 	if err != nil {
 		return err
 	}
+	if dv == nil {
+		return errors.New("version not found")
+	}
 
-	allowed, err := s.permRepo.CheckPermission(ctx, userID, nil, nil,
-		model.ResourceTypeDocument, docID, model.ActionDelete)
+	tenantIDStr, _ := database.GetTenantID(ctx)
+
+	var doc model.Document
+	err = s.db.Scopes(database.TenantScope(ctx)).WithContext(ctx).
+		Where("id = ?", docID.String()).
+		First(&doc).Error
 	if err != nil {
-		return err
+		return fmt.Errorf("get document: %w", err)
 	}
-	if !allowed {
-		allowed, err = s.permRepo.CheckPermission(ctx, userID, nil, nil,
-			model.ResourceTypeSpace, doc.SpaceID, model.ActionDelete)
-		if err != nil || !allowed {
-			return repository.ErrForbidden
+
+	newVersion := doc.Version + 1
+
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		archiveVersion := &model.DocumentVersion{
+			TenantScoped: model.TenantScoped{TenantID: tenantIDStr},
+			DocID:        doc.ID,
+			SpaceID:      doc.SpaceID,
+			Title:        doc.Title,
+			Content:      doc.Content,
+			ContentText:  doc.ContentText,
+			Version:      doc.Version,
+			ChangeLog:    fmt.Sprintf("archived before rollback to v%d", version),
+			CreatedBy:    userID.String(),
 		}
-	}
+		if err := tx.Create(archiveVersion).Error; err != nil {
+			return err
+		}
 
-	if doc.DirectoryID != nil {
-		_ = s.spaceRepo.IncrementDirectoryDocCount(ctx, *doc.DirectoryID, -1)
-	}
-	_ = s.spaceRepo.IncrementDocCount(ctx, doc.SpaceID, -1)
+		updates := map[string]interface{}{
+			"title":        dv.Title,
+			"content":      dv.Content,
+			"content_text": dv.ContentText,
+			"version":      newVersion,
+			"updated_by":   userID.String(),
+		}
+		if err := tx.Model(&doc).Updates(updates).Error; err != nil {
+			return err
+		}
 
-	_ = s.searchSvc.RemoveDocument(ctx, doc.TenantID, docID)
-
-	atts, _ := s.docRepo.ListAttachments(ctx, docID)
-	for _, att := range atts {
-		_ = s.minioClient.Delete(ctx, att.FilePath)
-		_ = s.searchSvc.RemoveAttachment(ctx, doc.TenantID, att.ID)
-	}
-
-	return s.docRepo.Delete(ctx, docID)
+		return nil
+	})
 }
 
-func (s *DocumentService) List(ctx context.Context, userID uuid.UUID, groupIDs, deptIDs []uuid.UUID, q *model.DocumentQuery) (*database.PaginatedResult, error) {
-	allowedSpaceIDs, err := s.permRepo.GetAccessibleResources(
-		ctx, userID, groupIDs, deptIDs,
-		model.ResourceTypeSpace, model.RoleViewer,
-	)
-	if err != nil {
-		return nil, err
+func (s *DocumentService) ListDocuments(ctx context.Context, spaceID uuid.UUID, query model.DocumentQuery) ([]*model.Document, int64, error) {
+	var docs []*model.Document
+	var total int64
+
+	db := s.db.Scopes(database.TenantScope(ctx)).WithContext(ctx).
+		Model(&model.Document{}).
+		Where("space_id = ?", spaceID.String())
+
+	if query.Keyword != "" {
+		db = db.Where("title ILIKE ? OR content_text ILIKE ?", "%"+query.Keyword+"%", "%"+query.Keyword+"%")
+	}
+	if query.Category != "" {
+		db = db.Where("category = ?", query.Category)
+	}
+	if len(query.Tags) > 0 {
+		db = db.Where("tags && ?", query.Tags)
+	}
+	if query.Status != "" {
+		db = db.Where("status = ?", query.Status)
+	}
+	if query.CreatedBy != "" {
+		db = db.Where("created_by = ?", query.CreatedBy)
+	}
+	if query.DirectoryID != "" {
+		db = db.Where("directory_id = ?", query.DirectoryID)
+	}
+	if query.IsPublic != nil {
+		db = db.Where("is_public = ?", *query.IsPublic)
 	}
 
-	if allowedSpaceIDs != nil {
-		if q.SpaceID == uuid.Nil {
-			if len(allowedSpaceIDs) == 0 {
-				return &database.PaginatedResult{
-					Total:      0,
-					Page:       q.Page,
-					PageSize:   q.PageSize,
-					TotalPages: 0,
-					Data:       []model.Document{},
-				}, nil
-			}
-			q.SpaceID = uuid.Nil
-		} else {
-			found := false
-			for _, id := range allowedSpaceIDs {
-				if id == q.SpaceID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				return nil, repository.ErrForbidden
-			}
-		}
+	if err := db.Count(&total).Error; err != nil {
+		return nil, 0, err
 	}
 
-	return s.docRepo.List(ctx, q)
-}
-
-func (s *DocumentService) UploadAttachment(ctx context.Context,
-	tenantID, spaceID uuid.UUID, docID *uuid.UUID, uploaderID uuid.UUID,
-	fileName string, fileSize int64, contentType string, reader io.Reader,
-) (*model.Attachment, error) {
-	ok, err := s.tenantRepo.CheckQuotaAndIncrement(ctx, tenantID, "storage", fileSize)
-	if err != nil {
-		return nil, err
+	sortBy := query.SortBy
+	if sortBy == "" {
+		sortBy = "created_at"
 	}
-	if !ok {
-		return nil, errors.New("storage quota exceeded")
+	sortOrder := query.SortOrder
+	if sortOrder == "" {
+		sortOrder = "desc"
 	}
+	db = db.Order(fmt.Sprintf("%s %s", sortBy, sortOrder))
 
-	uploadResult, err := s.minioClient.Upload(ctx, tenantID.String(), "attachments", fileName, reader, fileSize, contentType)
-	if err != nil {
-		return nil, fmt.Errorf("upload to minio: %w", err)
+	if err := db.Find(&docs).Error; err != nil {
+		return nil, 0, err
 	}
 
-	isImage := false
-	ext := ""
-	lowerName := fileName
-	for i := len(lowerName) - 1; i >= 0; i-- {
-		if lowerName[i] == '.' {
-			ext = lowerName[i:]
-			break
-		}
-	}
-	imageExts := map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".bmp": true, ".webp": true, ".svg": true}
-	if imageExts[ext] {
-		isImage = true
-	}
-
-	att := &model.Attachment{
-		TenantScoped:  model.TenantScoped{TenantID: tenantID},
-		SpaceID:       spaceID,
-		DocumentID:    docID,
-		FileName:      fileName,
-		OriginalName:  fileName,
-		FilePath:      uploadResult.ObjectName,
-		MimeType:      contentType,
-		FileSize:      fileSize,
-		FileExtension: ext,
-		StorageType:   "minio",
-		ETag:          uploadResult.ETag,
-		IsImage:       isImage,
-		UploaderID:    uploaderID,
-	}
-
-	if err := s.docRepo.CreateAttachment(ctx, att); err != nil {
-		_ = s.minioClient.Delete(ctx, uploadResult.ObjectName)
-		return nil, err
-	}
-
-	_ = s.spaceRepo.IncrementStorage(ctx, spaceID, fileSize)
-
-	return att, nil
-}
-
-func (s *DocumentService) GetDiff(ctx context.Context, docID uuid.UUID, v1, v2 int) (string, error) {
-	ver1, err := s.docRepo.GetVersion(ctx, docID, v1)
-	if err != nil {
-		return "", err
-	}
-	ver2, err := s.docRepo.GetVersion(ctx, docID, v2)
-	if err != nil {
-		return "", err
-	}
-
-	text1 := extractPlainText(ver1.Content)
-	text2 := extractPlainText(ver2.Content)
-
-	dmp := diffmatchpatch.New()
-	diffs := dmp.DiffMain(text1, text2, true)
-
-	return dmp.DiffPrettyText(diffs), nil
-}
-
-func extractPlainText(doc model.ProseMirrorDoc) string {
-	if doc.Content == nil {
-		return ""
-	}
-	contentBytes, err := json.Marshal(doc.Content)
-	if err != nil {
-		return ""
-	}
-
-	var builder []byte
-	var walk func(interface{})
-	walk = func(v interface{}) {
-		switch val := v.(type) {
-		case map[string]interface{}:
-			if text, ok := val["text"].(string); ok {
-				builder = append(builder, []byte(text)...)
-				builder = append(builder, ' ')
-			}
-			if children, ok := val["content"].([]interface{}); ok {
-				for _, c := range children {
-					walk(c)
-				}
-			}
-		case []interface{}:
-			for _, item := range val {
-				walk(item)
-			}
-		}
-	}
-	var arr []interface{}
-	_ = json.Unmarshal(contentBytes, &arr)
-	for _, item := range arr {
-		walk(item)
-	}
-	return string(builder)
+	return docs, total, nil
 }

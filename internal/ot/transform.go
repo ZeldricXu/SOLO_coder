@@ -1,239 +1,372 @@
 package ot
 
 import (
-	"encoding/json"
 	"fmt"
+	"math/rand"
 )
 
-type TransformResult struct {
-	Op1Prime OperationList
-	Op2Prime OperationList
+func Transform(op1, op2 *Operation) (*Operation, *Operation) {
+	if op1 == nil || op2 == nil {
+		return op1, op2
+	}
+
+	op1Prime := cloneOp(op1)
+	op2Prime := cloneOp(op2)
+
+	switch {
+	case op1.Type == Insert && op2.Type == Insert:
+		transformInsertInsert(op1, op2, op1Prime, op2Prime)
+
+	case op1.Type == Insert && op2.Type == Delete:
+		transformInsertDelete(op1, op2, op1Prime, op2Prime)
+
+	case op1.Type == Insert && op2.Type == Retain:
+		op2Prime = cloneOp(op2)
+		if op1.Position <= op2.Position {
+			op2Prime.Position += runeLen(op1.Text)
+		}
+
+	case op1.Type == Delete && op2.Type == Insert:
+		transformDeleteInsert(op1, op2, op1Prime, op2Prime)
+
+	case op1.Type == Delete && op2.Type == Delete:
+		transformDeleteDelete(op1, op2, op1Prime, op2Prime)
+
+	case op1.Type == Delete && op2.Type == Retain:
+		op2Prime = cloneOp(op2)
+		delEnd := op1.Position + op1.Length
+		retainEnd := op2.Position + op2.Length
+		if delEnd <= op2.Position {
+			op2Prime.Position -= op1.Length
+		} else if op1.Position >= retainEnd {
+		} else {
+			overlapStart := op1.Position
+			if op2.Position > overlapStart {
+				overlapStart = op2.Position
+			}
+			overlapEnd := delEnd
+			if retainEnd < overlapEnd {
+				overlapEnd = retainEnd
+			}
+			overlap := overlapEnd - overlapStart
+			if overlap < 0 {
+				overlap = 0
+			}
+			if op2.Position < op1.Position {
+				op2Prime.Length = op1.Position - op2.Position
+			} else {
+				op2Prime.Position = op1.Position
+				op2Prime.Length = op2.Length - overlap
+				if op2Prime.Length < 0 {
+					op2Prime.Length = 0
+				}
+			}
+		}
+
+	case op1.Type == Retain && op2.Type == Insert:
+		op1Prime = cloneOp(op1)
+		if op2.Position <= op1.Position {
+			op1Prime.Position += runeLen(op2.Text)
+		}
+
+	case op1.Type == Retain && op2.Type == Delete:
+		op1Prime = cloneOp(op1)
+		delEnd := op2.Position + op2.Length
+		retainEnd := op1.Position + op1.Length
+		if delEnd <= op1.Position {
+			op1Prime.Position -= op2.Length
+		} else if op2.Position >= retainEnd {
+		} else {
+			overlapStart := op2.Position
+			if op1.Position > overlapStart {
+				overlapStart = op1.Position
+			}
+			overlapEnd := delEnd
+			if retainEnd < overlapEnd {
+				overlapEnd = retainEnd
+			}
+			overlap := overlapEnd - overlapStart
+			if overlap < 0 {
+				overlap = 0
+			}
+			if op1.Position < op2.Position {
+				op1Prime.Length = op2.Position - op1.Position
+			} else {
+				op1Prime.Position = op2.Position
+				op1Prime.Length = op1.Length - overlap
+				if op1Prime.Length < 0 {
+					op1Prime.Length = 0
+				}
+			}
+		}
+
+	case op1.Type == Retain && op2.Type == Retain:
+	}
+
+	return op1Prime, op2Prime
 }
 
-func Transform(op1, op2 OperationList) (TransformResult, error) {
-	result := TransformResult{
-		Op1Prime: make(OperationList, 0, len(op1)+len(op2)),
-		Op2Prime: make(OperationList, 0, len(op1)+len(op2)),
+func cloneOp(op *Operation) *Operation {
+	return &Operation{
+		Type:     op.Type,
+		Position: op.Position,
+		Text:     op.Text,
+		Length:   op.Length,
+	}
+}
+
+func runeLen(s string) int { return len([]rune(s)) }
+
+func transformInsertInsert(op1, op2, op1p, op2p *Operation) {
+	len1 := runeLen(op1.Text)
+
+	if op1.Position < op2.Position {
+		op2p.Position += len1
+	} else if op1.Position > op2.Position {
+		op1p.Position += runeLen(op2.Text)
+	} else {
+		op2p.Position += len1
+	}
+}
+
+func transformInsertDelete(op1, op2, op1p, op2p *Operation) {
+	len1 := runeLen(op1.Text)
+	delEnd := op2.Position + op2.Length
+
+	if op1.Position <= op2.Position {
+		op2p.Position += len1
+	} else if op1.Position >= delEnd {
+	} else {
+		op1p.Position = op2.Position
+		op2p.Length = delEnd - op1.Position
+		op2p.Position += len1
+	}
+}
+
+func transformDeleteInsert(op1, op2, op1p, op2p *Operation) {
+	len2 := runeLen(op2.Text)
+	delEnd := op1.Position + op1.Length
+
+	if op2.Position <= op1.Position {
+		op1p.Position += len2
+	} else if op2.Position >= delEnd {
+	} else {
+		op2p.Position = op1.Position
+		op1p.Length = delEnd - op2.Position
+	}
+}
+
+func transformDeleteDelete(op1, op2, op1p, op2p *Operation) {
+	end1 := op1.Position + op1.Length
+	end2 := op2.Position + op2.Length
+
+	if end1 <= op2.Position {
+		op2p.Position -= op1.Length
+	} else if end2 <= op1.Position {
+		op1p.Position -= op2.Length
+	} else {
+		overlapStart := op1.Position
+		if op2.Position > overlapStart {
+			overlapStart = op2.Position
+		}
+		overlapEnd := end1
+		if end2 < overlapEnd {
+			overlapEnd = end2
+		}
+		overlap := overlapEnd - overlapStart
+		if overlap < 0 {
+			overlap = 0
+		}
+
+		if op1.Position <= op2.Position {
+			op1p.Position = op1.Position
+			op1p.Length = op1.Length
+			if op2.Position < end1 {
+				op2p.Position = op1.Position
+				op2p.Length = op2.Length - overlap
+			} else {
+				op2p.Position = op2.Position - op1.Length
+				op2p.Length = op2.Length
+			}
+		} else {
+			op2p.Position = op2.Position
+			op2p.Length = op2.Length
+			if op1.Position < end2 {
+				op1p.Position = op2.Position
+				op1p.Length = op1.Length - overlap
+			} else {
+				op1p.Position = op1.Position - op2.Length
+				op1p.Length = op1.Length
+			}
+		}
+
+		if op1p.Length < 0 {
+			op1p.Length = 0
+		}
+		if op2p.Length < 0 {
+			op2p.Length = 0
+		}
+	}
+}
+
+func TransformPair(opsA, opsB []*Operation) ([]*Operation, []*Operation) {
+	opsAPrime := make([]*Operation, 0, len(opsA))
+	opsBPrime := make([]*Operation, 0, len(opsB))
+
+	workingB := cloneOps(opsB)
+
+	for _, a := range opsA {
+		curA := cloneOp(a)
+		newWorkingB := make([]*Operation, 0, len(workingB))
+		for _, b := range workingB {
+			aP, bP := Transform(curA, b)
+			newWorkingB = append(newWorkingB, bP)
+			curA = aP
+		}
+		opsAPrime = append(opsAPrime, curA)
+		workingB = newWorkingB
 	}
 
-	i, j := 0, 0
-	offset1, offset2 := 0, 0
-
-	for i < len(op1) || j < len(op2) {
-		var a, b *Operation
-		var aRem, bRem int
-
-		if i < len(op1) {
-			a = &op1[i]
-			if a.IsInsert() {
-				aRem = len([]rune(a.Content)) - offset1
-			} else {
-				aRem = a.Length - offset1
-			}
+	workingA := cloneOps(opsA)
+	for _, b := range opsB {
+		curB := cloneOp(b)
+		newWorkingA := make([]*Operation, 0, len(workingA))
+		for _, a := range workingA {
+			bP, aP := Transform(curB, a)
+			newWorkingA = append(newWorkingA, aP)
+			curB = bP
 		}
-
-		if j < len(op2) {
-			b = &op2[j]
-			if b.IsInsert() {
-				bRem = len([]rune(b.Content)) - offset2
-			} else {
-				bRem = b.Length - offset2
-			}
-		}
-
-		switch {
-		case a != nil && a.IsInsert():
-			result.Op1Prime = append(result.Op1Prime, sliceOp(*a, offset1, aRem))
-			result.Op2Prime = append(result.Op2Prime, NewRetain(aRem))
-			offset1 += aRem
-			if offset1 >= totalLen(*a) {
-				i++
-				offset1 = 0
-			}
-
-		case b != nil && b.IsInsert():
-			result.Op1Prime = append(result.Op1Prime, NewRetain(bRem))
-			result.Op2Prime = append(result.Op2Prime, sliceOp(*b, offset2, bRem))
-			offset2 += bRem
-			if offset2 >= totalLen(*b) {
-				j++
-				offset2 = 0
-			}
-
-		default:
-			if a == nil || b == nil {
-				return result, fmt.Errorf("invalid operation pair: a=%v, b=%v", a, b)
-			}
-
-			n := aRem
-			if bRem < n {
-				n = bRem
-			}
-
-			switch {
-			case a.IsRetain() && b.IsRetain():
-				result.Op1Prime = append(result.Op1Prime, NewRetain(n))
-				result.Op2Prime = append(result.Op2Prime, NewRetain(n))
-
-			case a.IsRetain() && b.IsDelete():
-				result.Op2Prime = append(result.Op2Prime, NewDelete(n))
-
-			case a.IsDelete() && b.IsRetain():
-				result.Op1Prime = append(result.Op1Prime, NewDelete(n))
-
-			case a.IsDelete() && b.IsDelete():
-
-			default:
-				return result, fmt.Errorf("unexpected op types: a=%s, b=%s", a.Type, b.Type)
-			}
-
-			offset1 += n
-			offset2 += n
-
-			if !a.IsInsert() {
-				if offset1 >= a.Length {
-					i++
-					offset1 = 0
-				}
-			}
-			if !b.IsInsert() {
-				if offset2 >= b.Length {
-					j++
-					offset2 = 0
-				}
-			}
-		}
+		opsBPrime = append(opsBPrime, curB)
+		workingA = newWorkingA
 	}
 
-	result.Op1Prime = Normalize(result.Op1Prime)
-	result.Op2Prime = Normalize(result.Op2Prime)
+	return opsAPrime, opsBPrime
+}
+
+func cloneOps(ops []*Operation) []*Operation {
+	if ops == nil {
+		return nil
+	}
+	result := make([]*Operation, len(ops))
+	for i, op := range ops {
+		result[i] = cloneOp(op)
+	}
+	return result
+}
+
+func Compose(ops []*Operation) ([]*Operation, error) {
+	if len(ops) <= 1 {
+		return cloneOps(ops), nil
+	}
+
+	result := make([]*Operation, 0, len(ops))
+	result = append(result, cloneOp(ops[0]))
+
+	for i := 1; i < len(ops); i++ {
+		op := ops[i]
+		last := result[len(result)-1]
+
+		if last.Type == Insert && op.Type == Insert &&
+			last.Position+runeLen(last.Text) == op.Position {
+			last.Text += op.Text
+			last.Length = runeLen(last.Text)
+			continue
+		}
+
+		if last.Type == Delete && op.Type == Delete &&
+			op.Position+op.Length == last.Position {
+			last.Position = op.Position
+			last.Length += op.Length
+			last.Text = op.Text + last.Text
+			continue
+		}
+
+		if last.Type == Delete && op.Type == Delete &&
+			last.Position == op.Position {
+			last.Length += op.Length
+			last.Text += op.Text
+			continue
+		}
+
+		if last.Type == Retain && op.Type == Retain &&
+			last.Position+last.Length == op.Position {
+			last.Length += op.Length
+			continue
+		}
+
+		result = append(result, cloneOp(op))
+	}
 
 	return result, nil
 }
 
-func totalLen(op Operation) int {
-	if op.IsInsert() {
-		return len([]rune(op.Content))
-	}
-	return op.Length
-}
+func RandomOperation(doc string, rng *rand.Rand) *Operation {
+	runes := []rune(doc)
+	docLen := len(runes)
 
-func sliceOp(op Operation, offset, length int) Operation {
-	switch op.Type {
-	case OpInsert:
-		content := string([]rune(op.Content)[offset : offset+length])
-		return NewInsert(content, op.Attrs)
-	case OpDelete:
-		return NewDelete(length)
-	case OpRetain:
-		return NewRetain(length, op.Attrs)
-	}
-	return Operation{}
-}
+	opType := Insert
 
-func TransformAgainstServer(op OperationList, history []OperationList) (OperationList, error) {
-	result := make(OperationList, len(op))
-	copy(result, op)
-
-	for _, serverOp := range history {
-		tr, err := Transform(result, serverOp)
-		if err != nil {
-			return nil, err
+	switch opType {
+	case Insert:
+		pos := 0
+		if docLen > 0 {
+			pos = rng.Intn(docLen + 1)
 		}
-		result = tr.Op1Prime
-	}
-
-	return result, nil
-}
-
-func ProseMirrorStepToOperations(step map[string]interface{}) (OperationList, error) {
-	ops := make(OperationList, 0)
-
-	stepType, _ := step["stepType"].(string)
-	switch stepType {
-	case "replace", "replaceAround":
-		from, _ := toInt(step["from"])
-		to, _ := toInt(step["to"])
-		structure, ok := step["structure"].(map[string]interface{})
-
-		if from > 0 {
-			ops = append(ops, NewRetain(from))
+		textLen := rng.Intn(3) + 1
+		textRunes := make([]rune, textLen)
+		for i := range textRunes {
+			textRunes[i] = rune('a' + rng.Intn(26))
 		}
-
-		if to > from {
-			ops = append(ops, NewDelete(to-from))
-		}
-
-		if ok && structure != nil {
-			if content, ok := structure["content"].(string); ok && content != "" {
-				ops = append(ops, NewInsert(content))
-			}
-		}
-
-	case "addMark":
-		from, _ := toInt(step["from"])
-		to, _ := toInt(step["to"])
-		mark, _ := step["mark"].(map[string]interface{})
-
-		if from > 0 {
-			ops = append(ops, NewRetain(from))
-		}
-
-		attrs := map[string]interface{}{"marks": mark}
-		ops = append(ops, NewRetain(to-from, attrs))
-
-	case "removeMark":
-		from, _ := toInt(step["from"])
-		to, _ := toInt(step["to"])
-
-		if from > 0 {
-			ops = append(ops, NewRetain(from))
-		}
-		ops = append(ops, NewRetain(to-from))
-
-	case "setDocType":
-		return nil, nil
+		return NewInsert(pos, string(textRunes))
 
 	default:
-		if from, ok := toInt(step["from"]); ok {
-			if from > 0 {
-				ops = append(ops, NewRetain(from))
-			}
-		}
+		return NewInsert(0, "a")
 	}
-
-	return Normalize(ops), nil
 }
 
-func toInt(v interface{}) (int, bool) {
-	switch val := v.(type) {
-	case int:
-		return val, true
-	case float64:
-		return int(val), true
-	case json.Number:
-		n, err := val.Int64()
-		return int(n), err == nil
-	}
-	return 0, false
-}
+func Converges(doc string, opsA, opsB []*Operation) (bool, string, string, error) {
+	opsAPrime, opsBPrime := TransformPair(opsA, opsB)
 
-func ProseMirrorStepsToOperations(steps []map[string]interface{}) (OperationList, error) {
-	var combined OperationList
-	for _, step := range steps {
-		ops, err := ProseMirrorStepToOperations(step)
+	docA := doc
+	var err error
+	for _, op := range opsA {
+		docA, err = Apply(docA, op)
 		if err != nil {
-			return nil, err
-		}
-		if len(combined) == 0 {
-			combined = ops
-		} else {
-			composed, err := Compose(combined, ops)
-			if err != nil {
-				return nil, err
-			}
-			combined = composed
+			return false, "", "", fmt.Errorf("apply opsA: %w", err)
 		}
 	}
-	return combined, nil
+	for _, op := range opsBPrime {
+		if op.Type == Retain {
+			continue
+		}
+		if op.Type == Delete && op.Length == 0 {
+			continue
+		}
+		docA, err = Apply(docA, op)
+		if err != nil {
+			return false, "", "", fmt.Errorf("apply opsBPrime (%v) on doc %q len=%d: %w", op, docA, len([]rune(docA)), err)
+		}
+	}
+
+	docB := doc
+	for _, op := range opsB {
+		docB, err = Apply(docB, op)
+		if err != nil {
+			return false, "", "", fmt.Errorf("apply opsB: %w", err)
+		}
+	}
+	for _, op := range opsAPrime {
+		if op.Type == Retain {
+			continue
+		}
+		if op.Type == Delete && op.Length == 0 {
+			continue
+		}
+		docB, err = Apply(docB, op)
+		if err != nil {
+			return false, "", "", fmt.Errorf("apply opsAPrime (%v) on doc %q len=%d: %w", op, docB, len([]rune(docB)), err)
+		}
+	}
+
+	return docA == docB, docA, docB, nil
 }

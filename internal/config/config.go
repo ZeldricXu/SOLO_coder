@@ -1,7 +1,6 @@
 package config
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -11,7 +10,7 @@ import (
 
 type Config struct {
 	Server   ServerConfig
-	PostgreSQL PostgreSQLConfig
+	Database DatabaseConfig
 	Redis    RedisConfig
 	MinIO    MinIOConfig
 	Bleve    BleveConfig
@@ -40,32 +39,30 @@ type PostgreSQLConfig struct {
 }
 
 func (c PostgreSQLConfig) DSN() string {
-	return fmt.Sprintf(
-		"host=%s port=%s user=%s password=%s dbname=%s sslmode=%s TimeZone=%s",
-		c.Host, c.Port, c.User, c.Password, c.DBName, c.SSLMode, c.Timezone,
-	)
+	return "host=" + c.Host +
+		" port=" + c.Port +
+		" user=" + c.User +
+		" password=" + c.Password +
+		" dbname=" + c.DBName +
+		" sslmode=" + c.SSLMode +
+		" TimeZone=" + c.Timezone
 }
+
+type DatabaseConfig = PostgreSQLConfig
 
 type RedisConfig struct {
-	Host         string
-	Port         string
-	Password     string
-	DB           int
-	PoolSize     int
-	MinIdleConns int
-}
-
-func (c RedisConfig) Addr() string {
-	return fmt.Sprintf("%s:%s", c.Host, c.Port)
+	Addr     string
+	Password string
+	DB       int
+	PoolSize int
 }
 
 type MinIOConfig struct {
-	Endpoint        string
-	AccessKeyID     string
-	SecretAccessKey string
-	UseSSL          bool
-	BucketName      string
-	Region          string
+	Endpoint  string
+	AccessKey string
+	SecretKey string
+	UseSSL    bool
+	Bucket    string
 }
 
 type BleveConfig struct {
@@ -104,7 +101,7 @@ func Load() *Config {
 			ReadTimeout:  getEnvInt("SERVER_READ_TIMEOUT", 30),
 			WriteTimeout: getEnvInt("SERVER_WRITE_TIMEOUT", 30),
 		},
-		PostgreSQL: PostgreSQLConfig{
+		Database: DatabaseConfig{
 			Host:         getEnv("DB_HOST", "localhost"),
 			Port:         getEnv("DB_PORT", "5432"),
 			User:         getEnv("DB_USER", "postgres"),
@@ -116,20 +113,17 @@ func Load() *Config {
 			MaxIdleConns: getEnvInt("DB_MAX_IDLE_CONNS", 10),
 		},
 		Redis: RedisConfig{
-			Host:         getEnv("REDIS_HOST", "localhost"),
-			Port:         getEnv("REDIS_PORT", "6379"),
-			Password:     getEnv("REDIS_PASSWORD", ""),
-			DB:           getEnvInt("REDIS_DB", 0),
-			PoolSize:     getEnvInt("REDIS_POOL_SIZE", 100),
-			MinIdleConns: getEnvInt("REDIS_MIN_IDLE_CONNS", 10),
+			Addr:     getEnv("REDIS_ADDR", "localhost:6379"),
+			Password: getEnv("REDIS_PASSWORD", ""),
+			DB:       getEnvInt("REDIS_DB", 0),
+			PoolSize: getEnvInt("REDIS_POOL_SIZE", 100),
 		},
 		MinIO: MinIOConfig{
-			Endpoint:        getEnv("MINIO_ENDPOINT", "localhost:9000"),
-			AccessKeyID:     getEnv("MINIO_ACCESS_KEY", "minioadmin"),
-			SecretAccessKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
-			UseSSL:          getEnvBool("MINIO_USE_SSL", false),
-			BucketName:      getEnv("MINIO_BUCKET", "knowledgebase"),
-			Region:          getEnv("MINIO_REGION", "us-east-1"),
+			Endpoint:  getEnv("MINIO_ENDPOINT", "localhost:9000"),
+			AccessKey: getEnv("MINIO_ACCESS_KEY", "minioadmin"),
+			SecretKey: getEnv("MINIO_SECRET_KEY", "minioadmin"),
+			UseSSL:    getEnvBool("MINIO_USE_SSL", false),
+			Bucket:    getEnv("MINIO_BUCKET", "knowledgebase"),
 		},
 		Bleve: BleveConfig{
 			IndexPath: getEnv("BLEVE_INDEX_PATH", "./data/bleve"),
