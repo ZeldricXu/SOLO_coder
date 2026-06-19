@@ -39,6 +39,9 @@ dependencies = [
     "duckdb",
     "pyyaml",
     "dbutils",
+    "faust-streaming",
+    "redis",
+    "robinhood-aiokafka",
 ]
 
 [project.optional-dependencies]
@@ -47,6 +50,7 @@ dev = [
     "pytest-asyncio",
     "httpx",
     "ruff",
+    "pytest-mock",
 ]
 test = [
     "pytest",
@@ -71,6 +75,10 @@ markers = [
     "integration: Integration tests requiring docker/testcontainers",
     "concurrency: Concurrency tests",
     "slow: Tests that are slow to run",
+    "streaming: Streaming engine related tests",
+    "backward_compat: Backward compatibility tests",
+    "nosql: NoSQL document source related tests",
+    "online_quality: Online quality checker related tests",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

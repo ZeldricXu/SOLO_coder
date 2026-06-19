@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from etl_engine.exceptions import CyclicDependencyError
+from etl_engine.transform.streaming import StreamingConfig, StreamingMode
 
 
 class DAGNode(BaseModel):
     id: str
-    type: Literal["extract", "transform", "quality_check", "load"]
+    type: Literal["extract", "transform", "quality_check", "load", "streaming"]
     config: dict = {}
     dependencies: list[str] = []
     retry_count: int = 0
@@ -30,12 +31,24 @@ class DAGDefinition(BaseModel):
     edges: list[DAGEdge]
     schedule: str | None = None
     sla_seconds: int | None = None
+    mode: StreamingMode = "batch"
+    streaming_config: StreamingConfig | None = None
 
     @model_validator(mode="after")
     def _check_node_ids_unique(self) -> "DAGDefinition":
         node_ids = [n.id for n in self.nodes]
         if len(node_ids) != len(set(node_ids)):
             raise ValueError("DAG node ids must be unique")
+        return self
+
+    @model_validator(mode="after")
+    def _check_streaming_config(self) -> "DAGDefinition":
+        if self.mode == "streaming" and self.streaming_config is None:
+            raise ValueError("streaming_config is required when mode is 'streaming'")
+        if self.mode == "batch":
+            has_streaming_node = any(n.type == "streaming" for n in self.nodes)
+            if has_streaming_node and self.streaming_config is None:
+                raise ValueError("streaming_config is required when DAG contains 'streaming' type nodes")
         return self
 
 

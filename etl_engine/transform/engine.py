@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+from typing import TYPE_CHECKING
 
 import dask.dataframe as dd
 import pandas as pd
 
-from etl_engine.exceptions import TransformStepError
+from etl_engine.exceptions import OnlineValidationError, TransformStepError
 from etl_engine.transform.schema_inference import infer_schema
 from etl_engine.transform.sql_transform import SQLTransform
 from etl_engine.transform.udf_transform import UDFTransform
+
+if TYPE_CHECKING:
+    from etl_engine.quality.online_checkpoint import OnlineQualityChecker
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +29,7 @@ class TransformEngine:
         self,
         df: pd.DataFrame,
         transformations: list[dict],
+        online_checker: "OnlineQualityChecker | None" = None,
     ) -> pd.DataFrame:
         if not transformations:
             return df
@@ -55,10 +61,50 @@ class TransformEngine:
                         )
                     else:
                         current = self._apply_udf(current, expression, params)
+                elif t_type == "quality_checkpoint":
+                    if online_checker is None:
+                        logger.warning(
+                            "Quality checkpoint step found at index %d but no online_checker provided, skipping",
+                            i,
+                        )
+                    else:
+                        config = t.get("config", {})
+                        checkpoint_id = config.get("checkpoint_id")
+
+                        if checkpoint_id is None:
+                            logger.warning(
+                                "Quality checkpoint at index %d has no checkpoint_id, skipping",
+                                i,
+                            )
+                        else:
+                            checkpoint_config = online_checker.get_checkpoint_config(checkpoint_id)
+
+                            if self.use_dask:
+                                current_df = current.compute()
+                            else:
+                                current_df = current
+
+                            result = asyncio.run(
+                                online_checker.run_checkpoint(checkpoint_id, current_df)
+                            )
+
+                            if not result.passed and checkpoint_config and checkpoint_config.on_failure == "abort":
+                                raise OnlineValidationError(checkpoint_id, result.validation_result)
+
+                            if self.use_dask:
+                                current = dd.from_pandas(current_df, npartitions=self.dask_n_workers)
+
+                            logger.info(
+                                "Quality checkpoint '%s' completed: passed=%s, action=%s, duration=%.3fs",
+                                checkpoint_id,
+                                result.passed,
+                                result.action_taken,
+                                result.duration_seconds,
+                            )
                 else:
                     raise ValueError(
                         f"Unknown transformation type '{t_type}' at index {i}. "
-                        f"Supported types: 'sql', 'udf'"
+                        f"Supported types: 'sql', 'udf', 'quality_checkpoint'"
                     )
             except Exception as e:
                 raise TransformStepError(
@@ -98,7 +144,7 @@ class TransformEngine:
         transformations: list[dict],
     ) -> dict:
         sample = df.head(100)
-        result = self.apply(sample, transformations)
+        result = self.apply(sample, transformations, online_checker=None)
         return infer_schema(result)
 
     def _to_dask(self, df: pd.DataFrame) -> dd.DataFrame:

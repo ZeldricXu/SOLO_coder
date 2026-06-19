@@ -17,6 +17,8 @@
         <li><a href="#dashboard" class="active"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></a></li>
         <li><a href="#sources"><span class="nav-icon">📂</span><span class="nav-label">Sources</span></a></li>
         <li><a href="#pipelines"><span class="nav-icon">🔄</span><span class="nav-label">Pipelines</span></a></li>
+        <li><a href="#streaming"><span class="nav-icon">🌊</span><span class="nav-label">Streaming</span></a></li>
+        <li><a href="#quality"><span class="nav-icon">✅</span><span class="nav-label">Quality</span></a></li>
         <li><a href="#executions"><span class="nav-icon">📋</span><span class="nav-label">Executions</span></a></li>
       </ul>
     </aside>
@@ -85,6 +87,83 @@
               </tr>
             </thead>
             <tbody id="executions-table-body-full"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="section-streaming" class="page-section">
+        <div class="section-header">
+          <h2>Streaming Pipelines</h2>
+          <p>Real-time streaming pipeline monitoring</p>
+        </div>
+        <div id="streaming-stats-grid" class="stats-grid"></div>
+        <div class="section-header" style="margin-top:16px">
+          <h2>Streaming Status</h2>
+        </div>
+        <div id="streaming-grid" class="card-grid" style="margin-top:16px"></div>
+        <div class="section-header" style="margin-top:24px">
+          <h2>Consumer Lag Monitor</h2>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Pipeline</th>
+                <th>Topic</th>
+                <th>Partition</th>
+                <th>Lag (messages)</th>
+                <th>Throughput (msg/s)</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="streaming-lag-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="section-quality" class="page-section">
+        <div class="section-header">
+          <h2>Data Quality Monitor</h2>
+          <p>Online and offline quality check results</p>
+        </div>
+        <div id="quality-stats-grid" class="stats-grid"></div>
+        <div class="section-header" style="margin-top:16px">
+          <h2>Online Checkpoint Status</h2>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Checkpoint ID</th>
+                <th>Pipeline</th>
+                <th>Position</th>
+                <th>Last Run</th>
+                <th>Status</th>
+                <th>Sample Rows</th>
+                <th>Duration</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody id="quality-checkpoint-table-body"></tbody>
+          </table>
+        </div>
+        <div class="section-header" style="margin-top:24px">
+          <h2>Recent Quality Reports</h2>
+        </div>
+        <div class="data-table-wrapper">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Pipeline</th>
+                <th>Rules Checked</th>
+                <th>Passed</th>
+                <th>Failed</th>
+                <th>Pass Rate</th>
+                <th>Blocked</th>
+                <th>Timestamp</th>
+              </tr>
+            </thead>
+            <tbody id="quality-reports-table-body"></tbody>
           </table>
         </div>
       </section>

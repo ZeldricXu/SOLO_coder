@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from etl_engine.quality.result import ValidationResult
+
 
 class ETLError(Exception):
     pass
@@ -84,3 +89,96 @@ class PartitionRetryError(ETLError):
         super().__init__(
             f"Failed to write partitions after retries: {failed_partitions}"
         )
+
+
+class StreamingPipelineError(ETLError):
+    def __init__(
+        self,
+        pipeline_name: str,
+        topic: str,
+        stage: Literal["consume", "transform", "aggregate", "sink"],
+        cause: Exception | None = None,
+    ):
+        self.pipeline_name = pipeline_name
+        self.topic = topic
+        self.stage = stage
+        self.cause = cause
+        msg = (
+            f"Streaming pipeline '{pipeline_name}' failed at {stage} stage "
+            f"while processing topic '{topic}'"
+        )
+        if cause is not None:
+            msg += f": {cause}"
+        super().__init__(msg)
+
+
+class WindowAggregationError(ETLError):
+    def __init__(
+        self,
+        window_type: str,
+        window_size: int,
+        field: str | None = None,
+        cause: Exception | None = None,
+    ):
+        self.window_type = window_type
+        self.window_size = window_size
+        self.field = field
+        self.cause = cause
+        msg = (
+            f"Window aggregation failed for {window_type} window "
+            f"(size={window_size}s)"
+        )
+        if field is not None:
+            msg += f" on field '{field}'"
+        if cause is not None:
+            msg += f": {cause}"
+        super().__init__(msg)
+
+
+class SinkWriteError(ETLError):
+    def __init__(
+        self,
+        sink_type: str,
+        operation: str,
+        record_count: int = 1,
+        cause: Exception | None = None,
+    ):
+        self.sink_type = sink_type
+        self.operation = operation
+        self.record_count = record_count
+        self.cause = cause
+        msg = (
+            f"Failed to {operation} {record_count} records "
+            f"to {sink_type} sink"
+        )
+        if cause is not None:
+            msg += f": {cause}"
+        super().__init__(msg)
+
+
+class DocumentQueryError(ETLError):
+    def __init__(self, message: str, cause: Exception | None = None):
+        self.message = message
+        self.cause = cause
+        super().__init__(message)
+
+
+class AggregationError(ETLError):
+    def __init__(self, message: str, cause: Exception | None = None):
+        self.message = message
+        self.cause = cause
+        super().__init__(message)
+
+
+class QualityCheckTimeoutError(ETLError):
+    def __init__(self, checkpoint_id: str, timeout: float):
+        self.checkpoint_id = checkpoint_id
+        self.timeout = timeout
+        super().__init__(f"Quality checkpoint '{checkpoint_id}' timed out after {timeout}s")
+
+
+class OnlineValidationError(ETLError):
+    def __init__(self, checkpoint_id: str, validation_result: "ValidationResult | None" = None):
+        self.checkpoint_id = checkpoint_id
+        self.validation_result = validation_result
+        super().__init__(f"Online validation at checkpoint '{checkpoint_id}' failed - task aborted")
