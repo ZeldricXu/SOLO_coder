@@ -1,0 +1,96 @@
+[pipeline]
+worker_threads = 8
+ring_buffer_size = 100000
+ring_buffer_seconds = 5
+fine_grained_window_secs = 10
+coarse_grained_window_secs = 300
+tdigest_compression = 100.0
+
+[[source.file_sources]]
+name = "app-logs"
+glob_pattern = "/var/log/app/*.log"
+service = "my-service"
+from_beginning = false
+line_buffer_size = 8192
+
+[[source.syslog_sources]]
+name = "syslog-udp"
+host = "0.0.0.0"
+port = 5514
+service = "syslog"
+
+[sink.kafka]
+brokers = "localhost:9092"
+anomaly_topic = "log-anomalies"
+stats_topic = "log-stats-aggregated"
+producer_linger_ms = 5
+batch_size = 16384
+compression = "lz4"
+
+[sink.minio]
+endpoint = "http://localhost:9000"
+access_key = "minioadmin"
+secret_key = "minioadmin"
+bucket = "logs"
+key_prefix = "log-stats/"
+flush_interval_secs = 60
+
+[sink.alert_channels]
+dedup_window_secs = 10
+escalation_minutes = 5
+escalation_api_url = "https://api.example.com/call-alert"
+
+[[sink.alert_channels.dingtalk]]
+name = "ops-dingtalk"
+webhook_url = "https://oapi.dingtalk.com/robot/send?access_token=REPLACE_WITH_YOUR_TOKEN"
+secret = "SEC_REPLACE_WITH_YOUR_SECRET"
+
+[[sink.alert_channels.feishu]]
+name = "ops-feishu"
+webhook_url = "https://open.feishu.cn/open-apis/bot/v2/hook/REPLACE_WITH_YOUR_HOOK"
+
+[[sink.alert_channels.pagerduty]]
+name = "oncall-pd"
+routing_key = "REPLACE_WITH_YOUR_ROUTING_KEY"
+api_url = "https://events.pagerduty.com/v2/enqueue"
+
+[[rules.threshold_rules]]
+id = "threshold-error-50"
+name = "High error rate"
+service = "my-service"
+level = "ERROR"
+window_minutes = 5
+threshold_count = 50
+severity = "WARNING"
+alert_channels = ["ops-dingtalk", "ops-feishu"]
+
+[[rules.trend_rules]]
+id = "trend-latency-p99"
+name = "P99 latency surge"
+service = "my-service"
+quantile = "P99"
+growth_percent = 30.0
+consecutive_windows = 3
+severity = "WARNING"
+alert_channels = ["ops-dingtalk"]
+
+[[rules.pattern_rules]]
+id = "pattern-oom"
+name = "OOM detected"
+patterns = ["OutOfMemoryError", "Java heap space"]
+case_sensitive = true
+severity = "CRITICAL"
+alert_channels = ["oncall-pd", "ops-dingtalk"]
+
+[[rules.pattern_rules]]
+id = "pattern-connection-reset"
+name = "Connection reset storm"
+patterns = ["connection reset", "Connection reset by peer"]
+case_sensitive = false
+severity = "WARNING"
+alert_channels = ["ops-feishu"]
+
+[observability]
+metrics_host = "0.0.0.0"
+metrics_port = 9090
+enable_dashboard = true
