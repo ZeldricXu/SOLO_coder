@@ -11,6 +11,7 @@ class SampleType(str, enum.Enum):
     WGS = "WGS"
     PANEL = "PANEL"
     cfDNA = "cfDNA"
+    RNA_SEQ = "RNA_SEQ"
 
 
 class SampleStatus(str, enum.Enum):
@@ -49,6 +50,32 @@ class ACMGClassification(str, enum.Enum):
     BENIGN = "B"
 
 
+class VariantType(str, enum.Enum):
+    SNV = "SNV"
+    INDEL = "Indel"
+    SV = "SV"
+    FUSION = "FUSION"
+    CNV = "CNV"
+    BND = "BND"
+
+
+class FamilyRole(str, enum.Enum):
+    PROBAND = "proband"
+    MOTHER = "mother"
+    FATHER = "father"
+    SIBLING = "sibling"
+    OTHER = "other"
+
+
+class InheritanceMode(str, enum.Enum):
+    AUTOSOMAL_DOMINANT = "AD"
+    AUTOSOMAL_RECESSIVE = "AR"
+    X_LINKED = "XL"
+    MITOCHONDRIAL = "MT"
+    DE_NOVO = "de_novo"
+    COMPOUND_HETEROZYGOUS = "compound_het"
+
+
 class Sample(Base):
     __tablename__ = "samples"
 
@@ -71,6 +98,9 @@ class Sample(Base):
     fastq_md5_r1 = Column(String(32))
     fastq_md5_r2 = Column(String(32))
 
+    family_id = Column(Integer, ForeignKey("families.id"), nullable=True)
+    family_role = Column(SQLEnum(FamilyRole), nullable=True)
+
     status = Column(SQLEnum(SampleStatus), default=SampleStatus.REGISTERED)
     qc_metrics = Column(JSON, default=dict)
     total_variants = Column(Integer, default=0)
@@ -83,6 +113,23 @@ class Sample(Base):
 
     tasks = relationship("AnalysisTask", back_populates="sample")
     variants = relationship("Variant", back_populates="sample")
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+class Family(Base):
+    __tablename__ = "families"
+
+    id = Column(Integer, primary_key=True, index=True)
+    family_id = Column(String(64), unique=True, index=True, nullable=False)
+    family_name = Column(String(128))
+    phenotype_description = Column(Text)
+    suspected_inheritance = Column(SQLEnum(InheritanceMode), nullable=True)
+    hpo_terms = Column(JSON, default=list)
+    notes = Column(Text)
+
+    members = relationship("Sample", backref="family", foreign_keys="Sample.family_id")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
@@ -166,10 +213,11 @@ class Variant(Base):
 
     chromosome = Column(String(16), index=True)
     position = Column(Integer, index=True)
+    end_position = Column(Integer, nullable=True)
     ref = Column(String(256))
     alt = Column(String(256))
 
-    variant_type = Column(String(16))
+    variant_type = Column(SQLEnum(VariantType), default=VariantType.SNV)
     genotype = Column(String(16))
     genotype_quality = Column(Float)
     depth = Column(Integer)
@@ -203,6 +251,24 @@ class Variant(Base):
     is_secondary_finding = Column(Boolean, default=False)
     is_candidate = Column(Boolean, default=False)
 
+    inheritance_mode = Column(SQLEnum(InheritanceMode), nullable=True)
+    segregation_info = Column(JSON, default=dict)
+
+    fusion_partner_gene = Column(String(64), nullable=True)
+    fusion_breakpoint_5prime = Column(String(128), nullable=True)
+    fusion_breakpoint_3prime = Column(String(128), nullable=True)
+    fusion_fusion_type = Column(String(32), nullable=True)
+    fusion_frame = Column(String(16), nullable=True)
+    fusion_junction_reads = Column(Integer, nullable=True)
+    fusion_spanning_reads = Column(Integer, nullable=True)
+
+    sv_event_type = Column(String(32), nullable=True)
+    sv_length = Column(Integer, nullable=True)
+    sv_ci_pos_left = Column(String(32), nullable=True)
+    sv_ci_pos_right = Column(String(32), nullable=True)
+
+    targeted_drugs = Column(JSON, default=list)
+
     sample = relationship("Sample", back_populates="variants")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -230,7 +296,8 @@ class CohortSample(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     cohort_id = Column(Integer, ForeignKey("cohorts.id"), nullable=False)
-    sample_id = Column(Integer, ForeignKey("samples.id"), nullable=False)
+    sample_id = Column(Integer, ForeignKey("samples.id"), nullable=True)
+    family_id = Column(Integer, ForeignKey("families.id"), nullable=True)
 
     added_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -286,5 +353,23 @@ class QCMetric(Base):
     het_hom_ratio = Column(Float)
 
     metrics_json = Column(JSON, default=dict)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class VariantVisualization(Base):
+    __tablename__ = "variant_visualizations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    variant_id = Column(Integer, ForeignKey("variants.id"), nullable=False)
+    sample_id = Column(Integer, ForeignKey("samples.id"), nullable=False)
+
+    image_path = Column(String(512), nullable=False)
+    image_type = Column(String(32), default="pileup")
+    chromosome = Column(String(16))
+    position = Column(Integer)
+    window_size = Column(Integer, default=50)
+
+    minio_object_key = Column(String(512), nullable=True)
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())

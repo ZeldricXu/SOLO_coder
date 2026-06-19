@@ -55,6 +55,10 @@ class ToolPaths(BaseSettings):
     gatk: str = "gatk"
     vardict: str = "vardict-java"
     vep: str = "vep"
+    star_fusion: str = "STAR-Fusion"
+    arriba: str = "arriba"
+    manta: str = "configManta.py"
+    star: str = "STAR"
 
 
 class ReferenceGenome(BaseSettings):
@@ -63,6 +67,7 @@ class ReferenceGenome(BaseSettings):
     hg38_fasta: str = "/data/reference/hg38/Homo_sapiens_assembly38.fasta"
     hg38_dict: str = "/data/reference/hg38/Homo_sapiens_assembly38.dict"
     hg38_bwa_index: str = "/data/reference/hg38/Homo_sapiens_assembly38.fasta"
+    hg38_gtf: str = "/data/reference/hg38/gencode.v33.annotation.gtf"
     known_sites_snp: str = "/data/reference/hg38/dbsnp_146.hg38.vcf.gz"
     known_sites_indel: str = "/data/reference/hg38/Mills_and_1000G_gold_standard.indels.hg38.vcf.gz"
     known_sites_1000g: str = "/data/reference/hg38/1000G_phase1.snps.high_confidence.hg38.vcf.gz"
@@ -76,6 +81,8 @@ class AnnotationDatabases(BaseSettings):
     dbnsfp_db: str = "/data/annotation/dbNSFP/dbNSFP4.3a.gz"
     clinvar_vcf: str = "/data/annotation/clinvar/clinvar_20240107.vcf.gz"
     gnomad_vcf: str = "/data/annotation/gnomad/gnomad.genomes.r4.0.sites.vcf.gz"
+    star_fusion_genome_lib: str = "/data/STAR-Fusion/genome_lib_build_dir/GRCh38_gencode_v33_CTAT_lib_Feb2020"
+    arriba_blacklist: str = "/data/arriba/hg38.blacklist.txt"
 
 
 class RetentionPolicy(BaseSettings):
@@ -95,6 +102,8 @@ class PipelineSettings(BaseSettings):
     work_dir: str = "/data/work"
     temp_dir: str = "/tmp/pipeline"
     log_dir: str = "/data/logs"
+    min_mapping_rate: float = 0.70
+    viz_window_size: int = 50
 
 
 class Settings(BaseSettings):
