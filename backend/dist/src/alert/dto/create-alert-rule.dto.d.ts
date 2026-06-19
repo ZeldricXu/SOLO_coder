@@ -18,4 +18,7 @@ export declare class CreateAlertRuleDto {
     escalationMinutes?: number;
     escalationChannels?: AlertChannelDto[];
     isActive?: boolean;
+    consecutiveThreshold?: number;
+    dedupMinutes?: number;
+    aggregationGroup?: string;
 }

@@ -8,6 +8,7 @@ export declare class AlertService {
     private readonly metricService;
     private readonly notificationService;
     private readonly logger;
+    private readonly pendingAggregations;
     constructor(prisma: PrismaService, metricService: MetricService, notificationService: NotificationService);
     create(dto: CreateAlertRuleDto): Promise<{
         metric: {
@@ -39,6 +40,10 @@ export declare class AlertService {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     findAll(metricId?: string, businessLineId?: string): Promise<({
@@ -71,6 +76,10 @@ export declare class AlertService {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     })[]>;
     findOne(id: string): Promise<{
@@ -103,6 +112,10 @@ export declare class AlertService {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     update(id: string, dto: UpdateAlertRuleDto): Promise<{
@@ -135,6 +148,10 @@ export declare class AlertService {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     remove(id: string): Promise<{
@@ -150,6 +167,10 @@ export declare class AlertService {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     toggle(id: string): Promise<{
@@ -182,6 +203,10 @@ export declare class AlertService {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     findRecords(ruleId?: string, acknowledged?: boolean): Promise<({
@@ -215,6 +240,10 @@ export declare class AlertService {
             silenceMinutes: number;
             escalationMinutes: number;
             escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+            consecutiveThreshold: number;
+            dedupMinutes: number;
+            aggregationGroup: string | null;
+            hitCount: number;
             lastTriggeredAt: Date | null;
         };
     } & {
@@ -241,6 +270,11 @@ export declare class AlertService {
         acknowledgedBy: string | null;
         acknowledgedAt: Date | null;
     }>;
+    acknowledgeRule(ruleId: string, userId: string): Promise<{
+        ruleId: string;
+        acknowledged: boolean;
+        hitCountReset: boolean;
+    }>;
     getHistory(ruleId: string): Promise<{
         value: number;
         message: string;
@@ -254,6 +288,15 @@ export declare class AlertService {
         acknowledgedAt: Date | null;
     }[]>;
     evaluateRule(ruleId: string): Promise<void>;
+    private evaluateWithNoiseReduction;
+    private getAggregationKey;
+    private parseAggregationKey;
+    private fetchBusinessLineName;
+    flushAggregations(): Promise<{
+        flushed: number;
+        messages: string[];
+    }>;
+    private flushAggregationByKey;
     private evaluateThreshold;
     private evaluateFluctuation;
     private evaluateStreamBreak;

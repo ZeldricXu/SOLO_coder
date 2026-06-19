@@ -9,9 +9,9 @@ export declare class LocalStrategy extends LocalStrategy_base {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
 }
 export {};

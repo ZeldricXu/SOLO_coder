@@ -19,6 +19,7 @@ const alert_module_1 = require("./alert/alert.module");
 const auth_module_1 = require("./auth/auth.module");
 const tenant_module_1 = require("./tenant/tenant.module");
 const audit_module_1 = require("./audit/audit.module");
+const change_detector_module_1 = require("./change-detector/change-detector.module");
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
@@ -46,6 +47,7 @@ exports.AppModule = AppModule = __decorate([
             auth_module_1.AuthModule,
             tenant_module_1.TenantModule,
             audit_module_1.AuditModule,
+            change_detector_module_1.ChangeDetectorModule,
         ],
     })
 ], AppModule);

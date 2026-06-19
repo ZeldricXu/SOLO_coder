@@ -18,6 +18,7 @@ import {
   Row,
   Col,
   Statistic,
+  Dropdown,
 } from 'antd';
 import {
   PlusOutlined,
@@ -25,11 +26,14 @@ import {
   DeleteOutlined,
   PlayCircleOutlined,
   BarChartOutlined,
+  CodeOutlined,
+  UnorderedListOutlined,
 } from '@ant-design/icons';
 import type { Metric, MetricType, Aggregation, TimeWindow } from '@/types';
 import { MetricType as MetricTypeEnum, Aggregation as AggregationEnum, TimeWindow as TimeWindowEnum } from '@/types';
 import { metricService } from '@/services/metric';
 import { formatDate, formatNumber, formatChangeRate } from '@/utils/format';
+import VisualMetricEditor from '@/components/VisualMetricEditor';
 
 const { Title } = Typography;
 const { Option } = Select;
@@ -40,6 +44,7 @@ const MetricPage: React.FC = () => {
   const [metrics, setMetrics] = useState<Metric[]>([]);
   const [loading, setLoading] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const [visualEditorVisible, setVisualEditorVisible] = useState(false);
   const [editingMetric, setEditingMetric] = useState<Metric | null>(null);
   const [previewDrawerVisible, setPreviewDrawerVisible] = useState(false);
   const [previewData, setPreviewData] = useState<Record<string, unknown>[]>([]);
@@ -244,9 +249,28 @@ const MetricPage: React.FC = () => {
         <Title level={3} style={{ margin: 0 }}>
           指标管理
         </Title>
-        <Button type="primary" icon={<PlusOutlined />} onClick={handleCreate}>
-          新建指标
-        </Button>
+        <Dropdown
+          menu={{
+            items: [
+              {
+                key: 'visual',
+                icon: <UnorderedListOutlined />,
+                label: <strong>可视化编辑器（推荐）</strong>,
+                onClick: () => setVisualEditorVisible(true),
+              },
+              {
+                key: 'sql',
+                icon: <CodeOutlined />,
+                label: 'SQL 模式',
+                onClick: handleCreate,
+              },
+            ],
+          }}
+        >
+          <Button type="primary" icon={<PlusOutlined />}>
+            新建指标
+          </Button>
+        </Dropdown>
       </div>
 
       <Table rowKey="id" columns={columns} dataSource={metrics} loading={loading} />
@@ -345,6 +369,29 @@ const MetricPage: React.FC = () => {
             <Switch />
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title="可视化指标编辑器"
+        open={visualEditorVisible}
+        onCancel={() => setVisualEditorVisible(false)}
+        footer={null}
+        width={1200}
+        style={{ top: 20 }}
+        destroyOnClose
+        maskClosable={false}
+      >
+        <VisualMetricEditor
+          onCancel={() => {
+            setVisualEditorVisible(false);
+            loadMetrics();
+          }}
+          onCreated={() => {
+            message.success('指标创建成功');
+            setVisualEditorVisible(false);
+            loadMetrics();
+          }}
+        />
       </Modal>
 
       <Drawer

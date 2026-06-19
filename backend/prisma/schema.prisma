@@ -119,6 +119,7 @@ model DataSource {
   businessLineId      String
   businessLine        BusinessLine @relation(fields: [businessLineId], references: [id], onDelete: Cascade)
   metrics             Metric[]
+  dataChangeEvents    DataChangeEvent[]
   isActive             Boolean      @default(true)
   lastConnectionTest  DateTime?
   createdAt           DateTime     @default(now())
@@ -207,6 +208,13 @@ model AlertRule {
   silenceMinutes     Int          @default(60)
   escalationMinutes  Int          @default(0)
   escalationChannels Json?
+
+  // 告警降噪
+  consecutiveThreshold Int       @default(1)
+  dedupMinutes         Int       @default(30)
+  aggregationGroup     String?
+  hitCount             Int       @default(0)
+
   isActive           Boolean      @default(true)
   lastTriggeredAt    DateTime?
   records            AlertRecord[]
@@ -216,6 +224,25 @@ model AlertRule {
   @@index([metricId])
   @@index([isActive])
   @@index([type])
+  @@index([aggregationGroup])
+}
+
+model DataChangeEvent {
+  id              String         @id @default(cuid())
+  dataSourceId    String
+  dataSource      DataSource     @relation(fields: [dataSourceId], references: [id], onDelete: Cascade)
+  tableName       String
+  operation       String
+  pk              Json?
+  beforeData      Json?
+  afterData       Json?
+  timestamp       DateTime       @default(now())
+  delivered       Boolean        @default(false)
+
+  @@index([dataSourceId])
+  @@index([tableName])
+  @@index([timestamp])
+  @@index([delivered])
 }
 
 model AlertRecord {

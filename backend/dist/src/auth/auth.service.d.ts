@@ -11,9 +11,9 @@ export declare class AuthService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
     login(user: any): Promise<{
         access_token: string;
@@ -24,9 +24,9 @@ export declare class AuthService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
     generateToken(user: any): string;
     getProfile(userId: string): Promise<{
@@ -34,17 +34,17 @@ export declare class AuthService {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
     updateProfile(userId: string, dto: UpdateProfileDto): Promise<{
         name: string;
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
 }

@@ -26,8 +26,8 @@ export declare class TenantController {
             id: string;
             createdAt: Date;
             updatedAt: Date;
-            tenantId: string;
             code: string;
+            tenantId: string;
         }[];
     } & {
         name: string;
@@ -55,23 +55,23 @@ export declare class TenantController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        tenantId: string;
         code: string;
+        tenantId: string;
     }>;
     updateBusinessLine(id: string, blId: string, dto: UpdateBusinessLineDto, user: any): Promise<{
         name: string;
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        tenantId: string;
         code: string;
+        tenantId: string;
     }>;
     removeBusinessLine(id: string, blId: string, user: any): Promise<{
         name: string;
         id: string;
         createdAt: Date;
         updatedAt: Date;
-        tenantId: string;
         code: string;
+        tenantId: string;
     }>;
 }

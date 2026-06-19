@@ -18,6 +18,8 @@ const alert_service_1 = require("./alert.service");
 const create_alert_rule_dto_1 = require("./dto/create-alert-rule.dto");
 const update_alert_rule_dto_1 = require("./dto/update-alert-rule.dto");
 const acknowledge_dto_1 = require("./dto/acknowledge.dto");
+const current_user_decorator_1 = require("../common/decorators/current-user.decorator");
+const jwt_auth_guard_1 = require("../common/guards/jwt-auth.guard");
 let AlertController = class AlertController {
     constructor(alertService) {
         this.alertService = alertService;
@@ -39,6 +41,12 @@ let AlertController = class AlertController {
     }
     toggleRule(id) {
         return this.alertService.toggle(id);
+    }
+    async acknowledgeRule(id, user) {
+        return this.alertService.acknowledgeRule(id, user.sub ?? user.id);
+    }
+    async flushAggregations() {
+        return this.alertService.flushAggregations();
     }
     findRecords(ruleId, acknowledged) {
         const ack = acknowledged !== undefined ? acknowledged === 'true' : undefined;
@@ -96,6 +104,21 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", void 0)
 ], AlertController.prototype, "toggleRule", null);
+__decorate([
+    (0, common_1.Post)('rules/:id/acknowledge'),
+    (0, common_1.UseGuards)(jwt_auth_guard_1.JwtAuthGuard),
+    __param(0, (0, common_1.Param)('id')),
+    __param(1, (0, current_user_decorator_1.CurrentUser)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], AlertController.prototype, "acknowledgeRule", null);
+__decorate([
+    (0, common_1.Post)('flush-aggregations'),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", Promise)
+], AlertController.prototype, "flushAggregations", null);
 __decorate([
     (0, common_1.Get)('records'),
     __param(0, (0, common_1.Query)('ruleId')),

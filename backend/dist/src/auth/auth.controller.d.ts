@@ -10,9 +10,9 @@ export declare class AuthController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
     login(_dto: LoginDto, user: any): Promise<{
         access_token: string;
@@ -23,17 +23,17 @@ export declare class AuthController {
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
     updateProfile(user: any, dto: UpdateProfileDto): Promise<{
         name: string;
         id: string;
         createdAt: Date;
         updatedAt: Date;
+        tenantId: string | null;
         role: import(".prisma/client").$Enums.Role;
         email: string;
-        tenantId: string | null;
     }>;
 }

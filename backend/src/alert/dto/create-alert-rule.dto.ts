@@ -8,6 +8,7 @@ import {
   IsNotEmpty,
   ValidateNested,
   IsBoolean,
+  Min,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AlertType } from '@prisma/client';
@@ -64,4 +65,18 @@ export class CreateAlertRuleDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  consecutiveThreshold?: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  dedupMinutes?: number;
+
+  @IsOptional()
+  @IsString()
+  aggregationGroup?: string;
 }

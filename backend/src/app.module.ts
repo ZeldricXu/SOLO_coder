@@ -10,6 +10,7 @@ import { AlertModule } from './alert/alert.module';
 import { AuthModule } from './auth/auth.module';
 import { TenantModule } from './tenant/tenant.module';
 import { AuditModule } from './audit/audit.module';
+import { ChangeDetectorModule } from './change-detector/change-detector.module';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { AuditModule } from './audit/audit.module';
     AuthModule,
     TenantModule,
     AuditModule,
+    ChangeDetectorModule,
   ],
 })
 export class AppModule {}

@@ -35,6 +35,10 @@ export declare class AlertController {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     findRules(metricId?: string, businessLineId?: string): Promise<({
@@ -67,6 +71,10 @@ export declare class AlertController {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     })[]>;
     findOneRule(id: string): Promise<{
@@ -99,6 +107,10 @@ export declare class AlertController {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     updateRule(id: string, dto: UpdateAlertRuleDto): Promise<{
@@ -131,6 +143,10 @@ export declare class AlertController {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     removeRule(id: string): Promise<{
@@ -146,6 +162,10 @@ export declare class AlertController {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
     }>;
     toggleRule(id: string): Promise<{
@@ -178,7 +198,20 @@ export declare class AlertController {
         silenceMinutes: number;
         escalationMinutes: number;
         escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+        consecutiveThreshold: number;
+        dedupMinutes: number;
+        aggregationGroup: string | null;
+        hitCount: number;
         lastTriggeredAt: Date | null;
+    }>;
+    acknowledgeRule(id: string, user: any): Promise<{
+        ruleId: string;
+        acknowledged: boolean;
+        hitCountReset: boolean;
+    }>;
+    flushAggregations(): Promise<{
+        flushed: number;
+        messages: string[];
     }>;
     findRecords(ruleId?: string, acknowledged?: string): Promise<({
         rule: {
@@ -211,6 +244,10 @@ export declare class AlertController {
             silenceMinutes: number;
             escalationMinutes: number;
             escalationChannels: import("@prisma/client/runtime/library").JsonValue | null;
+            consecutiveThreshold: number;
+            dedupMinutes: number;
+            aggregationGroup: string | null;
+            hitCount: number;
             lastTriggeredAt: Date | null;
         };
     } & {

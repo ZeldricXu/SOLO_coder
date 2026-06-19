@@ -408,4 +408,210 @@ describe('AlertService', () => {
       );
     });
   });
+
+  describe('告警降噪 - 连续阈值 Flapping Detection', () => {
+    it('consecutiveThreshold=3 时，第1次超阈值不触发，只累加 hitCount', async () => {
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 3,
+        hitCount: 0,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+
+      await service.evaluateRule('rule-1');
+
+      expect(prismaMock.alertRule.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ hitCount: 1 }),
+        }),
+      );
+      expect(notificationMock.sendNotifications).not.toHaveBeenCalled();
+      expect(prismaMock.alertRecord.create).not.toHaveBeenCalled();
+    });
+
+    it('consecutiveThreshold=3 时，第2次仍不触发', async () => {
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 3,
+        hitCount: 1,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+
+      await service.evaluateRule('rule-1');
+
+      expect(prismaMock.alertRule.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ hitCount: 2 }),
+        }),
+      );
+      expect(notificationMock.sendNotifications).not.toHaveBeenCalled();
+    });
+
+    it('consecutiveThreshold=3 时，第3次触发并重置 hitCount 为 0', async () => {
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 3,
+        hitCount: 2,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+      prismaMock.alertRecord.create.mockResolvedValue({ id: 'rec-flap-3' });
+      prismaMock.alertRule.update.mockResolvedValue({});
+
+      await service.evaluateRule('rule-1');
+
+      expect(notificationMock.sendNotifications).toHaveBeenCalled();
+      expect(prismaMock.alertRecord.create).toHaveBeenCalled();
+      const updateCall = prismaMock.alertRule.update.mock.calls.find(
+        (c: any) => c[0].data.hitCount === 0,
+      );
+      expect(updateCall).toBeDefined();
+    });
+
+    it('连续中断（某次未命中）应重置 hitCount 为 0', async () => {
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 3,
+        hitCount: 2,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 50 }] });
+
+      await service.evaluateRule('rule-1');
+
+      expect(prismaMock.alertRule.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ hitCount: 0 }),
+        }),
+      );
+      expect(notificationMock.sendNotifications).not.toHaveBeenCalled();
+    });
+
+    it('consecutiveThreshold=1 时，默认立即触发', async () => {
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 1,
+        hitCount: 0,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+      prismaMock.alertRecord.create.mockResolvedValue({ id: 'rec-flap-1' });
+      prismaMock.alertRule.update.mockResolvedValue({});
+
+      await service.evaluateRule('rule-1');
+
+      expect(notificationMock.sendNotifications).toHaveBeenCalled();
+    });
+  });
+
+  describe('告警降噪 - 去重窗口 Dedup Window', () => {
+    it('在 dedupMinutes=30 内，上次触发后 25 分钟再次命中，只写 record 不发通知', async () => {
+      const twentyFiveMinAgo = new Date(Date.now() - 25 * 60 * 1000);
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 1,
+        dedupMinutes: 30,
+        lastTriggeredAt: twentyFiveMinAgo,
+        hitCount: 0,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+      prismaMock.alertRecord.create.mockResolvedValue({ id: 'rec-dedup-1' });
+
+      await service.evaluateRule('rule-1');
+
+      expect(prismaMock.alertRecord.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ notified: false }),
+        }),
+      );
+      expect(notificationMock.sendNotifications).not.toHaveBeenCalled();
+    });
+
+    it('超出 dedup 窗口后正常发送通知', async () => {
+      const twoHoursAgo = new Date(Date.now() - 120 * 60 * 1000);
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 1,
+        dedupMinutes: 30,
+        lastTriggeredAt: twoHoursAgo,
+        hitCount: 0,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+      prismaMock.alertRecord.create.mockResolvedValue({ id: 'rec-dedup-2' });
+
+      await service.evaluateRule('rule-1');
+
+      expect(notificationMock.sendNotifications).toHaveBeenCalled();
+      const createCall = prismaMock.alertRecord.create.mock.calls[0][0];
+      expect(createCall.data.notified).toBe(true);
+    });
+
+    it('lastTriggeredAt 为 null 时，dedup 窗口不生效', async () => {
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        condition: { upper: 100 },
+        consecutiveThreshold: 1,
+        dedupMinutes: 30,
+        lastTriggeredAt: null,
+        hitCount: 0,
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+      prismaMock.alertRecord.create.mockResolvedValue({ id: 'rec-dedup-3' });
+
+      await service.evaluateRule('rule-1');
+
+      expect(notificationMock.sendNotifications).toHaveBeenCalled();
+    });
+  });
+
+  describe('告警降噪 - 告警聚合 Alert Aggregation', () => {
+    beforeEach(() => {
+      notificationMock.sendNotifications.mockClear();
+    });
+
+    it('配置了 aggregationGroup 的告警入聚合队列，不立即发送', async () => {
+      prismaMock.alertRule.findUnique.mockResolvedValue({
+        ...baseRule,
+        id: 'rule-agg-1',
+        name: 'GMV下跌',
+        condition: { upper: 100 },
+        consecutiveThreshold: 1,
+        dedupMinutes: 30,
+        aggregationGroup: 'core_metrics',
+        lastTriggeredAt: null,
+        hitCount: 0,
+        metricId: 'metric-gmv',
+      });
+      metricMock.execute.mockResolvedValue({ data: [{ aggregated_value: 150 }] });
+      prismaMock.alertRecord.create.mockResolvedValue({ id: 'rec-agg-1' });
+
+      await service.evaluateRule('rule-agg-1');
+
+      expect(notificationMock.sendNotifications).not.toHaveBeenCalled();
+      expect(prismaMock.alertRecord.create).toHaveBeenCalled();
+    });
+
+    it('acknowledgeRule 确认最近一条记录并重置 hitCount', async () => {
+      prismaMock.alertRecord.findMany.mockResolvedValue([
+        { id: 'rec-ack', acknowledged: false, ruleId: 'rule-1' },
+      ]);
+      prismaMock.alertRecord.update.mockResolvedValue({ id: 'rec-ack' });
+      prismaMock.alertRule.findUnique.mockResolvedValue({ id: 'rule-1', hitCount: 2 });
+      prismaMock.alertRule.update.mockResolvedValue({});
+
+      const res = await service.acknowledgeRule('rule-1', 'user-1');
+
+      expect(prismaMock.alertRecord.update).toHaveBeenCalled();
+      expect(prismaMock.alertRule.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ hitCount: 0 }),
+        }),
+      );
+      expect(res).toBeDefined();
+    });
+  });
 });
