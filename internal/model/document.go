@@ -24,31 +24,37 @@ func (Directory) TableName() string {
 type Document struct {
 	BaseModel
 	TenantScoped
-	SpaceID         string         `gorm:"type:uuid;not null;index" json:"space_id"`
-	DirectoryID     string         `gorm:"type:uuid;index" json:"directory_id"`
-	Title         string         `gorm:"type:varchar(500);not null" json:"title"`
-	Slug          string         `gorm:"type:varchar(500);index" json:"slug"`
-	Summary       string         `gorm:"type:text" json:"summary"`
-	Content       ProseMirrorDoc `gorm:"type:jsonb" json:"content"`
-	ContentText   string         `gorm:"type:text" json:"content_text"`
-	ContentType   string         `gorm:"type:varchar(50);default:'markdown'" json:"content_type"`
-	LangCode      string         `gorm:"type:varchar(16);default:'zh-CN'" json:"lang_code"`
-	Category      string         `gorm:"type:varchar(100);index" json:"category"`
-	Tags          []string       `gorm:"type:text[]" json:"tags"`
-	Status        string         `gorm:"type:varchar(32);not null;default:'draft'" json:"status"`
-	Priority      int            `gorm:"type:int;default:0" json:"priority"`
-	Version       int            `gorm:"type:int;default:1" json:"version"`
-	ViewCount     int64          `gorm:"type:bigint;default:0" json:"view_count"`
-	LikeCount     int64          `gorm:"type:bigint;default:0" json:"like_count"`
-	CommentCount  int64          `gorm:"type:bigint;default:0" json:"comment_count"`
-	IsPublic      bool           `gorm:"type:boolean;default:false" json:"is_public"`
-	IsPinned      bool           `gorm:"type:boolean;default:false" json:"is_pinned"`
-	PublishedAt   *time.Time     `json:"published_at"`
-	CreatedBy     string         `gorm:"type:uuid;not null" json:"created_by"`
-	UpdatedBy     string         `gorm:"type:uuid" json:"updated_by"`
-	ParentDocID   string         `gorm:"type:uuid;index" json:"parent_doc_id"`
-	OriginalID    string         `gorm:"type:uuid;index" json:"original_id"`
-	Metadata      JSONB          `gorm:"type:jsonb" json:"metadata"`
+	SpaceID              string         `gorm:"type:uuid;not null;index" json:"space_id"`
+	DirectoryID          string         `gorm:"type:uuid;index" json:"directory_id"`
+	Title                string         `gorm:"type:varchar(500);not null" json:"title"`
+	Slug                 string         `gorm:"type:varchar(500);index" json:"slug"`
+	Summary              string         `gorm:"type:text" json:"summary"`
+	Content              ProseMirrorDoc `gorm:"type:jsonb" json:"content"`
+	ContentText          string         `gorm:"type:text" json:"content_text"`
+	ContentType          string         `gorm:"type:varchar(50);default:'markdown'" json:"content_type"`
+	LangCode             string         `gorm:"type:varchar(16);default:'zh-CN'" json:"lang_code"`
+	Category             string         `gorm:"type:varchar(100);index" json:"category"`
+	Tags                 []string       `gorm:"type:text[]" json:"tags"`
+	Status               string         `gorm:"type:varchar(32);not null;default:'draft'" json:"status"`
+	Priority             int            `gorm:"type:int;default:0" json:"priority"`
+	Version              int            `gorm:"type:int;default:1" json:"version"`
+	ViewCount            int64          `gorm:"type:bigint;default:0" json:"view_count"`
+	LikeCount            int64          `gorm:"type:bigint;default:0" json:"like_count"`
+	CommentCount         int64          `gorm:"type:bigint;default:0" json:"comment_count"`
+	IsPublic             bool           `gorm:"type:boolean;default:false" json:"is_public"`
+	IsPinned             bool           `gorm:"type:boolean;default:false" json:"is_pinned"`
+	PublishedAt          *time.Time     `json:"published_at"`
+	CreatedBy            string         `gorm:"type:uuid;not null" json:"created_by"`
+	UpdatedBy            string         `gorm:"type:uuid" json:"updated_by"`
+	ParentDocID          string         `gorm:"type:uuid;index" json:"parent_doc_id"`
+	OriginalID           string         `gorm:"type:uuid;index" json:"original_id"`
+	Metadata             JSONB          `gorm:"type:jsonb" json:"metadata"`
+	IsBaseLang           bool           `gorm:"type:boolean;default:true" json:"is_base_lang"`
+	BaseDocID            string         `gorm:"type:uuid;index" json:"base_doc_id"`
+	BaseVersion          int            `gorm:"type:int;default:0" json:"base_version"`
+	NeedsReTranslation   bool           `gorm:"type:boolean;default:false" json:"needs_retranslation"`
+	LastTranslationAt    *time.Time     `json:"last_translation_at"`
+	TranslationProgress  int            `gorm:"type:int;default:0" json:"translation_progress"`
 }
 
 func (Document) TableName() string {
@@ -117,15 +123,18 @@ func (ApiToken) TableName() string {
 type I18nDoc struct {
 	BaseModel
 	TenantScoped
-	SourceDocID   string `gorm:"type:uuid;not null;index" json:"source_doc_id"`
-	SourceLang  string `gorm:"type:varchar(16);not null" json:"source_lang"`
-	TargetLang  string `gorm:"type:varchar(16);not null" json:"target_lang"`
-	TargetDocID string `gorm:"type:uuid;index" json:"target_doc_id"`
-	Status      string `gorm:"type:varchar(32);default:'draft'" json:"status"`
-	Progress    int    `gorm:"type:int;default:0" json:"progress"`
-	TranslatedBy string `gorm:"type:uuid" json:"translated_by"`
-	ReviewedBy  string `gorm:"type:uuid" json:"reviewed_by"`
-	Metadata    JSONB  `gorm:"type:jsonb" json:"metadata"`
+	SourceDocID          string `gorm:"type:uuid;not null;index" json:"source_doc_id"`
+	SourceLang           string `gorm:"type:varchar(16);not null" json:"source_lang"`
+	TargetLang           string `gorm:"type:varchar(16);not null" json:"target_lang"`
+	TargetDocID          string `gorm:"type:uuid;index" json:"target_doc_id"`
+	Status               string `gorm:"type:varchar(32);default:'draft'" json:"status"`
+	Progress             int    `gorm:"type:int;default:0" json:"progress"`
+	TranslatedBy         string `gorm:"type:uuid" json:"translated_by"`
+	ReviewedBy           string `gorm:"type:uuid" json:"reviewed_by"`
+	BaseVersionForked    int    `gorm:"type:int;default:0" json:"base_version_forked"`
+	LastBaseVersionSynced int   `gorm:"type:int;default:0" json:"last_base_version_synced"`
+	DiffToBase           string `gorm:"type:text" json:"diff_to_base"`
+	Metadata             JSONB  `gorm:"type:jsonb" json:"metadata"`
 }
 
 func (I18nDoc) TableName() string {
@@ -204,5 +213,51 @@ type SearchIndex struct {
 func (SearchIndex) TableName() string {
 	return "search_indices"
 }
+
+type SnapshotPolicy struct {
+	BaseModel
+	TenantScoped
+	SpaceID            string     `gorm:"type:uuid;not null;index" json:"space_id"`
+	Name               string     `gorm:"type:varchar(255);not null" json:"name"`
+	Frequency          string     `gorm:"type:varchar(32);not null;default:'daily'" json:"frequency"`
+	CronExpr           string     `gorm:"type:varchar(128)" json:"cron_expr"`
+	Hour               int        `gorm:"type:int;default:2" json:"hour"`
+	DayOfWeek          int        `gorm:"type:int;default:0" json:"day_of_week"`
+	DayOfMonth         int        `gorm:"type:int;default:1" json:"day_of_month"`
+	RetentionDays      int        `gorm:"type:int;default:90" json:"retention_days"`
+	IncludeAttachments bool       `gorm:"type:boolean;default:true" json:"include_attachments"`
+	IncludeDeleted     bool       `gorm:"type:boolean;default:false" json:"include_deleted"`
+	IsEnabled          bool       `gorm:"type:boolean;default:true" json:"is_enabled"`
+	LastRunAt          *time.Time `json:"last_run_at"`
+	NextRunAt          *time.Time `json:"next_run_at"`
+	CreatedBy          string     `gorm:"type:uuid;not null" json:"created_by"`
+}
+
+func (SnapshotPolicy) TableName() string { return "snapshot_policies" }
+
+type SpaceSnapshot struct {
+	BaseModel
+	TenantScoped
+	SpaceID         string     `gorm:"type:uuid;not null;index" json:"space_id"`
+	PolicyID        string     `gorm:"type:uuid;index" json:"policy_id"`
+	Name            string     `gorm:"type:varchar(500);not null" json:"name"`
+	Description     string     `gorm:"type:text" json:"description"`
+	SnapshotType    string     `gorm:"type:varchar(32);default:'automatic'" json:"snapshot_type"`
+	Status          string     `gorm:"type:varchar(32);default:'pending'" json:"status"`
+	StorageType     string     `gorm:"type:varchar(32);default:'minio'" json:"storage_type"`
+	StoragePath     string     `gorm:"type:varchar(1000)" json:"storage_path"`
+	ArchiveSize     int64      `gorm:"type:bigint;default:0" json:"archive_size"`
+	DocCount        int        `gorm:"type:int;default:0" json:"doc_count"`
+	VersionCount    int        `gorm:"type:int;default:0" json:"version_count"`
+	AttachmentCount int        `gorm:"type:int;default:0" json:"attachment_count"`
+	DirCount        int        `gorm:"type:int;default:0" json:"dir_count"`
+	ChecksumSHA256  string     `gorm:"type:varchar(64)" json:"checksum_sha256"`
+	ErrorMsg        string     `gorm:"type:text" json:"error_msg"`
+	ExpireAt        *time.Time `json:"expire_at"`
+	CreatedBy       string     `gorm:"type:uuid" json:"created_by"`
+	CompletedAt     *time.Time `json:"completed_at"`
+}
+
+func (SpaceSnapshot) TableName() string { return "space_snapshots" }
 
 var _ = gorm.DeletedAt{}

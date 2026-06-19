@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -17,6 +18,24 @@ type Config struct {
 	JWT      JWTConfig
 	CORS     CORSConfig
 	OT       OTConfig
+	Tika     TikaConfig
+	Snapshot SnapshotConfig
+}
+
+type SnapshotConfig struct {
+	ColdBucket             string
+	DefaultRetentionDays   int
+	MaxConcurrentSnapshots int
+	TempDir                string
+}
+
+type TikaConfig struct {
+	Endpoint   string
+	Timeout    time.Duration
+	Username   string
+	Password   string
+	EnableOCR  bool
+	OCRService string
 }
 
 type ServerConfig struct {
@@ -142,6 +161,20 @@ func Load() *Config {
 			BufferSize:    getEnvInt("OT_BUFFER_SIZE", 1000),
 			FlushInterval: getEnvInt("OT_FLUSH_INTERVAL", 100),
 			MaxVersionGap: getEnvInt("OT_MAX_VERSION_GAP", 100),
+		},
+		Tika: TikaConfig{
+			Endpoint:   getEnv("TIKA_ENDPOINT", "http://localhost:9998"),
+			Timeout:    time.Duration(getEnvInt("TIKA_TIMEOUT", 30)) * time.Second,
+			Username:   getEnv("TIKA_USERNAME", ""),
+			Password:   getEnv("TIKA_PASSWORD", ""),
+			EnableOCR:  getEnvBool("TIKA_ENABLE_OCR", false),
+			OCRService: getEnv("TIKA_OCR_SERVICE", ""),
+		},
+		Snapshot: SnapshotConfig{
+			ColdBucket:             getEnv("SNAPSHOT_COLD_BUCKET", "knowledgebase-snapshots"),
+			DefaultRetentionDays:   getEnvInt("SNAPSHOT_DEFAULT_RETENTION_DAYS", 90),
+			MaxConcurrentSnapshots: getEnvInt("SNAPSHOT_MAX_CONCURRENT", 2),
+			TempDir:                getEnv("SNAPSHOT_TEMP_DIR", "./data/snapshots/tmp"),
 		},
 	}
 

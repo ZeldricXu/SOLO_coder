@@ -71,6 +71,8 @@ func AutoMigrate(db *gorm.DB) error {
 		&model.Quota{},
 		&model.Theme{},
 		&model.SearchIndex{},
+		&model.SnapshotPolicy{},
+		&model.SpaceSnapshot{},
 	}
 
 	for _, m := range models {
