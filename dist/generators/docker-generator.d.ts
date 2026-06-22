@@ -7,8 +7,9 @@ export declare class DockerGenerator {
     generate(): Promise<void>;
     private generateDockerfile;
     private getDockerfileContent;
-    private getBackendDockerfile;
+    private getNodeBackendDockerfile;
     private getFrontendDockerfile;
+    private getCliToolDockerfile;
     private getLockFile;
     private getPmInstallCommand;
     private getPmRunCommand;

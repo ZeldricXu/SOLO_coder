@@ -43,6 +43,7 @@ export interface CreateOptions {
   ci?: string;
   deploy?: string;
   template?: string;
+  templateVersion?: string;
   author?: string;
   description?: string;
   gitRemote?: string;
@@ -165,7 +166,8 @@ async function main(): Promise<void> {
     .option('--no-docker', 'Exclude Docker support')
     .option('--ci <provider>', `CI provider: ${Object.values(CI_PROVIDER_NAMES).join(', ')}`)
     .option('--deploy <target>', `Deploy target: ${Object.values(DEPLOY_TARGET_NAMES).join(', ')}`)
-    .option('--template <path>', 'Use custom template from local path or GitHub URL')
+    .option('--template <path>', 'Use custom template from local path, GitHub URL, or npm package')
+    .option('--template-version <version>', 'Specify template version (for npm packages)')
     .option('-a, --author <name>', 'Author name')
     .option('-d, --description <desc>', 'Project description')
     .option('--git-remote <url>', 'Git remote repository URL')
@@ -194,6 +196,7 @@ async function main(): Promise<void> {
         ciProvider: options.ci as CiProviderType | undefined,
         deployTarget: options.deploy as DeployTargetType | undefined,
         template: options.template ?? null,
+        templateVersion: options.templateVersion ?? null,
         quiet: options.quiet ?? false,
         gitRemoteUrl: options.gitRemote,
         usePreCommitHook: options.preCommit,
@@ -215,6 +218,7 @@ async function main(): Promise<void> {
           ciProvider: (defaults['ciProvider'] as CiProviderType | undefined) ?? prefs.lastCiProvider ?? 'github',
           deployTarget: (defaults['deployTarget'] as DeployTargetType | undefined) ?? 'docker',
           template: defaults['template'] ?? null,
+          templateVersion: defaults['templateVersion'] ?? null,
           quiet: true,
           gitRemoteUrl: defaults['gitRemoteUrl'],
           usePreCommitHook: defaults['usePreCommitHook'] ?? prefs.lastUsePreCommitHook ?? true,
@@ -248,6 +252,7 @@ async function main(): Promise<void> {
         deployTarget: (config['deployTarget'] as DeployTargetType) ?? 'none',
         usePreCommitHook: (config['usePreCommitHook'] as boolean) ?? true,
         template: (config['template'] as string | null) ?? null,
+        templateVersion: (config['templateVersion'] as string | null) ?? null,
         quiet: (config['quiet'] as boolean) ?? false,
         gitRemoteUrl: config['gitRemoteUrl'] as string | undefined,
         targetDir,

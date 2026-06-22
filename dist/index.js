@@ -4,6 +4,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.validateCreateOptions = validateCreateOptions;
 const commander_1 = require("commander");
 const chalk_1 = __importDefault(require("chalk"));
 const path_1 = __importDefault(require("path"));
@@ -35,6 +36,62 @@ async function checkForUpdates() {
         console.log();
     }
 }
+function validateCreateOptions(options) {
+    const errors = [];
+    if (options.template && options.framework) {
+        errors.push({
+            message: `--template 和 --framework 参数冲突。使用自定义模板时，框架选项由模板决定。`,
+            code: 'TEMPLATE_FRAMEWORK_CONFLICT',
+        });
+    }
+    if (options.template && options.docker !== undefined) {
+        errors.push({
+            message: `--template 和 --docker 参数冲突。使用自定义模板时，Docker支持由模板决定。`,
+            code: 'TEMPLATE_DOCKER_CONFLICT',
+        });
+    }
+    if (options.template && options.ci) {
+        errors.push({
+            message: `--template 和 --ci 参数冲突。使用自定义模板时，CI配置由模板决定。`,
+            code: 'TEMPLATE_CI_CONFLICT',
+        });
+    }
+    if (options.template && options.deploy) {
+        errors.push({
+            message: `--template 和 --deploy 参数冲突。使用自定义模板时，部署配置由模板决定。`,
+            code: 'TEMPLATE_DEPLOY_CONFLICT',
+        });
+    }
+    const validFrameworks = ['node-backend', 'react-frontend', 'vue-frontend', 'cli-tool'];
+    if (options.framework && !validFrameworks.includes(options.framework)) {
+        errors.push({
+            message: `无效的框架: ${options.framework}。可选值: ${validFrameworks.join(', ')}`,
+            code: 'INVALID_FRAMEWORK',
+        });
+    }
+    const validPMs = ['npm', 'yarn', 'pnpm'];
+    if (options.packageManager && !validPMs.includes(options.packageManager)) {
+        errors.push({
+            message: `无效的包管理器: ${options.packageManager}。可选值: ${validPMs.join(', ')}`,
+            code: 'INVALID_PACKAGE_MANAGER',
+        });
+    }
+    const validCIs = ['github', 'gitlab', 'none'];
+    if (options.ci && !validCIs.includes(options.ci)) {
+        errors.push({
+            message: `无效的CI提供方: ${options.ci}。可选值: ${validCIs.join(', ')}`,
+            code: 'INVALID_CI_PROVIDER',
+        });
+    }
+    const validDeploys = ['docker', 'k8s', 'none'];
+    if (options.deploy && !validDeploys.includes(options.deploy)) {
+        errors.push({
+            message: `无效的部署目标: ${options.deploy}。可选值: ${validDeploys.join(', ')}`,
+            code: 'INVALID_DEPLOY_TARGET',
+        });
+    }
+    return errors;
+}
 async function main() {
     await state_js_1.globalState.init();
     const program = new commander_1.Command();
@@ -55,13 +112,22 @@ async function main() {
         .option('--no-docker', 'Exclude Docker support')
         .option('--ci <provider>', `CI provider: ${Object.values(types_js_1.CI_PROVIDER_NAMES).join(', ')}`)
         .option('--deploy <target>', `Deploy target: ${Object.values(types_js_1.DEPLOY_TARGET_NAMES).join(', ')}`)
-        .option('--template <path>', 'Use custom template from local path or GitHub URL')
+        .option('--template <path>', 'Use custom template from local path, GitHub URL, or npm package')
+        .option('--template-version <version>', 'Specify template version (for npm packages)')
         .option('-a, --author <name>', 'Author name')
         .option('-d, --description <desc>', 'Project description')
         .option('--git-remote <url>', 'Git remote repository URL')
         .option('--no-pre-commit', 'Skip pre-commit hook installation')
         .option('--force', 'Overwrite existing directory', false)
         .action(async (projectName, options) => {
+        const validationErrors = validateCreateOptions(options);
+        if (validationErrors.length > 0) {
+            console.error(chalk_1.default.red('\n❌ 参数错误:'));
+            for (const err of validationErrors) {
+                console.error(chalk_1.default.red(`   ${err.message}`));
+            }
+            process.exit(1);
+        }
         await checkForUpdates();
         const availablePMs = (0, package_manager_js_1.detectPackageManagers)();
         const defaults = {
@@ -74,6 +140,7 @@ async function main() {
             ciProvider: options.ci,
             deployTarget: options.deploy,
             template: options.template ?? null,
+            templateVersion: options.templateVersion ?? null,
             quiet: options.quiet ?? false,
             gitRemoteUrl: options.gitRemote,
             usePreCommitHook: options.preCommit,
@@ -93,6 +160,7 @@ async function main() {
                 ciProvider: defaults['ciProvider'] ?? prefs.lastCiProvider ?? 'github',
                 deployTarget: defaults['deployTarget'] ?? 'docker',
                 template: defaults['template'] ?? null,
+                templateVersion: defaults['templateVersion'] ?? null,
                 quiet: true,
                 gitRemoteUrl: defaults['gitRemoteUrl'],
                 usePreCommitHook: defaults['usePreCommitHook'] ?? prefs.lastUsePreCommitHook ?? true,
@@ -124,6 +192,7 @@ async function main() {
             deployTarget: config['deployTarget'] ?? 'none',
             usePreCommitHook: config['usePreCommitHook'] ?? true,
             template: config['template'] ?? null,
+            templateVersion: config['templateVersion'] ?? null,
             quiet: config['quiet'] ?? false,
             gitRemoteUrl: config['gitRemoteUrl'],
             targetDir,
@@ -357,8 +426,10 @@ _csp
         process.exit(1);
     }
 }
-main().catch(error => {
-    console.error(chalk_1.default.red('\n❌ Fatal error:'), error);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch(error => {
+        console.error(chalk_1.default.red('\n❌ Fatal error:'), error);
+        process.exit(1);
+    });
+}
 //# sourceMappingURL=index.js.map

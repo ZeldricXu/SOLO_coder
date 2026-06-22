@@ -36,17 +36,25 @@ export class DockerGenerator {
 
   private getDockerfileContent(): string {
     const nodeVersion = this.dockerConfig.nodeVersion;
-    const isFrontend = this.isFrontend();
     const exposePort = this.getExposePort();
+    const framework = this.config.framework;
 
-    if (isFrontend) {
+    if (framework === 'node-backend') {
+      return this.getNodeBackendDockerfile(nodeVersion, exposePort);
+    }
+
+    if (framework === 'react-frontend' || framework === 'vue-frontend') {
       return this.getFrontendDockerfile(nodeVersion, exposePort);
     }
 
-    return this.getBackendDockerfile(nodeVersion, exposePort);
+    if (framework === 'cli-tool') {
+      return this.getCliToolDockerfile(nodeVersion);
+    }
+
+    return this.getNodeBackendDockerfile(nodeVersion, exposePort);
   }
 
-  private getBackendDockerfile(nodeVersion: string, exposePort: number): string {
+  private getNodeBackendDockerfile(nodeVersion: string, exposePort: number): string {
     const pm = this.config.packageManager;
     const lockFile = this.getLockFile();
 
@@ -153,6 +161,70 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
 
 # Start Nginx
 CMD ["nginx", "-g", "daemon off;"]
+`;
+  }
+
+  private getCliToolDockerfile(nodeVersion: string): string {
+    const pm = this.config.packageManager;
+    const lockFile = this.getLockFile();
+    const projectName = this.config.projectName;
+
+    return `# --- Builder Stage ---
+FROM node:${nodeVersion}-alpine AS builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json ${lockFile}* ./
+
+# Install dependencies
+RUN ${this.getPmInstallCommand(pm, true)}
+
+# Copy source
+COPY . .
+
+# Build
+RUN ${this.getPmRunCommand(pm, 'build')}
+
+# --- Runner Stage ---
+FROM node:${nodeVersion}-alpine AS runner
+
+WORKDIR /app
+
+# Set production environment
+ENV NODE_ENV=production
+
+# Install runtime dependencies
+RUN apk add --no-cache curl tini
+
+# Create non-root user
+RUN addgroup --system --gid 1001 nodejs && \\
+    adduser --system --uid 1001 nodejs
+
+# Copy package files
+COPY package.json ${lockFile}* ./
+
+# Install production dependencies only
+RUN ${this.getPmInstallCommand(pm, true, true)}
+
+# Copy built artifacts from builder
+COPY --from=builder --chown=nodejs:nodejs /app/dist ./dist
+
+# Install the CLI tool globally
+RUN npm link
+
+# Use non-root user
+USER nodejs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \\
+  CMD ${projectName} --help > /dev/null || exit 1
+
+# Start with tini for proper signal handling
+ENTRYPOINT ["/sbin/tini", "--"]
+
+# Default command
+CMD ["${projectName}", "--help"]
 `;
   }
 

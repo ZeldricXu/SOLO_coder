@@ -13,6 +13,9 @@ const axios_1 = __importDefault(require("axios"));
 const ora_1 = __importDefault(require("ora"));
 const builtin_js_1 = require("./builtin.js");
 const state_js_1 = require("../state.js");
+const registry_js_1 = require("./registry.js");
+const TEMPLATE_NAME_PREFIX = 'create-';
+const TEMPLATE_NAME_SUFFIX = '-template';
 class TemplateEngine {
     config;
     constructor(config) {
@@ -33,7 +36,10 @@ class TemplateEngine {
         const spinner = (0, ora_1.default)(`加载自定义模板: ${templatePath}`).start();
         try {
             let localPath;
-            if (templatePath.startsWith('http') || templatePath.startsWith('git@') || templatePath.endsWith('.git')) {
+            if (this.isNpmPackageName(templatePath)) {
+                localPath = await this.loadNpmTemplate(templatePath);
+            }
+            else if (templatePath.startsWith('http') || templatePath.startsWith('git@') || templatePath.endsWith('.git')) {
                 localPath = await this.cloneRemoteTemplate(templatePath);
             }
             else if (await fs_extra_1.default.pathExists(templatePath)) {
@@ -60,6 +66,22 @@ class TemplateEngine {
             spinner.fail(`模板加载失败: ${error.message}`);
             throw error;
         }
+    }
+    isNpmPackageName(name) {
+        if (name.startsWith('@')) {
+            return name.includes('/') && name.endsWith(TEMPLATE_NAME_SUFFIX);
+        }
+        return name.startsWith(TEMPLATE_NAME_PREFIX) && name.endsWith(TEMPLATE_NAME_SUFFIX);
+    }
+    async loadNpmTemplate(packageName) {
+        await registry_js_1.templateRegistry.init();
+        const version = this.config.templateVersion ?? undefined;
+        const cachedPath = await registry_js_1.templateRegistry.getTemplatePath(packageName, version);
+        if (cachedPath) {
+            return cachedPath;
+        }
+        const entry = await registry_js_1.templateRegistry.installTemplate(packageName, version);
+        return entry.path;
     }
     async cloneRemoteTemplate(url) {
         const tempDir = path_1.default.join(state_js_1.globalState.getTemplateCacheDir(), `temp-${Date.now()}`);

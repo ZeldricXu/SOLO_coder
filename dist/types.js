@@ -30,6 +30,8 @@ exports.PACKAGE_MANAGER_NAMES = {
 exports.CI_PROVIDER_NAMES = {
     github: 'GitHub Actions',
     gitlab: 'GitLab CI',
+    bitbucket: 'Bitbucket Pipelines',
+    circleci: 'CircleCI',
     none: 'None',
 };
 exports.DEPLOY_TARGET_NAMES = {

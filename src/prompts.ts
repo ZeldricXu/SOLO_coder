@@ -99,11 +99,10 @@ export async function runInteractiveWizard(
       type: 'list',
       name: 'ciProvider',
       message: '选择 CI 平台:',
-      choices: [
-        { name: CI_PROVIDER_NAMES.github, value: 'github' as CiProviderType },
-        { name: CI_PROVIDER_NAMES.gitlab, value: 'gitlab' as CiProviderType },
-        { name: CI_PROVIDER_NAMES.none, value: 'none' as CiProviderType },
-      ],
+      choices: Object.entries(CI_PROVIDER_NAMES).map(([value, name]) => ({
+        name,
+        value: value as CiProviderType,
+      })),
       default: defaultCI,
       when: (answers: PromptAnswers) => answers.useCI && defaults.ciProvider === undefined,
     },

@@ -18,6 +18,7 @@ export declare class GlobalState {
     checkForUpdates(force?: boolean): Promise<TemplateInfo | null>;
     updateTemplates(): Promise<boolean>;
     getTemplateCacheDir(): string;
+    getCacheDir(): string;
     getConfigDir(): string;
     clearCache(): Promise<void>;
 }

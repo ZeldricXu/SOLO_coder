@@ -5,6 +5,8 @@ export declare class TemplateEngine {
     render(): Promise<TemplateConfig>;
     private loadTemplate;
     private loadCustomTemplate;
+    private isNpmPackageName;
+    private loadNpmTemplate;
     private cloneRemoteTemplate;
     private renderTemplateFiles;
     private renderSingleFile;

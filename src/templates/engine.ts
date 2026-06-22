@@ -8,6 +8,10 @@ import ora from 'ora';
 import type { ProjectConfig, TemplateConfig, TemplateFile } from '../types.js';
 import { getBuiltinTemplate } from './builtin.js';
 import { globalState } from '../state.js';
+import { templateRegistry } from './registry.js';
+
+const TEMPLATE_NAME_PREFIX = 'create-';
+const TEMPLATE_NAME_SUFFIX = '-template';
 
 export class TemplateEngine {
   private config: ProjectConfig;
@@ -35,7 +39,9 @@ export class TemplateEngine {
     try {
       let localPath: string;
 
-      if (templatePath.startsWith('http') || templatePath.startsWith('git@') || templatePath.endsWith('.git')) {
+      if (this.isNpmPackageName(templatePath)) {
+        localPath = await this.loadNpmTemplate(templatePath);
+      } else if (templatePath.startsWith('http') || templatePath.startsWith('git@') || templatePath.endsWith('.git')) {
         localPath = await this.cloneRemoteTemplate(templatePath);
       } else if (await fs.pathExists(templatePath)) {
         localPath = path.resolve(templatePath);
@@ -62,6 +68,26 @@ export class TemplateEngine {
       spinner.fail(`模板加载失败: ${(error as Error).message}`);
       throw error;
     }
+  }
+
+  private isNpmPackageName(name: string): boolean {
+    if (name.startsWith('@')) {
+      return name.includes('/') && name.endsWith(TEMPLATE_NAME_SUFFIX);
+    }
+    return name.startsWith(TEMPLATE_NAME_PREFIX) && name.endsWith(TEMPLATE_NAME_SUFFIX);
+  }
+
+  private async loadNpmTemplate(packageName: string): Promise<string> {
+    await templateRegistry.init();
+    const version = this.config.templateVersion ?? undefined;
+
+    const cachedPath = await templateRegistry.getTemplatePath(packageName, version);
+    if (cachedPath) {
+      return cachedPath;
+    }
+
+    const entry = await templateRegistry.installTemplate(packageName, version);
+    return entry.path;
   }
 
   private async cloneRemoteTemplate(url: string): Promise<string> {

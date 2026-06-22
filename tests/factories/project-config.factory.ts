@@ -22,6 +22,7 @@ export interface ProjectConfigOverrides {
   deployTarget?: DeployTargetType;
   usePreCommitHook?: boolean;
   template?: string | null;
+  templateVersion?: string | null;
   quiet?: boolean;
   gitRemoteUrl?: string | undefined;
   targetDir?: string;
@@ -43,6 +44,7 @@ export function createProjectConfig(
     deployTarget: 'docker',
     usePreCommitHook: true,
     template: null,
+    templateVersion: null,
     quiet: false,
     gitRemoteUrl: undefined,
     targetDir: '/tmp/test-project',

@@ -120,6 +120,9 @@ class GlobalState {
     getTemplateCacheDir() {
         return TEMPLATE_CACHE_DIR;
     }
+    getCacheDir() {
+        return CACHE_DIR;
+    }
     getConfigDir() {
         return CONFIG_DIR;
     }

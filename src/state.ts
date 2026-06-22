@@ -139,6 +139,10 @@ export class GlobalState {
     return TEMPLATE_CACHE_DIR;
   }
 
+  getCacheDir(): string {
+    return CACHE_DIR;
+  }
+
   getConfigDir(): string {
     return CONFIG_DIR;
   }

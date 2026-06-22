@@ -86,11 +86,10 @@ async function runInteractiveWizard(defaults, availablePMs) {
             type: 'list',
             name: 'ciProvider',
             message: '选择 CI 平台:',
-            choices: [
-                { name: types_js_1.CI_PROVIDER_NAMES.github, value: 'github' },
-                { name: types_js_1.CI_PROVIDER_NAMES.gitlab, value: 'gitlab' },
-                { name: types_js_1.CI_PROVIDER_NAMES.none, value: 'none' },
-            ],
+            choices: Object.entries(types_js_1.CI_PROVIDER_NAMES).map(([value, name]) => ({
+                name,
+                value: value,
+            })),
             default: defaultCI,
             when: (answers) => answers.useCI && defaults.ciProvider === undefined,
         },
