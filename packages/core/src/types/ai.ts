@@ -2,6 +2,8 @@ import type { ID, Faction } from './common';
 import type { CubeCoords } from './grid';
 import type { CombatUnit } from './combat';
 
+export type AIRole = 'melee' | 'ranged' | 'healer' | 'tank' | 'support' | 'scout';
+
 export type AIType = 'aggressive' | 'defensive' | 'supportive' | 'balanced' | 'custom';
 
 export interface AIProfile {
@@ -15,6 +17,7 @@ export interface AIProfile {
   caution: number;
   parameters: AIParameters;
   behaviorTree?: BehaviorTreeNode;
+  aiRole?: AIRole;
 }
 
 export interface AIParameters {
@@ -163,4 +166,85 @@ export interface SquadAI {
   formation: 'line' | 'column' | 'wedge' | 'circle' | 'loose';
   memory: AIMemory;
   unitAIs: Map<ID, AIProfile>;
+  focusTargetId?: ID;
+  currentPhase?: number;
+}
+
+export interface KillPriorityAssessment {
+  targetUnitId: ID;
+  killPriority: number;
+  threatLevel: number;
+  hpPercentage: number;
+  canKillThisTurn: boolean;
+  estimatedDamageToKill: number;
+  attackersAvailable: number;
+}
+
+export interface ThreatWeights {
+  damagePotential: number;
+  reachability: number;
+  distance: number;
+  hpPercentage: number;
+  statusEffect: number;
+  priorityMultiplier: number;
+  flankingBonus: number;
+}
+
+export type BehaviorTreeNodeConfigType =
+  | 'selector'
+  | 'sequence'
+  | 'parallel'
+  | 'condition'
+  | 'action'
+  | 'inverter'
+  | 'repeat'
+  | 'untilFail'
+  | 'wait';
+
+export interface BehaviorTreeNodeConfig {
+  type: BehaviorTreeNodeConfigType;
+  name?: string;
+  children?: BehaviorTreeNodeConfig[];
+  condition?: string;
+  conditionParams?: Record<string, unknown>;
+  action?: string;
+  actionParams?: Record<string, unknown>;
+  decorator?: {
+    type: 'inverter' | 'repeat' | 'untilFail' | 'wait';
+    count?: number;
+    waitTime?: number;
+  };
+  parallelConfig?: {
+    successThreshold: number;
+    failureThreshold: number;
+  };
+}
+
+export interface BehaviorTreeConfig {
+  root: BehaviorTreeNodeConfig;
+  conditions?: Record<string, Record<string, unknown>>;
+  actions?: Record<string, Record<string, unknown>>;
+}
+
+export interface BossPhaseConfig {
+  threshold: number;
+  behaviorTree: BehaviorTreeConfig;
+  name?: string;
+}
+
+export interface BossAIConfig {
+  id: ID;
+  name: string;
+  phaseThresholds: number[];
+  phaseBehaviors: BossPhaseConfig[];
+  defaultBehavior: BehaviorTreeConfig;
+}
+
+export type TargetSortMode = 'threat' | 'kill' | 'closest' | 'lowestHp' | 'highestDamage';
+
+export interface PositionDangerInfo {
+  coords: CubeCoords;
+  dangerScore: number;
+  nearbyEnemies: ID[];
+  threatSources: Array<{ unitId: ID; threat: number; distance: number }>;
 }

@@ -7,6 +7,9 @@ import type {
   AIMemory,
   AIProfile,
   AIDecision,
+  AIRole,
+  BossAIConfig,
+  BossPhaseConfig,
 } from '../types';
 import {
   cubeDistance,
@@ -873,6 +876,553 @@ export class SquadAI {
 
   private coordsEqual(a: CubeCoords, b: CubeCoords): boolean {
     return a.q === b.q && a.r === b.r && a.s === b.s;
+  }
+
+  assignAIRoles(allUnits: Map<ID, CombatUnit>): Map<ID, AIRole> {
+    const roles = new Map<ID, AIRole>();
+    const aliveMembers = this.getAliveMembers(allUnits);
+
+    for (const unit of aliveMembers) {
+      const role = this.detectUnitAIRole(unit);
+      roles.set(unit.id, role);
+    }
+
+    return roles;
+  }
+
+  private detectUnitAIRole(unit: CombatUnit): AIRole {
+    const hasHealSkill = unit.skills.some(s =>
+      s.type === 'active' &&
+      s.canTargetAlly &&
+      s.effects.some(e => e.type === 'heal')
+    );
+    if (hasHealSkill) return 'healer';
+
+    const defenseScore = unit.stats.defense + unit.stats.magicDefense;
+    const attackScore = unit.stats.attack + unit.stats.magicAttack;
+    const hasTaunt = unit.skills.some(s => s.tags.includes('taunt'));
+    if ((defenseScore > attackScore * 1.2 && unit.stats.maxHp > 100) || hasTaunt) {
+      return 'tank';
+    }
+
+    const buffCount = unit.skills.filter(s =>
+      s.type === 'active' &&
+      s.canTargetAlly &&
+      s.effects.some(e => e.type === 'buff')
+    ).length;
+    if (buffCount >= 2) return 'support';
+
+    if (unit.stats.moveRange >= 5 && unit.stats.visionRange >= 6) {
+      return 'scout';
+    }
+
+    if (unit.stats.attackRange > 1) return 'ranged';
+
+    const hasRangedSkill = unit.skills.some(s =>
+      s.type === 'active' && s.range.max > 1
+    );
+    if (hasRangedSkill) return 'ranged';
+
+    return 'melee';
+  }
+
+  setFocusTarget(targetId: ID): void {
+    this.data.focusTargetId = targetId;
+  }
+
+  getFocusTarget(): ID | undefined {
+    return this.data.focusTargetId;
+  }
+
+  clearFocusTarget(): void {
+    this.data.focusTargetId = undefined;
+  }
+
+  autoSelectFocusTarget(
+    allUnits: Map<ID, CombatUnit>,
+    threatMap?: Map<ID, number>
+  ): ID | null {
+    const enemies = this.getEnemies(allUnits);
+    if (enemies.length === 0) return null;
+
+    let bestTarget: CombatUnit | null = null;
+    let bestScore = -Infinity;
+
+    const aliveMembers = this.getAliveMembers(allUnits);
+
+    for (const enemy of enemies) {
+      let score = 0;
+
+      const hpRatio = enemy.stats.hp / Math.max(enemy.stats.maxHp, 1);
+      score += (1 - hpRatio) * 40;
+
+      if (threatMap?.has(enemy.id)) {
+        score += threatMap.get(enemy.id)! * 0.4;
+      }
+
+      let reachableCount = 0;
+      for (const member of aliveMembers) {
+        const dist = cubeDistance(member.coords, enemy.coords);
+        const totalReach = member.stats.moveRange + member.stats.attackRange;
+        if (dist <= totalReach) {
+          reachableCount++;
+        }
+      }
+      score += reachableCount * 15;
+
+      if (enemy.castingSkill) score += 30;
+
+      const hasHealSkill = enemy.skills.some(s =>
+        s.tags.includes('heal') || s.effects.some(e => e.type === 'heal')
+      );
+      if (hasHealSkill) score += 25;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestTarget = enemy;
+      }
+    }
+
+    if (bestTarget) {
+      this.setFocusTarget(bestTarget.id);
+      return bestTarget.id;
+    }
+
+    return null;
+  }
+
+  planTacticalFormation(
+    allUnits: Map<ID, CombatUnit>,
+    targetPosition?: CubeCoords,
+    getTileHeight?: (coords: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): MovementPlan[] {
+    const plans: MovementPlan[] = [];
+    const aliveMembers = this.getAliveMembers(allUnits);
+    const roles = this.assignAIRoles(allUnits);
+
+    if (aliveMembers.length === 0) return plans;
+
+    const enemies = this.getEnemies(allUnits);
+    const enemyCenter = enemies.length > 0
+      ? this.calculateSquadCenter(enemies)
+      : (targetPosition ?? { q: 0, r: 0, s: 0 });
+
+    const tanks = aliveMembers.filter(u => roles.get(u.id) === 'tank');
+    const healers = aliveMembers.filter(u => roles.get(u.id) === 'healer');
+    const ranged = aliveMembers.filter(u => roles.get(u.id) === 'ranged');
+    const meleeUnits = aliveMembers.filter(u => roles.get(u.id) === 'melee');
+    const supports = aliveMembers.filter(u => roles.get(u.id) === 'support');
+    const scouts = aliveMembers.filter(u => roles.get(u.id) === 'scout');
+
+    for (const tank of tanks) {
+      const targetPos = this.findTankPosition(tank, enemyCenter, allUnits, getTileHeight, isPassable);
+      plans.push({
+        unitId: tank.id,
+        targetCoords: targetPos,
+        priority: 100,
+        reason: '坦克前排站位',
+      });
+    }
+
+    for (const melee of meleeUnits) {
+      const targetPos = this.findMeleePosition(melee, enemyCenter, allUnits, getTileHeight, isPassable);
+      plans.push({
+        unitId: melee.id,
+        targetCoords: targetPos,
+        priority: 90,
+        reason: '近战输出站位',
+      });
+    }
+
+    for (const rangedUnit of ranged) {
+      const targetPos = this.findRangedPosition(rangedUnit, enemyCenter, allUnits, getTileHeight, isPassable);
+      plans.push({
+        unitId: rangedUnit.id,
+        targetCoords: targetPos,
+        priority: 80,
+        reason: '远程输出站位',
+      });
+    }
+
+    for (const healer of healers) {
+      const targetPos = this.findHealerPosition(healer, tanks, allUnits, getTileHeight, isPassable);
+      plans.push({
+        unitId: healer.id,
+        targetCoords: targetPos,
+        priority: 85,
+        reason: '治疗后排站位',
+      });
+    }
+
+    for (const support of supports) {
+      const targetPos = this.findSupportPosition(support, aliveMembers, allUnits, getTileHeight, isPassable);
+      plans.push({
+        unitId: support.id,
+        targetCoords: targetPos,
+        priority: 75,
+        reason: '辅助保护站位',
+      });
+    }
+
+    for (const scout of scouts) {
+      const targetPos = this.findScoutPosition(scout, enemyCenter, allUnits, getTileHeight, isPassable);
+      plans.push({
+        unitId: scout.id,
+        targetCoords: targetPos,
+        priority: 70,
+        reason: '侦查侧翼站位',
+      });
+    }
+
+    return plans.sort((a, b) => b.priority - a.priority);
+  }
+
+  private findTankPosition(
+    unit: CombatUnit,
+    enemyCenter: CubeCoords,
+    allUnits: Map<ID, CombatUnit>,
+    getTileHeight?: (coords: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): CubeCoords {
+    const direction = {
+      q: Math.sign(enemyCenter.q - unit.coords.q),
+      r: Math.sign(enemyCenter.r - unit.coords.r),
+      s: Math.sign(enemyCenter.s - unit.coords.s),
+    };
+
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    const searchRange = unit.stats.moveRange;
+    for (let dq = -searchRange; dq <= searchRange; dq++) {
+      for (let dr = -searchRange; dr <= searchRange; dr++) {
+        const ds = -dq - dr;
+        if (Math.abs(dq) + Math.abs(dr) + Math.abs(ds) > searchRange * 2) continue;
+
+        const pos = {
+          q: unit.coords.q + dq,
+          r: unit.coords.r + dr,
+          s: unit.coords.s + ds,
+        };
+
+        if (isPassable && !isPassable(pos)) continue;
+
+        let score = 0;
+
+        const distToEnemy = cubeDistance(pos, enemyCenter);
+        score -= distToEnemy * 5;
+
+        if (getTileHeight) {
+          score += getTileHeight(pos) * 15;
+        }
+
+        const frontBonus = (direction.q * dq + direction.r * dr + direction.s * ds);
+        score += frontBonus * 3;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPos = pos;
+        }
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findMeleePosition(
+    unit: CombatUnit,
+    enemyCenter: CubeCoords,
+    allUnits: Map<ID, CombatUnit>,
+    getTileHeight?: (coords: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): CubeCoords {
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    const searchRange = unit.stats.moveRange;
+    for (let dq = -searchRange; dq <= searchRange; dq++) {
+      for (let dr = -searchRange; dr <= searchRange; dr++) {
+        const ds = -dq - dr;
+        if (Math.abs(dq) + Math.abs(dr) + Math.abs(ds) > searchRange * 2) continue;
+
+        const pos = {
+          q: unit.coords.q + dq,
+          r: unit.coords.r + dr,
+          s: unit.coords.s + ds,
+        };
+
+        if (isPassable && !isPassable(pos)) continue;
+
+        let score = 0;
+
+        const distToEnemy = cubeDistance(pos, enemyCenter);
+        if (distToEnemy <= unit.stats.attackRange + 1) {
+          score += 50;
+        } else {
+          score -= distToEnemy * 3;
+        }
+
+        if (getTileHeight) {
+          score += getTileHeight(pos) * 10;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPos = pos;
+        }
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findRangedPosition(
+    unit: CombatUnit,
+    enemyCenter: CubeCoords,
+    allUnits: Map<ID, CombatUnit>,
+    getTileHeight?: (coords: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): CubeCoords {
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    const optimalRange = unit.stats.attackRange * 0.8;
+    const searchRange = unit.stats.moveRange;
+
+    for (let dq = -searchRange; dq <= searchRange; dq++) {
+      for (let dr = -searchRange; dr <= searchRange; dr++) {
+        const ds = -dq - dr;
+        if (Math.abs(dq) + Math.abs(dr) + Math.abs(ds) > searchRange * 2) continue;
+
+        const pos = {
+          q: unit.coords.q + dq,
+          r: unit.coords.r + dr,
+          s: unit.coords.s + ds,
+        };
+
+        if (isPassable && !isPassable(pos)) continue;
+
+        let score = 0;
+
+        const distToEnemy = cubeDistance(pos, enemyCenter);
+        const rangeDiff = Math.abs(distToEnemy - optimalRange);
+        score -= rangeDiff * 5;
+
+        if (distToEnemy <= unit.stats.attackRange) {
+          score += 40;
+        }
+
+        if (getTileHeight) {
+          score += getTileHeight(pos) * 20;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPos = pos;
+        }
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findHealerPosition(
+    unit: CombatUnit,
+    tanks: CombatUnit[],
+    allUnits: Map<ID, CombatUnit>,
+    getTileHeight?: (coords: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): CubeCoords {
+    const allies = this.getAliveMembers(allUnits).filter(u => u.id !== unit.id);
+    const allyCenter = allies.length > 0
+      ? this.calculateSquadCenter(allies)
+      : unit.coords;
+
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    const searchRange = unit.stats.moveRange;
+
+    for (let dq = -searchRange; dq <= searchRange; dq++) {
+      for (let dr = -searchRange; dr <= searchRange; dr++) {
+        const ds = -dq - dr;
+        if (Math.abs(dq) + Math.abs(dr) + Math.abs(ds) > searchRange * 2) continue;
+
+        const pos = {
+          q: unit.coords.q + dq,
+          r: unit.coords.r + dr,
+          s: unit.coords.s + ds,
+        };
+
+        if (isPassable && !isPassable(pos)) continue;
+
+        let score = 0;
+
+        let alliesInRange = 0;
+        for (const ally of allies) {
+          const dist = cubeDistance(pos, ally.coords);
+          if (dist <= unit.stats.attackRange) {
+            alliesInRange++;
+          }
+        }
+        score += alliesInRange * 20;
+
+        const enemies = this.getEnemies(allUnits);
+        let minEnemyDist = Infinity;
+        for (const enemy of enemies) {
+          const dist = cubeDistance(pos, enemy.coords);
+          if (dist < minEnemyDist) minEnemyDist = dist;
+        }
+        score += minEnemyDist * 3;
+
+        if (getTileHeight) {
+          score += getTileHeight(pos) * 8;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPos = pos;
+        }
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findSupportPosition(
+    unit: CombatUnit,
+    allies: CombatUnit[],
+    allUnits: Map<ID, CombatUnit>,
+    getTileHeight?: (coords: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): CubeCoords {
+    const allyCenter = allies.length > 0
+      ? this.calculateSquadCenter(allies.filter(a => a.id !== unit.id))
+      : unit.coords;
+
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    const searchRange = unit.stats.moveRange;
+
+    for (let dq = -searchRange; dq <= searchRange; dq++) {
+      for (let dr = -searchRange; dr <= searchRange; dr++) {
+        const ds = -dq - dr;
+        if (Math.abs(dq) + Math.abs(dr) + Math.abs(ds) > searchRange * 2) continue;
+
+        const pos = {
+          q: unit.coords.q + dq,
+          r: unit.coords.r + dr,
+          s: unit.coords.s + ds,
+        };
+
+        if (isPassable && !isPassable(pos)) continue;
+
+        let score = 0;
+
+        const distToCenter = cubeDistance(pos, allyCenter);
+        score -= distToCenter * 5;
+
+        const enemies = this.getEnemies(allUnits);
+        let minEnemyDist = Infinity;
+        for (const enemy of enemies) {
+          const dist = cubeDistance(pos, enemy.coords);
+          if (dist < minEnemyDist) minEnemyDist = dist;
+        }
+        score += minEnemyDist * 2;
+
+        if (getTileHeight) {
+          score += getTileHeight(pos) * 10;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPos = pos;
+        }
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findScoutPosition(
+    unit: CombatUnit,
+    enemyCenter: CubeCoords,
+    allUnits: Map<ID, CombatUnit>,
+    getTileHeight?: (coords: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): CubeCoords {
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    const searchRange = unit.stats.moveRange;
+
+    for (let dq = -searchRange; dq <= searchRange; dq++) {
+      for (let dr = -searchRange; dr <= searchRange; dr++) {
+        const ds = -dq - dr;
+        if (Math.abs(dq) + Math.abs(dr) + Math.abs(ds) > searchRange * 2) continue;
+
+        const pos = {
+          q: unit.coords.q + dq,
+          r: unit.coords.r + dr,
+          s: unit.coords.s + ds,
+        };
+
+        if (isPassable && !isPassable(pos)) continue;
+
+        let score = 0;
+
+        const distToEnemy = cubeDistance(pos, enemyCenter);
+        score += distToEnemy * 2;
+
+        if (getTileHeight) {
+          score += getTileHeight(pos) * 25;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestPos = pos;
+        }
+      }
+    }
+
+    return bestPos;
+  }
+
+  getCurrentPhase(): number {
+    return this.data.currentPhase ?? 0;
+  }
+
+  updateBossPhase(bossUnit: CombatUnit): number {
+    const hpRatio = bossUnit.stats.hp / Math.max(bossUnit.stats.maxHp, 1);
+    const thresholds = [0.8, 0.5, 0.3];
+    let phase = 0;
+
+    for (let i = thresholds.length - 1; i >= 0; i--) {
+      if (hpRatio <= thresholds[i]) {
+        phase = i + 1;
+        break;
+      }
+    }
+
+    if (phase !== (this.data.currentPhase ?? 0)) {
+      this.data.currentPhase = phase;
+    }
+
+    return phase;
+  }
+
+  getPhaseBehavior(
+    bossConfig: BossAIConfig,
+    currentHpRatio: number
+  ): BossPhaseConfig | null {
+    for (let i = bossConfig.phaseBehaviors.length - 1; i >= 0; i--) {
+      if (currentHpRatio <= bossConfig.phaseThresholds[i]) {
+        return bossConfig.phaseBehaviors[i];
+      }
+    }
+    return null;
   }
 
   toJSON(): Record<string, unknown> {

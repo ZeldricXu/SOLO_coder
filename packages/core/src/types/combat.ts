@@ -263,8 +263,10 @@ export interface CombatState {
 
 export type TurnPhase = 'start' | 'action' | 'end';
 
+export type CombatLogType = 'damage' | 'heal' | 'status' | 'move' | 'skill' | 'death' | 'turn' | 'phase' | 'damage_entity' | 'entity_trigger' | string;
+
 export interface CombatLogEntry {
-  type: 'damage' | 'heal' | 'status' | 'move' | 'skill' | 'death' | 'turn' | 'phase';
+  type: CombatLogType;
   data: Record<string, unknown>;
   timestamp: number;
   turnNumber: number;

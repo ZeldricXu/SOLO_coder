@@ -7,6 +7,7 @@ import { serializeMap, deserializeMap } from '../utils/serialization';
 interface PathfindingOptions {
   ignoreTerrain?: string[];
   ignoreUnits?: boolean;
+  ignoreEntities?: boolean;
   unitId?: ID;
   preferTerrain?: string[];
   avoidTerrain?: string[];
@@ -169,7 +170,17 @@ export class Pathfinder {
           }
         }
 
-        const baseMoveCost = this.grid.getMoveCost(currentNode.coords, neighborCoords);
+        if (!options.ignoreEntities) {
+          const entitiesOnTile = this.grid.getEntitiesAtTile(neighborCoords);
+          const blockingEntity = entitiesOnTile.find(e => e.blocksMovement && !e.isDestroyed);
+          if (blockingEntity && !cubeEquals(neighborCoords, goal)) {
+            continue;
+          }
+        }
+
+        const baseMoveCost = this.grid.getMoveCost(currentNode.coords, neighborCoords, {
+          ignoreEntities: options.ignoreEntities,
+        });
         if (!isFinite(baseMoveCost)) continue;
 
         let terrainBias = 0;
@@ -259,7 +270,17 @@ export class Pathfinder {
           }
         }
 
-        const moveCost = this.grid.getMoveCost(currentNode.coords, neighbor);
+        if (!options.ignoreEntities) {
+          const entitiesOnTile = this.grid.getEntitiesAtTile(neighbor);
+          const blockingEntity = entitiesOnTile.find(e => e.blocksMovement && !e.isDestroyed);
+          if (blockingEntity) {
+            continue;
+          }
+        }
+
+        const moveCost = this.grid.getMoveCost(currentNode.coords, neighbor, {
+          ignoreEntities: options.ignoreEntities,
+        });
         if (!isFinite(moveCost)) continue;
 
         const newMoveCost = currentNode.moveCost + moveCost;
@@ -342,7 +363,17 @@ export class Pathfinder {
           }
         }
 
-        const moveCost = this.grid.getMoveCost(currentNode.coords, neighbor);
+        if (!options.ignoreEntities) {
+          const entitiesOnTile = this.grid.getEntitiesAtTile(neighbor);
+          const blockingEntity = entitiesOnTile.find(e => e.blocksMovement && !e.isDestroyed);
+          if (blockingEntity) {
+            continue;
+          }
+        }
+
+        const moveCost = this.grid.getMoveCost(currentNode.coords, neighbor, {
+          ignoreEntities: options.ignoreEntities,
+        });
         if (!isFinite(moveCost)) continue;
 
         const newMoveCost = currentNode.moveCost + moveCost;
@@ -435,6 +466,7 @@ export class Pathfinder {
       String(maxMovePoints),
       options.ignoreTerrain?.join('|') ?? '',
       String(options.ignoreUnits ?? false),
+      String(options.ignoreEntities ?? false),
       options.unitId ?? '',
       options.preferTerrain?.join('|') ?? '',
       options.avoidTerrain?.join('|') ?? '',

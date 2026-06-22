@@ -154,6 +154,12 @@ export class FieldOfViewCalculator {
       return true;
     }
 
+    const entitiesOnTile = this.grid.getEntitiesAtTile(coords);
+    const entityBlocksVision = entitiesOnTile.some(e => e.blocksVision && !e.isDestroyed);
+    if (entityBlocksVision && from && !cubeEquals(from, coords)) {
+      return true;
+    }
+
     if (customBlockers.has(cubeKey(coords))) {
       const blocker = customBlockers.get(cubeKey(coords));
       if (blocker && blocker.opacity >= 0.8) {
@@ -180,6 +186,13 @@ export class FieldOfViewCalculator {
 
     if (tile.units.length > 0) {
       opacity = Math.max(opacity, 0.5);
+    }
+
+    const entitiesOnTile = this.grid.getEntitiesAtTile(coords);
+    for (const entity of entitiesOnTile) {
+      if (entity.blocksVision && !entity.isDestroyed) {
+        opacity = Math.max(opacity, 1);
+      }
     }
 
     if (customBlockers.has(cubeKey(coords))) {

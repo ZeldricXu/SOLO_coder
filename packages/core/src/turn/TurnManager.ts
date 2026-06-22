@@ -10,6 +10,8 @@ import type {
 } from '../types/turn';
 import { InterruptSystem } from './InterruptSystem';
 import { RoundSummaryGenerator } from './RoundSummaryGenerator';
+import type { MapEntityManager } from '../entities';
+import { EventBus } from '../events/EventBus';
 
 export interface UnitWithSpeed {
   id: ID;
@@ -52,8 +54,10 @@ export class TurnManager {
   private interruptSystem: InterruptSystem;
   private summaryGenerator: RoundSummaryGenerator;
   private tiebreakerCounter: number;
+  private entityManager?: MapEntityManager;
+  private _eventBus: EventBus;
 
-  constructor(config: TurnOrderConfig, units: UnitWithSpeed[]) {
+  constructor(config: TurnOrderConfig, units: UnitWithSpeed[], eventBus?: EventBus) {
     this.units = new Map();
     for (const unit of units) {
       this.units.set(unit.id, unit);
@@ -63,6 +67,7 @@ export class TurnManager {
     this.tiebreakerCounter = 0;
     this.interruptSystem = new InterruptSystem(config.interruptPriorityBias || 0);
     this.summaryGenerator = new RoundSummaryGenerator(1);
+    this._eventBus = eventBus ?? new EventBus();
 
     this.state = {
       currentRound: 1,
@@ -79,6 +84,11 @@ export class TurnManager {
 
     this.currentTurnIndex = -1;
     this.buildTurnOrder();
+    this._eventBus.setCurrentTurn(this.state.currentRound);
+  }
+
+  get eventBus(): EventBus {
+    return this._eventBus;
   }
 
   buildTurnOrder(): TurnOrderEntry[] {
@@ -147,9 +157,18 @@ export class TurnManager {
     return filtered.length < hooks.length;
   }
 
+  setEntityManager(entityManager: MapEntityManager): void {
+    this.entityManager = entityManager;
+  }
+
+  getEntityManager(): MapEntityManager | undefined {
+    return this.entityManager;
+  }
+
   async startRound(): Promise<void> {
     this.state.currentRound = this.state.currentRound || 1;
     this.currentTurnIndex = -1;
+    this._eventBus.setCurrentTurn(this.state.currentRound);
 
     for (const entry of this.state.turnOrder) {
       entry.hasActed = false;
@@ -158,6 +177,14 @@ export class TurnManager {
     this.processDelayedActions();
     this.interruptSystem.clearExecuted();
     this.summaryGenerator.reset(this.state.currentRound);
+
+    if (this.entityManager) {
+      this.entityManager.tickCooldowns();
+    }
+
+    this._eventBus.publish('COMBAT_ROUND_START', {
+      roundNumber: this.state.currentRound,
+    });
 
     await this.executeHooks('onRoundStart', {
       manager: this,
@@ -204,8 +231,25 @@ export class TurnManager {
       const executed = this.interruptSystem.executeInterrupts(context, this.currentTurnIndex);
       if (executed.length > 0) {
         this.state.interruptQueue.push(...executed);
+        for (const interrupt of executed) {
+          this._eventBus.publish('INTERRUPT_TRIGGERED', {
+            interrupterId: interrupt.sourceUnitId,
+            targetId: interrupt.targetUnitId,
+            reason: interrupt.skillId,
+          }, {
+            source: interrupt.sourceUnitId,
+            target: interrupt.targetUnitId,
+          });
+        }
       }
     }
+
+    this._eventBus.publish('TURN_START', {
+      unitId: entry.unitId,
+      turnNumber: this.state.currentRound,
+    }, {
+      source: entry.unitId,
+    });
 
     await this.executeHooks('onTurnStart', {
       manager: this,
@@ -232,6 +276,13 @@ export class TurnManager {
 
     await this.setPhase('end');
 
+    this._eventBus.publish('TURN_END', {
+      unitId,
+      turnNumber: this.state.currentRound,
+    }, {
+      source: unitId,
+    });
+
     await this.executeHooks('onTurnEnd', {
       manager: this,
       unitId,
@@ -252,6 +303,12 @@ export class TurnManager {
     if (oldPhase === phase) return;
 
     this.state.currentPhase = phase;
+
+    this._eventBus.publish('PHASE_CHANGE', {
+      oldPhase,
+      newPhase: phase,
+      turnNumber: this.state.currentRound,
+    });
 
     await this.executeHooks('onPhaseChange', {
       manager: this,
@@ -328,6 +385,11 @@ export class TurnManager {
 
     const summary = this.summaryGenerator.generateSummary();
     this.state.turnHistory.push(summary);
+
+    this._eventBus.publish('COMBAT_ROUND_END', {
+      roundNumber: this.state.currentRound,
+      summary: summary as unknown as Record<string, unknown>,
+    });
 
     await this.executeHooks('onRoundEnd', {
       manager: this,

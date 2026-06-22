@@ -4,8 +4,12 @@ import type {
   CombatUnit,
   AIParameters,
   ThreatAssessment as ThreatAssessmentResult,
+  KillPriorityAssessment,
+  TargetSortMode,
+  ThreatWeights,
+  PositionDangerInfo,
 } from '../types';
-import { cubeDistance, isInRange } from '../grid/coords';
+import { cubeDistance, isInRange, cubeSpiral } from '../grid/coords';
 import { clamp, normalize, mapRange } from '../utils';
 
 export class ThreatAssessment {
@@ -366,6 +370,283 @@ export class ThreatAssessment {
       }
     }
     return nearbyAllies === 0;
+  }
+
+  calculateKillPriority(
+    target: CombatUnit,
+    unit: CombatUnit,
+    allUnits?: Map<ID, CombatUnit>
+  ): KillPriorityAssessment {
+    const hpRatio = target.stats.hp / Math.max(target.stats.maxHp, 1);
+    const estimatedDamage = this.estimateDamage(unit, target);
+    const distance = cubeDistance(unit.coords, target.coords);
+    const canKillThisTurn = estimatedDamage >= target.stats.hp && this.canAttackThisTurn(unit, target);
+
+    let attackersAvailable = 1;
+    if (allUnits) {
+      for (const u of allUnits.values()) {
+        if (u.id === unit.id || !u.isAlive || u.faction !== unit.faction) continue;
+        if (this.canAttackThisTurn(u, target)) {
+          attackersAvailable++;
+        }
+      }
+    }
+
+    const threatAssessment = this.calculateThreat(unit, target, allUnits ?? new Map());
+
+    const lowHpBonus = (1 - hpRatio) * 100;
+    const threatBonus = threatAssessment.threatLevel * 0.5;
+    const killableBonus = canKillThisTurn ? 50 : 0;
+    const attackersBonus = Math.min(attackersAvailable, 5) * 10;
+
+    const killPriority = clamp(
+      lowHpBonus * 0.4 + threatBonus * 0.3 + killableBonus + attackersBonus,
+      0,
+      200
+    );
+
+    return {
+      targetUnitId: target.id,
+      killPriority,
+      threatLevel: threatAssessment.threatLevel,
+      hpPercentage: hpRatio,
+      canKillThisTurn,
+      estimatedDamageToKill: Math.max(target.stats.hp - estimatedDamage, 0),
+      attackersAvailable,
+    };
+  }
+
+  getPrioritizedTargets(
+    unit: CombatUnit,
+    enemies: CombatUnit[],
+    mode: TargetSortMode = 'threat',
+    allUnits?: Map<ID, CombatUnit>
+  ): Array<{ unit: CombatUnit; score: number }> {
+    const results: Array<{ unit: CombatUnit; score: number }> = [];
+
+    for (const enemy of enemies) {
+      if (!enemy.isAlive) continue;
+
+      let score = 0;
+
+      switch (mode) {
+        case 'threat': {
+          const assessment = this.calculateThreat(unit, enemy, allUnits ?? new Map());
+          score = assessment.threatLevel;
+          break;
+        }
+        case 'kill': {
+          const priority = this.calculateKillPriority(enemy, unit, allUnits);
+          score = priority.killPriority;
+          break;
+        }
+        case 'closest': {
+          const distance = cubeDistance(unit.coords, enemy.coords);
+          score = 100 / (distance + 1);
+          break;
+        }
+        case 'lowestHp': {
+          const hpRatio = enemy.stats.hp / Math.max(enemy.stats.maxHp, 1);
+          score = (1 - hpRatio) * 100;
+          break;
+        }
+        case 'highestDamage': {
+          const damagePotential = this.calculateDamagePotential(enemy);
+          score = damagePotential;
+          break;
+        }
+      }
+
+      results.push({ unit: enemy, score });
+    }
+
+    results.sort((a, b) => b.score - a.score);
+    return results;
+  }
+
+  calculateDamagePotential(unit: CombatUnit): number {
+    const baseAttack = unit.stats.attack;
+    const magicAttack = unit.stats.magicAttack;
+    const attackPower = Math.max(baseAttack, magicAttack);
+
+    let maxSkillMultiplier = 1;
+    for (const skill of unit.skills) {
+      if (skill.type !== 'active') continue;
+      for (const effect of skill.effects) {
+        if (effect.type === 'damage') {
+          const multiplier = effect.value / Math.max(attackPower, 1);
+          if (multiplier > maxSkillMultiplier) {
+            maxSkillMultiplier = multiplier;
+          }
+        }
+      }
+    }
+
+    const critBonus = 1 + unit.stats.critRate * unit.stats.critDamage * 0.5;
+    return attackPower * maxSkillMultiplier * critBonus;
+  }
+
+  calculateReachabilityFactor(
+    unit: CombatUnit,
+    target: CombatUnit
+  ): number {
+    const distance = cubeDistance(unit.coords, target.coords);
+    const attackRange = unit.stats.attackRange;
+    const moveRange = unit.hasMoved ? 0 : unit.stats.moveRange;
+
+    if (distance <= attackRange) return 1.0;
+    if (distance <= attackRange + moveRange) return 0.5;
+    return 0.25;
+  }
+
+  calculatePositionDanger(
+    position: CubeCoords,
+    enemies: CombatUnit[],
+    unit?: CombatUnit
+  ): PositionDangerInfo {
+    let dangerScore = 0;
+    const nearbyEnemies: ID[] = [];
+    const threatSources: Array<{ unitId: ID; threat: number; distance: number }> = [];
+
+    for (const enemy of enemies) {
+      if (!enemy.isAlive) continue;
+
+      const distance = cubeDistance(position, enemy.coords);
+      const damagePotential = this.calculateDamagePotential(enemy);
+      const distanceFactor = 1 / (distance + 1);
+      const threat = damagePotential * distanceFactor;
+
+      dangerScore += threat;
+
+      if (distance <= enemy.stats.attackRange + enemy.stats.moveRange) {
+        nearbyEnemies.push(enemy.id);
+      }
+
+      threatSources.push({
+        unitId: enemy.id,
+        threat,
+        distance,
+      });
+    }
+
+    return {
+      coords: position,
+      dangerScore,
+      nearbyEnemies,
+      threatSources,
+    };
+  }
+
+  calculateEnhancedThreat(
+    source: CombatUnit,
+    target: CombatUnit,
+    allUnits: Map<ID, CombatUnit>,
+    weights?: Partial<ThreatWeights>,
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number
+  ): number {
+    const defaultWeights: ThreatWeights = {
+      damagePotential: 0.4,
+      reachability: 0.25,
+      distance: 0.15,
+      hpPercentage: 0.1,
+      statusEffect: 0.1,
+      priorityMultiplier: 1.0,
+      flankingBonus: 0.2,
+    };
+
+    const w = { ...defaultWeights, ...weights };
+
+    const damagePotential = this.calculateDamagePotential(target);
+    const normalizedDamage = mapRange(damagePotential, 0, 200, 0, 100);
+
+    const reachabilityFactor = this.calculateReachabilityFactor(source, target) * 100;
+
+    const distance = cubeDistance(source.coords, target.coords);
+    const distanceFactor = (1 / (distance + 1)) * 100;
+
+    const hpRatio = target.stats.hp / Math.max(target.stats.maxHp, 1);
+    const hpFactor = (1 - hpRatio) * 100;
+
+    const statusEffectFactor = this.calculateStatusEffectFactor(target);
+
+    const baseScore =
+      normalizedDamage * w.damagePotential +
+      reachabilityFactor * w.reachability +
+      distanceFactor * w.distance +
+      hpFactor * w.hpPercentage +
+      statusEffectFactor * w.statusEffect;
+
+    const priorityMultiplier = this.calculatePriorityMultiplier(target, allUnits);
+    const flankingBonus = this.calculateFlankingBonus(source, target, allUnits) * w.flankingBonus * 100;
+
+    const threatScore = (baseScore + flankingBonus) * (w.priorityMultiplier * priorityMultiplier);
+
+    return clamp(threatScore, 0, 200);
+  }
+
+  private calculateStatusEffectFactor(target: CombatUnit): number {
+    let factor = 0;
+    const debuffs = target.statusEffects.filter(s => s.isDebuff);
+
+    if (debuffs.length > 0) {
+      const totalDuration = debuffs.reduce((sum, d) => sum + d.duration, 0);
+      const totalStacks = debuffs.reduce((sum, d) => sum + d.stackCount, 0);
+      factor = mapRange(totalDuration + totalStacks * 2, 0, 20, 0, 80);
+    }
+
+    const hpRatio = target.stats.hp / Math.max(target.stats.maxHp, 1);
+    if (hpRatio < 0.3) {
+      factor += mapRange(hpRatio, 0.3, 0, 0, 20);
+    }
+
+    return factor;
+  }
+
+  private calculatePriorityMultiplier(
+    target: CombatUnit,
+    allUnits: Map<ID, CombatUnit>
+  ): number {
+    let multiplier = 1.0;
+
+    const hasHealSkill = target.skills.some(s =>
+      s.tags.includes('heal') || s.effects.some(e => e.type === 'heal')
+    );
+    if (hasHealSkill) multiplier *= 1.3;
+
+    const hasCastingSkill = target.skills.some(s =>
+      s.castTime > 0 || s.tags.includes('aoe') || s.tags.includes('magic')
+    );
+    if (hasCastingSkill) multiplier *= 1.2;
+
+    if (target.castingSkill) multiplier *= 1.25;
+
+    const isIsolated = this.checkIsolation(target, allUnits);
+    if (isIsolated) multiplier *= 1.1;
+
+    return multiplier;
+  }
+
+  private calculateFlankingBonus(
+    source: CombatUnit,
+    target: CombatUnit,
+    allUnits: Map<ID, CombatUnit>
+  ): number {
+    let alliedAttackers = 0;
+
+    for (const unit of allUnits.values()) {
+      if (unit.id === source.id || !unit.isAlive) continue;
+      if (unit.faction === source.faction) {
+        if (this.canAttackThisTurn(unit, target)) {
+          alliedAttackers++;
+        }
+      }
+    }
+
+    if (alliedAttackers === 0) return 0;
+    if (alliedAttackers === 1) return 0.1;
+    if (alliedAttackers === 2) return 0.2;
+    return 0.3;
   }
 
   toJSON(): Record<string, unknown> {

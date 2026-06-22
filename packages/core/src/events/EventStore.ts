@@ -15,6 +15,7 @@ import {
 } from '../types';
 import type { ID } from '../types/common';
 import { generateId, createChecksum, deepClone, toJSON, fromJSON } from '../utils';
+import type { EventBus } from './EventBus';
 
 const DEFAULT_CONFIG: EventStoreConfig = {
   maxEvents: 10000,
@@ -29,9 +30,26 @@ export class EventStore {
   private subscribers: EventSubscriber[] = [];
   private snapshots: GameStateSnapshot[] = [];
   private config: EventStoreConfig;
+  private _eventBus: EventBus | null = null;
+  private appendingFromBus: boolean = false;
 
   constructor(config: Partial<EventStoreConfig> = {}) {
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  get eventBus(): EventBus | null {
+    return this._eventBus;
+  }
+
+  setEventBus(eventBus: EventBus | null): void {
+    this._eventBus = eventBus;
+
+    if (eventBus) {
+      const bus = eventBus as EventBus & { setEventStore?: (store: EventStore) => void };
+      if (bus.getEventStore?.() !== this) {
+        bus.setEventStore?.(this);
+      }
+    }
   }
 
   append<T = unknown>(event: Omit<GameEvent, 'id' | 'timestamp' | 'version'> & { data?: T }): GameEvent {
@@ -57,7 +75,26 @@ export class EventStore {
 
     this.notifySubscribers(fullEvent);
 
+    if (this._eventBus && !this.appendingFromBus) {
+      const bus = this._eventBus as EventBus & { setEmittingFromStore?: (v: boolean) => void; publishFromStore?: (e: GameEvent) => void };
+      bus.setEmittingFromStore?.(true);
+      try {
+        bus.publishFromStore?.(fullEvent);
+      } finally {
+        bus.setEmittingFromStore?.(false);
+      }
+    }
+
     return fullEvent;
+  }
+
+  appendFromBus<T = unknown>(event: Omit<GameEvent, 'id' | 'timestamp' | 'version'> & { data?: T }): GameEvent {
+    this.appendingFromBus = true;
+    try {
+      return this.append(event);
+    } finally {
+      this.appendingFromBus = false;
+    }
   }
 
   query(filter: EventFilter): GameEvent[] {

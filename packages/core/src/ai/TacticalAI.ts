@@ -8,6 +8,8 @@ import type {
   PositionEvaluation,
   ThreatAssessment as ThreatAssessmentResult,
   AIParameters,
+  AIRole,
+  PositionDangerInfo,
 } from '../types';
 import { ThreatAssessment } from './ThreatAssessment';
 import {
@@ -473,6 +475,558 @@ export class TacticalAI {
       flankAngle,
       blockingOptions,
     };
+  }
+
+  isRanged(unit: CombatUnit): boolean {
+    if (unit.stats.attackRange > 1) return true;
+    for (const skill of unit.skills) {
+      if (skill.type === 'active' && skill.range.max > 1) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  isHealer(unit: CombatUnit): boolean {
+    return unit.skills.some(s =>
+      s.type === 'active' &&
+      s.canTargetAlly &&
+      s.effects.some(e => e.type === 'heal')
+    );
+  }
+
+  isTank(unit: CombatUnit): boolean {
+    const defenseScore = unit.stats.defense + unit.stats.magicDefense;
+    const attackScore = unit.stats.attack + unit.stats.magicAttack;
+    const hasTaunt = unit.skills.some(s => s.tags.includes('taunt'));
+    return (defenseScore > attackScore * 1.2 && unit.stats.maxHp > 100) || hasTaunt;
+  }
+
+  isSupport(unit: CombatUnit): boolean {
+    const buffCount = unit.skills.filter(s =>
+      s.type === 'active' &&
+      s.canTargetAlly &&
+      s.effects.some(e => e.type === 'buff')
+    ).length;
+    return buffCount >= 2;
+  }
+
+  isScout(unit: CombatUnit): boolean {
+    return unit.stats.moveRange >= 5 && unit.stats.visionRange >= 6;
+  }
+
+  detectAIRole(unit: CombatUnit): AIRole {
+    if (this.isHealer(unit)) return 'healer';
+    if (this.isTank(unit)) return 'tank';
+    if (this.isSupport(unit)) return 'support';
+    if (this.isScout(unit)) return 'scout';
+    if (this.isRanged(unit)) return 'ranged';
+    return 'melee';
+  }
+
+  getUnitRole(unit: CombatUnit): AIRole {
+    if (unit.aiProfile && this.profile.aiRole) {
+      return this.profile.aiRole;
+    }
+    return this.detectAIRole(unit);
+  }
+
+  makeRoleBasedDecision(
+    unit: CombatUnit,
+    allUnits: Map<ID, CombatUnit>,
+    reachableTiles?: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean,
+    hasLineOfSight?: (from: CubeCoords, to: CubeCoords) => boolean
+  ): AIDecision {
+    const role = this.getUnitRole(unit);
+
+    switch (role) {
+      case 'ranged':
+        return this.makeRangedDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+      case 'healer':
+        return this.makeHealerDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+      case 'tank':
+        return this.makeTankDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+      case 'support':
+        return this.makeSupportDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+      case 'scout':
+        return this.makeScoutDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+      case 'melee':
+      default:
+        return this.makeDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+    }
+  }
+
+  private makeRangedDecision(
+    unit: CombatUnit,
+    allUnits: Map<ID, CombatUnit>,
+    reachableTiles?: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean,
+    hasLineOfSight?: (from: CubeCoords, to: CubeCoords) => boolean
+  ): AIDecision {
+    const enemies = this.getUnitsByFaction(unit, allUnits, false);
+    const threatMap = this.threatAssessor.getThreatMap(unit, allUnits, getTileHeight, getCoverBonus);
+
+    const dangerThreshold = 60;
+    const currentDanger = this.calculatePositionDanger(unit.coords, enemies).dangerScore;
+
+    if (currentDanger > dangerThreshold && this.defensiveness > 0.4) {
+      const kiteDecision = this.tryKite(unit, enemies, reachableTiles, getTileHeight, getCoverBonus, isPassable);
+      if (kiteDecision) return this.finalizeDecision(unit, kiteDecision);
+    }
+
+    const targets = this.threatAssessor.getPrioritizedTargets(unit, enemies, 'threat', allUnits);
+    if (targets.length === 0) {
+      return this.finalizeDecision(unit, this.createWaitDecision(unit, '无可用目标'));
+    }
+
+    const primaryTarget = targets[0].unit;
+    const positions = reachableTiles ?? this.getReachablePositions(unit, isPassable);
+    const bestPosition = this.findBestKitingPosition(unit, positions, primaryTarget, enemies, getTileHeight);
+
+    const selectedSkill = this.selectSkill(unit, primaryTarget, bestPosition);
+
+    const inRange = cubeDistance(bestPosition, primaryTarget.coords) <= unit.stats.attackRange;
+
+    if (selectedSkill && inRange && selectedSkill.canTargetEnemy) {
+      return this.finalizeDecision(unit, {
+        unitId: unit.id,
+        action: 'skill',
+        targetCoords: primaryTarget.coords,
+        targetUnitId: primaryTarget.id,
+        skillId: selectedSkill.id,
+        confidence: 0.9,
+        reasoning: `远程单位使用技能【${selectedSkill.name}】攻击目标`,
+        alternatives: [],
+      });
+    }
+
+    if (inRange && !unit.hasActed) {
+      return this.finalizeDecision(unit, {
+        unitId: unit.id,
+        action: 'attack',
+        targetCoords: primaryTarget.coords,
+        targetUnitId: primaryTarget.id,
+        confidence: 0.8,
+        reasoning: '远程单位攻击目标',
+        alternatives: [],
+      });
+    }
+
+    if (!cubeEquals(unit.coords, bestPosition) && !unit.hasMoved) {
+      return this.finalizeDecision(unit, this.createMoveDecision(unit, bestPosition, '移动到最佳射击位置'));
+    }
+
+    return this.finalizeDecision(unit, this.createWaitDecision(unit, '等待目标进入射程'));
+  }
+
+  private makeHealerDecision(
+    unit: CombatUnit,
+    allUnits: Map<ID, CombatUnit>,
+    reachableTiles?: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean,
+    hasLineOfSight?: (from: CubeCoords, to: CubeCoords) => boolean
+  ): AIDecision {
+    const allies = this.getUnitsByFaction(unit, allUnits, true);
+    const enemies = this.getUnitsByFaction(unit, allUnits, false);
+
+    const healTarget = this.findLowestHpAlly(unit, allies);
+    const healThreshold = this.parameters.riskAssessment.hpSafetyThreshold + 0.1;
+
+    if (healTarget && healTarget.stats.hp / Math.max(healTarget.stats.maxHp, 1) < healThreshold) {
+      const healDecision = this.tryHealAlly(unit, healTarget, getTileHeight, getCoverBonus);
+      if (healDecision) return this.finalizeDecision(unit, healDecision);
+
+      const positions = reachableTiles ?? this.getReachablePositions(unit, isPassable);
+      const bestPos = this.findBestHealerPosition(unit, positions, allies, enemies, getTileHeight);
+      if (!cubeEquals(unit.coords, bestPos) && !unit.hasMoved) {
+        return this.finalizeDecision(unit, this.createMoveDecision(unit, bestPos, '移动到治疗位置'));
+      }
+    }
+
+    const dangerThreshold = 50;
+    const currentDanger = this.calculatePositionDanger(unit.coords, enemies).dangerScore;
+    if (currentDanger > dangerThreshold) {
+      const retreatDecision = this.tryRetreat(unit, allUnits, reachableTiles, new Map(), getTileHeight, getCoverBonus, isPassable);
+      if (retreatDecision) return this.finalizeDecision(unit, retreatDecision);
+    }
+
+    return this.makeDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+  }
+
+  private makeTankDecision(
+    unit: CombatUnit,
+    allUnits: Map<ID, CombatUnit>,
+    reachableTiles?: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean,
+    hasLineOfSight?: (from: CubeCoords, to: CubeCoords) => boolean
+  ): AIDecision {
+    const allies = this.getUnitsByFaction(unit, allUnits, true);
+    const enemies = this.getUnitsByFaction(unit, allUnits, false);
+
+    const hasTauntSkill = unit.skills.some(s =>
+      s.type === 'active' && s.tags.includes('taunt') && s.currentCooldown === 0 && unit.stats.mp >= s.mpCost
+    );
+
+    if (hasTauntSkill && enemies.length > 0) {
+      const nearbyEnemies = enemies.filter(e =>
+        cubeDistance(unit.coords, e.coords) <= 3
+      );
+      if (nearbyEnemies.length >= 2) {
+        const tauntSkill = unit.skills.find(s => s.tags.includes('taunt'))!;
+        return this.finalizeDecision(unit, {
+          unitId: unit.id,
+          action: 'skill',
+          targetCoords: unit.coords,
+          targetUnitId: unit.id,
+          skillId: tauntSkill.id,
+          confidence: 0.85,
+          reasoning: '坦克使用嘲讽技能吸引敌人',
+          alternatives: [],
+        });
+      }
+    }
+
+    const healer = allies.find(a => this.isHealer(a));
+    if (healer && !unit.hasMoved) {
+      const positions = reachableTiles ?? this.getReachablePositions(unit, isPassable);
+      const bestPos = this.findTankPosition(unit, positions, healer, enemies, getTileHeight);
+      if (!cubeEquals(unit.coords, bestPos)) {
+        return this.finalizeDecision(unit, this.createMoveDecision(unit, bestPos, '坦克站位保护队友'));
+      }
+    }
+
+    return this.makeDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+  }
+
+  private makeSupportDecision(
+    unit: CombatUnit,
+    allUnits: Map<ID, CombatUnit>,
+    reachableTiles?: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean,
+    hasLineOfSight?: (from: CubeCoords, to: CubeCoords) => boolean
+  ): AIDecision {
+    const allies = this.getUnitsByFaction(unit, allUnits, true);
+
+    const buffSkill = unit.skills.find(s =>
+      s.type === 'active' &&
+      s.canTargetAlly &&
+      s.effects.some(e => e.type === 'buff') &&
+      s.currentCooldown === 0 &&
+      unit.stats.mp >= s.mpCost
+    );
+
+    if (buffSkill) {
+      const target = this.findAllyNeedingBuff(unit, allies);
+      if (target) {
+        const distance = cubeDistance(unit.coords, target.coords);
+        if (distance >= buffSkill.range.min && distance <= buffSkill.range.max) {
+          return this.finalizeDecision(unit, {
+            unitId: unit.id,
+            action: 'skill',
+            targetCoords: target.coords,
+            targetUnitId: target.id,
+            skillId: buffSkill.id,
+            confidence: 0.8,
+            reasoning: `辅助单位给【${target.name}】上Buff`,
+            alternatives: [],
+          });
+        }
+      }
+    }
+
+    return this.makeDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+  }
+
+  private makeScoutDecision(
+    unit: CombatUnit,
+    allUnits: Map<ID, CombatUnit>,
+    reachableTiles?: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean,
+    hasLineOfSight?: (from: CubeCoords, to: CubeCoords) => boolean
+  ): AIDecision {
+    const enemies = this.getUnitsByFaction(unit, allUnits, false);
+
+    if (enemies.length === 0 && !unit.hasMoved) {
+      const positions = reachableTiles ?? this.getReachablePositions(unit, isPassable);
+      const scoutPos = this.findBestScoutPosition(unit, positions, getTileHeight);
+      if (!cubeEquals(unit.coords, scoutPos)) {
+        return this.finalizeDecision(unit, this.createMoveDecision(unit, scoutPos, '侦查单位探索前方'));
+      }
+    }
+
+    return this.makeDecision(unit, allUnits, reachableTiles, getTileHeight, getCoverBonus, isPassable, hasLineOfSight);
+  }
+
+  private tryKite(
+    unit: CombatUnit,
+    enemies: CombatUnit[],
+    reachableTiles?: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number,
+    getCoverBonus?: (coords: CubeCoords, from: CubeCoords) => number,
+    isPassable?: (coords: CubeCoords) => boolean
+  ): AIDecision | null {
+    const positions = reachableTiles ?? this.getReachablePositions(unit, isPassable);
+    if (positions.length === 0) return null;
+
+    let bestPos: CubeCoords = unit.coords;
+    let bestScore = -Infinity;
+
+    for (const pos of positions) {
+      let score = 0;
+
+      let minEnemyDist = Infinity;
+      for (const enemy of enemies) {
+        const dist = cubeDistance(pos, enemy.coords);
+        if (dist < minEnemyDist) minEnemyDist = dist;
+      }
+      score += minEnemyDist * 10;
+
+      const inAttackRange = enemies.some(e =>
+        cubeDistance(pos, e.coords) <= unit.stats.attackRange
+      );
+      if (inAttackRange) score += 50;
+
+      if (getTileHeight) {
+        score += getTileHeight(pos) * 15;
+      }
+
+      if (getCoverBonus) {
+        let totalCover = 0;
+        for (const enemy of enemies) {
+          totalCover += getCoverBonus(pos, enemy.coords);
+        }
+        score += totalCover * 100;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPos = pos;
+      }
+    }
+
+    if (!cubeEquals(unit.coords, bestPos)) {
+      return this.createMoveDecision(unit, bestPos, '风筝战术：保持距离并攻击');
+    }
+
+    return null;
+  }
+
+  private findBestKitingPosition(
+    unit: CombatUnit,
+    positions: CubeCoords[],
+    target: CombatUnit,
+    enemies: CombatUnit[],
+    getTileHeight?: (coords: CubeCoords) => number
+  ): CubeCoords {
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    for (const pos of positions) {
+      let score = 0;
+      const distToTarget = cubeDistance(pos, target.coords);
+
+      const optimalRange = unit.stats.attackRange * 0.8;
+      const rangeDiff = Math.abs(distToTarget - optimalRange);
+      score -= rangeDiff * 5;
+
+      if (distToTarget <= unit.stats.attackRange) {
+        score += 80;
+      }
+
+      let totalEnemyDist = 0;
+      for (const enemy of enemies) {
+        totalEnemyDist += cubeDistance(pos, enemy.coords);
+      }
+      score += totalEnemyDist * 2;
+
+      if (getTileHeight) {
+        score += getTileHeight(pos) * 20;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPos = pos;
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findBestHealerPosition(
+    unit: CombatUnit,
+    positions: CubeCoords[],
+    allies: CombatUnit[],
+    enemies: CombatUnit[],
+    getTileHeight?: (coords: CubeCoords) => number
+  ): CubeCoords {
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    for (const pos of positions) {
+      let score = 0;
+
+      let allyInRange = 0;
+      for (const ally of allies) {
+        if (ally.id === unit.id) continue;
+        const dist = cubeDistance(pos, ally.coords);
+        if (dist <= unit.stats.attackRange) {
+          allyInRange++;
+          const hpRatio = ally.stats.hp / Math.max(ally.stats.maxHp, 1);
+          score += (1 - hpRatio) * 30;
+        }
+      }
+      score += allyInRange * 20;
+
+      let minEnemyDist = Infinity;
+      for (const enemy of enemies) {
+        const dist = cubeDistance(pos, enemy.coords);
+        if (dist < minEnemyDist) minEnemyDist = dist;
+      }
+      score += minEnemyDist * 5;
+
+      if (getTileHeight) {
+        score += getTileHeight(pos) * 10;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPos = pos;
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findTankPosition(
+    unit: CombatUnit,
+    positions: CubeCoords[],
+    allyToProtect: CombatUnit,
+    enemies: CombatUnit[],
+    getTileHeight?: (coords: CubeCoords) => number
+  ): CubeCoords {
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    for (const pos of positions) {
+      let score = 0;
+
+      const distToAlly = cubeDistance(pos, allyToProtect.coords);
+      if (distToAlly <= 2) {
+        score += 50;
+      } else {
+        score -= distToAlly * 10;
+      }
+
+      let enemyBetween = 0;
+      for (const enemy of enemies) {
+        const distToEnemy = cubeDistance(pos, enemy.coords);
+        if (distToEnemy <= unit.stats.attackRange + 1) {
+          enemyBetween++;
+        }
+      }
+      score += enemyBetween * 15;
+
+      if (getTileHeight) {
+        score += getTileHeight(pos) * 10;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPos = pos;
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findBestScoutPosition(
+    unit: CombatUnit,
+    positions: CubeCoords[],
+    getTileHeight?: (coords: CubeCoords) => number
+  ): CubeCoords {
+    let bestPos = unit.coords;
+    let bestScore = -Infinity;
+
+    for (const pos of positions) {
+      let score = 0;
+
+      const dist = cubeDistance(unit.coords, pos);
+      score += dist * 5;
+
+      if (getTileHeight) {
+        score += getTileHeight(pos) * 25;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestPos = pos;
+      }
+    }
+
+    return bestPos;
+  }
+
+  private findLowestHpAlly(unit: CombatUnit, allies: CombatUnit[]): CombatUnit | null {
+    let lowest: CombatUnit | null = null;
+    let lowestRatio = 1;
+
+    for (const ally of allies) {
+      if (ally.id === unit.id || !ally.isAlive) continue;
+      const ratio = ally.stats.hp / Math.max(ally.stats.maxHp, 1);
+      if (ratio < lowestRatio) {
+        lowestRatio = ratio;
+        lowest = ally;
+      }
+    }
+
+    return lowest;
+  }
+
+  private findAllyNeedingBuff(unit: CombatUnit, allies: CombatUnit[]): CombatUnit | null {
+    const buffableAllies = allies.filter(ally => {
+      if (ally.id === unit.id || !ally.isAlive) return false;
+      const dist = cubeDistance(unit.coords, ally.coords);
+      return dist <= unit.stats.attackRange;
+    });
+
+    if (buffableAllies.length === 0) return null;
+
+    return buffableAllies.reduce((best, current) => {
+      const bestScore = this.calculateBuffNeed(best);
+      const currentScore = this.calculateBuffNeed(current);
+      return currentScore > bestScore ? current : best;
+    });
+  }
+
+  private calculateBuffNeed(unit: CombatUnit): number {
+    let score = 0;
+    const debuffCount = unit.statusEffects.filter(s => s.isDebuff).length;
+    score += debuffCount * 20;
+
+    const hpRatio = unit.stats.hp / Math.max(unit.stats.maxHp, 1);
+    score += (1 - hpRatio) * 30;
+
+    return score;
+  }
+
+  calculatePositionDanger(
+    position: CubeCoords,
+    enemies: CombatUnit[]
+  ): PositionDangerInfo {
+    return this.threatAssessor.calculatePositionDanger(position, enemies);
   }
 
   chooseAction(

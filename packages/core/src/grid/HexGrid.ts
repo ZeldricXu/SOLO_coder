@@ -5,8 +5,9 @@ import type {
   OffsetCoords,
   GridQueryOptions,
   TerrainType,
-  ID
+  ID,
 } from '../types';
+import type { EntityType, MapEntity } from '../types/entities';
 import { 
   cubeKey, 
   offsetToCube, 
@@ -19,16 +20,25 @@ import {
 } from './coords';
 import { terrainRegistry } from './TerrainConfig';
 import { generateId } from '../utils';
+import { EventBus } from '../events/EventBus';
+import { MapEntityManager, BaseMapEntity } from '../entities';
 
 export class HexGrid {
   private tiles: Map<string, HexTile>;
   private config: HexGridConfig;
   private width: number;
   private height: number;
+  private entityManager: MapEntityManager;
+  private entities: Map<ID, MapEntity>;
+  private _eventBus: EventBus;
 
-  constructor(config: HexGridConfig) {
+  constructor(config: HexGridConfig, eventBus?: EventBus) {
     this.config = config;
     this.tiles = new Map();
+    this.entities = new Map();
+    this.entityManager = new MapEntityManager();
+    this.entityManager.setGrid(this);
+    this._eventBus = eventBus ?? new EventBus();
     
     if (config.radius !== undefined) {
       this.initializeHexGrid(config.radius);
@@ -41,6 +51,10 @@ export class HexGrid {
     } else {
       throw new Error('HexGrid must be initialized with either radius or width/height');
     }
+  }
+
+  get eventBus(): EventBus {
+    return this._eventBus;
   }
 
   private initializeHexGrid(radius: number): void {
@@ -95,10 +109,21 @@ export class HexGrid {
     return this.tiles.has(cubeKey(coords));
   }
 
-  setTileTerrain(coords: CubeCoords, terrain: TerrainType): void {
+  setTileTerrain(coords: CubeCoords, terrain: TerrainType, sourceId?: ID): void {
     const tile = this.getTile(coords);
     if (tile) {
+      const oldTerrain = tile.terrain;
       tile.terrain = terrain;
+
+      this._eventBus.publish('TERRAIN_CHANGED', {
+        coords,
+        oldTerrain,
+        newTerrain: terrain,
+        source: sourceId,
+      }, {
+        source: sourceId,
+        position: coords,
+      });
     }
   }
 
@@ -219,12 +244,14 @@ export class HexGrid {
     return tiles;
   }
 
-  getMoveCost(from: CubeCoords, to: CubeCoords): number {
+  getMoveCost(from: CubeCoords, to: CubeCoords, options: { ignoreEntities?: boolean } = {}): number {
     const tile = this.getTile(to);
     if (!tile) return Infinity;
     
     const config = terrainRegistry.get(tile.terrain);
     if (config.blocksMovement) return Infinity;
+    
+    if (!options.ignoreEntities && this.blocksMovementForEntities(to)) return Infinity;
     
     const heightDiff = Math.abs(this.getHeight(from) - tile.height);
     const heightCost = heightDiff > 1 ? heightDiff * 0.5 : 0;
@@ -235,13 +262,23 @@ export class HexGrid {
   blocksVision(coords: CubeCoords): boolean {
     const tile = this.getTile(coords);
     if (!tile) return true;
-    return terrainRegistry.blocksVision(tile.terrain) || tile.units.length > 0;
+    return terrainRegistry.blocksVision(tile.terrain) || tile.units.length > 0 || this.blocksVisionForEntities(coords);
   }
 
   blocksMovement(coords: CubeCoords): boolean {
     const tile = this.getTile(coords);
     if (!tile) return true;
-    return terrainRegistry.blocksMovement(tile.terrain) || tile.units.length > 0;
+    return terrainRegistry.blocksMovement(tile.terrain) || tile.units.length > 0 || this.blocksMovementForEntities(coords);
+  }
+
+  private blocksMovementForEntities(coords: CubeCoords): boolean {
+    const entities = this.getEntitiesAtTile(coords);
+    return entities.some(e => e.blocksMovement && !e.isDestroyed);
+  }
+
+  private blocksVisionForEntities(coords: CubeCoords): boolean {
+    const entities = this.getEntitiesAtTile(coords);
+    return entities.some(e => e.blocksVision && !e.isDestroyed);
   }
 
   getVisibility(coords: CubeCoords): { isVisible: boolean; isRevealed: boolean } {
@@ -332,6 +369,96 @@ export class HexGrid {
     }
   }
 
+  addEntity(entity: BaseMapEntity): void {
+    if (this.entities.has(entity.id)) return;
+    
+    this.entities.set(entity.id, entity as unknown as MapEntity);
+    
+    const tile = this.getTile(entity.position);
+    if (tile && !tile.objects.includes(entity.id)) {
+      tile.objects.push(entity.id);
+    }
+
+    this._eventBus.publish('OBJECT_SPAWNED', {
+      objectId: entity.id,
+      position: entity.position,
+      type: entity.type,
+    }, {
+      position: entity.position,
+    });
+  }
+
+  removeEntity(entityId: ID): boolean {
+    const entity = this.entities.get(entityId);
+    if (!entity) return false;
+    
+    const tile = this.getTile(entity.position);
+    if (tile) {
+      tile.objects = tile.objects.filter(id => id !== entityId);
+    }
+    
+    this.entities.delete(entityId);
+
+    this._eventBus.publish('OBJECT_REMOVED', {
+      objectId: entityId,
+      position: entity.position,
+    }, {
+      position: entity.position,
+    });
+
+    return true;
+  }
+
+  getEntity(entityId: ID): MapEntity | undefined {
+    return this.entities.get(entityId);
+  }
+
+  hasEntity(entityId: ID): boolean {
+    return this.entities.has(entityId);
+  }
+
+  getEntitiesAtTile(coords: CubeCoords): MapEntity[] {
+    const tile = this.getTile(coords);
+    if (!tile) return [];
+    
+    const result: MapEntity[] = [];
+    for (const entityId of tile.objects) {
+      const entity = this.entities.get(entityId);
+      if (entity) {
+        result.push(entity);
+      }
+    }
+    return result;
+  }
+
+  getEntitiesByType(type: EntityType): MapEntity[] {
+    const result: MapEntity[] = [];
+    for (const entity of this.entities.values()) {
+      if (entity.type === type) {
+        result.push(entity);
+      }
+    }
+    return result;
+  }
+
+  getEntitiesByTrigger(trigger: string): MapEntity[] {
+    const result: MapEntity[] = [];
+    for (const entity of this.entities.values()) {
+      if (entity.triggers.includes(trigger)) {
+        result.push(entity);
+      }
+    }
+    return result;
+  }
+
+  getEntityManager(): MapEntityManager {
+    return this.entityManager;
+  }
+
+  getAllEntities(): MapEntity[] {
+    return Array.from(this.entities.values());
+  }
+
   clone(): HexGrid {
     const newGrid = new HexGrid(this.config);
     for (const [key, tile] of this.tiles.entries()) {
@@ -343,10 +470,19 @@ export class HexGrid {
         objects: [...tile.objects],
       });
     }
+    newGrid.entities = new Map(this.entities);
     return newGrid;
   }
 
   toJSON(): Record<string, unknown> {
+    const entitiesData: Array<{ id: ID; data: Record<string, unknown> }> = [];
+    for (const entity of this.entities.values()) {
+      entitiesData.push({
+        id: entity.id,
+        data: entity as unknown as Record<string, unknown>,
+      });
+    }
+    
     return {
       config: this.config,
       width: this.width,
@@ -359,6 +495,7 @@ export class HexGrid {
           objects: [...tile.objects],
         }
       })),
+      entities: entitiesData,
     };
   }
 
@@ -371,6 +508,13 @@ export class HexGrid {
     const tilesData = data.tiles as Array<{ key: string; data: Record<string, unknown> }>;
     for (const tileData of tilesData) {
       grid.tiles.set(tileData.key, tileData.data as unknown as HexTile);
+    }
+    
+    const entitiesData = data.entities as Array<{ id: ID; data: Record<string, unknown> }> | undefined;
+    if (entitiesData) {
+      for (const entityData of entitiesData) {
+        grid.entities.set(entityData.id, entityData.data as unknown as MapEntity);
+      }
     }
     
     return grid;

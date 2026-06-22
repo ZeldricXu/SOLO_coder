@@ -4,6 +4,8 @@ import type {
   BehaviorResult,
   BehaviorTreeNode,
   BehaviorTreeNodeType,
+  BehaviorTreeConfig,
+  BehaviorTreeNodeConfig,
 } from '../types';
 import { deepClone, serializeMap, deserializeMap } from '../utils';
 
@@ -585,5 +587,588 @@ export class BehaviorTree {
     }
 
     return node;
+  }
+
+  static fromJSON(config: Record<string, unknown>): BehaviorTree {
+    const bt = new BehaviorTree();
+    bt.fromJSON(config);
+    return bt;
+  }
+}
+
+export class BehaviorConditionBuilders {
+  static hasHpBelow(percentage: number): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const hpRatio = context.unit.stats.hp / Math.max(context.unit.stats.maxHp, 1);
+      return hpRatio < percentage;
+    };
+  }
+
+  static hasHpAbove(percentage: number): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const hpRatio = context.unit.stats.hp / Math.max(context.unit.stats.maxHp, 1);
+      return hpRatio > percentage;
+    };
+  }
+
+  static everyNTurns(n: number, offset: number = 0): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      return (context.currentTurn + offset) % n === 0;
+    };
+  }
+
+  static targetWithinRange(rangeType: 'attack' | 'move' | 'vision', rangeValue: number): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const enemies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction !== context.unit.faction
+      );
+      for (const enemy of enemies) {
+        const dist = Math.abs(context.unit.coords.q - enemy.coords.q) +
+                     Math.abs(context.unit.coords.r - enemy.coords.r) +
+                     Math.abs(context.unit.coords.s - enemy.coords.s);
+        if (dist / 2 <= rangeValue) return true;
+      }
+      return false;
+    };
+  }
+
+  static hasStatusEffect(effectType: string): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      return context.unit.statusEffects.some(s => s.type === effectType);
+    };
+  }
+
+  static enemyCountBelow(count: number): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const enemies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction !== context.unit.faction
+      );
+      return enemies.length < count;
+    };
+  }
+
+  static allyCountBelow(count: number): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const allies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction === context.unit.faction && u.id !== context.unit.id
+      );
+      return allies.length < count;
+    };
+  }
+
+  static isFlanked(): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const enemies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction !== context.unit.faction
+      );
+      let leftSide = 0;
+      let rightSide = 0;
+      for (const enemy of enemies) {
+        const dist = Math.abs(context.unit.coords.q - enemy.coords.q) +
+                     Math.abs(context.unit.coords.r - enemy.coords.r);
+        if (enemy.coords.q < context.unit.coords.q) leftSide++;
+        else rightSide++;
+      }
+      return leftSide > 0 && rightSide > 0;
+    };
+  }
+
+  static hasMpAbove(percentage: number): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const mpRatio = context.unit.stats.mp / Math.max(context.unit.stats.maxMp, 1);
+      return mpRatio > percentage;
+    };
+  }
+
+  static canUseSkill(skillId: string): (context: AIContext) => boolean {
+    return (context: AIContext) => {
+      const skill = context.unit.skills.find(s => s.id === skillId);
+      if (!skill) return false;
+      return skill.currentCooldown === 0 && context.unit.stats.mp >= skill.mpCost;
+    };
+  }
+}
+
+export class BehaviorActionBuilders {
+  static castSkillById(
+    skillId: string,
+    targetSelector: 'highestThreat' | 'lowestHpAlly' | 'closestEnemy' | 'self' = 'highestThreat'
+  ): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const skill = context.unit.skills.find(s => s.id === skillId);
+      if (!skill || skill.currentCooldown > 0 || context.unit.stats.mp < skill.mpCost) {
+        return 'failure';
+      }
+      context.memory.set('selectedSkill', skillId);
+      context.memory.set('targetSelector', targetSelector);
+      return 'success';
+    };
+  }
+
+  static moveToNearestEnemy(): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const enemies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction !== context.unit.faction
+      );
+      if (enemies.length === 0) return 'failure';
+
+      let nearest = enemies[0];
+      let minDist = Infinity;
+      for (const enemy of enemies) {
+        const dist = Math.abs(context.unit.coords.q - enemy.coords.q) +
+                     Math.abs(context.unit.coords.r - enemy.coords.r) +
+                     Math.abs(context.unit.coords.s - enemy.coords.s);
+        if (dist < minDist) {
+          minDist = dist;
+          nearest = enemy;
+        }
+      }
+      context.memory.set('moveTarget', nearest.coords);
+      return 'success';
+    };
+  }
+
+  static moveAwayFromAllEnemies(minDistance: number): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const enemies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction !== context.unit.faction
+      );
+      if (enemies.length === 0) return 'success';
+
+      let avgQ = 0, avgR = 0, avgS = 0;
+      for (const enemy of enemies) {
+        avgQ += enemy.coords.q;
+        avgR += enemy.coords.r;
+        avgS += enemy.coords.s;
+      }
+      avgQ /= enemies.length;
+      avgR /= enemies.length;
+      avgS /= enemies.length;
+
+      const dq = context.unit.coords.q - avgQ;
+      const dr = context.unit.coords.r - avgR;
+      const ds = context.unit.coords.s - avgS;
+      const len = Math.sqrt(dq * dq + dr * dr + ds * ds) || 1;
+
+      const retreatPos = {
+        q: context.unit.coords.q + (dq / len) * minDistance,
+        r: context.unit.coords.r + (dr / len) * minDistance,
+        s: context.unit.coords.s + (ds / len) * minDistance,
+      };
+      context.memory.set('retreatTarget', retreatPos);
+      return 'success';
+    };
+  }
+
+  static attackHighestThreat(): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const threats = context.threatMap;
+      if (threats.size === 0) return 'failure';
+
+      let highestId: ID | null = null;
+      let highestThreat = -1;
+      for (const [id, threat] of threats.entries()) {
+        if (threat > highestThreat) {
+          highestThreat = threat;
+          highestId = id;
+        }
+      }
+      if (highestId) {
+        context.memory.set('attackTarget', highestId);
+        return 'success';
+      }
+      return 'failure';
+    };
+  }
+
+  static healLowestAlly(): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const allies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction === context.unit.faction && u.id !== context.unit.id
+      );
+      if (allies.length === 0) return 'failure';
+
+      let lowestAlly = allies[0];
+      let lowestRatio = 1;
+      for (const ally of allies) {
+        const ratio = ally.stats.hp / Math.max(ally.stats.maxHp, 1);
+        if (ratio < lowestRatio) {
+          lowestRatio = ratio;
+          lowestAlly = ally;
+        }
+      }
+      context.memory.set('healTarget', lowestAlly.id);
+      return 'success';
+    };
+  }
+
+  static castAoeOnBestCluster(
+    skillId: string,
+    minTargets: number = 2,
+    radius: number = 2
+  ): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const skill = context.unit.skills.find(s => s.id === skillId);
+      if (!skill || skill.currentCooldown > 0 || context.unit.stats.mp < skill.mpCost) {
+        return 'failure';
+      }
+
+      const enemies = Array.from(context.allUnits.values()).filter(
+        u => u.isAlive && u.faction !== context.unit.faction
+      );
+      if (enemies.length < minTargets) return 'failure';
+
+      let bestTarget = enemies[0].coords;
+      let bestCount = 0;
+
+      for (const enemy of enemies) {
+        let count = 0;
+        for (const other of enemies) {
+          const dist = Math.abs(enemy.coords.q - other.coords.q) +
+                       Math.abs(enemy.coords.r - other.coords.r) +
+                       Math.abs(enemy.coords.s - other.coords.s);
+          if (dist / 2 <= radius) count++;
+        }
+        if (count > bestCount) {
+          bestCount = count;
+          bestTarget = enemy.coords;
+        }
+      }
+
+      if (bestCount >= minTargets) {
+        context.memory.set('aoeSkill', skillId);
+        context.memory.set('aoeTarget', bestTarget);
+        return 'success';
+      }
+      return 'failure';
+    };
+  }
+
+  static spawnSummons(summonData: { templateId: string; count: number }): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      context.memory.set('summonData', summonData);
+      return 'success';
+    };
+  }
+
+  static taunt(): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const tauntSkill = context.unit.skills.find(s => s.tags.includes('taunt'));
+      if (tauntSkill && tauntSkill.currentCooldown === 0 && context.unit.stats.mp >= tauntSkill.mpCost) {
+        context.memory.set('tauntSkill', tauntSkill.id);
+        return 'success';
+      }
+      return 'failure';
+    };
+  }
+
+  static buffSelf(buffId: string): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      const buffSkill = context.unit.skills.find(s =>
+        s.effects.some(e => e.type === 'buff') && s.canTargetSelf
+      );
+      if (buffSkill && buffSkill.currentCooldown === 0 && context.unit.stats.mp >= buffSkill.mpCost) {
+        context.memory.set('buffSkill', buffSkill.id);
+        context.memory.set('buffTarget', 'self');
+        return 'success';
+      }
+      return 'failure';
+    };
+  }
+
+  static wait(): (context: AIContext) => BehaviorResult {
+    return (_context: AIContext) => {
+      return 'success';
+    };
+  }
+
+  static moveToHighGround(): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      context.memory.set('positioningGoal', 'highGround');
+      return 'success';
+    };
+  }
+
+  static maintainDistance(): (context: AIContext) => BehaviorResult {
+    return (context: AIContext) => {
+      context.memory.set('positioningGoal', 'maintainDistance');
+      return 'success';
+    };
+  }
+}
+
+export class BossBehaviorTreeBuilder {
+  private currentNode: BehaviorTreeNode | null = null;
+  private nodeStack: BehaviorTreeNode[] = [];
+  private rootNode: BehaviorTreeNode | null = null;
+  private idCounter: number = 0;
+
+  private generateId(prefix: string): ID {
+    return `${prefix}_${Date.now()}_${this.idCounter++}` as ID;
+  }
+
+  sequence(name?: string): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('sequence'),
+      type: 'sequence',
+      name: name ?? 'Sequence',
+      children: [],
+    };
+    this.addChild(node);
+    this.nodeStack.push(node);
+    this.currentNode = node;
+    return this;
+  }
+
+  selector(name?: string): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('selector'),
+      type: 'selector',
+      name: name ?? 'Selector',
+      children: [],
+    };
+    this.addChild(node);
+    this.nodeStack.push(node);
+    this.currentNode = node;
+    return this;
+  }
+
+  parallel(
+    successThreshold: number,
+    failureThreshold: number,
+    name?: string
+  ): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('parallel'),
+      type: 'parallel',
+      name: name ?? 'Parallel',
+      children: [],
+      parallelConfig: {
+        successThreshold,
+        failureThreshold,
+      },
+    };
+    this.addChild(node);
+    this.nodeStack.push(node);
+    this.currentNode = node;
+    return this;
+  }
+
+  condition(
+    name: string,
+    condition: (context: AIContext) => boolean
+  ): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('condition'),
+      type: 'condition',
+      name,
+      condition,
+    };
+    this.addChild(node);
+    return this;
+  }
+
+  action(
+    name: string,
+    action: (context: AIContext) => BehaviorResult
+  ): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('action'),
+      type: 'action',
+      name,
+      action,
+    };
+    this.addChild(node);
+    return this;
+  }
+
+  inverter(name?: string): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('decorator'),
+      type: 'decorator',
+      name: name ?? 'Inverter',
+      children: [],
+      decorator: { type: 'inverter' },
+    };
+    this.addChild(node);
+    this.nodeStack.push(node);
+    this.currentNode = node;
+    return this;
+  }
+
+  repeat(count: number, name?: string): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('decorator'),
+      type: 'decorator',
+      name: name ?? `Repeat(x${count})`,
+      children: [],
+      decorator: { type: 'repeat', count },
+    };
+    this.addChild(node);
+    this.nodeStack.push(node);
+    this.currentNode = node;
+    return this;
+  }
+
+  untilFail(name?: string): BossBehaviorTreeBuilder {
+    const node: BehaviorTreeNode = {
+      id: this.generateId('decorator'),
+      type: 'decorator',
+      name: name ?? 'UntilFail',
+      children: [],
+      decorator: { type: 'untilFail' },
+    };
+    this.addChild(node);
+    this.nodeStack.push(node);
+    this.currentNode = node;
+    return this;
+  }
+
+  end(): BossBehaviorTreeBuilder {
+    this.nodeStack.pop();
+    this.currentNode = this.nodeStack.length > 0
+      ? this.nodeStack[this.nodeStack.length - 1]
+      : null;
+    return this;
+  }
+
+  private addChild(node: BehaviorTreeNode): void {
+    if (!this.rootNode) {
+      this.rootNode = node;
+    } else if (this.currentNode && this.currentNode.children) {
+      this.currentNode.children.push(node);
+    }
+  }
+
+  build(): BehaviorTree {
+    if (!this.rootNode) {
+      throw new Error('Behavior tree is empty');
+    }
+    const bt = new BehaviorTree(this.rootNode);
+    return bt;
+  }
+
+  getRoot(): BehaviorTreeNode | null {
+    return this.rootNode;
+  }
+
+  reset(): void {
+    this.rootNode = null;
+    this.currentNode = null;
+    this.nodeStack = [];
+    this.idCounter = 0;
+  }
+
+  static fromConfig(config: BehaviorTreeConfig): BehaviorTree {
+    const builder = new BossBehaviorTreeBuilder();
+    const rootNode = builder.buildNodeFromConfig(config.root);
+    const bt = new BehaviorTree(rootNode);
+    return bt;
+  }
+
+  private buildNodeFromConfig(config: BehaviorTreeNodeConfig): BehaviorTreeNode {
+    const node: BehaviorTreeNode = {
+      id: this.generateId(config.type),
+      type: config.type as BehaviorTreeNodeType,
+      name: config.name ?? config.type,
+    };
+
+    if (config.children) {
+      node.children = config.children.map(c => this.buildNodeFromConfig(c));
+    }
+
+    if (config.decorator) {
+      node.decorator = config.decorator;
+    }
+
+    if (config.parallelConfig) {
+      node.parallelConfig = config.parallelConfig;
+    }
+
+    if (config.condition) {
+      node.condition = this.getConditionFromRegistry(config.condition, config.conditionParams);
+    }
+
+    if (config.action) {
+      node.action = this.getActionFromRegistry(config.action, config.actionParams);
+    }
+
+    return node;
+  }
+
+  private getConditionFromRegistry(
+    conditionName: string,
+    params?: Record<string, unknown>
+  ): ((context: AIContext) => boolean) | undefined {
+    switch (conditionName) {
+      case 'hasHpBelow':
+        return BehaviorConditionBuilders.hasHpBelow((params?.percentage as number) ?? 0.3);
+      case 'hasHpAbove':
+        return BehaviorConditionBuilders.hasHpAbove((params?.percentage as number) ?? 0.7);
+      case 'everyNTurns':
+        return BehaviorConditionBuilders.everyNTurns(
+          (params?.n as number) ?? 3,
+          (params?.offset as number) ?? 0
+        );
+      case 'enemyCountBelow':
+        return BehaviorConditionBuilders.enemyCountBelow((params?.count as number) ?? 2);
+      case 'allyCountBelow':
+        return BehaviorConditionBuilders.allyCountBelow((params?.count as number) ?? 2);
+      case 'isFlanked':
+        return BehaviorConditionBuilders.isFlanked();
+      case 'hasStatusEffect':
+        return BehaviorConditionBuilders.hasStatusEffect((params?.effectType as string) ?? '');
+      case 'hasMpAbove':
+        return BehaviorConditionBuilders.hasMpAbove((params?.percentage as number) ?? 0.5);
+      case 'canUseSkill':
+        return BehaviorConditionBuilders.canUseSkill((params?.skillId as string) ?? '');
+      default:
+        return undefined;
+    }
+  }
+
+  private getActionFromRegistry(
+    actionName: string,
+    params?: Record<string, unknown>
+  ): ((context: AIContext) => BehaviorResult) | undefined {
+    switch (actionName) {
+      case 'attackHighestThreat':
+        return BehaviorActionBuilders.attackHighestThreat();
+      case 'healLowestAlly':
+        return BehaviorActionBuilders.healLowestAlly();
+      case 'moveToNearestEnemy':
+        return BehaviorActionBuilders.moveToNearestEnemy();
+      case 'moveAwayFromAllEnemies':
+        return BehaviorActionBuilders.moveAwayFromAllEnemies(
+          (params?.minDistance as number) ?? 3
+        );
+      case 'castSkillById':
+        return BehaviorActionBuilders.castSkillById(
+          (params?.skillId as string) ?? '',
+          (params?.targetSelector as 'highestThreat' | 'lowestHpAlly' | 'closestEnemy' | 'self') ?? 'highestThreat'
+        );
+      case 'castAoeOnBestCluster':
+        return BehaviorActionBuilders.castAoeOnBestCluster(
+          (params?.skillId as string) ?? '',
+          (params?.minTargets as number) ?? 2,
+          (params?.radius as number) ?? 2
+        );
+      case 'spawnSummons':
+        return BehaviorActionBuilders.spawnSummons(
+          (params?.summonData as { templateId: string; count: number }) ?? { templateId: '', count: 1 }
+        );
+      case 'taunt':
+        return BehaviorActionBuilders.taunt();
+      case 'buffSelf':
+        return BehaviorActionBuilders.buffSelf((params?.buffId as string) ?? '');
+      case 'wait':
+        return BehaviorActionBuilders.wait();
+      case 'moveToHighGround':
+        return BehaviorActionBuilders.moveToHighGround();
+      case 'maintainDistance':
+        return BehaviorActionBuilders.maintainDistance();
+      default:
+        return undefined;
+    }
   }
 }

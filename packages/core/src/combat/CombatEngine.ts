@@ -6,6 +6,7 @@ import type {
   DamageCalculationConfig,
   ElementChart,
   CombatLogEntry,
+  LootItem,
 } from '../types';
 import type { CubeCoords } from '../types/grid';
 import type { ID, Faction, Direction } from '../types/common';
@@ -15,6 +16,8 @@ import { SkillSystem } from './SkillSystem';
 import { StatusEffectSystem } from './StatusEffectSystem';
 import type { SkillExecutionResult } from './SkillSystem';
 import type { StatusEffectTickResult } from './StatusEffectSystem';
+import type { MapEntityManager } from '../entities';
+import { EventBus } from '../events/EventBus';
 
 export type CombatEngineEventMap = {
   onBeforeAttack?: (attacker: CombatUnit, defender: CombatUnit) => boolean | void;
@@ -56,11 +59,14 @@ export class CombatEngine implements Serializable {
   private damageConfig: DamageCalculationConfig;
   private elementChart: ElementChart;
   private events: CombatEngineEventMap;
+  private _eventBus: EventBus;
+  private entityManager?: MapEntityManager;
 
   constructor(
     damageConfig: DamageCalculationConfig,
     elementChart: ElementChart,
-    events: CombatEngineEventMap = {}
+    events: CombatEngineEventMap = {},
+    eventBus?: EventBus
   ) {
     this.units = new Map();
     this.delayedSkills = [];
@@ -70,11 +76,16 @@ export class CombatEngine implements Serializable {
     this.damageConfig = damageConfig;
     this.elementChart = elementChart;
     this.events = events;
+    this._eventBus = eventBus ?? new EventBus();
 
     this.statusEffectSystem = new StatusEffectSystem();
     this.damageCalculator = new DamageCalculator(damageConfig, elementChart);
     this.skillSystem = new SkillSystem(this.damageCalculator, this.statusEffectSystem);
     this.skillSystem.setUnits(this.units);
+  }
+
+  get eventBus(): EventBus {
+    return this._eventBus;
   }
 
   addUnit(unit: CombatUnit): void {
@@ -85,6 +96,74 @@ export class CombatEngine implements Serializable {
   removeUnit(unitId: ID): void {
     this.units.delete(unitId);
     this.skillSystem.setUnits(this.units);
+  }
+
+  setEntityManager(entityManager: MapEntityManager): void {
+    this.entityManager = entityManager;
+  }
+
+  getEntityManager(): MapEntityManager | undefined {
+    return this.entityManager;
+  }
+
+  attackEntity(attackerId: ID, entityId: ID): { success: boolean; isDestroyed: boolean; actualDamage: number; drops?: LootItem[] } | null {
+    const attacker = this.units.get(attackerId);
+    if (!attacker || !attacker.isAlive) {
+      return null;
+    }
+
+    if (!this.entityManager) {
+      return null;
+    }
+
+    const entity = this.entityManager.getEntity(entityId);
+    if (!entity || entity.type !== 'destructible' || entity.isDestroyed) {
+      return null;
+    }
+
+    const baseDamage = attacker.stats.attack;
+    const damageType = 'physical';
+
+    const result = this.entityManager.damageEntity(entityId, baseDamage, damageType, attackerId);
+
+    if (result.success) {
+      this.addCombatLog('damage_entity', {
+        attackerId: attacker.id,
+        entityId,
+        damage: result.actualDamage,
+        isDestroyed: result.isDestroyed,
+        drops: result.drops,
+      });
+    }
+
+    return result;
+  }
+
+  triggerOnStepEntities(unitId: ID, position: CubeCoords): Array<{ entityId: ID; type: string; data: Record<string, unknown> }> {
+    const unit = this.units.get(unitId);
+    if (!unit || !unit.isAlive) {
+      return [];
+    }
+
+    if (!this.entityManager) {
+      return [];
+    }
+
+    const results = this.entityManager.triggerOnStepEntities(position, {
+      id: unitId,
+      faction: unit.faction,
+    });
+
+    for (const result of results) {
+      this.addCombatLog('entity_trigger', {
+        unitId,
+        entityId: result.entityId,
+        triggerType: result.type,
+        data: result.data,
+      });
+    }
+
+    return results;
   }
 
   getUnit(unitId: ID): CombatUnit | undefined {
@@ -149,7 +228,31 @@ export class CombatEngine implements Serializable {
       directionBonus
     );
 
+    this._eventBus.publish('UNIT_ATTACK', {
+      attackerId: attacker.id,
+      defenderId: defender.id,
+      isHit: !damage.isDodged,
+      isCrit: damage.isCrit,
+      damage,
+      skillId: undefined,
+    }, {
+      source: attacker.id,
+      target: defender.id,
+      faction: attacker.faction,
+      position: defender.coords,
+    });
+
     defender.stats.hp = Math.max(0, defender.stats.hp - damage.finalDamage);
+
+    this._eventBus.publish('DAMAGE_DEALT', {
+      sourceId: attacker.id,
+      targetId: defender.id,
+      damage,
+    }, {
+      source: attacker.id,
+      target: defender.id,
+      position: defender.coords,
+    });
 
     this.addCombatLog('damage', {
       attackerId: attacker.id,
@@ -222,6 +325,20 @@ export class CombatEngine implements Serializable {
 
     const result = this.skillSystem.executeSkill(caster, skill, targetUnit, targetCoords);
 
+    this._eventBus.publish('UNIT_CAST_SKILL', {
+      casterId: caster.id,
+      skillId: skill.id,
+      targetCoords,
+      targetUnitId,
+      isDelayed: skill.isDelayed,
+      delayTurns: skill.castTime,
+    }, {
+      source: caster.id,
+      target: targetUnitId,
+      faction: caster.faction,
+      position: targetCoords ?? caster.coords,
+    });
+
     this.addCombatLog('skill', {
       casterId: caster.id,
       skillId: skill.id,
@@ -235,6 +352,18 @@ export class CombatEngine implements Serializable {
     }
 
     if (result.success) {
+      if (skill.cooldown > 0) {
+        skill.currentCooldown = skill.cooldown;
+        this._eventBus.publish('SKILL_COOLDOWN_START', {
+          unitId: caster.id,
+          skillId: skill.id,
+          cooldown: skill.cooldown,
+        }, {
+          source: caster.id,
+          position: caster.coords,
+        });
+      }
+
       this.skillSystem.processPassiveTriggers(caster, 'onSkillCast', {
         skill,
         target: targetUnit,
@@ -243,6 +372,16 @@ export class CombatEngine implements Serializable {
       for (const damageInstance of result.damageInstances) {
         const target = this.units.get(damageInstance.targetId);
         if (target) {
+          this._eventBus.publish('DAMAGE_DEALT', {
+            sourceId: caster.id,
+            targetId: damageInstance.targetId,
+            damage: damageInstance,
+          }, {
+            source: caster.id,
+            target: damageInstance.targetId,
+            position: damageInstance.position,
+          });
+
           this.skillSystem.processPassiveTriggers(target, 'onDamageTaken', {
             value: damageInstance.finalDamage,
             target,
@@ -251,6 +390,43 @@ export class CombatEngine implements Serializable {
 
           if (target.stats.hp <= 0 && target.isAlive) {
             this.killUnit(target.id, casterId, damageInstance);
+          }
+        }
+      }
+
+      for (const healInstance of result.healInstances) {
+        const target = this.units.get(healInstance.targetId);
+        if (target) {
+          this._eventBus.publish('HEAL_APPLIED', {
+            sourceId: caster.id,
+            targetId: healInstance.targetId,
+            heal: healInstance,
+          }, {
+            source: caster.id,
+            target: healInstance.targetId,
+            position: healInstance.position,
+          });
+        }
+      }
+
+      for (const targetId of result.targets) {
+        const target = this.units.get(targetId);
+        if (target) {
+          const targetEffects = result.appliedStatusEffects.filter(e => e.source === caster.id);
+          for (const effect of targetEffects) {
+            this._eventBus.publish('UNIT_STATUS_APPLIED', {
+              unitId: targetId,
+              effectId: effect.id,
+              effectType: effect.type,
+              duration: effect.maxDuration,
+              remainingDuration: effect.duration,
+              sourceId: caster.id,
+              isApplied: true,
+            }, {
+              source: caster.id,
+              target: targetId,
+              position: target.coords,
+            });
           }
         }
       }
@@ -360,6 +536,19 @@ export class CombatEngine implements Serializable {
 
     unit.isAlive = false;
     unit.stats.hp = 0;
+
+    this._eventBus.publish('UNIT_DEATH', {
+      unitId: unit.id,
+      killerId: killer?.id,
+      position: unit.coords,
+      damage,
+      effectsOnDeath: unit.tags,
+    }, {
+      source: killer?.id,
+      target: unit.id,
+      faction: unit.faction,
+      position: unit.coords,
+    });
 
     for (const otherUnit of this.getAliveUnits()) {
       this.skillSystem.processPassiveTriggers(otherUnit, 'onUnitDeath', {
@@ -479,7 +668,68 @@ export class CombatEngine implements Serializable {
   tickUnitStatus(unitId: ID): StatusEffectTickResult[] {
     const unit = this.units.get(unitId);
     if (!unit) return [];
-    return this.statusEffectSystem.tickEffects(unit);
+    const results = this.statusEffectSystem.tickEffects(unit);
+
+    for (const result of results) {
+      const effect = unit.statusEffects.find(e => e.id === result.effectId);
+
+      this._eventBus.publish('UNIT_STATUS_TICK', {
+        unitId: unit.id,
+        effectId: result.effectId,
+        effectType: result.effectType,
+        duration: effect?.maxDuration ?? 0,
+        remainingDuration: result.durationRemaining,
+        sourceId: effect?.source ?? '',
+        isApplied: !result.expired,
+        tickData: result.data,
+      }, {
+        source: effect?.source,
+        target: unit.id,
+        position: unit.coords,
+      });
+
+      if (result.expired) {
+        this._eventBus.publish('UNIT_STATUS_REMOVED', {
+          unitId: unit.id,
+          effectId: result.effectId,
+          effectType: result.effectType,
+          duration: effect?.maxDuration ?? 0,
+          remainingDuration: 0,
+          sourceId: effect?.source ?? '',
+          isApplied: false,
+        }, {
+          source: effect?.source,
+          target: unit.id,
+          position: unit.coords,
+        });
+      }
+
+      if (result.damageInstance) {
+        this._eventBus.publish('DAMAGE_DEALT', {
+          sourceId: result.damageInstance.sourceId,
+          targetId: unit.id,
+          damage: result.damageInstance,
+        }, {
+          source: result.damageInstance.sourceId,
+          target: unit.id,
+          position: result.damageInstance.position,
+        });
+      }
+
+      if (result.healInstance) {
+        this._eventBus.publish('HEAL_APPLIED', {
+          sourceId: result.healInstance.sourceId,
+          targetId: unit.id,
+          heal: result.healInstance,
+        }, {
+          source: result.healInstance.sourceId,
+          target: unit.id,
+          position: result.healInstance.position,
+        });
+      }
+    }
+
+    return results;
   }
 
   applyAurasForUnit(unitId: ID): void {
@@ -494,6 +744,15 @@ export class CombatEngine implements Serializable {
       for (const skill of unit.skills) {
         if (skill.currentCooldown > 0) {
           skill.currentCooldown = Math.max(0, skill.currentCooldown - 1);
+          if (skill.currentCooldown === 0) {
+            this._eventBus.publish('SKILL_COOLDOWN_END', {
+              unitId: unit.id,
+              skillId: skill.id,
+            }, {
+              source: unit.id,
+              position: unit.coords,
+            });
+          }
         }
       }
     }

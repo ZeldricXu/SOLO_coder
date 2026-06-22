@@ -4,3 +4,5 @@ export * from './combat';
 export * from './turn';
 export * from './utils';
 export * from './level';
+export * from './events';
+export * from './entities';
