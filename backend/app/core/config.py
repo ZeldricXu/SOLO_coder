@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60 * 24 * 7
     database_url: str = "sqlite:///./snippets.db"
     frontend_dir: str = "../frontend"
+    max_snippet_size_kb: int = 512
 
     class Config:
         env_file = ".env"

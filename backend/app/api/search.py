@@ -1,6 +1,6 @@
-from typing import Optional
+from typing import Optional, List
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import or_, and_, desc, asc
+from sqlalchemy import or_, and_, desc, asc, func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -32,6 +32,8 @@ def snippet_to_list_response(snippet: Snippet) -> SnippetListResponse:
 
 
 def can_view_snippet(snippet: Snippet, user: Optional[User], db: Session) -> bool:
+    if snippet.is_deleted:
+        return False
     if snippet.visibility == "public":
         return True
     if not user:
@@ -47,6 +49,21 @@ def can_view_snippet(snippet: Snippet, user: Optional[User], db: Session) -> boo
     return False
 
 
+def apply_tag_filter(query, tag_list: List[str], db: Session):
+    if not tag_list:
+        return query
+    tag_count = len(tag_list)
+    subq = (
+        db.query(SnippetTag.snippet_id)
+        .join(Tag)
+        .filter(Tag.name.in_([t.lower() for t in tag_list]))
+        .group_by(SnippetTag.snippet_id)
+        .having(func.count(SnippetTag.tag_id) == tag_count)
+        .subquery()
+    )
+    return query.filter(Snippet.id.in_(subq))
+
+
 @router.get("", response_model=PaginatedSnippets)
 def search_snippets(
     q: str = Query("", description="Search query"),
@@ -56,17 +73,24 @@ def search_snippets(
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     language: Optional[str] = None,
     tag: Optional[str] = None,
+    tags: Optional[List[str]] = Query(None),
     author: Optional[str] = None,
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Snippet).join(User)
+    query = db.query(Snippet).join(User).filter(Snippet.is_deleted == False)
 
     if current_user:
+        from sqlalchemy import select
+        team_ids = select(TeamMember.team_id).where(TeamMember.user_id == current_user.id)
         query = query.filter(
             or_(
                 Snippet.visibility == "public",
                 Snippet.author_id == current_user.id,
+                and_(
+                    Snippet.visibility == "team",
+                    Snippet.team_id.in_(team_ids),
+                ),
             )
         )
     else:
@@ -87,6 +111,8 @@ def search_snippets(
         query = query.filter(User.username == author)
     if tag:
         query = query.join(SnippetTag).join(Tag).filter(Tag.name == tag.lower())
+    if tags:
+        query = apply_tag_filter(query, tags, db)
 
     total = query.count()
 

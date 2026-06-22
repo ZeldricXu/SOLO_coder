@@ -1,10 +1,11 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import or_, desc, asc
+from sqlalchemy import or_, desc, asc, and_, func
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_current_user_optional
+from app.core.config import settings
 from app.models.models import User, Snippet, Tag, SnippetTag, Favorite, Star, Team, TeamMember
 from app.schemas.schemas import (
     SnippetCreate,
@@ -15,6 +16,8 @@ from app.schemas.schemas import (
 )
 
 router = APIRouter(prefix="/api/snippets", tags=["snippets"])
+
+MAX_SNIPPET_SIZE_BYTES = settings.max_snippet_size_kb * 1024
 
 
 def get_or_create_tags(db: Session, tag_names: List[str]) -> List[Tag]:
@@ -68,9 +71,15 @@ def snippet_to_detail_response(db: Session, snippet: Snippet, current_user: Opti
 
     parent_title = None
     parent_author_username = None
+    parent_updated_at = None
+    parent_has_updates = False
+
     if snippet.parent:
         parent_title = snippet.parent.title
         parent_author_username = snippet.parent.author.username if snippet.parent.author else ""
+        parent_updated_at = snippet.parent.updated_at
+        if snippet.parent.updated_at > snippet.updated_at:
+            parent_has_updates = True
 
     return SnippetResponse(
         id=snippet.id,
@@ -82,6 +91,7 @@ def snippet_to_detail_response(db: Session, snippet: Snippet, current_user: Opti
         stars_count=snippet.stars_count,
         forks_count=snippet.forks_count,
         views_count=snippet.views_count,
+        is_deleted=snippet.is_deleted,
         created_at=snippet.created_at,
         updated_at=snippet.updated_at,
         author_id=snippet.author_id,
@@ -92,6 +102,8 @@ def snippet_to_detail_response(db: Session, snippet: Snippet, current_user: Opti
         parent_id=snippet.parent_id,
         parent_title=parent_title,
         parent_author_username=parent_author_username,
+        parent_updated_at=parent_updated_at,
+        parent_has_updates=parent_has_updates,
         tags=tag_names,
         is_favorited=is_favorited,
         is_starred=is_starred,
@@ -99,6 +111,8 @@ def snippet_to_detail_response(db: Session, snippet: Snippet, current_user: Opti
 
 
 def can_view_snippet(db: Session, snippet: Snippet, user: Optional[User]) -> bool:
+    if snippet.is_deleted:
+        return False
     if snippet.visibility == "public":
         return True
     if not user:
@@ -114,6 +128,21 @@ def can_view_snippet(db: Session, snippet: Snippet, user: Optional[User]) -> boo
     return False
 
 
+def apply_tag_filter(query, tag_list: List[str], db: Session):
+    if not tag_list:
+        return query
+    tag_count = len(tag_list)
+    subq = (
+        db.query(SnippetTag.snippet_id)
+        .join(Tag)
+        .filter(Tag.name.in_([t.lower() for t in tag_list]))
+        .group_by(SnippetTag.snippet_id)
+        .having(func.count(SnippetTag.tag_id) == tag_count)
+        .subquery()
+    )
+    return query.filter(Snippet.id.in_(subq))
+
+
 @router.get("", response_model=PaginatedSnippets)
 def list_snippets(
     page: int = Query(1, ge=1),
@@ -122,24 +151,35 @@ def list_snippets(
     sort_order: str = Query("desc", regex="^(asc|desc)$"),
     language: Optional[str] = None,
     tag: Optional[str] = None,
+    tags: Optional[List[str]] = Query(None),
     author: Optional[str] = None,
     visibility: Optional[str] = None,
     current_user: Optional[User] = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    query = db.query(Snippet)
+    from sqlalchemy import func
+
+    query = db.query(Snippet).filter(Snippet.is_deleted == False)
 
     if visibility and visibility == "public":
         query = query.filter(Snippet.visibility == "public")
     elif current_user:
+        from sqlalchemy import select
+        team_ids = select(TeamMember.team_id).where(TeamMember.user_id == current_user.id)
         query = query.filter(
             or_(
                 Snippet.visibility == "public",
                 Snippet.author_id == current_user.id,
+                and_(
+                    Snippet.visibility == "team",
+                    Snippet.team_id.in_(team_ids),
+                ),
             )
         )
         if visibility and visibility == "private":
             query = query.filter(Snippet.visibility == "private", Snippet.author_id == current_user.id)
+        elif visibility and visibility == "team":
+            query = query.filter(Snippet.visibility == "team", Snippet.team_id.in_(team_ids))
     else:
         query = query.filter(Snippet.visibility == "public")
 
@@ -149,6 +189,8 @@ def list_snippets(
         query = query.join(User).filter(User.username == author)
     if tag:
         query = query.join(SnippetTag).join(Tag).filter(Tag.name == tag.lower())
+    if tags:
+        query = apply_tag_filter(query, tags, db)
 
     total = query.count()
 
@@ -179,6 +221,8 @@ def get_snippet(
     snippet = db.query(Snippet).filter(Snippet.id == snippet_id).first()
     if not snippet:
         raise HTTPException(status_code=404, detail="Snippet not found")
+    if snippet.is_deleted:
+        raise HTTPException(status_code=404, detail="Snippet not found")
     if not can_view_snippet(db, snippet, current_user):
         raise HTTPException(status_code=403, detail="You don't have permission to view this snippet")
 
@@ -198,6 +242,13 @@ def create_snippet(
     if snippet_data.visibility not in ["public", "private", "team"]:
         raise HTTPException(status_code=400, detail="Invalid visibility type")
 
+    code_size = len(snippet_data.code.encode("utf-8"))
+    if code_size > MAX_SNIPPET_SIZE_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Snippet code too large. Maximum size is {settings.max_snippet_size_kb}KB, got {code_size // 1024}KB"
+        )
+
     if snippet_data.visibility == "team" and snippet_data.team_id:
         team = db.query(Team).filter(Team.id == snippet_data.team_id).first()
         if not team:
@@ -212,7 +263,7 @@ def create_snippet(
     parent = None
     if snippet_data.parent_id:
         parent = db.query(Snippet).filter(Snippet.id == snippet_data.parent_id).first()
-        if not parent:
+        if not parent or parent.is_deleted:
             raise HTTPException(status_code=404, detail="Parent snippet not found")
         if not can_view_snippet(db, parent, current_user):
             raise HTTPException(status_code=403, detail="You don't have permission to fork this snippet")
@@ -252,12 +303,20 @@ def update_snippet(
     db: Session = Depends(get_db),
 ):
     snippet = db.query(Snippet).filter(Snippet.id == snippet_id).first()
-    if not snippet:
+    if not snippet or snippet.is_deleted:
         raise HTTPException(status_code=404, detail="Snippet not found")
     if snippet.author_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have permission to edit this snippet")
 
     update_data = snippet_data.model_dump(exclude_unset=True)
+
+    if "code" in update_data:
+        code_size = len(update_data["code"].encode("utf-8"))
+        if code_size > MAX_SNIPPET_SIZE_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Snippet code too large. Maximum size is {settings.max_snippet_size_kb}KB, got {code_size // 1024}KB"
+            )
 
     if "visibility" in update_data and update_data["visibility"] not in ["public", "private", "team"]:
         raise HTTPException(status_code=400, detail="Invalid visibility type")
@@ -300,18 +359,25 @@ def delete_snippet(
     db: Session = Depends(get_db),
 ):
     snippet = db.query(Snippet).filter(Snippet.id == snippet_id).first()
-    if not snippet:
+    if not snippet or snippet.is_deleted:
         raise HTTPException(status_code=404, detail="Snippet not found")
     if snippet.author_id != current_user.id:
         raise HTTPException(status_code=403, detail="You don't have permission to delete this snippet")
 
-    if snippet.parent_id:
-        parent = db.query(Snippet).filter(Snippet.id == snippet.parent_id).first()
-        if parent and parent.forks_count > 0:
-            parent.forks_count -= 1
-
-    db.delete(snippet)
-    db.commit()
+    if snippet.forks_count > 0:
+        snippet.is_deleted = True
+        if snippet.parent_id:
+            parent = db.query(Snippet).filter(Snippet.id == snippet.parent_id).first()
+            if parent and parent.forks_count > 0:
+                parent.forks_count -= 1
+        db.commit()
+    else:
+        if snippet.parent_id:
+            parent = db.query(Snippet).filter(Snippet.id == snippet.parent_id).first()
+            if parent and parent.forks_count > 0:
+                parent.forks_count -= 1
+        db.delete(snippet)
+        db.commit()
 
     return None
 
@@ -323,7 +389,7 @@ def fork_snippet(
     db: Session = Depends(get_db),
 ):
     original = db.query(Snippet).filter(Snippet.id == snippet_id).first()
-    if not original:
+    if not original or original.is_deleted:
         raise HTTPException(status_code=404, detail="Snippet not found")
     if not can_view_snippet(db, original, current_user):
         raise HTTPException(status_code=403, detail="You don't have permission to fork this snippet")
@@ -359,7 +425,7 @@ def toggle_star(
     db: Session = Depends(get_db),
 ):
     snippet = db.query(Snippet).filter(Snippet.id == snippet_id).first()
-    if not snippet:
+    if not snippet or snippet.is_deleted:
         raise HTTPException(status_code=404, detail="Snippet not found")
     if not can_view_snippet(db, snippet, current_user):
         raise HTTPException(status_code=403, detail="You don't have permission to star this snippet")
@@ -390,7 +456,7 @@ def toggle_favorite(
     db: Session = Depends(get_db),
 ):
     snippet = db.query(Snippet).filter(Snippet.id == snippet_id).first()
-    if not snippet:
+    if not snippet or snippet.is_deleted:
         raise HTTPException(status_code=404, detail="Snippet not found")
     if not can_view_snippet(db, snippet, current_user):
         raise HTTPException(status_code=403, detail="You don't have permission to favorite this snippet")
@@ -419,11 +485,14 @@ def get_forks(
     db: Session = Depends(get_db),
 ):
     snippet = db.query(Snippet).filter(Snippet.id == snippet_id).first()
-    if not snippet:
+    if not snippet or snippet.is_deleted:
         raise HTTPException(status_code=404, detail="Snippet not found")
     if not can_view_snippet(db, snippet, current_user):
         raise HTTPException(status_code=403, detail="You don't have permission to view this snippet")
 
-    forks = db.query(Snippet).filter(Snippet.parent_id == snippet_id).order_by(desc(Snippet.created_at)).all()
+    forks = db.query(Snippet).filter(
+        Snippet.parent_id == snippet_id,
+        Snippet.is_deleted == False
+    ).order_by(desc(Snippet.created_at)).all()
     visible_forks = [f for f in forks if can_view_snippet(db, f, current_user)]
     return [snippet_to_list_response(f) for f in visible_forks]

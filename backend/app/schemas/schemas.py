@@ -115,6 +115,7 @@ class SnippetResponse(BaseModel):
     stars_count: int
     forks_count: int
     views_count: int
+    is_deleted: bool = False
     created_at: datetime
     updated_at: datetime
     author_id: int
@@ -125,6 +126,8 @@ class SnippetResponse(BaseModel):
     parent_id: Optional[int] = None
     parent_title: Optional[str] = None
     parent_author_username: Optional[str] = None
+    parent_updated_at: Optional[datetime] = None
+    parent_has_updates: bool = False
     tags: List[str] = []
     is_favorited: bool = False
     is_starred: bool = False

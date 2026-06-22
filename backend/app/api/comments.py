@@ -12,6 +12,8 @@ router = APIRouter(prefix="/api/snippets/{snippet_id}/comments", tags=["comments
 
 
 def can_view_snippet(db: Session, snippet: Snippet, user: Optional[User]) -> bool:
+    if snippet.is_deleted:
+        return False
     if snippet.visibility == "public":
         return True
     if not user:

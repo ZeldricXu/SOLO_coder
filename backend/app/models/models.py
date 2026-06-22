@@ -63,6 +63,7 @@ class Snippet(Base):
     stars_count = Column(Integer, default=0)
     forks_count = Column(Integer, default=0)
     views_count = Column(Integer, default=0)
+    is_deleted = Column(Boolean, default=False, index=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, index=True)
 
@@ -72,7 +73,7 @@ class Snippet(Base):
 
     author = relationship("User", back_populates="snippets")
     team = relationship("Team", back_populates="snippets")
-    parent = relationship("Snippet", remote_side=[id], backref="forks")
+    parent = relationship("Snippet", remote_side=[id], backref="forks", foreign_keys=[parent_id])
     tags = relationship("SnippetTag", back_populates="snippet", cascade="all, delete-orphan")
     comments = relationship("Comment", back_populates="snippet", cascade="all, delete-orphan")
     favorited_by = relationship("Favorite", back_populates="snippet", cascade="all, delete-orphan")
