@@ -1,14 +1,16 @@
 use crate::{AlertEvent, AlertSeverity};
 use crate::config::{
     AlertChannelsConfig, ConfigHandle, DingTalkChannelConfig, EmailChannelConfig,
-    FeishuChannelConfig, PagerDutyChannelConfig,
+    FeishuChannelConfig, PagerDutyChannelConfig, SnsChannelConfig, TencentSmsChannelConfig,
 };
 use chrono::{DateTime, Duration, Utc};
 use hmac::{Hmac, Mac};
 use parking_lot::RwLock;
+use sha1::Sha1;
 use sha2::Sha256;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration as StdDuration;
 use tracing::{debug, error, info, warn};
 
 type HmacSha256 = Hmac<Sha256>;
@@ -359,6 +361,318 @@ impl AlertChannel for PagerDutyChannel {
     }
 }
 
+struct SnsChannel {
+    cfg: SnsChannelConfig,
+    client: Option<aws_sdk_sns::Client>,
+    timeout_ms: u64,
+}
+
+impl SnsChannel {
+    async fn new(cfg: SnsChannelConfig) -> Self {
+        let timeout_ms = cfg.timeout_ms;
+        let client = if !cfg.access_key_id.is_empty() && !cfg.secret_access_key.is_empty() {
+            let creds = aws_sdk_sns::config::Credentials::new(
+                &cfg.access_key_id,
+                &cfg.secret_access_key,
+                None,
+                None,
+                "logforge",
+            );
+            let config = aws_sdk_sns::Config::builder()
+                .credentials_provider(creds)
+                .region(aws_sdk_sns::config::Region::new(cfg.region.clone()))
+                .behavior_version_latest()
+                .build();
+            Some(aws_sdk_sns::Client::from_conf(config))
+        } else {
+            let sdk_config = aws_config::from_env()
+                .region(aws_sdk_sns::config::Region::new(cfg.region.clone()))
+                .load()
+                .await;
+            Some(aws_sdk_sns::Client::new(&sdk_config))
+        };
+
+        Self {
+            cfg,
+            client,
+            timeout_ms,
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl AlertChannel for SnsChannel {
+    fn name(&self) -> &str {
+        &self.cfg.name
+    }
+
+    async fn send(
+        &self,
+        event: &AlertEvent,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !matches!(event.severity, AlertSeverity::Critical) {
+            return Ok(());
+        }
+
+        let client = match &self.client {
+            Some(c) => c,
+            None => return Err("SNS client not initialized".into()),
+        };
+
+        let message = format!(
+            "[CRITICAL] {} - {}\nTime: {}\nService: {}\nOccurrences: {}\nMessage: {}",
+            event.rule_name,
+            event.severity,
+            event.timestamp.format("%Y-%m-%d %H:%M:%S UTC"),
+            event.service,
+            event.occurrences,
+            event.message,
+        );
+
+        let subject = format!("[LOGFORGE CRITICAL] {} - {}", event.service, event.rule_name);
+
+        for phone in &self.cfg.phone_numbers {
+            let client_clone = client.clone();
+            let message_clone = message.clone();
+            let subject_clone = subject.clone();
+            let phone_clone = phone.clone();
+            let timeout = self.timeout_ms;
+            let ch_name = self.cfg.name.clone();
+
+            tokio::spawn(async move {
+                let fut = client_clone
+                    .publish()
+                    .phone_number(phone_clone)
+                    .message(message_clone)
+                    .subject(subject_clone);
+
+                match tokio::time::timeout(StdDuration::from_millis(timeout), fut.send()).await {
+                    Ok(Ok(_)) => {
+                        info!("SNS {} sent SMS to {}", ch_name, phone);
+                    }
+                    Ok(Err(e)) => {
+                        warn!("SNS {} failed to send to {}: {}", ch_name, phone, e);
+                    }
+                    Err(_) => {
+                        warn!("SNS {} send to {} timed out after {}ms", ch_name, phone, timeout);
+                    }
+                }
+            });
+        }
+
+        if !self.cfg.topic_arn.is_empty() {
+            let client_clone = client.clone();
+            let message_clone = message.clone();
+            let subject_clone = subject.clone();
+            let topic_arn = self.cfg.topic_arn.clone();
+            let timeout = self.timeout_ms;
+            let ch_name = self.cfg.name.clone();
+
+            tokio::spawn(async move {
+                let fut = client_clone
+                    .publish()
+                    .topic_arn(topic_arn.clone())
+                    .message(message_clone)
+                    .subject(subject_clone);
+
+                match tokio::time::timeout(StdDuration::from_millis(timeout), fut.send()).await {
+                    Ok(Ok(_)) => {
+                        info!("SNS {} published to {}", ch_name, topic_arn);
+                    }
+                    Ok(Err(e)) => {
+                        warn!("SNS {} failed to publish to {}: {}", ch_name, topic_arn, e);
+                    }
+                    Err(_) => {
+                        warn!("SNS {} publish to {} timed out after {}ms", ch_name, topic_arn, timeout);
+                    }
+                }
+            });
+        }
+
+        Ok(())
+    }
+}
+
+struct TencentSmsChannel {
+    cfg: TencentSmsChannelConfig,
+    client: reqwest::Client,
+}
+
+impl TencentSmsChannel {
+    fn new(cfg: TencentSmsChannelConfig) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(StdDuration::from_millis(cfg.timeout_ms))
+            .build()
+            .unwrap_or_default();
+        Self { cfg, client }
+    }
+
+    fn tencent_sign(&self, timestamp: i64, payload: &str) -> String {
+        let service = "sms";
+        let host = "sms.tencentcloudapi.com";
+        let algorithm = "TC3-HMAC-SHA256";
+        let date = Utc::now().format("%Y-%m-%d").to_string();
+
+        let http_request_method = "POST";
+        let canonical_uri = "/";
+        let canonical_querystring = "";
+        let canonical_headers = format!(
+            "content-type:application/json\nhost:{}\nx-tc-action:SendSms\n",
+            host
+        );
+        let signed_headers = "content-type;host;x-tc-action";
+        let payload_hash = sha256_hex(payload);
+
+        let canonical_request = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}",
+            http_request_method,
+            canonical_uri,
+            canonical_querystring,
+            canonical_headers,
+            signed_headers,
+            payload_hash
+        );
+
+        let credential_scope = format!("{}/{}/tc3_request", date, service);
+        let string_to_sign = format!(
+            "{}\n{}\n{}\n{}",
+            algorithm,
+            timestamp,
+            credential_scope,
+            sha256_hex(&canonical_request)
+        );
+
+        let secret_date = hmac_sha256(format!("TC3{}", self.cfg.secret_key).as_bytes(), &date);
+        let secret_service = hmac_sha256(&secret_date, service);
+        let secret_signing = hmac_sha256(&secret_service, "tc3_request");
+        let signature = hmac_sha256_hex(&secret_signing, &string_to_sign);
+
+        format!(
+            "{} Credential={}/{}, SignedHeaders={}, Signature={}",
+            algorithm,
+            self.cfg.secret_id,
+            credential_scope,
+            signed_headers,
+            signature
+        )
+    }
+}
+
+fn hmac_sha256(key: &[u8], msg: &str) -> Vec<u8> {
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).unwrap();
+    mac.update(msg.as_bytes());
+    mac.finalize().into_bytes().to_vec()
+}
+
+fn hmac_sha256_hex(key: &[u8], msg: &str) -> String {
+    use std::fmt::Write;
+    let bytes = hmac_sha256(key, msg);
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        write!(&mut s, "{:02x}", b).unwrap();
+    }
+    s
+}
+
+fn sha256_hex(msg: &str) -> String {
+    use sha2::{Digest, Sha256};
+    use std::fmt::Write;
+    let mut hasher = Sha256::new();
+    hasher.update(msg.as_bytes());
+    let bytes = hasher.finalize();
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        write!(&mut s, "{:02x}", b).unwrap();
+    }
+    s
+}
+
+#[async_trait::async_trait]
+impl AlertChannel for TencentSmsChannel {
+    fn name(&self) -> &str {
+        &self.cfg.name
+    }
+
+    async fn send(
+        &self,
+        event: &AlertEvent,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if !matches!(event.severity, AlertSeverity::Critical) {
+            return Ok(());
+        }
+
+        let timestamp = Utc::now().timestamp();
+        let phone_numbers: Vec<String> = self
+            .cfg
+            .phone_numbers
+            .iter()
+            .map(|p| {
+                if p.starts_with('+') {
+                    p.clone()
+                } else if p.starts_with("86") {
+                    format!("+{}", p)
+                } else {
+                    format!("+86{}", p)
+                }
+            })
+            .collect();
+
+        let payload = serde_json::json!({
+            "PhoneNumberSet": phone_numbers,
+            "SmsSdkAppId": self.cfg.app_id,
+            "SignName": self.cfg.sign_name,
+            "TemplateId": self.cfg.template_id,
+            "TemplateParamSet": [
+                event.service.clone(),
+                event.rule_name.clone(),
+                event.occurrences.to_string(),
+                event.message.chars().take(30).collect::<String>(),
+            ],
+        });
+
+        let payload_str = serde_json::to_string(&payload)?;
+        let auth = self.tencent_sign(timestamp, &payload_str);
+
+        let client = self.client.clone();
+        let cfg = self.cfg.clone();
+        let payload_str_clone = payload_str.clone();
+        let ch_name = self.cfg.name.clone();
+        let timeout = self.cfg.timeout_ms;
+
+        tokio::spawn(async move {
+            let req = client
+                .post("https://sms.tencentcloudapi.com/")
+                .header("Authorization", auth)
+                .header("Content-Type", "application/json")
+                .header("X-TC-Action", "SendSms")
+                .header("X-TC-Timestamp", timestamp.to_string())
+                .header("X-TC-Version", "2021-01-11")
+                .header("X-TC-Region", cfg.region.clone())
+                .body(payload_str_clone);
+
+            match tokio::time::timeout(StdDuration::from_millis(timeout), req.send()).await {
+                Ok(Ok(resp)) => {
+                    let status = resp.status();
+                    if status.is_success() {
+                        info!("Tencent SMS {} sent to {} phones", ch_name, phone_numbers.len());
+                    } else {
+                        let text = resp.text().await.unwrap_or_default();
+                        warn!("Tencent SMS {} failed: {} - {}", ch_name, status, text);
+                    }
+                }
+                Ok(Err(e)) => {
+                    warn!("Tencent SMS {} request error: {}", ch_name, e);
+                }
+                Err(_) => {
+                    warn!("Tencent SMS {} timed out after {}ms", ch_name, timeout);
+                }
+            }
+        });
+
+        Ok(())
+    }
+}
+
 struct DedupEntry {
     first_time: DateTime<Utc>,
     last_time: DateTime<Utc>,
@@ -450,6 +764,27 @@ impl Alerter {
                 .channels
                 .insert(pd_cfg.name.clone(), Arc::new(ch) as Arc<dyn AlertChannel>);
         }
+
+        drop(inner);
+        for sns_cfg in &alert_cfg.sns {
+            let ch = SnsChannel::new(sns_cfg.clone()).await;
+            info!("Loaded alert channel: sns/{}", ch.name());
+            let mut inner = self.inner.write();
+            inner
+                .channels
+                .insert(sns_cfg.name.clone(), Arc::new(ch) as Arc<dyn AlertChannel>);
+        }
+
+        for sms_cfg in &alert_cfg.tencent_sms {
+            let ch = TencentSmsChannel::new(sms_cfg.clone());
+            info!("Loaded alert channel: tencent_sms/{}", ch.name());
+            let mut inner = self.inner.write();
+            inner
+                .channels
+                .insert(sms_cfg.name.clone(), Arc::new(ch) as Arc<dyn AlertChannel>);
+        }
+
+        let mut inner = self.inner.write();
 
         for r in &rules_cfg.threshold_rules {
             inner

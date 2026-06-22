@@ -1,12 +1,12 @@
 pub mod custom_format;
 
 use crate::{LogFormat, LogLevel, LogRecord};
-use crate::config::{CustomFormatConfig, ParserConfig};
-use crate::parser::custom_format::{CompiledFormat, CustomFormatRegistry, FieldValue};
+use crate::parser::custom_format::{BenchmarkResult, CustomFormatRegistry, FormatDefinition, FormatHitStats};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use regex::RegexSet;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::Path;
 use tracing::{debug, info, warn};
 
 const SAMPLE_SIZE: usize = 100;
@@ -384,8 +384,6 @@ pub struct ParserEngine {
     detectors: HashMap<String, FormatDetector>,
     patterns: PatternSet,
     custom_formats: CustomFormatRegistry,
-    custom_format_matched_count: u64,
-    fallback_count: u64,
 }
 
 impl ParserEngine {
@@ -394,31 +392,28 @@ impl ParserEngine {
             detectors: HashMap::new(),
             patterns: PatternSet::precompiled(),
             custom_formats: CustomFormatRegistry::new(),
-            custom_format_matched_count: 0,
-            fallback_count: 0,
         }
     }
 
-    pub fn with_config(config: ParserConfig) -> Self {
-        let mut engine = Self::new();
-        engine.load_custom_formats(
-            config.custom_formats,
-            config.format_match_order,
-        );
-        engine
+    pub fn load_custom_formats<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.custom_formats.load_file(path)
     }
 
-    pub fn load_custom_formats(
-        &mut self,
-        formats: Vec<CustomFormatConfig>,
-        match_order: Vec<String>,
-    ) {
-        self.custom_formats
-            .load_from_configs(formats, match_order);
+    pub fn register_custom_format(&mut self, def: FormatDefinition) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.custom_formats.register(def)
     }
 
     pub fn custom_format_count(&self) -> usize {
         self.custom_formats.format_count()
+    }
+
+    pub fn benchmark_file<P: AsRef<Path>>(&mut self, path: P) -> Result<BenchmarkResult, Box<dyn std::error::Error + Send + Sync>> {
+        self.custom_formats.benchmark_file(path)
+    }
+
+    pub fn format_stats(&self) -> Vec<(String, FormatHitStats)> {
+        // Not accessible directly; use benchmark to get stats
+        Vec::new()
     }
 
     pub fn parse(&mut self, mut record: LogRecord) -> LogRecord {
@@ -427,22 +422,16 @@ impl ParserEngine {
             return record;
         }
 
-        if self.custom_formats.format_count() > 0 {
-            if let Some((fmt, parsed)) = self.custom_formats.try_parse(&raw) {
-                debug!(
-                    "Custom format matched: {} (id={})",
-                    fmt.name(),
-                    fmt.id()
-                );
-                fmt.apply_to_record(&mut record, &parsed);
-                self.custom_format_matched_count += 1;
-                if record.message.is_empty() {
-                    record.message = raw.clone();
-                }
-                return record;
+        let custom_hit = self.custom_formats.try_parse(&raw);
+        if let Some((fmt_name, parsed)) = custom_hit {
+            debug!("Custom format matched: {}", fmt_name);
+            self.custom_formats.apply_to_record(parsed, &mut record);
+            if record.message.is_empty() {
+                record.message = raw.clone();
             }
+            extract_generic(&mut record, &self.patterns, &raw);
+            return record;
         }
-        self.fallback_count += 1;
 
         let detector = self.detectors
             .entry(record.source.clone())
@@ -481,27 +470,6 @@ impl ParserEngine {
 
         record
     }
-
-    pub fn get_parse_stats(&self) -> ParseStats {
-        ParseStats {
-            custom_format_matched: self.custom_format_matched_count,
-            fallback_auto_detected: self.fallback_count,
-            format_stats: self.custom_formats.get_stats(),
-        }
-    }
-
-    pub fn reset_stats(&mut self) {
-        self.custom_format_matched_count = 0;
-        self.fallback_count = 0;
-        self.custom_formats.reset_stats();
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ParseStats {
-    pub custom_format_matched: u64,
-    pub fallback_auto_detected: u64,
-    pub format_stats: Vec<crate::parser::custom_format::FormatStats>,
 }
 
 impl Default for ParserEngine {

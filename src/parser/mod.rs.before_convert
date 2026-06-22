@@ -1,16 +1,60 @@
-pub mod custom_format;
+// pub mod custom_format;
 
 use crate::{LogFormat, LogLevel, LogRecord};
-use crate::config::{CustomFormatConfig, ParserConfig};
-use crate::parser::custom_format::{CompiledFormat, CustomFormatRegistry, FieldValue};
+// use crate::parser::custom_format::{BenchmarkResult, CustomFormatRegistry, FormatDefinition, FormatHitStats};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
-use regex::RegexSet;
+use regex::{Regex, RegexSet};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::path::Path;
+use std::sync::OnceLock;
 use tracing::{debug, info, warn};
 
 const SAMPLE_SIZE: usize = 100;
 const FORMAT_CONFIDENCE_THRESHOLD: f64 = 0.7;
+
+static NGINX_ACCESS_RE: OnceLock<Regex> = OnceLock::new();
+static APACHE_COMMON_RE: OnceLock<Regex> = OnceLock::new();
+static ENVOY_RE: OnceLock<Regex> = OnceLock::new();
+static NGINX_ACCESS_CAP_RE: OnceLock<Regex> = OnceLock::new();
+static APACHE_COMMON_CAP_RE: OnceLock<Regex> = OnceLock::new();
+static ENVOY_CAP_RE: OnceLock<Regex> = OnceLock::new();
+
+fn nginx_access_re() -> &'static Regex {
+    NGINX_ACCESS_RE.get_or_init(|| {
+        Regex::new("^\\S+ \\S+ \\S+ \\[[^\\]]+\\] \\\"[A-Z]+ [^\\\"]+ [^\\\"]+\\\" \\d{3} \\d+").unwrap()
+    })
+}
+
+fn apache_common_re() -> &'static Regex {
+    APACHE_COMMON_RE.get_or_init(|| {
+        Regex::new(r"^\S+ \S+ \S+ \[[^\]]+\] \"[A-Z]+ [^\"]* [^\"]*\" \d{3} \d+").unwrap()
+    })
+}
+
+fn envoy_re() -> &'static Regex {
+    ENVOY_RE.get_or_init(|| {
+        Regex::new(r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\] \"[A-Z]+ ").unwrap()
+    })
+}
+
+fn nginx_access_cap_re() -> &'static Regex {
+    NGINX_ACCESS_CAP_RE.get_or_init(|| {
+        Regex::new(r#"^(\S+) \S+ (\S+) \[([^\]]+)\] "([A-Z]+) ([^"]+) ([^"]+)" (\d{3}) (\d+) "([^"]*)" "([^"]*)"(?:\s+(\d+(?:\.\d+)?))?"#).unwrap()
+    })
+}
+
+fn apache_common_cap_re() -> &'static Regex {
+    APACHE_COMMON_CAP_RE.get_or_init(|| {
+        Regex::new(r#"^(\S+) \S+ (\S+) \[([^\]]+)\] "([A-Z]+) ([^"]*) ([^"]*)" (\d{3}) (\d+)"#).unwrap()
+    })
+}
+
+fn envoy_cap_re() -> &'static Regex {
+    ENVOY_CAP_RE.get_or_init(|| {
+        Regex::new(r#"^\[([^\]]+)\] "([A-Z]+) ([^"]+) ([^"]+)" (\d+) (\d+) (\d+) (\d+) "([^"]*)" "([^"]*)" "([^"]*)" "([^"]*)" "([^"]*)""#).unwrap()
+    })
+}
 
 pub struct FormatDetector {
     samples: Vec<String>,
@@ -88,24 +132,15 @@ fn is_csv(line: &str) -> bool {
 }
 
 fn is_nginx_access(line: &str) -> bool {
-    lazy_regex::regex_is_match!(
-        r"^\S+ \S+ \S+ \[[^\]]+\] \"[A-Z]+ [^\"]+ [^\"]+\" \d{3} \d+",
-        line
-    )
+    nginx_access_re().is_match(line)
 }
 
 fn is_apache_common(line: &str) -> bool {
-    lazy_regex::regex_is_match!(
-        r"^\S+ \S+ \S+ \[[^\]]+\] \"[A-Z]+ [^\"]* [^\"]*\" \d{3} \d+",
-        line
-    )
+    apache_common_re().is_match(line)
 }
 
 fn is_envoy(line: &str) -> bool {
-    lazy_regex::regex_is_match!(
-        r"^\[\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\] \"[A-Z]+ ",
-        line
-    )
+    envoy_re().is_match(line)
 }
 
 pub struct PatternSet {
@@ -231,11 +266,16 @@ fn parse_json_record(record: &mut LogRecord, raw: &str) -> bool {
 }
 
 fn parse_nginx_access(record: &mut LogRecord, raw: &str) -> bool {
-    lazy_regex::regex_captures!(
-        r#"^(\S+) \S+ (\S+) \[([^\]]+)\] "([A-Z]+) ([^"]+) ([^"]+)" (\d{3}) (\d+) "([^"]*)" "([^"]*)"(?:\s+(\d+(?:\.\d+)?))?"#,
-        raw
-    ).map(|caps| {
-        let (_, remote, _user, ts_str, method, path, proto, status, bytes, _ref, ua, rt) = caps;
+    if let Some(caps) = nginx_access_cap_re().captures(raw) {
+        let remote = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let ts_str = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+        let method = caps.get(4).map(|m| m.as_str()).unwrap_or("");
+        let path = caps.get(5).map(|m| m.as_str()).unwrap_or("");
+        let proto = caps.get(6).map(|m| m.as_str()).unwrap_or("");
+        let status = caps.get(7).map(|m| m.as_str()).unwrap_or("");
+        let bytes = caps.get(8).map(|m| m.as_str()).unwrap_or("");
+        let ua = caps.get(10).map(|m| m.as_str()).unwrap_or("");
+        let rt = caps.get(11).map(|m| m.as_str());
         if let Some(dt) = parse_timestamp(ts_str) {
             record.timestamp = dt;
         }
@@ -260,15 +300,20 @@ fn parse_nginx_access(record: &mut LogRecord, raw: &str) -> bool {
             }
         }
         true
-    }).unwrap_or(false)
+    } else {
+        false
+    }
 }
 
 fn parse_apache_common(record: &mut LogRecord, raw: &str) -> bool {
-    lazy_regex::regex_captures!(
-        r#"^(\S+) \S+ (\S+) \[([^\]]+)\] "([A-Z]+) ([^"]*) ([^"]*)" (\d{3}) (\d+)"#,
-        raw
-    ).map(|caps| {
-        let (_, remote, _user, ts_str, method, path, proto, status, bytes) = caps;
+    if let Some(caps) = apache_common_cap_re().captures(raw) {
+        let remote = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let ts_str = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+        let method = caps.get(4).map(|m| m.as_str()).unwrap_or("");
+        let path = caps.get(5).map(|m| m.as_str()).unwrap_or("");
+        let proto = caps.get(6).map(|m| m.as_str()).unwrap_or("");
+        let status = caps.get(7).map(|m| m.as_str()).unwrap_or("");
+        let bytes = caps.get(8).map(|m| m.as_str()).unwrap_or("");
         if let Some(dt) = parse_timestamp(ts_str) {
             record.timestamp = dt;
         }
@@ -287,15 +332,23 @@ fn parse_apache_common(record: &mut LogRecord, raw: &str) -> bool {
             record.level = LogLevel::Info;
         }
         true
-    }).unwrap_or(false)
+    } else {
+        false
+    }
 }
 
 fn parse_envoy(record: &mut LogRecord, raw: &str) -> bool {
-    lazy_regex::regex_captures!(
-        r#"^\[([^\]]+)\] "([A-Z]+) ([^"]+) ([^"]+)" (\d+) (\d+) (\d+) (\d+) "([^"]*)" "([^"]*)" "([^"]*)" "([^"]*)" "([^"]*)""#,
-        raw
-    ).map(|caps| {
-        let (_, ts_str, method, path, proto, status_code, flags, up, down, xff, ua, req_id, up_host, up_attempts) = caps;
+    if let Some(caps) = envoy_cap_re().captures(raw) {
+        let ts_str = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+        let method = caps.get(2).map(|m| m.as_str()).unwrap_or("");
+        let path = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+        let proto = caps.get(4).map(|m| m.as_str()).unwrap_or("");
+        let status_code = caps.get(5).map(|m| m.as_str()).unwrap_or("");
+        let flags = caps.get(6).map(|m| m.as_str()).unwrap_or("");
+        let up = caps.get(7).map(|m| m.as_str()).unwrap_or("");
+        let xff = caps.get(9).map(|m| m.as_str()).unwrap_or("");
+        let ua = caps.get(10).map(|m| m.as_str()).unwrap_or("");
+        let req_id = caps.get(11).map(|m| m.as_str()).unwrap_or("");
         if let Some(dt) = parse_timestamp(ts_str) {
             record.timestamp = dt;
         }
@@ -320,7 +373,9 @@ fn parse_envoy(record: &mut LogRecord, raw: &str) -> bool {
             record.level = LogLevel::Info;
         }
         true
-    }).unwrap_or(false)
+    } else {
+        false
+    }
 }
 
 fn parse_csv(record: &mut LogRecord, raw: &str) -> bool {
@@ -384,8 +439,6 @@ pub struct ParserEngine {
     detectors: HashMap<String, FormatDetector>,
     patterns: PatternSet,
     custom_formats: CustomFormatRegistry,
-    custom_format_matched_count: u64,
-    fallback_count: u64,
 }
 
 impl ParserEngine {
@@ -394,31 +447,28 @@ impl ParserEngine {
             detectors: HashMap::new(),
             patterns: PatternSet::precompiled(),
             custom_formats: CustomFormatRegistry::new(),
-            custom_format_matched_count: 0,
-            fallback_count: 0,
         }
     }
 
-    pub fn with_config(config: ParserConfig) -> Self {
-        let mut engine = Self::new();
-        engine.load_custom_formats(
-            config.custom_formats,
-            config.format_match_order,
-        );
-        engine
+    pub fn load_custom_formats<P: AsRef<Path>>(&mut self, path: P) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.custom_formats.load_file(path)
     }
 
-    pub fn load_custom_formats(
-        &mut self,
-        formats: Vec<CustomFormatConfig>,
-        match_order: Vec<String>,
-    ) {
-        self.custom_formats
-            .load_from_configs(formats, match_order);
+    pub fn register_custom_format(&mut self, def: FormatDefinition) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        self.custom_formats.register(def)
     }
 
     pub fn custom_format_count(&self) -> usize {
         self.custom_formats.format_count()
+    }
+
+    pub fn benchmark_file<P: AsRef<Path>>(&mut self, path: P) -> Result<BenchmarkResult, Box<dyn std::error::Error + Send + Sync>> {
+        self.custom_formats.benchmark_file(path)
+    }
+
+    pub fn format_stats(&self) -> Vec<(String, FormatHitStats)> {
+        // Not accessible directly; use benchmark to get stats
+        Vec::new()
     }
 
     pub fn parse(&mut self, mut record: LogRecord) -> LogRecord {
@@ -427,22 +477,16 @@ impl ParserEngine {
             return record;
         }
 
-        if self.custom_formats.format_count() > 0 {
-            if let Some((fmt, parsed)) = self.custom_formats.try_parse(&raw) {
-                debug!(
-                    "Custom format matched: {} (id={})",
-                    fmt.name(),
-                    fmt.id()
-                );
-                fmt.apply_to_record(&mut record, &parsed);
-                self.custom_format_matched_count += 1;
-                if record.message.is_empty() {
-                    record.message = raw.clone();
-                }
-                return record;
+        let custom_hit = self.custom_formats.try_parse(&raw);
+        if let Some((fmt_name, parsed)) = custom_hit {
+            debug!("Custom format matched: {}", fmt_name);
+            self.custom_formats.apply_to_record(parsed, &mut record);
+            if record.message.is_empty() {
+                record.message = raw.clone();
             }
+            extract_generic(&mut record, &self.patterns, &raw);
+            return record;
         }
-        self.fallback_count += 1;
 
         let detector = self.detectors
             .entry(record.source.clone())
@@ -481,27 +525,6 @@ impl ParserEngine {
 
         record
     }
-
-    pub fn get_parse_stats(&self) -> ParseStats {
-        ParseStats {
-            custom_format_matched: self.custom_format_matched_count,
-            fallback_auto_detected: self.fallback_count,
-            format_stats: self.custom_formats.get_stats(),
-        }
-    }
-
-    pub fn reset_stats(&mut self) {
-        self.custom_format_matched_count = 0;
-        self.fallback_count = 0;
-        self.custom_formats.reset_stats();
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct ParseStats {
-    pub custom_format_matched: u64,
-    pub fallback_auto_detected: u64,
-    pub format_stats: Vec<crate::parser::custom_format::FormatStats>,
 }
 
 impl Default for ParserEngine {

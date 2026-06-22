@@ -20,7 +20,63 @@ pub struct AppConfig {
 
     #[serde(default)]
     pub observability: ObservabilityConfig,
+
+    #[serde(default)]
+    pub parser: ParserConfig,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ParserConfig {
+    #[serde(default)]
+    pub custom_formats: Vec<CustomFormatConfig>,
+
+    #[serde(default)]
+    pub format_match_order: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFormatConfig {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: Option<String>,
+    #[serde(default = "default_priority")]
+    pub priority: u32,
+    #[serde(default)]
+    pub line_prefix: Option<String>,
+    pub delimiter: String,
+    #[serde(default)]
+    pub trim_whitespace: bool,
+    pub fields: Vec<CustomFieldConfig>,
+    #[serde(default)]
+    pub time_format: Option<String>,
+}
+
+fn default_priority() -> u32 { 100 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CustomFieldConfig {
+    pub name: String,
+    #[serde(rename = "type", default = "default_field_type")]
+    pub field_type: String,
+    #[serde(default)]
+    pub target_field: Option<String>,
+    #[serde(default)]
+    pub optional: bool,
+    #[serde(default)]
+    pub default_value: Option<String>,
+}
+
+fn default_field_type() -> String { "string".to_string() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BenchmarkConfig {
+    pub log_file: String,
+    #[serde(default = "default_sample_size")]
+    pub sample_size: usize,
+}
+
+fn default_sample_size() -> usize { 10000 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineConfig {
@@ -108,8 +164,36 @@ pub struct SinkConfig {
     pub minio: Option<MinIOSinkConfig>,
 
     #[serde(default)]
+    pub clickhouse: Option<ClickHouseSinkConfig>,
+
+    #[serde(default)]
     pub alert_channels: AlertChannelsConfig,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ClickHouseSinkConfig {
+    pub url: String,
+    pub user: String,
+    #[serde(default)]
+    pub password: String,
+    pub database: String,
+    pub table: String,
+    #[serde(default = "default_clickhouse_batch")]
+    pub batch_size: usize,
+    #[serde(default = "default_clickhouse_flush")]
+    pub flush_interval_secs: u64,
+    #[serde(default = "default_clickhouse_retries")]
+    pub max_retries: u32,
+    #[serde(default)]
+    pub local_cache_dir: Option<String>,
+    #[serde(default = "default_clickhouse_retry_backoff")]
+    pub retry_backoff_ms: u64,
+}
+
+fn default_clickhouse_batch() -> usize { 1000 }
+fn default_clickhouse_flush() -> u64 { 10 }
+fn default_clickhouse_retries() -> u32 { 3 }
+fn default_clickhouse_retry_backoff() -> u64 { 1000 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KafkaSinkConfig {
@@ -156,6 +240,12 @@ pub struct AlertChannelsConfig {
     #[serde(default)]
     pub pagerduty: Vec<PagerDutyChannelConfig>,
 
+    #[serde(default)]
+    pub sns: Vec<SnsChannelConfig>,
+
+    #[serde(default)]
+    pub tencent_sms: Vec<TencentSmsChannelConfig>,
+
     #[serde(default = "default_dedup_window")]
     pub dedup_window_secs: u64,
 
@@ -165,6 +255,39 @@ pub struct AlertChannelsConfig {
     #[serde(default)]
     pub escalation_api_url: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SnsChannelConfig {
+    pub name: String,
+    pub region: String,
+    pub topic_arn: String,
+    #[serde(default)]
+    pub access_key_id: Option<String>,
+    #[serde(default)]
+    pub secret_access_key: Option<String>,
+    #[serde(default = "default_sns_timeout")]
+    pub timeout_ms: u64,
+    #[serde(default)]
+    pub phone_numbers: Vec<String>,
+}
+
+fn default_sns_timeout() -> u64 { 5000 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TencentSmsChannelConfig {
+    pub name: String,
+    pub region: String,
+    pub secret_id: String,
+    pub secret_key: String,
+    pub app_id: String,
+    pub template_id: String,
+    pub sign_name: Option<String>,
+    pub phone_numbers: Vec<String>,
+    #[serde(default = "default_sms_timeout")]
+    pub timeout_ms: u64,
+}
+
+fn default_sms_timeout() -> u64 { 10000 }
 
 fn default_dedup_window() -> u64 { 10 }
 fn default_escalation_minutes() -> u64 { 5 }

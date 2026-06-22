@@ -7,6 +7,7 @@ use chrono::{DateTime, Duration, Utc};
 use parking_lot::RwLock;
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tracing::{debug, info};
 
 struct WindowBucket {
@@ -82,6 +83,7 @@ impl WindowBucket {
 pub struct AggregationEngine {
     config: ConfigHandle,
     inner: Arc<RwLock<AggregationInner>>,
+    event_sender: broadcast::Sender<Vec<WindowStats>>,
 }
 
 struct AggregationInner {
@@ -98,6 +100,7 @@ struct AggregationInner {
 
 impl AggregationEngine {
     pub fn new(config: ConfigHandle) -> Self {
+        let (event_sender, _) = broadcast::channel(1024);
         let rt = tokio::runtime::Handle::try_current().ok();
         let pipeline = rt.as_ref().map(|_| None).unwrap_or(None);
         let (fine_secs, coarse_secs, compression) = {
@@ -127,6 +130,7 @@ impl AggregationEngine {
         Self {
             config,
             inner: Arc::new(RwLock::new(inner)),
+            event_sender,
         }
     }
 
@@ -172,6 +176,7 @@ impl AggregationEngine {
             .range(..cutoff_fine)
             .map(|(k, _)| *k)
             .collect();
+        let mut emitted_fine: Vec<WindowStats> = Vec::new();
         for start in &fine_to_emit {
             if let Some(bucket) = inner.fine_buckets.remove(start) {
                 let stats = bucket.build_stats();
@@ -180,6 +185,7 @@ impl AggregationEngine {
                     start,
                     stats.len()
                 );
+                emitted_fine.extend(stats.clone());
                 inner.pending_fine_results.extend(stats);
                 inner.last_fine_emitted = Some(*start);
             }
@@ -209,6 +215,16 @@ impl AggregationEngine {
         inner.fine_buckets.retain(|k, _| *k >= retention_cutoff);
         let coarse_retention = now - Duration::seconds(inner.coarse_window_secs as i64 * 5);
         inner.coarse_buckets.retain(|k, _| *k >= coarse_retention);
+
+        drop(inner);
+
+        if !emitted_fine.is_empty() {
+            let _ = self.event_sender.send(emitted_fine);
+        }
+    }
+
+    pub fn subscribe(&self) -> broadcast::Receiver<Vec<WindowStats>> {
+        self.event_sender.subscribe()
     }
 
     pub fn drain_fine_results(&self) -> Vec<WindowStats> {

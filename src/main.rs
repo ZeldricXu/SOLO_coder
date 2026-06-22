@@ -1,13 +1,15 @@
 use logforge::aggregator::AggregationEngine;
 use logforge::alerter::Alerter;
 use logforge::collector::CollectorManager;
-use logforge::config::{ConfigManager, default_config_toml};
+use logforge::config::{ConfigManager, default_config_toml, ParserConfig};
 use logforge::detector::RuleEngine;
 use logforge::observability::ObservabilityServer;
 use logforge::output::OutputManager;
 use logforge::output::kafka_sink::KafkaSink;
 use logforge::output::minio_sink::MinIOSink;
+use logforge::output::clickhouse_sink::ClickHouseSink;
 use logforge::parser::ParserEngine;
+use logforge::parser::custom_format::CustomFormatRegistry;
 use logforge::{AlertEvent, LogRecord, WindowStats};
 use chrono::Utc;
 use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
@@ -59,6 +61,11 @@ fn init_logging() {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let args: Vec<String> = std::env::args().collect();
+
+    if args.len() >= 2 && args[1] == "benchmark" {
+        return run_benchmark(&args[1..]).await;
+    }
+
     let config_path: PathBuf = if args.len() > 1 {
         let p = PathBuf::from(&args[1]);
         if p.exists() {
@@ -89,19 +96,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     let cfg_snapshot = config_handle.read().await.clone();
     let collector = Arc::new(CollectorManager::new(&cfg_snapshot));
-    let parser = Arc::new(std::sync::Mutex::new(ParserEngine::new()));
+
+    let parser_engine = {
+        let parser_cfg = ParserConfig {
+            custom_formats: cfg_snapshot.parser.custom_formats.clone(),
+            format_match_order: cfg_snapshot.parser.format_match_order.clone(),
+        };
+        let mut pe = ParserEngine::with_config(parser_cfg);
+        let custom_count = pe.custom_format_count();
+        if custom_count > 0 {
+            info!("ParserEngine initialized with {} custom formats", custom_count);
+        } else {
+            info!("ParserEngine initialized with default auto-detection mode");
+        }
+        Arc::new(std::sync::Mutex::new(pe))
+    };
+
     let aggregator = Arc::new(AggregationEngine::new(config_handle.clone()));
     aggregator.init_from_config().await;
     let detector = RuleEngine::new(config_handle.clone());
     detector.reload_rules().await?;
     let alerter = Alerter::new(config_handle.clone());
     alerter.reload_from_config().await;
-    let kafka_sink = KafkaSink::new(config_handle.clone());
-    kafka_sink.init_from_config().await;
 
-    let minio_cfg = cfg_snapshot.sink.minio.clone();
-    let mut minio_sink = MinIOSink::new(minio_cfg);
-    minio_sink.init().await;
+    let output_manager = OutputManager::new(config_handle.clone()).await;
 
     collector.start_all(config_handle.clone()).await?;
 
@@ -110,8 +128,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let signal_detector = detector.clone();
     let signal_alerter = alerter.clone();
     let signal_aggregator = aggregator.clone();
-    let signal_kafka = kafka_sink.clone();
-    let signal_minio = minio_sink.clone();
+    let signal_output = output_manager.clone();
     let signal_task = tokio::spawn(async move {
         while let Some(signal) = signals.next().await {
             match signal {
@@ -135,8 +152,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 SIGINT | SIGTERM => {
                     info!("Termination signal received - shutting down gracefully");
                     let now = Utc::now();
-                    let _ = signal_minio.flush(now).await;
-                    let _ = signal_kafka.flush().await;
+                    let _ = signal_output.minio.flush(now).await;
+                    let _ = signal_output.kafka.flush().await;
+                    if let Some(ref ch) = signal_output.clickhouse {
+                        let _ = ch.flush(now).await;
+                    }
                     info!("Graceful shutdown complete");
                     std::process::exit(0);
                 }
@@ -164,11 +184,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     }
 
     let collector_ring = collector.ring_buffer.clone();
-    let parser_c = parser.clone();
+    let parser_c = parser_engine.clone();
     let aggregator_c = aggregator.clone();
     let detector_c = detector.clone();
-    let kafka_c = kafka_sink.clone();
-    let minio_c = minio_sink.clone();
+    let kafka_c = output_manager.kafka.clone();
+    let minio_c = output_manager.minio.clone();
+    let clickhouse_c = output_manager.clickhouse.clone();
     let alerter_c = alerter.clone();
 
     let pipeline_task = tokio::task::spawn_blocking(move || {
@@ -203,11 +224,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 detector_c.ingest_stats(&[stats.clone()], now);
                 kafka_c.enqueue_stats(stats.clone());
                 minio_c.enqueue(stats.clone());
+                if let Some(ref ch) = clickhouse_c {
+                    ch.enqueue(stats.clone());
+                }
             }
             let coarse_results: Vec<WindowStats> = aggregator_c.drain_coarse_results();
             for stats in &coarse_results {
                 kafka_c.enqueue_stats(stats.clone());
                 minio_c.enqueue(stats.clone());
+                if let Some(ref ch) = clickhouse_c {
+                    ch.enqueue(stats.clone());
+                }
             }
             let events: Vec<AlertEvent> = detector_c.drain_events();
             for ev in events {
@@ -250,13 +277,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     });
 
     let flush_task = {
-        let kafka_flush = kafka_sink.clone();
-        let minio_flush = minio_sink.clone();
+        let kafka_flush = output_manager.kafka.clone();
+        let minio_flush = output_manager.minio.clone();
         let alerter_flush = alerter.clone();
+        let clickhouse_flush = output_manager.clickhouse.clone();
         tokio::spawn(async move {
             let mut kafka_interval = tokio::time::interval(Duration::from_millis(KAFKA_FLUSH_MS));
             let mut minio_interval = tokio::time::interval(Duration::from_secs(30));
             let mut alert_interval = tokio::time::interval(Duration::from_millis(ALERT_FLUSH_MS));
+            let mut clickhouse_interval = tokio::time::interval(Duration::from_secs(5));
             loop {
                 tokio::select! {
                     _ = kafka_interval.tick() => {
@@ -270,14 +299,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         let now = Utc::now();
                         alerter_flush.flush(now).await;
                     }
+                    _ = clickhouse_interval.tick() => {
+                        if let Some(ref ch) = clickhouse_flush {
+                            let now = Utc::now();
+                            ch.flush_if_needed(now).await;
+                        }
+                    }
                 }
             }
         })
     };
 
+    let custom_format_count = parser_engine
+        .lock()
+        .map(|p| p.custom_format_count())
+        .unwrap_or(0);
     info!("LogForge fully started. Listening for logs. Press Ctrl+C to quit.");
     info!("  - /health endpoint: http://localhost:9090/health");
     info!("  - /metrics endpoint: http://localhost:9090/metrics");
+    info!("  - Parser: {} custom formats registered", custom_format_count);
+    if output_manager.clickhouse.is_some() {
+        info!("  - ClickHouse sink: enabled");
+    } else {
+        info!("  - ClickHouse sink: disabled (not configured)");
+    }
     info!("  - Dashboard: enabled (press Q in dashboard to exit UI)");
 
     tokio::select! {
@@ -297,6 +342,130 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             info!("Flush task ended");
         }
     }
+
+    Ok(())
+}
+
+async fn run_benchmark(args: &[String]) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if args.len() < 2 {
+        eprintln!("Usage: logforge benchmark <config.toml> <log_file> [sample_size]");
+        eprintln!();
+        eprintln!("Runs parser benchmark on a log file, outputting:");
+        eprintln!("  - Hit rate for each custom format");
+        eprintln!("  - Parsing time distribution (avg/P95/P99)");
+        eprintln!("  - Format match ordering suggestions");
+        std::process::exit(1);
+    }
+
+    let config_path = PathBuf::from(&args[1]);
+    let log_path = PathBuf::from(&args[2]);
+    let sample_size: usize = if args.len() >= 4 {
+        args[3].parse().unwrap_or(10000)
+    } else {
+        10000
+    };
+
+    if !config_path.exists() {
+        eprintln!("Error: config file {:?} not found", config_path);
+        std::process::exit(1);
+    }
+    if !log_path.exists() {
+        eprintln!("Error: log file {:?} not found", log_path);
+        std::process::exit(1);
+    }
+
+    eprintln!("=== LogForge Parser Benchmark ===");
+    eprintln!("Config: {:?}", config_path);
+    eprintln!("Log file: {:?}", log_path);
+    eprintln!("Sample size: up to {} lines", sample_size);
+    eprintln!();
+
+    let config_manager = ConfigManager::new(&config_path)?;
+    let config_handle = config_manager.handle();
+    let cfg = config_handle.read().await;
+
+    let mut registry = CustomFormatRegistry::new();
+    registry.load_from_configs(
+        cfg.parser.custom_formats.clone(),
+        cfg.parser.format_match_order.clone(),
+    );
+
+    eprintln!("Loaded {} custom format(s):", registry.format_count());
+    for fmt in registry.get_stats() {
+        eprintln!("  - {} (priority={}, id={})", fmt.name, fmt.priority, fmt.id);
+    }
+    eprintln!();
+
+    eprintln!("Running benchmark...");
+    let result = registry
+        .run_benchmark(
+            log_path.to_str().unwrap(),
+            sample_size,
+        )
+        .await?;
+
+    eprintln!();
+    eprintln!("=== Benchmark Results ===");
+    eprintln!("Total lines processed: {}", result.total_lines);
+    eprintln!("Custom format hits: {} ({:.1}%)",
+        result.total_hits,
+        if result.total_lines > 0 {
+            (result.total_hits as f64 / result.total_lines as f64) * 100.0
+        } else {
+            0.0
+        }
+    );
+    eprintln!("Auto-detect fallback: {} ({:.1}%)",
+        result.total_lines - result.total_hits,
+        if result.total_lines > 0 {
+            ((result.total_lines - result.total_hits) as f64 / result.total_lines as f64) * 100.0
+        } else {
+            0.0
+        }
+    );
+    eprintln!();
+    eprintln!("{:<30} {:>10} {:>12} {:>12} {:>12} {:>12}",
+        "FORMAT", "HITS", "HIT%", "AVG(ns)", "P95(ns)", "P99(ns)");
+    eprintln!("{:-<30} {:-<10} {:-<12} {:-<12} {:-<12} {:-<12}", "", "", "", "", "", "");
+
+    let mut sorted_formats = result.per_format.clone();
+    sorted_formats.sort_by(|a, b| b.hit_rate.partial_cmp(&a.hit_rate).unwrap_or(std::cmp::Ordering::Equal));
+
+    for fmt in &sorted_formats {
+        let hit_pct = if result.total_lines > 0 {
+            (fmt.hits as f64 / result.total_lines as f64) * 100.0
+        } else {
+            0.0
+        };
+        eprintln!("{:<30} {:>10} {:>11.1}% {:>12} {:>12} {:>12}",
+            fmt.name,
+            fmt.hits,
+            hit_pct,
+            fmt.avg_ns,
+            fmt.p95_ns,
+            fmt.p99_ns
+        );
+    }
+
+    eprintln!();
+    eprintln!("=== Suggested Match Order ===");
+    for (i, fmt) in sorted_formats.iter().enumerate() {
+        if fmt.hits > 0 {
+            eprintln!("  {}. \"{}\"  ({} hits, {:.1}% hit rate)",
+                i + 1,
+                fmt.id,
+                fmt.hits,
+                if result.total_lines > 0 {
+                    (fmt.hits as f64 / result.total_lines as f64) * 100.0
+                } else {
+                    0.0
+                }
+            );
+        }
+    }
+    eprintln!();
+    eprintln!("Put the highest-hit-rate formats first in your config.toml's");
+    eprintln!("format_match_order list to minimize average parsing time.");
 
     Ok(())
 }

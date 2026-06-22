@@ -1,17 +1,21 @@
 pub mod kafka_sink;
 pub mod minio_sink;
 pub mod dashboard;
+pub mod clickhouse_sink;
 
 use crate::config::ConfigHandle;
 use crate::output::kafka_sink::KafkaSink;
 use crate::output::minio_sink::MinIOSink;
+use crate::output::clickhouse_sink::ClickHouseSink;
 use crate::aggregator::AggregationEngine;
 use crate::output::dashboard::Dashboard;
 use std::sync::Arc;
+use tracing::info;
 
 pub struct OutputManager {
     pub kafka: KafkaSink,
     pub minio: MinIOSink,
+    pub clickhouse: Option<ClickHouseSink>,
 }
 
 impl OutputManager {
@@ -19,14 +23,31 @@ impl OutputManager {
         let kafka = KafkaSink::new(config.clone());
         kafka.init_from_config().await;
 
-        let minio_cfg = {
+        let (minio_cfg, clickhouse_cfg) = {
             let cfg = config.read().await;
-            cfg.sink.minio.clone()
+            (cfg.sink.minio.clone(), cfg.sink.clickhouse.clone())
         };
         let mut minio = MinIOSink::new(minio_cfg);
         minio.init().await;
 
-        Self { kafka, minio }
+        let clickhouse = match clickhouse_cfg {
+            Some(cfg) => {
+                info!("Initializing ClickHouse sink at {}", cfg.url);
+                match ClickHouseSink::new(cfg).await {
+                    Ok(ch) => Some(ch),
+                    Err(e) => {
+                        tracing::warn!("Failed to initialize ClickHouse sink: {}", e);
+                        None
+                    }
+                }
+            }
+            None => {
+                info!("No ClickHouse sink configured - skipping");
+                None
+            }
+        };
+
+        Self { kafka, minio, clickhouse }
     }
 
     pub fn maybe_start_dashboard(config: ConfigHandle, agg: Arc<AggregationEngine>) -> Option<tokio::task::JoinHandle<()>> {
