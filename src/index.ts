@@ -35,7 +35,7 @@ async function checkForUpdates(): Promise<void> {
   }
 }
 
-interface CreateOptions {
+export interface CreateOptions {
   quiet?: boolean;
   framework?: string;
   packageManager?: string;
@@ -71,6 +71,77 @@ interface CompletionOptions {
   shell?: string;
 }
 
+export interface ValidationError {
+  message: string;
+  code: string;
+}
+
+export function validateCreateOptions(options: CreateOptions): ValidationError[] {
+  const errors: ValidationError[] = [];
+
+  if (options.template && options.framework) {
+    errors.push({
+      message: `--template 和 --framework 参数冲突。使用自定义模板时，框架选项由模板决定。`,
+      code: 'TEMPLATE_FRAMEWORK_CONFLICT',
+    });
+  }
+
+  if (options.template && options.docker !== undefined) {
+    errors.push({
+      message: `--template 和 --docker 参数冲突。使用自定义模板时，Docker支持由模板决定。`,
+      code: 'TEMPLATE_DOCKER_CONFLICT',
+    });
+  }
+
+  if (options.template && options.ci) {
+    errors.push({
+      message: `--template 和 --ci 参数冲突。使用自定义模板时，CI配置由模板决定。`,
+      code: 'TEMPLATE_CI_CONFLICT',
+    });
+  }
+
+  if (options.template && options.deploy) {
+    errors.push({
+      message: `--template 和 --deploy 参数冲突。使用自定义模板时，部署配置由模板决定。`,
+      code: 'TEMPLATE_DEPLOY_CONFLICT',
+    });
+  }
+
+  const validFrameworks = ['node-backend', 'react-frontend', 'vue-frontend', 'cli-tool'];
+  if (options.framework && !validFrameworks.includes(options.framework)) {
+    errors.push({
+      message: `无效的框架: ${options.framework}。可选值: ${validFrameworks.join(', ')}`,
+      code: 'INVALID_FRAMEWORK',
+    });
+  }
+
+  const validPMs = ['npm', 'yarn', 'pnpm'];
+  if (options.packageManager && !validPMs.includes(options.packageManager)) {
+    errors.push({
+      message: `无效的包管理器: ${options.packageManager}。可选值: ${validPMs.join(', ')}`,
+      code: 'INVALID_PACKAGE_MANAGER',
+    });
+  }
+
+  const validCIs = ['github', 'gitlab', 'none'];
+  if (options.ci && !validCIs.includes(options.ci)) {
+    errors.push({
+      message: `无效的CI提供方: ${options.ci}。可选值: ${validCIs.join(', ')}`,
+      code: 'INVALID_CI_PROVIDER',
+    });
+  }
+
+  const validDeploys = ['docker', 'k8s', 'none'];
+  if (options.deploy && !validDeploys.includes(options.deploy)) {
+    errors.push({
+      message: `无效的部署目标: ${options.deploy}。可选值: ${validDeploys.join(', ')}`,
+      code: 'INVALID_DEPLOY_TARGET',
+    });
+  }
+
+  return errors;
+}
+
 async function main(): Promise<void> {
   await globalState.init();
 
@@ -101,6 +172,15 @@ async function main(): Promise<void> {
     .option('--no-pre-commit', 'Skip pre-commit hook installation')
     .option('--force', 'Overwrite existing directory', false)
     .action(async (projectName: string | undefined, options: CreateOptions) => {
+      const validationErrors = validateCreateOptions(options);
+      if (validationErrors.length > 0) {
+        console.error(chalk.red('\n❌ 参数错误:'));
+        for (const err of validationErrors) {
+          console.error(chalk.red(`   ${err.message}`));
+        }
+        process.exit(1);
+      }
+
       await checkForUpdates();
 
       const availablePMs = detectPackageManagers();
@@ -416,7 +496,9 @@ _csp
   }
 }
 
-main().catch(error => {
-  console.error(chalk.red('\n❌ Fatal error:'), error);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(error => {
+    console.error(chalk.red('\n❌ Fatal error:'), error);
+    process.exit(1);
+  });
+}
