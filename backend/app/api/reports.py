@@ -13,6 +13,35 @@ import re
 
 router = APIRouter(prefix="/api/reports", tags=["周报管理"])
 
+REPORT_STATUS_FLOW = {
+    "not_started": ["notified"],
+    "notified": ["reminded", "submitted"],
+    "reminded": ["submitted", "reminded"],
+    "submitted": ["draft", "summarized"],
+    "draft": ["submitted"],
+    "summarized": []
+}
+
+REPORT_STATUS_HUMAN = {
+    "not_started": "未开始",
+    "notified": "已推送",
+    "reminded": "已提醒",
+    "submitted": "已提交",
+    "draft": "草稿",
+    "summarized": "已汇总"
+}
+
+
+def validate_status_transition(current_status: str, new_status: str) -> None:
+    if current_status == new_status:
+        return
+    allowed_next = REPORT_STATUS_FLOW.get(current_status, [])
+    if new_status not in allowed_next:
+        raise HTTPException(
+            status_code=400,
+            detail=f"非法状态流转：从「{REPORT_STATUS_HUMAN.get(current_status, current_status)}」不能变更为「{REPORT_STATUS_HUMAN.get(new_status, new_status)}」"
+        )
+
 
 def _calc_word_count(content: Dict[str, Any]) -> int:
     total = 0
@@ -204,6 +233,7 @@ def update_report(
         report.word_count = _calc_word_count(data.content)
 
     if data.status is not None:
+        validate_status_transition(report.status, data.status)
         if data.status == "submitted":
             if report.template_version_id:
                 tv = db.query(models.TemplateVersion).filter(

@@ -87,7 +87,7 @@ class TemplateFieldBase(BaseModel):
     field_key: str
     field_name: str
     field_type: str = "markdown"
-    options: Optional[List[Dict[str, Any]]] = None
+    options: Optional[List[Any]] = None
     placeholder: Optional[str] = None
     is_required: bool = True
     sort_order: int = 0
@@ -104,7 +104,7 @@ class TemplateFieldUpdate(BaseModel):
     field_key: Optional[str] = None
     field_name: Optional[str] = None
     field_type: Optional[str] = None
-    options: Optional[List[Dict[str, Any]]] = None
+    options: Optional[List[Any]] = None
     placeholder: Optional[str] = None
     is_required: Optional[bool] = None
     sort_order: Optional[int] = None

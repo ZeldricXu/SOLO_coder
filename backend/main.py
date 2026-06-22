@@ -228,7 +228,8 @@ async def lifespan(app: FastAPI):
     logger.info(f"Starting {settings.APP_NAME}...")
     Base.metadata.create_all(bind=engine)
     logger.info("Database tables created")
-    _init_default_data()
+    if settings.APP_ENV != "test":
+        _init_default_data()
 
     from app.scheduler.tasks import start_scheduler, stop_scheduler
     if settings.APP_ENV != "test":

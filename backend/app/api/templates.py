@@ -131,10 +131,11 @@ def create_template(
     db.flush()
 
     for idx, field_data in enumerate(data.fields):
+        field_dict = field_data.model_dump(exclude={"sort_order"})
         field = models.TemplateField(
             template_id=template.id,
             sort_order=idx,
-            **field_data.model_dump()
+            **field_dict
         )
         db.add(field)
 
@@ -189,10 +190,11 @@ def update_template(
             models.TemplateField.template_id == template_id
         ).delete()
         for idx, field_data in enumerate(data.fields):
+            field_dict = field_data.model_dump(exclude={"sort_order"})
             field = models.TemplateField(
                 template_id=template.id,
                 sort_order=idx,
-                **field_data.model_dump()
+                **field_dict
             )
             db.add(field)
         db.flush()
