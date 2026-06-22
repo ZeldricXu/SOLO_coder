@@ -13,6 +13,11 @@ import (
 	"gorm.io/gorm"
 )
 
+func init() {
+	gob.Register([]interface{}{})
+	gob.Register(map[string]interface{}{})
+}
+
 type CheckpointSaveOption int
 
 const (

@@ -13,6 +13,7 @@ import (
 
 type TaskScheduler struct {
 	mu                 sync.RWMutex
+	callbackMu         sync.RWMutex
 	config             SchedulerConfig
 	queue              *PriorityQueue
 	sharder            *Sharder
@@ -162,16 +163,22 @@ func (s *TaskScheduler) RegisterWorker(worker *models.Worker) error {
 
 func (s *TaskScheduler) UnregisterWorker(workerID int64) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 
 	sw, exists := s.workers[workerID]
 	if !exists {
+		s.mu.Unlock()
 		return fmt.Errorf("worker %d not found", workerID)
 	}
 
+	var (
+		st       *scheduledTask
+		deadline *time.Time
+		err      error
+	)
 	if sw.currentTask != nil {
 		taskID := *sw.currentTask
-		if err := s.reassignTask(taskID); err != nil {
+		st, deadline, err = s.reassignTaskLocked(taskID)
+		if err != nil {
 			s.logger.Error("failed to reassign task", zap.Int64("taskID", taskID), zap.Error(err))
 		}
 	}
@@ -179,6 +186,15 @@ func (s *TaskScheduler) UnregisterWorker(workerID int64) error {
 	sw.worker.Status = models.WorkerStatusOffline
 	delete(s.workers, workerID)
 	s.emitEvent(EventWorkerOffline, workerID)
+
+	s.mu.Unlock()
+
+	if st != nil && err == nil {
+		if _, enqErr := s.queue.Enqueue(st.task, deadline); enqErr != nil {
+			s.logger.Error("failed to enqueue reassigned task",
+				zap.Int64("taskID", st.task.ID), zap.Error(enqErr))
+		}
+	}
 
 	return nil
 }
@@ -211,6 +227,8 @@ func (s *TaskScheduler) SubmitTask(ctx context.Context, task *models.Task) error
 	if task.Status == "" {
 		task.Status = models.TaskStatusPending
 	}
+
+	task.Status = models.TaskStatusQueued
 
 	st := &scheduledTask{
 		task: task,
@@ -246,7 +264,6 @@ func (s *TaskScheduler) SubmitTask(ctx context.Context, task *models.Task) error
 		deadline = &d
 	}
 
-	task.Status = models.TaskStatusQueued
 	_, err := s.queue.Enqueue(task, deadline)
 	if err != nil {
 		s.mu.Lock()
@@ -502,16 +519,16 @@ func (s *TaskScheduler) RestoreCheckpoint(taskID int64) (*TaskCheckpoint, error)
 }
 
 func (s *TaskScheduler) OnEvent(callback SchedulerEventCallback) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
+	s.callbackMu.Lock()
+	defer s.callbackMu.Unlock()
 	s.callbacks = append(s.callbacks, callback)
 }
 
 func (s *TaskScheduler) emitEvent(event SchedulerEvent, payload interface{}) {
-	s.mu.RLock()
+	s.callbackMu.RLock()
 	callbacks := make([]SchedulerEventCallback, len(s.callbacks))
 	copy(callbacks, s.callbacks)
-	s.mu.RUnlock()
+	s.callbackMu.RUnlock()
 
 	for _, cb := range callbacks {
 		go cb(event, payload)
@@ -597,10 +614,20 @@ func (s *TaskScheduler) handleWorkerOffline(workerID int64) {
 
 func (s *TaskScheduler) reassignTask(taskID int64) error {
 	s.mu.Lock()
+	st, deadline, err := s.reassignTaskLocked(taskID)
+	s.mu.Unlock()
+	if err != nil {
+		return err
+	}
+
+	_, err = s.queue.Enqueue(st.task, deadline)
+	return err
+}
+
+func (s *TaskScheduler) reassignTaskLocked(taskID int64) (*scheduledTask, *time.Time, error) {
 	st, exists := s.tasks[taskID]
 	if !exists {
-		s.mu.Unlock()
-		return fmt.Errorf("task %d not found", taskID)
+		return nil, nil, fmt.Errorf("task %d not found", taskID)
 	}
 
 	if workerID, assigned := s.assignments[taskID]; assigned {
@@ -622,16 +649,13 @@ func (s *TaskScheduler) reassignTask(taskID int64) error {
 		tracker.Stop()
 	}
 
-	s.mu.Unlock()
-
 	var deadline *time.Time
 	if st.task.TimeoutSeconds > 0 {
 		d := time.Now().Add(time.Duration(st.task.TimeoutSeconds) * time.Second)
 		deadline = &d
 	}
 
-	_, err := s.queue.Enqueue(st.task, deadline)
-	return err
+	return st, deadline, nil
 }
 
 func (s *TaskScheduler) taskDispatcherLoop() {
@@ -694,6 +718,13 @@ func (s *TaskScheduler) assignTask(task *models.Task) error {
 		return fmt.Errorf("no suitable worker found")
 	}
 
+	updatedLoad := WorkerLoad{}
+	selectedWorker.mu.RLock()
+	updatedLoad = selectedWorker.load
+	updatedLoad.CurrentTasks++
+	selectedWorker.mu.RUnlock()
+	updatedLoad.Score = s.calculateAssignmentScore(selectedWorker, task)
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -703,12 +734,12 @@ func (s *TaskScheduler) assignTask(task *models.Task) error {
 
 	selectedWorker.mu.Lock()
 	selectedWorker.currentTask = &task.ID
-	selectedWorker.load.CurrentTasks++
+	selectedWorker.load.CurrentTasks = updatedLoad.CurrentTasks
 	if selectedWorker.load.CurrentTasks > 0 {
 		selectedWorker.worker.Status = models.WorkerStatusRunning
 	}
 	selectedWorker.worker.CurrentTaskID = &task.ID
-	selectedWorker.load.Score = s.calculateWorkerScore(selectedWorker)
+	selectedWorker.load.Score = updatedLoad.Score
 
 	if history, ok := s.workerLoadHistory[selectedWorker.worker.ID]; ok {
 		s.workerLoadHistory[selectedWorker.worker.ID] = append(history, selectedWorker.load)

@@ -63,10 +63,15 @@ func NewTaskTracker(task *models.Task, config TrackerConfig) *TaskTracker {
 		config.Timeout = time.Duration(task.TimeoutSeconds) * time.Second
 	}
 
+	initialStatus := task.Status
+	if initialStatus == "" {
+		initialStatus = models.TaskStatusPending
+	}
+
 	tt := &TaskTracker{
 		task:            task,
 		totalSteps:      config.TotalSteps,
-		status:          models.TaskStatusPending,
+		status:          initialStatus,
 		startTime:       time.Now(),
 		lastUpdateTime:  time.Now(),
 		checkpoints:     make([]TaskCheckpoint, 0, config.MaxCheckpoints),
@@ -112,7 +117,10 @@ func (tt *TaskTracker) Start(ctx context.Context, workerID int64) error {
 func (tt *TaskTracker) Stop() {
 	tt.mu.Lock()
 	defer tt.mu.Unlock()
+	tt.stopTimer()
+}
 
+func (tt *TaskTracker) stopTimer() {
 	if tt.timeoutTimer != nil {
 		tt.timeoutTimer.Stop()
 		tt.timeoutTimer = nil
@@ -133,7 +141,7 @@ func (tt *TaskTracker) Cancel() {
 		close(tt.cancelChan)
 	}
 
-	tt.Stop()
+	tt.stopTimer()
 }
 
 func (tt *TaskTracker) ReportProgress(step int64, totalSteps int64, data models.Params) error {
@@ -205,7 +213,7 @@ func (tt *TaskTracker) Complete(result *models.Result) error {
 		}
 	}
 
-	tt.Stop()
+	tt.stopTimer()
 
 	if tt.onComplete != nil {
 		tt.onComplete(tt.task.ID, result)
@@ -243,7 +251,7 @@ func (tt *TaskTracker) Fail(errMsg string) error {
 	}
 
 	tt.status = models.TaskStatusFailed
-	tt.Stop()
+	tt.stopTimer()
 
 	if tt.onFail != nil {
 		tt.onFail(tt.task.ID, errMsg)

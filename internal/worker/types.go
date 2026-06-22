@@ -281,8 +281,8 @@ type runningTask struct {
 }
 
 type cacheEntry struct {
-	key        string
-	value      interface{}
-	expiresAt  time.Time
-	accessTime time.Time
+	Key        string
+	Value      interface{}
+	ExpiresAt  time.Time
+	AccessTime time.Time
 }

@@ -108,3 +108,10 @@ func (db *DB) HealthCheck(ctx context.Context) error {
 	defer cancel()
 	return sqlDB.PingContext(ctx)
 }
+
+func NewDBFromGORM(gormDB *gorm.DB, cfg *config.DatabaseConfig) *DB {
+	return &DB{
+		DB:     gormDB,
+		config: cfg,
+	}
+}

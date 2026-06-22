@@ -153,7 +153,7 @@ func (lc *LocalCache) Get(key string) (interface{}, bool) {
 
 	entry := elem.Value.(*cacheEntry)
 
-	if !entry.expiresAt.IsZero() && time.Now().After(entry.expiresAt) {
+	if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
 		lc.removeElement(elem)
 		lc.stats.Evictions++
 		lc.stats.Misses++
@@ -161,10 +161,10 @@ func (lc *LocalCache) Get(key string) (interface{}, bool) {
 	}
 
 	lc.lruList.MoveToFront(elem)
-	entry.accessTime = time.Now()
+	entry.AccessTime = time.Now()
 	lc.stats.Hits++
 
-	return entry.value, true
+	return entry.Value, true
 }
 
 func (lc *LocalCache) Set(key string, value interface{}) error {
@@ -180,21 +180,21 @@ func (lc *LocalCache) SetWithTTL(key string, value interface{}, ttl time.Duratio
 	if elem, exists := lc.cacheMap[key]; exists {
 		lc.lruList.MoveToFront(elem)
 		entry := elem.Value.(*cacheEntry)
-		entry.value = value
-		entry.accessTime = time.Now()
+		entry.Value = value
+		entry.AccessTime = time.Now()
 		if ttl > 0 {
-			entry.expiresAt = time.Now().Add(ttl)
+			entry.ExpiresAt = time.Now().Add(ttl)
 		}
 		return nil
 	}
 
 	entry := &cacheEntry{
-		key:        key,
-		value:      value,
-		accessTime: time.Now(),
+		Key:        key,
+		Value:      value,
+		AccessTime: time.Now(),
 	}
 	if ttl > 0 {
-		entry.expiresAt = time.Now().Add(ttl)
+		entry.ExpiresAt = time.Now().Add(ttl)
 	}
 
 	elem := lc.lruList.PushFront(entry)
@@ -230,7 +230,7 @@ func (lc *LocalCache) Has(key string) bool {
 	}
 
 	entry := elem.Value.(*cacheEntry)
-	if !entry.expiresAt.IsZero() && time.Now().After(entry.expiresAt) {
+	if !entry.ExpiresAt.IsZero() && time.Now().After(entry.ExpiresAt) {
 		return false
 	}
 
@@ -264,7 +264,7 @@ func (lc *LocalCache) evictOldest() {
 
 func (lc *LocalCache) removeElement(elem *list.Element) {
 	entry := elem.Value.(*cacheEntry)
-	delete(lc.cacheMap, entry.key)
+	delete(lc.cacheMap, entry.Key)
 	lc.lruList.Remove(elem)
 }
 
@@ -381,12 +381,12 @@ func (lc *LocalCache) loadFromDisk() error {
 	loadedCount := 0
 
 	for _, entry := range saveData.Entries {
-		if !entry.expiresAt.IsZero() && now.After(entry.expiresAt) {
+		if !entry.ExpiresAt.IsZero() && now.After(entry.ExpiresAt) {
 			continue
 		}
 
 		elem := lc.lruList.PushFront(entry)
-		lc.cacheMap[entry.key] = elem
+		lc.cacheMap[entry.Key] = elem
 		loadedCount++
 	}
 
@@ -415,7 +415,7 @@ func (lc *LocalCache) Keys() []string {
 	keys := make([]string, 0, lc.lruList.Len())
 	for elem := lc.lruList.Front(); elem != nil; elem = elem.Next() {
 		entry := elem.Value.(*cacheEntry)
-		keys = append(keys, entry.key)
+		keys = append(keys, entry.Key)
 	}
 	return keys
 }

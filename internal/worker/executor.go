@@ -90,22 +90,27 @@ func (te *TaskExecutor) Start(ctx context.Context) error {
 
 func (te *TaskExecutor) Stop() error {
 	te.mu.Lock()
-	defer te.mu.Unlock()
-
 	if !te.running {
+		te.mu.Unlock()
 		return nil
 	}
 
 	te.running = false
 	te.cancel()
+	te.mu.Unlock()
+
 	te.wg.Wait()
 
+	te.mu.Lock()
 	close(te.taskQueue)
+	completed := te.completedTasks
+	failed := te.failedTasks
+	te.mu.Unlock()
 
 	util.Info("task executor stopped",
 		zap.String("worker_id", te.workerID),
-		zap.Int64("completed_tasks", te.completedTasks),
-		zap.Int64("failed_tasks", te.failedTasks))
+		zap.Int64("completed_tasks", completed),
+		zap.Int64("failed_tasks", failed))
 
 	return nil
 }
