@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Team - SnippetHub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    user: null,
+    team: null,
+    snippets: [],
+    members: [],
+    teamId: null,
+    loading: true,
+    activeTab: 'snippets',
+    showAddMember: false,
+    newMemberUsername: '',
+    addingMember: false,
+    isMember: false,
+    isAdmin: false,
+    sortBy: 'updated_at',
+    sortOrder: 'desc',
+    error: null,
+    init() {
+        this.teamId = window.location.pathname.split('/')[2];
+        this.checkAuth();
+        this.loadTeam();
+        this.loadMembers();
+        this.loadSnippets();
+    },
+    checkAuth() {
+        if (isLoggedIn()) {
+            this.user = { username: getCurrentUsername() };
+        }
+    },
+    async loadTeam() {
+        try {
+            this.team = await apiGet(`/teams/${this.teamId}`);
+        } catch (e) {
+            this.error = e.message;
+        }
+    },
+    async loadMembers() {
+        try {
+            this.members = await apiGet(`/teams/${this.teamId}/members`);
+            if (this.user) {
+                const member = this.members.find(m => m.username === this.user.username);
+                this.isMember = !!member;
+                this.isAdmin = member?.role === 'admin';
+            }
+        } catch (e) {}
+    },
+    async loadSnippets() {
+        try {
+            const data = await apiGet(`/teams/${this.teamId}/snippets?sort_by=${this.sortBy}&sort_order=${this.sortOrder}`);
+            this.snippets = data;
+        } catch (e) {}
+        finally {
+            this.loading = false;
+        }
+    },
+    async addMember() {
+        if (!this.newMemberUsername.trim()) {
+            showToast('Please enter a username', 'error');
+            return;
+        }
+        this.addingMember = true;
+        try {
+            await apiPost(`/teams/${this.teamId}/members?username=${encodeURIComponent(this.newMemberUsername)}`, {});
+            this.newMemberUsername = '';
+            this.showAddMember = false;
+            this.loadMembers();
+            showToast('Member added successfully!');
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
+            this.addingMember = false;
+        }
+    },
+    async removeMember(userId) {
+        if (!confirm('Remove this member from the team?')) return;
+        try {
+            await apiDelete(`/teams/${this.teamId}/members/${userId}`);
+            this.loadMembers();
+            showToast('Member removed');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    },
+    changeSort(field) {
+        if (this.sortBy === field) {
+            this.sortOrder = this.sortOrder === 'desc' ? 'asc' : 'desc';
+        } else {
+            this.sortBy = field;
+            this.sortOrder = 'desc';
+        }
+        this.loadSnippets();
+    },
+    logout() {
+        removeToken();
+        clearCurrentUser();
+        this.user = null;
+        window.location.href = '/';
+    }
+}">
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a href="/" class="navbar-brand">📝 SnippetHub</a>
+            <div class="nav-links">
+                <a href="/">Explore</a>
+                <a href="/teams">Teams</a>
+                <a href="/search">Search</a>
+                <template x-if="user">
+                    <>
+                        <a :href="'/users/' + user.username">My Snippets</a>
+                        <a href="/new" class="btn btn-primary btn-sm">+ New Snippet</a>
+                        <div class="nav-user">
+                            <div class="avatar" x-text="user.username.charAt(0).toUpperCase()" :style="'background: ' + getAvatarColor(user.username)"></div>
+                            <button @click="logout" class="btn btn-secondary btn-sm">Logout</button>
+                        </div>
+                    </>
+                </template>
+                <template x-if="!user">
+                    <>
+                        <a href="/login">Login</a>
+                        <a href="/register" class="btn btn-primary btn-sm">Sign Up</a>
+                    </>
+                </template>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        <div x-show="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 12px;">Loading team...</p>
+        </div>
+
+        <div x-show="error && !loading" class="alert alert-error" x-text="error"></div>
+
+        <div x-show="!loading && !error && team" style="display: none;">
+            <div class="profile-header">
+                <div style="flex: 1;">
+                    <h2 x-text="team.name"></h2>
+                    <p style="color: var(--text-muted);" x-text="team.description || 'No description'"></p>
+                    <div class="profile-stats">
+                        <span class="profile-stat">
+                            <strong x-text="team.members_count"></strong> members
+                        </span>
+                        <span class="profile-stat">
+                            Created by <strong>team creator</strong>
+                        </span>
+                    </div>
+                </div>
+                <div>
+                    <template x-if="isMember">
+                        <a :href="'/new?team=' + team.id" class="btn btn-primary btn-sm">+ New Snippet</a>
+                    </template>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <div class="tab" :class="{ active: activeTab === 'snippets' }" @click="activeTab = 'snippets'">
+                    Snippets
+                </div>
+                <div class="tab" :class="{ active: activeTab === 'members' }" @click="activeTab = 'members'">
+                    Members (<span x-text="team.members_count"></span>)
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'snippets'">
+                <div class="filters" style="margin-bottom: 16px;">
+                    <div class="filter-item">
+                        <span>Sort:</span>
+                        <select class="filter-select" x-model="sortBy" @change="loadSnippets()">
+                            <option value="updated_at">Recently Updated</option>
+                            <option value="created_at">Recently Created</option>
+                            <option value="stars_count">Most Stars</option>
+                            <option value="forks_count">Most Forks</option>
+                            <option value="views_count">Most Views</option>
+                        </select>
+                    </div>
+                    <div class="filter-item">
+                        <select class="filter-select" x-model="sortOrder" @change="loadSnippets()">
+                            <option value="desc">Descending</option>
+                            <option value="asc">Ascending</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div x-show="snippets.length === 0" class="card">
+                    <div class="card-body" style="text-align: center; color: var(--text-muted);">
+                        <p style="font-size: 3rem; margin-bottom: 12px;">📝</p>
+                        <p>No team snippets yet.</p>
+                        <template x-if="isMember">
+                            <a :href="'/new?team=' + team.id" class="btn btn-primary" style="margin-top: 12px;">Create first team snippet</a>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="snippets-grid">
+                    <template x-for="snippet in snippets" :key="snippet.id">
+                        <div class="snippet-card">
+                            <div class="snippet-card-header">
+                                <a :href="'/snippets/' + snippet.id" class="snippet-title" x-text="snippet.title"></a>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span x-html="visibilityBadge(snippet.visibility)"></span>
+                                    <span class="snippet-lang" x-text="snippet.language"></span>
+                                </div>
+                            </div>
+                            <div class="snippet-desc" x-show="snippet.description" x-text="snippet.description"></div>
+                            <div class="snippet-tags">
+                                <template x-for="tag in snippet.tags" :key="tag">
+                                    <span class="tag" x-text="'#' + tag"></span>
+                                </template>
+                            </div>
+                            <div class="snippet-footer">
+                                <span>by <a :href="'/users/' + snippet.author_username" x-text="snippet.author_username"></a></span>
+                                <div class="snippet-stats">
+                                    <span class="snippet-stat" x-text="'⭐ ' + snippet.stars_count"></span>
+                                    <span class="snippet-stat" x-text="'🍴 ' + snippet.forks_count"></span>
+                                    <span class="snippet-stat" x-text="'👁 ' + snippet.views_count"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'members'">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 style="font-size: 1rem;">Team Members</h3>
+                        <template x-if="isAdmin">
+                            <button @click="showAddMember = !showAddMember" class="btn btn-primary btn-sm">+ Add Member</button>
+                        </template>
+                    </div>
+                    <div class="card-body">
+                        <div x-show="showAddMember && isAdmin" style="margin-bottom: 16px; display: flex; gap: 8px;">
+                            <input type="text" class="form-input" x-model="newMemberUsername" placeholder="Enter username" style="flex: 1;">
+                            <button @click="addMember()" class="btn btn-primary" :disabled="addingMember">
+                                <span x-show="!addingMember">Add</span>
+                                <span x-show="addingMember">Adding...</span>
+                            </button>
+                        </div>
+                        <div style="display: flex; flex-direction: column; gap: 12px;">
+                            <template x-for="member in members" :key="member.user_id">
+                                <div style="display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border);">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <div class="avatar" style="width: 36px; height: 36px; font-size: 0.9rem;"
+                                             x-text="member.username.charAt(0).toUpperCase()"
+                                             :style="'background: ' + getAvatarColor(member.username)"></div>
+                                        <div>
+                                            <a :href="'/users/' + member.username" style="font-weight: 500;" x-text="member.username"></a>
+                                            <div style="font-size: 0.75rem; color: var(--text-muted);">
+                                                <span x-text="member.role"></span>
+                                                · joined <span x-text="formatDate(member.joined_at)"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <template x-if="isAdmin && user.username !== member.username">
+                                        <button @click="removeMember(member.user_id)" class="btn btn-secondary btn-sm">Remove</button>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

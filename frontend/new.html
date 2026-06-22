@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New Snippet - SnippetHub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    user: null,
+    form: {
+        title: '',
+        description: '',
+        code: '',
+        language: 'python',
+        visibility: 'private',
+        tags: '',
+        team_id: null,
+    },
+    teams: [],
+    submitting: false,
+    error: null,
+    isEdit: false,
+    snippetId: null,
+    parentId: null,
+    init() {
+        this.checkAuth();
+        if (!isLoggedIn()) {
+            window.location.href = '/login';
+            return;
+        }
+        this.loadTeams();
+        const urlParams = new URLSearchParams(window.location.search);
+        this.parentId = urlParams.get('fork');
+    },
+    checkAuth() {
+        if (isLoggedIn()) {
+            this.user = { username: getCurrentUsername() };
+        }
+    },
+    async loadTeams() {
+        try {
+            this.teams = await apiGet('/teams/me/teams');
+        } catch (e) {}
+    },
+    async submit() {
+        if (!this.form.title.trim()) {
+            this.error = 'Title is required';
+            return;
+        }
+        if (!this.form.code.trim()) {
+            this.error = 'Code is required';
+            return;
+        }
+
+        this.submitting = true;
+        this.error = null;
+
+        try {
+            const tagsArray = this.form.tags
+                .split(',')
+                .map(t => t.trim())
+                .filter(t => t.length > 0);
+
+            const payload = {
+                ...this.form,
+                tags: tagsArray,
+                team_id: this.form.visibility === 'team' ? this.form.team_id : null,
+                parent_id: this.parentId ? parseInt(this.parentId) : null,
+            };
+            delete payload.team_id;
+            if (this.form.visibility === 'team' && this.form.team_id) {
+                payload.team_id = parseInt(this.form.team_id);
+            }
+
+            const result = await apiPost('/snippets', payload);
+            window.location.href = `/snippets/${result.id}`;
+        } catch (e) {
+            this.error = e.message;
+        } finally {
+            this.submitting = false;
+        }
+    },
+    logout() {
+        removeToken();
+        clearCurrentUser();
+        this.user = null;
+        window.location.href = '/';
+    }
+}">
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a href="/" class="navbar-brand">📝 SnippetHub</a>
+            <div class="nav-links">
+                <a href="/">Explore</a>
+                <a href="/teams">Teams</a>
+                <a href="/search">Search</a>
+                <template x-if="user">
+                    <>
+                        <a :href="'/users/' + user.username">My Snippets</a>
+                        <a href="/new" class="btn btn-primary btn-sm">+ New Snippet</a>
+                        <div class="nav-user">
+                            <div class="avatar" x-text="user.username.charAt(0).toUpperCase()" :style="'background: ' + getAvatarColor(user.username)"></div>
+                            <button @click="logout" class="btn btn-secondary btn-sm">Logout</button>
+                        </div>
+                    </>
+                </template>
+                <template x-if="!user">
+                    <>
+                        <a href="/login">Login</a>
+                        <a href="/register" class="btn btn-primary btn-sm">Sign Up</a>
+                    </>
+                </template>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content" style="max-width: 800px;">
+        <div class="page-header">
+            <h1 class="page-title">Create New Snippet</h1>
+            <a href="/" class="btn btn-secondary btn-sm">Cancel</a>
+        </div>
+
+        <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+        <div class="card">
+            <div class="card-body">
+                <div class="form-group">
+                    <label class="form-label">Title *</label>
+                    <input type="text" class="form-input" x-model="form.title" placeholder="My awesome snippet">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <input type="text" class="form-input" x-model="form.description" placeholder="A brief description...">
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+                    <div class="form-group">
+                        <label class="form-label">Language *</label>
+                        <select class="form-select" x-model="form.language">
+                            <template x-for="lang in languageOptions()" :key="lang.value">
+                                <option :value="lang.value" x-text="lang.label"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Visibility</label>
+                        <select class="form-select" x-model="form.visibility">
+                            <option value="private">Private</option>
+                            <option value="public">Public</option>
+                            <option value="team" :disabled="teams.length === 0">Team</option>
+                        </select>
+                        <div class="form-help" x-show="form.visibility === 'team' && teams.length === 0">
+                            You need to join or create a team first.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group" x-show="form.visibility === 'team' && teams.length > 0">
+                    <label class="form-label">Team</label>
+                    <select class="form-select" x-model="form.team_id">
+                        <option value="" disabled>Select a team</option>
+                        <template x-for="team in teams" :key="team.id">
+                            <option :value="team.id" x-text="team.name"></option>
+                        </template>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Tags</label>
+                    <input type="text" class="form-input" x-model="form.tags" placeholder="python, automation, utils (comma separated)">
+                    <div class="form-help">Separate tags with commas</div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Code *</label>
+                    <textarea class="form-textarea" x-model="form.code" rows="20" placeholder="Paste your code here..."></textarea>
+                </div>
+
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <a href="/" class="btn btn-secondary">Cancel</a>
+                    <button @click="submit()" class="btn btn-primary" :disabled="submitting">
+                        <span x-show="!submitting">Create Snippet</span>
+                        <span x-show="submitting">Creating...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

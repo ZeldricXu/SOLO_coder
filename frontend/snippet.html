@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snippet - SnippetHub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    user: null,
+    snippet: null,
+    comments: [],
+    newComment: '',
+    loading: true,
+    error: null,
+    snippetId: null,
+    forks: [],
+    showForks: false,
+    init() {
+        this.snippetId = window.location.pathname.split('/')[2];
+        this.checkAuth();
+        this.loadSnippet();
+        this.loadComments();
+        this.loadForks();
+    },
+    checkAuth() {
+        if (isLoggedIn()) {
+            this.user = { username: getCurrentUsername() };
+        }
+    },
+    async loadSnippet() {
+        try {
+            this.snippet = await apiGet(`/snippets/${this.snippetId}`);
+            this.$nextTick(() => {
+                document.querySelectorAll('pre code').forEach((el) => {
+                    hljs.highlightElement(el);
+                });
+            });
+        } catch (e) {
+            this.error = e.message;
+        } finally {
+            this.loading = false;
+        }
+    },
+    async loadComments() {
+        try {
+            this.comments = await apiGet(`/snippets/${this.snippetId}/comments`);
+        } catch (e) {}
+    },
+    async loadForks() {
+        try {
+            this.forks = await apiGet(`/snippets/${this.snippetId}/forks`);
+        } catch (e) {}
+    },
+    async toggleStar() {
+        if (!this.user) {
+            window.location.href = '/login';
+            return;
+        }
+        try {
+            const result = await apiPost(`/snippets/${this.snippetId}/star`, {});
+            this.snippet.is_starred = result.starred;
+            this.snippet.stars_count = result.stars_count;
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    },
+    async toggleFavorite() {
+        if (!this.user) {
+            window.location.href = '/login';
+            return;
+        }
+        try {
+            const result = await apiPost(`/snippets/${this.snippetId}/favorite`, {});
+            this.snippet.is_favorited = result.favorited;
+            showToast(result.favorited ? 'Added to favorites' : 'Removed from favorites');
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    },
+    async forkSnippet() {
+        if (!this.user) {
+            window.location.href = '/login';
+            return;
+        }
+        try {
+            const result = await apiPost(`/snippets/${this.snippetId}/fork`, {});
+            window.location.href = `/snippets/${result.id}`;
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    },
+    async submitComment() {
+        if (!this.user) {
+            window.location.href = '/login';
+            return;
+        }
+        if (!this.newComment.trim()) return;
+        try {
+            const comment = await apiPost(`/snippets/${this.snippetId}/comments`, {
+                content: this.newComment
+            });
+            this.comments.unshift(comment);
+            this.newComment = '';
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    },
+    async deleteSnippet() {
+        if (!confirm('Are you sure you want to delete this snippet?')) return;
+        try {
+            await apiDelete(`/snippets/${this.snippetId}`);
+            window.location.href = '/';
+        } catch (e) {
+            showToast(e.message, 'error');
+        }
+    },
+    copyCode() {
+        navigator.clipboard.writeText(this.snippet.code);
+        showToast('Code copied to clipboard!');
+    },
+    isOwner() {
+        return this.user && this.snippet && this.user.username === this.snippet.author_username;
+    },
+    logout() {
+        removeToken();
+        clearCurrentUser();
+        this.user = null;
+        window.location.href = '/';
+    }
+}">
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a href="/" class="navbar-brand">📝 SnippetHub</a>
+            <div class="nav-links">
+                <a href="/">Explore</a>
+                <a href="/teams">Teams</a>
+                <a href="/search">Search</a>
+                <template x-if="user">
+                    <>
+                        <a :href="'/users/' + user.username">My Snippets</a>
+                        <a href="/new" class="btn btn-primary btn-sm">+ New Snippet</a>
+                        <div class="nav-user">
+                            <div class="avatar" x-text="user.username.charAt(0).toUpperCase()" :style="'background: ' + getAvatarColor(user.username)"></div>
+                            <button @click="logout" class="btn btn-secondary btn-sm">Logout</button>
+                        </div>
+                    </>
+                </template>
+                <template x-if="!user">
+                    <>
+                        <a href="/login">Login</a>
+                        <a href="/register" class="btn btn-primary btn-sm">Sign Up</a>
+                    </>
+                </template>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        <div x-show="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 12px;">Loading snippet...</p>
+        </div>
+
+        <div x-show="error && !loading" class="alert alert-error" x-text="error"></div>
+
+        <div x-show="!loading && !error && snippet" style="display: none;">
+            <div class="fork-chain" x-show="snippet.parent_id">
+                <span>Forked from:</span>
+                <a :href="'/snippets/' + snippet.parent_id" x-text="snippet.parent_title"></a>
+                <span>by</span>
+                <a :href="'/users/' + snippet.parent_author_username" x-text="snippet.parent_author_username"></a>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <div>
+                        <h1 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 4px;" x-text="snippet.title"></h1>
+                        <div class="snippet-meta" style="margin-top: 8px;">
+                            <span class="snippet-lang" x-text="snippet.language"></span>
+                            <span x-html="visibilityBadge(snippet.visibility)"></span>
+                            <a :href="'/users/' + snippet.author_username" class="snippet-stat">
+                                <span>👤</span>
+                                <span x-text="snippet.author_username"></span>
+                            </a>
+                            <span class="snippet-stat" x-text="'Created ' + formatDate(snippet.created_at)"></span>
+                            <span class="snippet-stat" x-text="'Updated ' + formatDate(snippet.updated_at)"></span>
+                        </div>
+                    </div>
+                    <div style="display: flex; gap: 8px;">
+                        <template x-if="isOwner()">
+                            <>
+                                <a :href="'/edit/' + snippet.id" class="btn btn-secondary btn-sm">Edit</a>
+                                <button @click="deleteSnippet()" class="btn btn-danger btn-sm">Delete</button>
+                            </>
+                        </template>
+                        <template x-if="!isOwner()">
+                            <button @click="forkSnippet()" class="btn btn-secondary btn-sm">🍴 Fork</button>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="snippet.description" class="card-body" style="border-bottom: 1px solid var(--border);">
+                    <p x-text="snippet.description"></p>
+                </div>
+
+                <div class="snippet-tags" style="padding: 12px 20px;">
+                    <template x-for="tag in snippet.tags" :key="tag">
+                        <a :href="'/search?tag=' + tag" class="tag" x-text="'#' + tag"></a>
+                    </template>
+                </div>
+
+                <div style="position: relative;">
+                    <button @click="copyCode()" class="btn btn-secondary btn-sm" style="position: absolute; top: 12px; right: 12px; z-index: 10;">📋 Copy</button>
+                    <pre><code :class="snippet.language" x-text="snippet.code"></code></pre>
+                </div>
+
+                <div class="card-footer">
+                    <div class="snippet-stats" style="gap: 20px;">
+                        <span class="snippet-stat" :class="{ active: snippet.is_starred }" @click="toggleStar()" style="cursor: pointer;">
+                            <span x-text="snippet.is_starred ? '⭐' : '☆'"></span>
+                            <span x-text="snippet.stars_count + ' stars'"></span>
+                        </span>
+                        <span class="snippet-stat" :class="{ active: snippet.is_favorited }" @click="toggleFavorite()" style="cursor: pointer;">
+                            <span x-text="snippet.is_favorited ? '❤️' : '🤍'"></span>
+                            <span>Favorite</span>
+                        </span>
+                        <span class="snippet-stat" @click="showForks = !showForks" style="cursor: pointer;">
+                            <span>🍴</span>
+                            <span x-text="snippet.forks_count + ' forks'"></span>
+                        </span>
+                        <span class="snippet-stat">
+                            <span>👁</span>
+                            <span x-text="snippet.views_count + ' views'"></span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div x-show="showForks && forks.length > 0" class="card" style="margin-top: 16px;">
+                <div class="card-header">
+                    <h3 style="font-size: 1rem;">Forks (<span x-text="forks.length"></span>)</h3>
+                </div>
+                <div class="card-body" style="padding: 0;">
+                    <template x-for="fork in forks" :key="fork.id">
+                        <div style="padding: 12px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;">
+                            <a :href="'/snippets/' + fork.id" x-text="fork.title" style="font-weight: 500;"></a>
+                            <div style="display: flex; gap: 12px; font-size: 0.8rem; color: var(--text-muted);">
+                                <span>by <a :href="'/users/' + fork.author_username" x-text="fork.author_username"></a></span>
+                                <span class="snippet-lang" x-text="fork.language"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div class="comments-section card" style="margin-top: 24px;">
+                <div class="card-header">
+                    <h3 style="font-size: 1rem;">Comments (<span x-text="comments.length"></span>)</h3>
+                </div>
+                <div class="card-body">
+                    <template x-if="user">
+                        <div style="margin-bottom: 20px;">
+                            <textarea
+                                class="form-textarea"
+                                x-model="newComment"
+                                placeholder="Write a comment..."
+                                style="min-height: 80px; font-family: inherit;"
+                            ></textarea>
+                            <div style="display: flex; justify-content: flex-end; margin-top: 8px;">
+                                <button @click="submitComment()" class="btn btn-primary btn-sm">Post Comment</button>
+                            </div>
+                        </div>
+                    </template>
+                    <template x-if="!user">
+                        <div style="text-align: center; padding: 20px; color: var(--text-muted);">
+                            <p>Please <a href="/login">login</a> to comment.</p>
+                        </div>
+                    </template>
+
+                    <div x-show="comments.length === 0" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                        No comments yet. Be the first to comment!
+                    </div>
+
+                    <template x-for="comment in comments" :key="comment.id">
+                        <div class="comment">
+                            <div class="comment-header">
+                                <div class="comment-author">
+                                    <div class="avatar" style="width: 28px; height: 28px; font-size: 0.75rem;"
+                                         x-text="comment.author_username.charAt(0).toUpperCase()"
+                                         :style="'background: ' + getAvatarColor(comment.author_username)"></div>
+                                    <a :href="'/users/' + comment.author_username" x-text="comment.author_username"></a>
+                                </div>
+                                <span class="comment-date" x-text="formatDate(comment.created_at)"></span>
+                            </div>
+                            <div class="comment-content" x-text="comment.content"></div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

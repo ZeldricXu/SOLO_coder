@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  snippethub:
+    build: .
+    container_name: snippethub
+    ports:
+      - "8000:8000"
+    volumes:
+      - snippethub_data:/data
+    environment:
+      - SECRET_KEY=your-secret-key-change-this-in-production
+      - DATABASE_URL=sqlite:////data/snippets.db
+    restart: unless-stopped
+
+volumes:
+  snippethub_data:

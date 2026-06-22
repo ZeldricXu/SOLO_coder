@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teams - SnippetHub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    user: null,
+    teams: [],
+    myTeams: [],
+    loading: true,
+    showCreateModal: false,
+    newTeam: { name: '', description: '' },
+    creating: false,
+    error: null,
+    init() {
+        this.checkAuth();
+        this.loadTeams();
+        if (isLoggedIn()) {
+            this.loadMyTeams();
+        }
+    },
+    checkAuth() {
+        if (isLoggedIn()) {
+            this.user = { username: getCurrentUsername() };
+        }
+    },
+    async loadTeams() {
+        try {
+            this.teams = await apiGet('/teams');
+        } catch (e) {
+            this.error = e.message;
+        } finally {
+            this.loading = false;
+        }
+    },
+    async loadMyTeams() {
+        try {
+            this.myTeams = await apiGet('/teams/me/teams');
+        } catch (e) {}
+    },
+    async createTeam() {
+        if (!this.newTeam.name.trim()) {
+            showToast('Team name is required', 'error');
+            return;
+        }
+        this.creating = true;
+        try {
+            const team = await apiPost('/teams', {
+                name: this.newTeam.name,
+                description: this.newTeam.description,
+            });
+            this.teams.unshift(team);
+            this.myTeams.unshift(team);
+            this.showCreateModal = false;
+            this.newTeam = { name: '', description: '' };
+            showToast('Team created successfully!');
+        } catch (e) {
+            showToast(e.message, 'error');
+        } finally {
+            this.creating = false;
+        }
+    },
+    logout() {
+        removeToken();
+        clearCurrentUser();
+        this.user = null;
+        window.location.href = '/';
+    }
+}">
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a href="/" class="navbar-brand">📝 SnippetHub</a>
+            <div class="nav-links">
+                <a href="/">Explore</a>
+                <a href="/teams">Teams</a>
+                <a href="/search">Search</a>
+                <template x-if="user">
+                    <>
+                        <a :href="'/users/' + user.username">My Snippets</a>
+                        <a href="/new" class="btn btn-primary btn-sm">+ New Snippet</a>
+                        <div class="nav-user">
+                            <div class="avatar" x-text="user.username.charAt(0).toUpperCase()" :style="'background: ' + getAvatarColor(user.username)"></div>
+                            <button @click="logout" class="btn btn-secondary btn-sm">Logout</button>
+                        </div>
+                    </>
+                </template>
+                <template x-if="!user">
+                    <>
+                        <a href="/login">Login</a>
+                        <a href="/register" class="btn btn-primary btn-sm">Sign Up</a>
+                    </>
+                </template>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        <div class="page-header">
+            <h1 class="page-title">Teams</h1>
+            <template x-if="user">
+                <button @click="showCreateModal = true" class="btn btn-primary">+ Create Team</button>
+            </template>
+        </div>
+
+        <div x-show="myTeams.length > 0" style="margin-bottom: 32px;">
+            <h2 style="font-size: 1.1rem; margin-bottom: 16px;">My Teams</h2>
+            <div class="teams-grid">
+                <template x-for="team in myTeams" :key="team.id">
+                    <div class="team-card">
+                        <h3><a :href="'/teams/' + team.id" x-text="team.name"></a></h3>
+                        <p x-text="team.description || 'No description'"></p>
+                        <div class="team-meta">
+                            <span x-text="team.members_count + ' members'"></span>
+                            ·
+                            <span x-text="'Created ' + formatDate(team.created_at)"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <div>
+            <h2 style="font-size: 1.1rem; margin-bottom: 16px;">All Teams</h2>
+
+            <div x-show="loading" class="loading">
+                <div class="spinner"></div>
+                <p style="margin-top: 12px;">Loading teams...</p>
+            </div>
+
+            <div x-show="!loading && teams.length === 0" class="card">
+                <div class="card-body" style="text-align: center; color: var(--text-muted);">
+                    <p style="font-size: 3rem; margin-bottom: 12px;">👥</p>
+                    <p>No teams yet.</p>
+                    <template x-if="user">
+                        <button @click="showCreateModal = true" class="btn btn-primary" style="margin-top: 12px;">Create the first team</button>
+                    </template>
+                </div>
+            </div>
+
+            <div class="teams-grid" x-show="!loading && teams.length > 0">
+                <template x-for="team in teams" :key="team.id">
+                    <div class="team-card">
+                        <h3><a :href="'/teams/' + team.id" x-text="team.name"></a></h3>
+                        <p x-text="team.description || 'No description'"></p>
+                        <div class="team-meta">
+                            <span x-text="team.members_count + ' members'"></span>
+                            ·
+                            <span x-text="'Created ' + formatDate(team.created_at)"></span>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+    </div>
+
+    <div x-show="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title">Create New Team</h3>
+                <button @click="showCreateModal = false" class="modal-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label class="form-label">Team Name *</label>
+                    <input type="text" class="form-input" x-model="newTeam.name" placeholder="e.g. Frontend Team">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-input" x-model="newTeam.description" rows="3" placeholder="What is this team about?"></textarea>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                    <button @click="showCreateModal = false" class="btn btn-secondary">Cancel</button>
+                    <button @click="createTeam()" class="btn btn-primary" :disabled="creating">
+                        <span x-show="!creating">Create Team</span>
+                        <span x-show="creating">Creating...</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

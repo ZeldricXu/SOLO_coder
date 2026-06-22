@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SnippetHub - Internal Code Snippets</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    user: null,
+    snippets: [],
+    loading: true,
+    error: null,
+    sortBy: 'updated_at',
+    sortOrder: 'desc',
+    language: '',
+    page: 1,
+    pageSize: 20,
+    total: 0,
+    popularTags: [],
+    init() {
+        this.checkAuth();
+        this.loadSnippets();
+        this.loadTags();
+    },
+    checkAuth() {
+        if (isLoggedIn()) {
+            this.user = { username: getCurrentUsername() };
+        }
+    },
+    async loadSnippets() {
+        this.loading = true;
+        this.error = null;
+        try {
+            let url = `/snippets?page=${this.page}&page_size=${this.pageSize}&sort_by=${this.sortBy}&sort_order=${this.sortOrder}`;
+            if (this.language) url += `&language=${this.language}`;
+            url += '&visibility=public';
+            const data = await apiGet(url);
+            this.snippets = data.items;
+            this.total = data.total;
+        } catch (e) {
+            this.error = e.message;
+        } finally {
+            this.loading = false;
+        }
+    },
+    async loadTags() {
+        try {
+            const tags = await apiGet('/search/tags?limit=20');
+            this.popularTags = tags;
+        } catch (e) {}
+    },
+    changeSort(field) {
+        if (this.sortBy === field) {
+            this.sortOrder = this.sortOrder === 'desc' ? 'asc' : 'desc';
+        } else {
+            this.sortBy = field;
+            this.sortOrder = 'desc';
+        }
+        this.page = 1;
+        this.loadSnippets();
+    },
+    prevPage() {
+        if (this.page > 1) {
+            this.page--;
+            this.loadSnippets();
+        }
+    },
+    nextPage() {
+        const totalPages = Math.ceil(this.total / this.pageSize);
+        if (this.page < totalPages) {
+            this.page++;
+            this.loadSnippets();
+        }
+    },
+    totalPages() {
+        return Math.ceil(this.total / this.pageSize);
+    },
+    logout() {
+        removeToken();
+        clearCurrentUser();
+        this.user = null;
+        window.location.href = '/';
+    }
+}">
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a href="/" class="navbar-brand">📝 SnippetHub</a>
+            <div class="nav-links">
+                <a href="/">Explore</a>
+                <a href="/teams">Teams</a>
+                <a href="/search">Search</a>
+                <template x-if="user">
+                    <>
+                        <a :href="'/users/' + user.username">My Snippets</a>
+                        <a href="/new" class="btn btn-primary btn-sm">+ New Snippet</a>
+                        <div class="nav-user">
+                            <div class="avatar" x-text="user.username.charAt(0).toUpperCase()" :style="'background: ' + getAvatarColor(user.username)"></div>
+                            <button @click="logout" class="btn btn-secondary btn-sm">Logout</button>
+                        </div>
+                    </>
+                </template>
+                <template x-if="!user">
+                    <>
+                        <a href="/login">Login</a>
+                        <a href="/register" class="btn btn-primary btn-sm">Sign Up</a>
+                    </>
+                </template>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        <div class="page-header">
+            <h1 class="page-title">Public Snippets</h1>
+            <div class="filters">
+                <div class="filter-item">
+                    <span>Sort:</span>
+                    <select class="filter-select" x-model="sortBy" @change="page = 1; loadSnippets()">
+                        <option value="updated_at">Recently Updated</option>
+                        <option value="created_at">Recently Created</option>
+                        <option value="stars_count">Most Stars</option>
+                        <option value="forks_count">Most Forks</option>
+                        <option value="views_count">Most Views</option>
+                    </select>
+                </div>
+                <div class="filter-item">
+                    <span>Order:</span>
+                    <select class="filter-select" x-model="sortOrder" @change="loadSnippets()">
+                        <option value="desc">Descending</option>
+                        <option value="asc">Ascending</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 250px; gap: 24px;">
+            <div>
+                <div x-show="loading" class="loading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 12px;">Loading snippets...</p>
+                </div>
+
+                <div x-show="error && !loading" class="alert alert-error" x-text="error"></div>
+
+                <div x-show="!loading && !error && snippets.length === 0" class="card">
+                    <div class="card-body" style="text-align: center; color: var(--text-muted);">
+                        <p style="font-size: 3rem; margin-bottom: 12px;">📝</p>
+                        <p>No snippets yet.</p>
+                        <template x-if="user">
+                            <a href="/new" class="btn btn-primary" style="margin-top: 12px;">Create your first snippet</a>
+                        </template>
+                    </div>
+                </div>
+
+                <div x-show="!loading && !error && snippets.length > 0" class="snippets-grid">
+                    <template x-for="snippet in snippets" :key="snippet.id">
+                        <div class="snippet-card">
+                            <div class="snippet-card-header">
+                                <a :href="'/snippets/' + snippet.id" class="snippet-title" x-text="snippet.title"></a>
+                                <span class="snippet-lang" x-text="snippet.language"></span>
+                            </div>
+                            <div class="snippet-desc" x-show="snippet.description" x-text="snippet.description"></div>
+                            <div class="snippet-tags">
+                                <template x-for="tag in snippet.tags" :key="tag">
+                                    <a :href="'/search?tag=' + tag" class="tag" x-text="'#' + tag"></a>
+                                </template>
+                            </div>
+                            <div class="snippet-footer">
+                                <div class="snippet-meta">
+                                    <a :href="'/users/' + snippet.author_username" class="snippet-stat">
+                                        <span>👤</span>
+                                        <span x-text="snippet.author_username"></span>
+                                    </a>
+                                    <span class="snippet-stat" x-text="'🕒 ' + formatDate(snippet.updated_at)"></span>
+                                    <span x-show="snippet.team_name" class="snippet-stat" x-text="'👥 ' + snippet.team_name"></span>
+                                </div>
+                                <div class="snippet-stats">
+                                    <span class="snippet-stat" x-text="'⭐ ' + snippet.stars_count"></span>
+                                    <span class="snippet-stat" x-text="'🍴 ' + snippet.forks_count"></span>
+                                    <span class="snippet-stat" x-text="'👁 ' + snippet.views_count"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+
+                <div x-show="!loading && totalPages() > 1" class="pagination">
+                    <button @click="prevPage()" :disabled="page === 1">Previous</button>
+                    <span style="display: flex; align-items: center; gap: 4px;">
+                        Page <span x-text="page"></span> of <span x-text="totalPages()"></span>
+                    </span>
+                    <button @click="nextPage()" :disabled="page >= totalPages()">Next</button>
+                </div>
+            </div>
+
+            <div>
+                <div class="card" style="margin-bottom: 16px;">
+                    <div class="card-header">
+                        <h3 style="font-size: 0.95rem;">Popular Tags</h3>
+                    </div>
+                    <div class="card-body">
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                            <template x-for="tag in popularTags" :key="tag.name">
+                                <a :href="'/search?tag=' + tag.name" class="tag" x-text="'#' + tag.name + ' (' + tag.count + ')'"></a>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3 style="font-size: 0.95rem;">About</h3>
+                    </div>
+                    <div class="card-body">
+                        <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                            Share and discover code snippets with your team.
+                        </p>
+                        <ul style="font-size: 0.85rem; color: var(--text-muted); padding-left: 20px;">
+                            <li>100+ language syntax highlighting</li>
+                            <li>Public, team, and private snippets</li>
+                            <li>Fork and modify snippets</li>
+                            <li>Star your favorites</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Profile - SnippetHub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    user: null,
+    profile: null,
+    snippets: [],
+    favorites: [],
+    stars: [],
+    activeTab: 'snippets',
+    loading: true,
+    error: null,
+    username: null,
+    init() {
+        this.username = window.location.pathname.split('/')[2];
+        this.checkAuth();
+        this.loadProfile();
+        this.loadSnippets();
+    },
+    checkAuth() {
+        if (isLoggedIn()) {
+            this.user = { username: getCurrentUsername() };
+        }
+    },
+    async loadProfile() {
+        try {
+            this.profile = await apiGet(`/users/${this.username}`);
+        } catch (e) {
+            this.error = e.message;
+        } finally {
+            this.loading = false;
+        }
+    },
+    async loadSnippets() {
+        try {
+            this.snippets = await apiGet(`/users/${this.username}/snippets?sort_by=updated_at&sort_order=desc`);
+        } catch (e) {}
+    },
+    async loadFavorites() {
+        if (this.favorites.length > 0) return;
+        try {
+            this.favorites = await apiGet(`/users/${this.username}/favorites`);
+        } catch (e) {}
+    },
+    async loadStars() {
+        if (this.stars.length > 0) return;
+        try {
+            this.stars = await apiGet(`/users/${this.username}/stars`);
+        } catch (e) {}
+    },
+    switchTab(tab) {
+        this.activeTab = tab;
+        if (tab === 'favorites') this.loadFavorites();
+        if (tab === 'stars') this.loadStars();
+    },
+    isOwnProfile() {
+        return this.user && this.profile && this.user.username === this.profile.username;
+    },
+    logout() {
+        removeToken();
+        clearCurrentUser();
+        this.user = null;
+        window.location.href = '/';
+    }
+}">
+    <nav class="navbar">
+        <div class="navbar-inner">
+            <a href="/" class="navbar-brand">📝 SnippetHub</a>
+            <div class="nav-links">
+                <a href="/">Explore</a>
+                <a href="/teams">Teams</a>
+                <a href="/search">Search</a>
+                <template x-if="user">
+                    <>
+                        <a :href="'/users/' + user.username">My Snippets</a>
+                        <a href="/new" class="btn btn-primary btn-sm">+ New Snippet</a>
+                        <div class="nav-user">
+                            <div class="avatar" x-text="user.username.charAt(0).toUpperCase()" :style="'background: ' + getAvatarColor(user.username)"></div>
+                            <button @click="logout" class="btn btn-secondary btn-sm">Logout</button>
+                        </div>
+                    </>
+                </template>
+                <template x-if="!user">
+                    <>
+                        <a href="/login">Login</a>
+                        <a href="/register" class="btn btn-primary btn-sm">Sign Up</a>
+                    </>
+                </template>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container main-content">
+        <div x-show="loading" class="loading">
+            <div class="spinner"></div>
+            <p style="margin-top: 12px;">Loading profile...</p>
+        </div>
+
+        <div x-show="error && !loading" class="alert alert-error" x-text="error"></div>
+
+        <div x-show="!loading && !error && profile" style="display: none;">
+            <div class="profile-header">
+                <div class="profile-avatar"
+                     x-text="profile.username.charAt(0).toUpperCase()"
+                     :style="'background: ' + getAvatarColor(profile.username)">
+                </div>
+                <div style="flex: 1;">
+                    <h2 x-text="profile.username"></h2>
+                    <p style="color: var(--text-muted);" x-show="profile.bio" x-text="profile.bio"></p>
+                    <div class="profile-stats">
+                        <span class="profile-stat">
+                            <strong x-text="profile.snippets_count"></strong> snippets
+                        </span>
+                        <span class="profile-stat">
+                            <strong x-text="profile.forks_count"></strong> forks
+                        </span>
+                        <span class="profile-stat">
+                            Joined <strong x-text="formatDate(profile.created_at)"></strong>
+                        </span>
+                    </div>
+                </div>
+                <div x-show="isOwnProfile()">
+                    <a href="/new" class="btn btn-primary btn-sm">+ New Snippet</a>
+                </div>
+            </div>
+
+            <div class="tabs">
+                <div class="tab" :class="{ active: activeTab === 'snippets' }" @click="switchTab('snippets')">
+                    Snippets (<span x-text="profile.snippets_count"></span>)
+                </div>
+                <div class="tab" :class="{ active: activeTab === 'favorites' }" @click="switchTab('favorites')">
+                    Favorites
+                </div>
+                <div class="tab" :class="{ active: activeTab === 'stars' }" @click="switchTab('stars')">
+                    Starred
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'snippets'">
+                <div x-show="snippets.length === 0" class="card">
+                    <div class="card-body" style="text-align: center; color: var(--text-muted);">
+                        <p style="font-size: 3rem; margin-bottom: 12px;">📝</p>
+                        <p x-show="isOwnProfile()">You haven't created any snippets yet.</p>
+                        <p x-show="!isOwnProfile()">This user hasn't created any public snippets yet.</p>
+                        <template x-if="isOwnProfile()">
+                            <a href="/new" class="btn btn-primary" style="margin-top: 12px;">Create your first snippet</a>
+                        </template>
+                    </div>
+                </div>
+
+                <div class="snippets-grid">
+                    <template x-for="snippet in snippets" :key="snippet.id">
+                        <div class="snippet-card">
+                            <div class="snippet-card-header">
+                                <a :href="'/snippets/' + snippet.id" class="snippet-title" x-text="snippet.title"></a>
+                                <div style="display: flex; align-items: center; gap: 8px;">
+                                    <span x-html="visibilityBadge(snippet.visibility)"></span>
+                                    <span class="snippet-lang" x-text="snippet.language"></span>
+                                </div>
+                            </div>
+                            <div class="snippet-desc" x-show="snippet.description" x-text="snippet.description"></div>
+                            <div class="snippet-tags">
+                                <template x-for="tag in snippet.tags" :key="tag">
+                                    <span class="tag" x-text="'#' + tag"></span>
+                                </template>
+                            </div>
+                            <div class="snippet-footer">
+                                <span class="snippet-stat" x-text="'🕒 ' + formatDate(snippet.updated_at)"></span>
+                                <div class="snippet-stats">
+                                    <span class="snippet-stat" x-text="'⭐ ' + snippet.stars_count"></span>
+                                    <span class="snippet-stat" x-text="'🍴 ' + snippet.forks_count"></span>
+                                    <span class="snippet-stat" x-text="'👁 ' + snippet.views_count"></span>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'favorites'">
+                <div x-show="favorites.length === 0" class="card">
+                    <div class="card-body" style="text-align: center; color: var(--text-muted);">
+                        <p style="font-size: 3rem; margin-bottom: 12px;">❤️</p>
+                        <p>No favorites yet.</p>
+                    </div>
+                </div>
+                <div class="snippets-grid">
+                    <template x-for="snippet in favorites" :key="snippet.id">
+                        <div class="snippet-card">
+                            <div class="snippet-card-header">
+                                <a :href="'/snippets/' + snippet.id" class="snippet-title" x-text="snippet.title"></a>
+                                <span class="snippet-lang" x-text="snippet.language"></span>
+                            </div>
+                            <div class="snippet-desc" x-show="snippet.description" x-text="snippet.description"></div>
+                            <div class="snippet-footer">
+                                <span>by <a :href="'/users/' + snippet.author_username" x-text="snippet.author_username"></a></span>
+                                <span class="snippet-stat" x-text="'⭐ ' + snippet.stars_count"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div x-show="activeTab === 'stars'">
+                <div x-show="stars.length === 0" class="card">
+                    <div class="card-body" style="text-align: center; color: var(--text-muted);">
+                        <p style="font-size: 3rem; margin-bottom: 12px;">⭐</p>
+                        <p>No starred snippets yet.</p>
+                    </div>
+                </div>
+                <div class="snippets-grid">
+                    <template x-for="snippet in stars" :key="snippet.id">
+                        <div class="snippet-card">
+                            <div class="snippet-card-header">
+                                <a :href="'/snippets/' + snippet.id" class="snippet-title" x-text="snippet.title"></a>
+                                <span class="snippet-lang" x-text="snippet.language"></span>
+                            </div>
+                            <div class="snippet-desc" x-show="snippet.description" x-text="snippet.description"></div>
+                            <div class="snippet-footer">
+                                <span>by <a :href="'/users/' + snippet.author_username" x-text="snippet.author_username"></a></span>
+                                <span class="snippet-stat" x-text="'⭐ ' + snippet.stars_count"></span>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

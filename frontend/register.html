@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Register - SnippetHub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    form: {
+        username: '',
+        email: '',
+        password: '',
+        confirmPassword: '',
+    },
+    loading: false,
+    error: null,
+    async submit() {
+        if (!this.form.username || !this.form.email || !this.form.password) {
+            this.error = 'Please fill in all fields';
+            return;
+        }
+        if (this.form.password !== this.form.confirmPassword) {
+            this.error = 'Passwords do not match';
+            return;
+        }
+        if (this.form.password.length < 6) {
+            this.error = 'Password must be at least 6 characters';
+            return;
+        }
+        this.loading = true;
+        this.error = null;
+        try {
+            const user = await apiPost('/auth/register', {
+                username: this.form.username,
+                email: this.form.email,
+                password: this.form.password,
+            });
+
+            const formData = new URLSearchParams();
+            formData.append('username', this.form.username);
+            formData.append('password', this.form.password);
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: formData.toString(),
+            });
+            const data = await response.json();
+            setToken(data.access_token);
+            setCurrentUser(user);
+
+            window.location.href = '/';
+        } catch (e) {
+            this.error = e.message;
+        } finally {
+            this.loading = false;
+        }
+    }
+}">
+    <div class="auth-container">
+        <div class="auth-card">
+            <h1 class="auth-title">📝 SnippetHub</h1>
+            <h2 style="text-align: center; font-size: 1.2rem; margin-bottom: 24px; font-weight: 500;">Create your account</h2>
+
+            <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+            <form @submit.prevent="submit()">
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-input" x-model="form.username" placeholder="Choose a username" autofocus>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Email</label>
+                    <input type="email" class="form-input" x-model="form.email" placeholder="your@email.com">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" x-model="form.password" placeholder="At least 6 characters">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Confirm Password</label>
+                    <input type="password" class="form-input" x-model="form.confirmPassword" placeholder="Confirm your password">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;" :disabled="loading">
+                    <span x-show="!loading">Create Account</span>
+                    <span x-show="loading">Creating account...</span>
+                </button>
+            </form>
+
+            <div class="auth-footer">
+                Already have an account? <a href="/login">Sign in</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

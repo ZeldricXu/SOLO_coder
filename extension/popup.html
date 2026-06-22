@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            width: 320px;
+            padding: 16px;
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-size: 14px;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .header h1 {
+            font-size: 16px;
+            margin: 0;
+            color: #6366f1;
+        }
+        .status {
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 12px;
+            font-size: 13px;
+        }
+        .status.connected {
+            background: #dcfce7;
+            color: #166534;
+        }
+        .status.disconnected {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .form-group {
+            margin-bottom: 12px;
+        }
+        label {
+            display: block;
+            margin-bottom: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            color: #374151;
+        }
+        input {
+            width: 100%;
+            padding: 6px 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 13px;
+            box-sizing: border-box;
+        }
+        input:focus {
+            outline: none;
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+        }
+        .btn {
+            width: 100%;
+            padding: 8px 16px;
+            background: #6366f1;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+        .btn:hover {
+            background: #4f46e5;
+        }
+        .btn-secondary {
+            background: #f3f4f6;
+            color: #374151;
+            margin-top: 8px;
+        }
+        .btn-secondary:hover {
+            background: #e5e7eb;
+        }
+        .hint {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 4px;
+        }
+        .quick-actions {
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .quick-actions h3 {
+            font-size: 13px;
+            margin: 0 0 8px 0;
+            color: #374151;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <span>📝</span>
+        <h1>SnippetHub</h1>
+    </div>
+
+    <div id="status" class="status disconnected">Not configured</div>
+
+    <div class="form-group">
+        <label for="serverUrl">Server URL</label>
+        <input type="text" id="serverUrl" placeholder="https://snippets.yourcompany.com">
+        <div class="hint">Your SnippetHub server address</div>
+    </div>
+
+    <div class="form-group">
+        <label for="apiToken">API Token</label>
+        <input type="password" id="apiToken" placeholder="Enter your API token">
+        <div class="hint">Login to SnippetHub to get your token</div>
+    </div>
+
+    <button class="btn" id="saveBtn">Save Settings</button>
+    <button class="btn btn-secondary" id="openBtn">Open SnippetHub</button>
+
+    <div class="quick-actions">
+        <h3>💡 Tips</h3>
+        <ul style="margin: 0; padding-left: 20px; font-size: 12px; color: #6b7280;">
+            <li>Select code on any page</li>
+            <li>Right-click → "Save to SnippetHub"</li>
+            <li>Or use Ctrl+Shift+S / Cmd+Shift+S</li>
+        </ul>
+    </div>
+
+    <script src="popup.js"></script>
+</body>
+</html>

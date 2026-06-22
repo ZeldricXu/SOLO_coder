@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - SnippetHub</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="/static/js/app.js"></script>
+</head>
+<body x-data="{
+    form: {
+        username: '',
+        password: '',
+    },
+    loading: false,
+    error: null,
+    async submit() {
+        if (!this.form.username || !this.form.password) {
+            this.error = 'Please enter both username and password';
+            return;
+        }
+        this.loading = true;
+        this.error = null;
+        try {
+            const formData = new URLSearchParams();
+            formData.append('username', this.form.username);
+            formData.append('password', this.form.password);
+
+            const response = await fetch('/api/auth/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: formData.toString(),
+            });
+
+            if (!response.ok) {
+                const data = await response.json();
+                throw new Error(data.detail || 'Login failed');
+            }
+
+            const data = await response.json();
+            setToken(data.access_token);
+
+            const user = await apiGet('/users/me');
+            setCurrentUser(user);
+
+            window.location.href = '/';
+        } catch (e) {
+            this.error = e.message;
+        } finally {
+            this.loading = false;
+        }
+    }
+}">
+    <div class="auth-container">
+        <div class="auth-card">
+            <h1 class="auth-title">📝 SnippetHub</h1>
+            <h2 style="text-align: center; font-size: 1.2rem; margin-bottom: 24px; font-weight: 500;">Welcome back</h2>
+
+            <div x-show="error" class="alert alert-error" x-text="error"></div>
+
+            <form @submit.prevent="submit()">
+                <div class="form-group">
+                    <label class="form-label">Username</label>
+                    <input type="text" class="form-input" x-model="form.username" placeholder="Enter your username" autofocus>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Password</label>
+                    <input type="password" class="form-input" x-model="form.password" placeholder="Enter your password">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;" :disabled="loading">
+                    <span x-show="!loading">Sign In</span>
+                    <span x-show="loading">Signing in...</span>
+                </button>
+            </form>
+
+            <div class="auth-footer">
+                Don't have an account? <a href="/register">Sign up</a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
