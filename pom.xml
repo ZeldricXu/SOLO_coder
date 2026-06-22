@@ -23,6 +23,7 @@
         <module>gateway-ratelimit</module>
         <module>gateway-transform</module>
         <module>gateway-observability</module>
+        <module>gateway-log-processor</module>
         <module>gateway-admin</module>
         <module>gateway-core</module>
     </modules>
