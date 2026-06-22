@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:14-alpine
+    container_name: featureflag-postgres
+    environment:
+      POSTGRES_DB: featureflag
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - featureflag-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: featureflag-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - featureflag-network
+
+  zookeeper:
+    image: bitnami/zookeeper:3.8
+    container_name: featureflag-zookeeper
+    environment:
+      - ALLOW_ANONYMOUS_LOGIN=yes
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/bitnami
+    networks:
+      - featureflag-network
+
+  kafka:
+    image: bitnami/kafka:3.6
+    container_name: featureflag-kafka
+    environment:
+      - KAFKA_BROKER_ID=1
+      - KAFKA_CFG_ZOOKEEPER_CONNECT=zookeeper:2181
+      - KAFKA_CFG_ADVERTISED_LISTENERS=PLAINTEXT://kafka:9092,EXTERNAL://localhost:9093
+      - KAFKA_CFG_LISTENERS=PLAINTEXT://:9092,EXTERNAL://:9093
+      - KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP=PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      - KAFKA_CFG_INTER_BROKER_LISTENER_NAME=PLAINTEXT
+      - ALLOW_PLAINTEXT_LISTENER=yes
+      - KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE=true
+    ports:
+      - "9092:9092"
+      - "9093:9093"
+    volumes:
+      - kafka-data:/bitnami
+    depends_on:
+      - zookeeper
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics.sh --bootstrap-server localhost:9092 --list"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    networks:
+      - featureflag-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: ../deploy/docker/Dockerfile.backend
+    container_name: featureflag-backend
+    environment:
+      - FF_DATABASE_HOST=postgres
+      - FF_DATABASE_PORT=5432
+      - FF_DATABASE_USER=postgres
+      - FF_DATABASE_PASSWORD=postgres
+      - FF_DATABASE_DBNAME=featureflag
+      - FF_REDIS_HOST=redis
+      - FF_REDIS_PORT=6379
+      - FF_KAFKA_BROKERS=kafka:9092
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+    networks:
+      - featureflag-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: ../deploy/docker/Dockerfile.frontend
+    container_name: featureflag-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - featureflag-network
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: featureflag-kafka-ui
+    environment:
+      - KAFKA_CLUSTERS_0_NAME=featureflag
+      - KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS=kafka:9092
+      - KAFKA_CLUSTERS_0_ZOOKEEPER=zookeeper:2181
+    ports:
+      - "8081:8080"
+    depends_on:
+      - kafka
+    networks:
+      - featureflag-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  zookeeper-data:
+  kafka-data:
+
+networks:
+  featureflag-network:
+    driver: bridge

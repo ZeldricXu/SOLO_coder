@@ -1,0 +1,166 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: featureflag-backend
+  labels:
+    app: featureflag
+    component: backend
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: featureflag
+      component: backend
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: featureflag
+        component: backend
+    spec:
+      containers:
+        - name: backend
+          image: featureflag/backend:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: FF_DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: featureflag-config
+                  key: database_host
+            - name: FF_DATABASE_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: featureflag-config
+                  key: database_port
+            - name: FF_DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: featureflag-secret
+                  key: database_user
+            - name: FF_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: featureflag-secret
+                  key: database_password
+            - name: FF_DATABASE_DBNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: featureflag-config
+                  key: database_dbname
+            - name: FF_REDIS_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: featureflag-config
+                  key: redis_host
+            - name: FF_REDIS_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: featureflag-config
+                  key: redis_port
+            - name: FF_KAFKA_BROKERS
+              valueFrom:
+                configMapKeyRef:
+                  name: featureflag-config
+                  key: kafka_brokers
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            successThreshold: 1
+            failureThreshold: 3
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+      volumes:
+        - name: config
+          configMap:
+            name: featureflag-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: featureflag-backend
+  labels:
+    app: featureflag
+    component: backend
+spec:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+  selector:
+    app: featureflag
+    component: backend
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: featureflag-backend
+  labels:
+    app: featureflag
+    component: backend
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: featureflag-backend
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: featureflag-backend
+  labels:
+    app: featureflag
+    component: backend
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: featureflag
+      component: backend

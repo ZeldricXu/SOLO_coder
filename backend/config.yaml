@@ -1,0 +1,46 @@
+server:
+  port: 8080
+  mode: release
+
+database:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  dbname: featureflag
+  sslmode: disable
+  max_idle_conns: 10
+  max_open_conns: 100
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+kafka:
+  brokers:
+    - localhost:9092
+  topic: featureflag-events
+  group_id: featureflag-server
+
+cache:
+  type: memory
+  ttl: 300
+  max_size: 10000
+
+sdk:
+  poll_interval: 30
+  long_poll_timeout: 60
+  circuit_breaker_threshold: 5
+  circuit_breaker_timeout: 30
+
+auth:
+  jwt_secret: featureflag-secret-key
+  jwt_expire: 86400
+
+auto_rollback:
+  enabled: true
+  check_interval: 60
+  window_minutes: 15

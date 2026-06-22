@@ -1,0 +1,61 @@
+# Go
+**/bin/
+**/obj/
+**/*.exe
+**/*.exe~
+**/*.dll
+**/*.so
+**/*.dylib
+**/test
+**/main
+
+# Go workspace
+go.work
+go.work.sum
+
+# Go vendor
+vendor/
+
+# Go test coverage
+*.out
+coverage.html
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+nohup.out
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+dist/
+.pnpm-store/
+.npm
+.yarn
+
+# Build outputs
+build/
+out/
+*.local
+
+# Kubernetes
+*.local.yaml
+*.secret.yaml
+
+# Docker
+docker-compose.override.yml
