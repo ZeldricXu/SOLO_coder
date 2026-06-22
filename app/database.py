@@ -44,7 +44,7 @@ CREATE TABLE IF NOT EXISTS note_tags (
     FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS references (
+CREATE TABLE IF NOT EXISTS "references" (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     from_note_id INTEGER NOT NULL,
     to_note_id INTEGER NOT NULL,
@@ -109,14 +109,14 @@ CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     content=''
 );
 
-CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts_data USING fts5vocab(notes_fts, 'instance');
+CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts_vocab USING fts5vocab(notes_fts, 'instance');
 
 CREATE INDEX IF NOT EXISTS idx_notes_folder ON notes(folder_id);
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notes_created ON notes(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_note_tags_tag ON note_tags(tag_id);
-CREATE INDEX IF NOT EXISTS idx_references_from ON references(from_note_id);
-CREATE INDEX IF NOT EXISTS idx_references_to ON references(to_note_id);
+CREATE INDEX IF NOT EXISTS idx_references_from ON "references"(from_note_id);
+CREATE INDEX IF NOT EXISTS idx_references_to ON "references"(to_note_id);
 CREATE INDEX IF NOT EXISTS idx_literature_doi ON literature(doi);
 CREATE INDEX IF NOT EXISTS idx_literature_year ON literature(year);
 """
@@ -250,7 +250,7 @@ class Database:
     def delete_note(self, note_id: int):
         with self.transaction() as cur:
             cur.execute("DELETE FROM notes WHERE id = ?", (note_id,))
-            cur.execute("DELETE FROM notes_fts WHERE rowid = ?", (note_id,))
+            cur.execute("INSERT INTO notes_fts(notes_fts, rowid) VALUES('delete', ?)", (note_id,))
 
     def get_note(self, note_id: int) -> Optional[Dict]:
         cur = self.conn.cursor()
@@ -385,57 +385,57 @@ class Database:
         if from_note_id == to_note_id:
             return
         with self.transaction() as cur:
-            cur.execute("INSERT OR IGNORE INTO references (from_note_id, to_note_id, created_at) VALUES (?, ?, ?)",
+            cur.execute('INSERT OR IGNORE INTO "references" (from_note_id, to_note_id, created_at) VALUES (?, ?, ?)',
                         (from_note_id, to_note_id, self._now()))
 
     def remove_reference(self, from_note_id: int, to_note_id: int):
         with self.transaction() as cur:
-            cur.execute("DELETE FROM references WHERE from_note_id = ? AND to_note_id = ?",
+            cur.execute('DELETE FROM "references" WHERE from_note_id = ? AND to_note_id = ?',
                         (from_note_id, to_note_id))
 
     def get_backlinks(self, note_id: int) -> List[Dict]:
         cur = self.conn.cursor()
-        cur.execute("""
+        cur.execute('''
             SELECT n.* FROM notes n
-            JOIN references r ON r.from_note_id = n.id
+            JOIN "references" r ON r.from_note_id = n.id
             WHERE r.to_note_id = ? ORDER BY n.updated_at DESC
-        """, (note_id,))
+        ''', (note_id,))
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]
 
     def get_outgoing_links(self, note_id: int) -> List[Dict]:
         cur = self.conn.cursor()
-        cur.execute("""
+        cur.execute('''
             SELECT n.* FROM notes n
-            JOIN references r ON r.to_note_id = n.id
+            JOIN "references" r ON r.to_note_id = n.id
             WHERE r.from_note_id = ? ORDER BY n.updated_at DESC
-        """, (note_id,))
+        ''', (note_id,))
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]
 
     def get_all_references(self) -> List[Tuple[int, int]]:
         cur = self.conn.cursor()
-        cur.execute("SELECT from_note_id, to_note_id FROM references")
+        cur.execute('SELECT from_note_id, to_note_id FROM "references"')
         rows = cur.fetchall()
         cur.close()
         return [(r["from_note_id"], r["to_note_id"]) for r in rows]
 
     def get_citation_count(self, note_id: int) -> int:
         cur = self.conn.cursor()
-        cur.execute("SELECT COUNT(*) as cnt FROM references WHERE to_note_id = ?", (note_id,))
+        cur.execute('SELECT COUNT(*) as cnt FROM "references" WHERE to_note_id = ?', (note_id,))
         cnt = cur.fetchone()["cnt"]
         cur.close()
         return cnt
 
     def get_isolated_notes(self) -> List[Dict]:
         cur = self.conn.cursor()
-        cur.execute("""
+        cur.execute('''
             SELECT * FROM notes WHERE id NOT IN (
-                SELECT from_note_id FROM references UNION SELECT to_note_id FROM references
+                SELECT from_note_id FROM "references" UNION SELECT to_note_id FROM "references"
             ) ORDER BY updated_at DESC
-        """)
+        ''')
         rows = cur.fetchall()
         cur.close()
         return [dict(r) for r in rows]

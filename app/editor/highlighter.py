@@ -186,8 +186,6 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         prev_state = self.previousBlockState()
         in_code_block = prev_state != -1
         code_lang = ""
-        if in_code_block:
-            code_lang = prev_state if prev_state > 0 else ""
 
         code_start_match = re.match(r"^```(\w*)\s*$", text)
         if code_start_match and not in_code_block:

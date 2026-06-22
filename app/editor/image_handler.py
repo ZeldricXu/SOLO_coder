@@ -16,13 +16,39 @@ except ImportError:
 
 SUPPORTED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".bmp", ".webp", ".tiff", ".svg"}
 
+MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
+
+
+class ImageSizeWarning(Exception):
+    def __init__(self, file_size_bytes: int, max_size_bytes: int = MAX_FILE_SIZE_BYTES):
+        self.file_size = file_size_bytes
+        self.max_size = max_size_bytes
+        size_mb = file_size_bytes / (1024 * 1024)
+        max_mb = max_size_bytes / (1024 * 1024)
+        super().__init__(f"图片文件过大 ({size_mb:.1f}MB)，超过最大限制 {max_mb:.0f}MB")
+
 
 class ImageHandler:
 
-    def __init__(self, images_dir: str, max_width: int = 2000):
+    def __init__(self, images_dir: str, max_width: int = 2000, max_file_size: int = MAX_FILE_SIZE_BYTES):
         self.images_dir = Path(images_dir)
         self.images_dir.mkdir(parents=True, exist_ok=True)
         self.max_width = max_width
+        self.max_file_size = max_file_size
+        self._size_warnings: list[tuple[str, int]] = []
+
+    @property
+    def size_warnings(self) -> list[tuple[str, int]]:
+        return list(self._size_warnings)
+
+    def clear_warnings(self):
+        self._size_warnings.clear()
+
+    def check_file_size(self, file_size_bytes: int, file_name: str = "") -> bool:
+        if file_size_bytes > self.max_file_size:
+            self._size_warnings.append((file_name, file_size_bytes))
+            return False
+        return True
 
     @staticmethod
     def _get_file_md5(data: bytes) -> str:
@@ -65,9 +91,12 @@ class ImageHandler:
         except Exception:
             return img_path
 
-    def save_image_from_data(self, image_data: bytes, ext: str = ".png") -> Optional[Path]:
+    def save_image_from_data(self, image_data: bytes, ext: str = ".png", file_name: str = "") -> Optional[Path]:
         if not image_data:
             return None
+
+        if not self.check_file_size(len(image_data), file_name):
+            raise ImageSizeWarning(len(image_data), self.max_file_size)
 
         md5_hash = self._get_file_md5(image_data)
         save_path = self._get_save_path(md5_hash, ext)
@@ -110,9 +139,13 @@ class ImageHandler:
         if ext not in SUPPORTED_IMAGE_EXTENSIONS:
             return None
 
+        file_size = path.stat().st_size
+        if not self.check_file_size(file_size, path.name):
+            raise ImageSizeWarning(file_size, self.max_file_size)
+
         try:
             data = path.read_bytes()
-            return self.save_image_from_data(data, ext)
+            return self.save_image_from_data(data, ext, path.name)
         except Exception:
             return None
 

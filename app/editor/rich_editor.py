@@ -21,12 +21,17 @@ from PyQt6.QtGui import (
     QDesktopServices,
     QAction,
     QKeySequence,
+    QTextOption,
 )
 from PyQt6.QtWidgets import QTextEdit, QApplication, QMenu
 
 from .highlighter import MarkdownHighlighter
 from .katex_renderer import KaTeXRenderer
-from .image_handler import ImageHandler
+from .image_handler import ImageHandler, ImageSizeWarning
+from .html_sanitizer import HtmlSanitizer
+from .debouncer import DebouncedCallable
+from .markdown_parser import MarkdownParser, DocumentHtmlRenderer
+from .document_model import DocumentModel
 
 
 class EditorMode:
@@ -40,6 +45,8 @@ class RichTextEditor(QTextEdit):
     noteLinkClicked = pyqtSignal(int)
     cursorPositionChangedEx = pyqtSignal(int, int)
     editorModeChanged = pyqtSignal(str)
+    contentChanged = pyqtSignal()
+    imageSizeWarning = pyqtSignal(str, int)
 
     def __init__(self, config=None, parent=None):
         super().__init__(parent)
@@ -48,12 +55,22 @@ class RichTextEditor(QTextEdit):
         self._markdown_content = ""
         self._wysiwyg_content = ""
         self._current_note_id: Optional[int] = None
+        self._dirty = False
+        self._destroyed = False
 
         self._init_ui()
         self._init_handlers()
         self._init_highlighter()
         self._init_shortcuts()
         self._setup_signals()
+        self._init_debounce()
+
+    def closeEvent(self, event):
+        self._destroyed = True
+        self.cancel_autosave()
+        if hasattr(self, '_debounced_model_update'):
+            self._debounced_model_update.cancel()
+        super().closeEvent(event)
 
     def _init_ui(self):
         font = QFont()
@@ -68,7 +85,7 @@ class RichTextEditor(QTextEdit):
         self.setAcceptDrops(True)
         self.setTabChangesFocus(False)
         self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth)
-        self.setWordWrapMode(True)
+        self.setWordWrapMode(QTextOption.WrapMode.WordWrap)
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
 
     def _init_handlers(self):
@@ -78,6 +95,11 @@ class RichTextEditor(QTextEdit):
 
         cache_dir = str(Path(images_dir).parent / "formulas")
         self.katex_renderer = KaTeXRenderer(cache_dir)
+
+        self.html_sanitizer = HtmlSanitizer()
+        self.markdown_parser = MarkdownParser()
+        self.html_renderer = DocumentHtmlRenderer(images_dir=images_dir)
+        self._document_model: Optional[DocumentModel] = None
 
     def _init_highlighter(self):
         theme = self.config.theme if self.config else "light"
@@ -124,6 +146,17 @@ class RichTextEditor(QTextEdit):
         self.textChanged.connect(self._on_text_changed)
         self.customContextMenuRequested.connect(self._show_context_menu)
 
+    def _init_debounce(self):
+        interval = self.config.auto_save_interval_ms if self.config else 30000
+        self._debounced_autosave = DebouncedCallable(
+            self._emit_save_requested,
+            interval_ms=min(interval, 5000)
+        )
+        self._debounced_model_update = DebouncedCallable(
+            self._update_document_model,
+            interval_ms=300
+        )
+
     @property
     def mode(self) -> str:
         return self._mode
@@ -157,6 +190,8 @@ class RichTextEditor(QTextEdit):
         self.setHtml(html)
 
     def _emit_save_requested(self):
+        if getattr(self, '_destroyed', False):
+            return
         if self._mode == EditorMode.MARKDOWN:
             content_md = self.toPlainText()
             self._markdown_content = content_md
@@ -192,6 +227,59 @@ class RichTextEditor(QTextEdit):
             self._markdown_content = self.toPlainText()
         else:
             self._wysiwyg_content = self.toHtml()
+        self._dirty = True
+        self.contentChanged.emit()
+        if hasattr(self, '_debounced_autosave'):
+            self._debounced_autosave()
+        if hasattr(self, '_debounced_model_update'):
+            self._debounced_model_update()
+
+    def _update_document_model(self):
+        try:
+            self._document_model = self.markdown_parser.parse(
+                self._markdown_content if self._mode == EditorMode.MARKDOWN
+                else self._html_to_markdown(self._wysiwyg_content)
+            )
+        except Exception:
+            self._document_model = None
+
+    def get_document_model(self) -> Optional[DocumentModel]:
+        if self._document_model is None:
+            self._update_document_model()
+        return self._document_model
+
+    def insertFromMimeData(self, source: QMimeData):
+        if source.hasImage() or source.hasUrls():
+            try:
+                image_path = self.image_handler.handle_mime_data(source)
+                if image_path:
+                    if self._mode == EditorMode.MARKDOWN:
+                        tag = ImageHandler.generate_markdown_tag(image_path, "Pasted Image")
+                        self.insertPlainText(tag)
+                    else:
+                        tag = ImageHandler.generate_html_tag(image_path, "Pasted Image")
+                        self.insertHtml(tag)
+                    return
+            except ImageSizeWarning as e:
+                self.imageSizeWarning.emit(str(e), e.file_size)
+                return
+            except Exception:
+                pass
+
+        if source.hasHtml():
+            html = source.html()
+            if self.html_sanitizer.has_unsafe_content(html):
+                cleaned_html = self.html_sanitizer.sanitize(html)
+                super().insertHtml(cleaned_html)
+                return
+
+        if source.hasText():
+            text = source.text()
+            if text.strip().startswith('```') and self._mode == EditorMode.MARKDOWN:
+                self.insertPlainText(text)
+                return
+
+        super().insertFromMimeData(source)
 
     def _apply_format_surround(self, prefix: str, suffix: str):
         cursor = self.textCursor()
@@ -428,20 +516,6 @@ class RichTextEditor(QTextEdit):
                         return True
         return super().canInsertFromMimeData(source)
 
-    def insertFromMimeData(self, source: QMimeData):
-        saved_path = self.image_handler.handle_mime_data(source)
-        if saved_path:
-            img_tag = self.image_handler.generate_html_tag(saved_path, "")
-            cursor = self.textCursor()
-            if self._mode == EditorMode.MARKDOWN:
-                md_tag = self.image_handler.generate_markdown_tag(saved_path, "")
-                cursor.insertText(md_tag)
-            else:
-                cursor.insertHtml(img_tag)
-            return
-
-        super().insertFromMimeData(source)
-
     def _show_context_menu(self, pos):
         menu = self.createStandardContextMenu()
 
@@ -561,3 +635,80 @@ class RichTextEditor(QTextEdit):
         display_text = note_title if note_title else f"@note/{note_id}"
         link_text = f"[{display_text}](note://{note_id})"
         cursor.insertText(link_text)
+
+    def set_content(self, content: str):
+        if self._mode == EditorMode.MARKDOWN:
+            self._markdown_content = content
+            self.setPlainText(content)
+        else:
+            self._markdown_content = content
+            self._render_wysiwyg()
+        self._dirty = False
+
+    def set_editor_mode(self, mode: str):
+        if mode != self._mode:
+            old_mode = self._mode
+            self._mode = mode
+            self._switch_mode(old_mode, mode)
+            self.editorModeChanged.emit(mode)
+
+    def insert_markdown_surround(self, marker: str):
+        self._apply_format_surround(marker, marker)
+
+    def insert_markdown_link(self):
+        self._insert_link()
+
+    def insert_image_tag(self, image_path: str, alt_text: str = ""):
+        cursor = self.textCursor()
+        if self._mode == EditorMode.MARKDOWN:
+            md_tag = ImageHandler.generate_markdown_tag(Path(image_path), alt_text)
+            cursor.insertText(md_tag)
+        else:
+            html_tag = ImageHandler.generate_html_tag(Path(image_path), alt_text)
+            cursor.insertHtml(html_tag)
+
+    def _html_to_markdown(self, html: str) -> str:
+        try:
+            import html2text
+            h = html2text.HTML2Text()
+            h.body_width = 0
+            return h.handle(html)
+        except ImportError:
+            from html import parser
+            class _TextExtractor(parser.HTMLParser):
+                def __init__(self):
+                    super().__init__()
+                    self.text = []
+                def handle_data(self, data):
+                    self.text.append(data)
+            p = _TextExtractor()
+            p.feed(html)
+            return "".join(p.text)
+
+    @property
+    def editor_mode(self) -> str:
+        return self._mode
+
+    @property
+    def is_dirty(self) -> bool:
+        return self._dirty
+
+    def set_dirty(self, dirty: bool = True):
+        self._dirty = dirty
+
+    def flush_autosave(self):
+        if hasattr(self, '_debounced_autosave') and self._debounced_autosave.is_pending:
+            self._debounced_autosave.flush()
+
+    def cancel_autosave(self):
+        if hasattr(self, '_debounced_autosave'):
+            self._debounced_autosave.cancel()
+
+    def get_autosave_stats(self) -> dict:
+        if hasattr(self, '_debounced_autosave'):
+            return {
+                "call_count": self._debounced_autosave.call_count,
+                "execute_count": self._debounced_autosave.execute_count,
+                "is_pending": self._debounced_autosave.is_pending,
+            }
+        return {"call_count": 0, "execute_count": 0, "is_pending": False}

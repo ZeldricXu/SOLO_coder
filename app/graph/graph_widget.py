@@ -6,6 +6,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QToolBar, QPushButton,
     QLabel, QLineEdit, QCheckBox, QStatusBar, QComboBox, QFrame
 )
+from PyQt6.QtCore import QSize
 from PyQt6.QtCore import Qt, pyqtSignal, QPointF, QRectF, QTimer
 from PyQt6.QtGui import QIcon, QAction
 
@@ -163,7 +164,9 @@ class GraphWidget(QWidget):
         self.filter_isolated_cb.stateChanged.connect(self._on_filter_isolated)
         toolbar.addWidget(self.filter_isolated_cb)
 
-        toolbar.addSpacing(16)
+        spacer = QWidget()
+        spacer.setFixedWidth(16)
+        toolbar.addWidget(spacer)
 
         toolbar.addWidget(QLabel("搜索:"))
         self.search_input = QLineEdit()
