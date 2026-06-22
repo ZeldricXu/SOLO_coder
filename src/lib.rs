@@ -6,6 +6,7 @@ pub mod detector;
 pub mod alerter;
 pub mod output;
 pub mod observability;
+pub mod interner;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

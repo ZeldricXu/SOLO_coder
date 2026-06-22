@@ -2,15 +2,128 @@ pub mod custom_format;
 
 use crate::{LogFormat, LogLevel, LogRecord};
 use crate::config::{CustomFormatConfig, ParserConfig};
+use crate::interner::{should_intern_field, should_intern_value, StringInterner};
 use crate::parser::custom_format::{CompiledFormat, CustomFormatRegistry, FieldValue};
 use chrono::{DateTime, FixedOffset, NaiveDateTime, TimeZone, Utc};
 use regex::RegexSet;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tracing::{debug, info, warn};
 
 const SAMPLE_SIZE: usize = 100;
 const FORMAT_CONFIDENCE_THRESHOLD: f64 = 0.7;
+
+#[derive(Debug, Clone, Copy)]
+struct LineFeature {
+    first_byte: u8,
+    line_len: u16,
+    first_field_len: u8,
+    special_char_mask: u8,
+}
+
+const BIT_BRACE_L: u8 = 1 << 0;
+const BIT_BRACKET_L: u8 = 1 << 1;
+const BIT_QUOTE: u8 = 1 << 2;
+const BIT_COMMA: u8 = 1 << 3;
+const BIT_COLON: u8 = 1 << 4;
+const BIT_SPACE: u8 = 1 << 5;
+
+#[inline]
+fn extract_features(line: &str) -> LineFeature {
+    let bytes = line.as_bytes();
+    let len = bytes.len().min(u16::MAX as usize) as u16;
+    let first_byte = bytes.first().copied().unwrap_or(b'\0');
+
+    let first_field_len = bytes
+        .iter()
+        .position(|b| *b == b' ' || *b == b',' || *b == b':' || *b == b'\t')
+        .unwrap_or(bytes.len())
+        .min(u8::MAX as usize) as u8;
+
+    let mut mask: u8 = 0;
+    let probe_end = bytes.len().min(64);
+    for &b in &bytes[..probe_end] {
+        match b {
+            b'{' => mask |= BIT_BRACE_L,
+            b'[' => mask |= BIT_BRACKET_L,
+            b'"' => mask |= BIT_QUOTE,
+            b',' => mask |= BIT_COMMA,
+            b':' => mask |= BIT_COLON,
+            b' ' => mask |= BIT_SPACE,
+            _ => {}
+        }
+    }
+
+    LineFeature {
+        first_byte,
+        line_len: len,
+        first_field_len,
+        special_char_mask: mask,
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum FormatClass {
+    Json = 0,
+    NginxAccess = 1,
+    ApacheCommon = 2,
+    Envoy = 3,
+    Csv = 4,
+    Unknown = 5,
+}
+
+#[inline]
+fn route_format(feat: LineFeature) -> [FormatClass; 3] {
+    let mut out = [FormatClass::Unknown; 3];
+    let mut idx = 0;
+
+    if feat.first_byte == b'{' {
+        out[idx] = FormatClass::Json;
+        idx += 1;
+    }
+
+    if feat.first_byte == b'[' && (feat.special_char_mask & BIT_QUOTE != 0) {
+        out[idx] = FormatClass::Envoy;
+        idx += 1;
+    }
+
+    if feat.special_char_mask & BIT_COMMA != 0 && feat.first_field_len > 0 && feat.first_byte != b'{' {
+        out[idx] = FormatClass::Csv;
+        idx += 1;
+    }
+
+    if feat.first_byte != b'{' && feat.first_byte != b'[' && feat.special_char_mask & BIT_SPACE != 0 && feat.special_char_mask & BIT_QUOTE != 0 {
+        if idx < 3 {
+            out[idx] = FormatClass::NginxAccess;
+            idx += 1;
+        }
+        if idx < 3 {
+            out[idx] = FormatClass::ApacheCommon;
+        }
+    }
+
+    if idx == 0 {
+        out[0] = FormatClass::Json;
+        out[1] = FormatClass::NginxAccess;
+        out[2] = FormatClass::ApacheCommon;
+    }
+
+    out
+}
+
+#[inline]
+fn class_to_format(cls: FormatClass) -> LogFormat {
+    match cls {
+        FormatClass::Json => LogFormat::Json,
+        FormatClass::NginxAccess => LogFormat::NginxAccess,
+        FormatClass::ApacheCommon => LogFormat::ApacheCommon,
+        FormatClass::Envoy => LogFormat::Envoy,
+        FormatClass::Csv => LogFormat::Csv,
+        FormatClass::Unknown => LogFormat::Unknown,
+    }
+}
 
 pub struct FormatDetector {
     samples: Vec<String>,
@@ -176,7 +289,23 @@ fn parse_timestamp(ts_str: &str) -> Option<DateTime<Utc>> {
     None
 }
 
-fn parse_json_record(record: &mut LogRecord, raw: &str) -> bool {
+#[inline]
+fn try_intern_string(interner: Option<&Arc<StringInterner>>, field: &str, val: &str) -> String {
+    if let Some(interner) = interner {
+        if should_intern_field(field) && should_intern_value(val) {
+            if let Some(interned) = interner.intern(val) {
+                return interned.as_str().to_string();
+            }
+        }
+    }
+    val.to_string()
+}
+
+fn parse_json_record(
+    record: &mut LogRecord,
+    raw: &str,
+    interner: Option<&Arc<StringInterner>>,
+) -> bool {
     let trimmed = raw.trim_start();
     if !trimmed.starts_with('{') {
         return false;
@@ -192,23 +321,24 @@ fn parse_json_record(record: &mut LogRecord, raw: &str) -> bool {
 
     for (k, v) in obj {
         let key_lc = k.to_lowercase();
-        let val_str = v.as_str().unwrap_or(&v.to_string()).to_string();
+        let val_str = v.as_str().unwrap_or(&v.to_string());
         match key_lc.as_str() {
             "timestamp" | "time" | "@timestamp" | "ts" => {
-                if let Some(dt) = parse_timestamp(&val_str) {
+                if let Some(dt) = parse_timestamp(val_str) {
                     record.timestamp = dt;
                 }
             }
             "level" | "loglevel" | "severity" | "log_level" => {
-                record.level = LogLevel::from(val_str.as_str());
+                record.level = LogLevel::from(val_str);
             }
             "service" | "app" | "application" | "service_name" => {
-                if val_str.len() > record.service.len() {
-                    record.service = val_str.clone();
+                let svc = try_intern_string(interner, &key_lc, val_str);
+                if svc.len() > record.service.len() {
+                    record.service = svc;
                 }
             }
             "traceid" | "trace_id" | "x-b3-traceid" => {
-                record.trace_id = Some(val_str.clone());
+                record.trace_id = Some(val_str.to_string());
             }
             "spend" | "duration" | "latency" | "elapsed" | "response_time" | "cost" => {
                 if let Some(f) = v.as_f64() {
@@ -218,12 +348,18 @@ fn parse_json_record(record: &mut LogRecord, raw: &str) -> bool {
                 }
             }
             "msg" | "message" | "log" | "body" | "content" => {
-                if record.message.is_empty() || val_str.len() > record.message.len() {
-                    record.message = val_str.clone();
+                let msg = val_str.to_string();
+                if record.message.is_empty() || msg.len() > record.message.len() {
+                    record.message = msg;
                 }
             }
             _ => {
-                record.fields.insert(k.clone(), val_str);
+                let field_val = if should_intern_field(&key_lc) && should_intern_value(val_str) {
+                    try_intern_string(interner, &key_lc, val_str)
+                } else {
+                    val_str.to_string()
+                };
+                record.fields.insert(k.clone(), field_val);
             }
         }
     }
@@ -386,6 +522,7 @@ pub struct ParserEngine {
     custom_formats: CustomFormatRegistry,
     custom_format_matched_count: u64,
     fallback_count: u64,
+    interner: Option<Arc<StringInterner>>,
 }
 
 impl ParserEngine {
@@ -396,7 +533,13 @@ impl ParserEngine {
             custom_formats: CustomFormatRegistry::new(),
             custom_format_matched_count: 0,
             fallback_count: 0,
+            interner: None,
         }
+    }
+
+    pub fn with_interner(mut self, interner: Arc<StringInterner>) -> Self {
+        self.interner = Some(interner);
+        self
     }
 
     pub fn with_config(config: ParserConfig) -> Self {
@@ -419,6 +562,10 @@ impl ParserEngine {
 
     pub fn custom_format_count(&self) -> usize {
         self.custom_formats.format_count()
+    }
+
+    pub fn set_interner(&mut self, interner: Arc<StringInterner>) {
+        self.interner = Some(interner);
     }
 
     pub fn parse(&mut self, mut record: LogRecord) -> LogRecord {
@@ -444,27 +591,40 @@ impl ParserEngine {
         }
         self.fallback_count += 1;
 
+        let feat = extract_features(&raw);
+        let candidates = route_format(feat);
+
         let detector = self.detectors
             .entry(record.source.clone())
             .or_insert_with(FormatDetector::new);
         let detected_format = detector.add_sample(&raw);
 
+        let interner = self.interner.as_ref();
+
         let parsed = match detected_format {
-            Some(LogFormat::Json) => parse_json_record(&mut record, &raw),
+            Some(LogFormat::Json) => parse_json_record(&mut record, &raw, interner),
             Some(LogFormat::NginxAccess) => parse_nginx_access(&mut record, &raw),
             Some(LogFormat::ApacheCommon) => parse_apache_common(&mut record, &raw),
             Some(LogFormat::Envoy) => parse_envoy(&mut record, &raw),
             Some(LogFormat::Csv) => parse_csv(&mut record, &raw),
             _ => {
                 let mut ok = false;
-                if parse_json_record(&mut record, &raw) {
-                    ok = true;
-                } else if parse_nginx_access(&mut record, &raw) {
-                    ok = true;
-                } else if parse_envoy(&mut record, &raw) {
-                    ok = true;
-                } else if parse_apache_common(&mut record, &raw) {
-                    ok = true;
+                for cls in candidates.iter() {
+                    if *cls == FormatClass::Unknown {
+                        continue;
+                    }
+                    let success = match class_to_format(*cls) {
+                        LogFormat::Json => parse_json_record(&mut record, &raw, interner),
+                        LogFormat::NginxAccess => parse_nginx_access(&mut record, &raw),
+                        LogFormat::ApacheCommon => parse_apache_common(&mut record, &raw),
+                        LogFormat::Envoy => parse_envoy(&mut record, &raw),
+                        LogFormat::Csv => parse_csv(&mut record, &raw),
+                        _ => false,
+                    };
+                    if success {
+                        ok = true;
+                        break;
+                    }
                 }
                 ok
             }
@@ -474,6 +634,14 @@ impl ParserEngine {
             parse_csv(&mut record, &raw);
         }
         extract_generic(&mut record, &self.patterns, &raw);
+
+        if let Some(interner) = &self.interner {
+            if !record.service.is_empty() && should_intern_value(&record.service) {
+                if let Some(interned) = interner.intern(&record.service) {
+                    record.service = interned.as_str().to_string();
+                }
+            }
+        }
 
         if record.message.is_empty() {
             record.message = raw.clone();

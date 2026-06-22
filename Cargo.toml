@@ -41,6 +41,7 @@ nom = "7"
 regex = "1"
 regex-syntax = "0.8"
 lazy-regex = "3"
+bumpalo = "3"
 
 # Time
 chrono = { version = "0.4", features = ["serde"] }
@@ -58,10 +59,10 @@ hyper = { version = "1", features = ["full"] }
 reqwest = { version = "0.12", features = ["json", "stream"] }
 
 # Kafka
-rdkafka = { version = "0.36", features = ["cmake-build", "ssl"] }
+rdkafka = { version = "0.36", features = ["cmake-build", "ssl-vendored"] }
 
 # ClickHouse
-clickhouse-rs = "1"
+clickhouse-rs = "=1.1.0-alpha.1"
 
 # MinIO / S3
 aws-sdk-s3 = "1"

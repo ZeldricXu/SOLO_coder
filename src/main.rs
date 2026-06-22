@@ -3,6 +3,7 @@ use logforge::alerter::Alerter;
 use logforge::collector::CollectorManager;
 use logforge::config::{ConfigManager, default_config_toml, ParserConfig};
 use logforge::detector::RuleEngine;
+use logforge::interner::StringInterner;
 use logforge::observability::ObservabilityServer;
 use logforge::output::OutputManager;
 use logforge::output::kafka_sink::KafkaSink;
@@ -193,6 +194,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let alerter_c = alerter.clone();
 
     let pipeline_task = tokio::task::spawn_blocking(move || {
+        let interner = StringInterner::new();
+        interner.install();
+        {
+            let mut p = match parser_c.lock() {
+                Ok(g) => g,
+                Err(poisoned) => poisoned.into_inner(),
+            };
+            p.set_interner(interner.clone());
+        }
+
         let mut log_counter: u64 = 0;
         let mut last_report = std::time::Instant::now();
 
