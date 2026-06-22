@@ -4,8 +4,10 @@ use axum::{
 };
 use common::error::AppError;
 use common::types::{
-    IOSchema, Model, ModelCategory, ModelFramework, ModelStatus, ModelVersion, Tenant,
+    IOSchema, Model, ModelCategory, ModelFramework, ModelStatus, ModelVersion,
 };
+use model_registry::RegisterModelParams;
+use security::AuthenticatedTenant;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use tracing::{error, info, instrument, warn};
@@ -28,6 +30,11 @@ pub struct RegisterModelRequest {
     pub name: String,
     pub category: ModelCategory,
     pub description: Option<String>,
+    pub framework: ModelFramework,
+    pub version: String,
+    pub input_schema: Vec<IOSchema>,
+    pub output_schema: Vec<IOSchema>,
+    pub gpu_memory_mb: u64,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
@@ -68,7 +75,7 @@ pub struct ListResponse<T> {
 #[instrument(skip_all, fields(model_name = %request.name))]
 pub async fn register_model(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Json(request): Json<RegisterModelRequest>,
 ) -> Result<Json<Model>, AppError> {
     info!("Registering model: {}", request.name);
@@ -77,10 +84,35 @@ pub async fn register_model(
         return Err(AppError::Validation("Model name cannot be empty".to_string()));
     }
 
+    let temp_dir = std::env::temp_dir().join("model_uploads");
+    let dummy_path = temp_dir.join(format!("{}-dummy", request.name));
+    tokio::fs::create_dir_all(&temp_dir).await.ok();
+    tokio::fs::write(&dummy_path, []).await.ok();
+
+    let params = RegisterModelParams {
+        model_name: request.name.clone(),
+        version: request.version.clone(),
+        category: request.category,
+        framework: request.framework,
+        description: request.description.clone(),
+        author: None,
+        tags: vec![],
+        labels: HashMap::new(),
+        input_schema: request.input_schema.clone(),
+        output_schema: request.output_schema.clone(),
+        gpu_memory_mb: request.gpu_memory_mb,
+        max_batch_size: None,
+        max_sequence_length: None,
+        preferred_backend: None,
+        overwrite: false,
+    };
+
     let model = state
         .model_registry
-        .register_model(&request.name, request.category, request.description.as_deref())
+        .register_model(params, &dummy_path)
         .await?;
+
+    let _ = tokio::fs::remove_file(&dummy_path).await;
 
     info!("Model registered successfully: {} (id={})", request.name, model.id);
 
@@ -101,7 +133,7 @@ pub async fn register_model(
 #[instrument(skip_all)]
 pub async fn list_models(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Query(query): Query<ListModelsQuery>,
 ) -> Result<Json<ListResponse<Model>>, AppError> {
     let page = query.page.unwrap_or(1);
@@ -142,7 +174,7 @@ pub async fn list_models(
 #[instrument(skip_all, fields(id_or_name = %id_or_name))]
 pub async fn get_model(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Path(id_or_name): Path<String>,
 ) -> Result<Json<Model>, AppError> {
     info!("Getting model: {}", id_or_name);
@@ -169,12 +201,19 @@ pub async fn get_model(
 #[instrument(skip_all, fields(model_id = %model_id))]
 pub async fn delete_model(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Path(model_id): Path<Uuid>,
 ) -> Result<(), AppError> {
     info!("Deleting model: {}", model_id);
 
-    state.model_registry.delete_model(model_id).await?;
+    let model = state.model_registry.get_model(&model_id.to_string()).await?;
+
+    for version in &model.versions {
+        state
+            .model_registry
+            .delete_model_version(&model.name, &version.version)
+            .await?;
+    }
 
     info!("Model deleted successfully: {}", model_id);
 
@@ -201,7 +240,7 @@ pub async fn delete_model(
 #[instrument(skip_all, fields(model_id = %model_id))]
 pub async fn upload_model_version(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Path(model_id): Path<Uuid>,
     mut multipart: Multipart,
 ) -> Result<Json<ModelVersion>, AppError> {
@@ -230,12 +269,11 @@ pub async fn upload_model_version(
                 version_info = Some(metadata);
             }
             "model_file" => {
+                let file_name = field.file_name().unwrap_or("model.bin").to_string();
                 let data = field
                     .bytes()
                     .await
                     .map_err(|e| AppError::Validation(format!("Failed to read model file: {}", e)))?;
-
-                let file_name = field.file_name().unwrap_or("model.bin").to_string();
                 let temp_dir = std::env::temp_dir().join("model_uploads");
                 tokio::fs::create_dir_all(&temp_dir).await.map_err(|e| {
                     AppError::Internal(format!("Failed to create temp directory: {}", e))
@@ -257,24 +295,40 @@ pub async fn upload_model_version(
     let file_path =
         model_file_path.ok_or_else(|| AppError::Validation("Missing 'model_file' field".to_string()))?;
 
+    let model = state.model_registry.get_model(&model_id.to_string()).await?;
+
+    let params = RegisterModelParams {
+        model_name: model.name.clone(),
+        version: metadata.version.clone(),
+        category: model.category,
+        framework: metadata.framework,
+        description: model.description.clone(),
+        author: None,
+        tags: vec![],
+        labels: HashMap::new(),
+        input_schema: metadata.input_schema,
+        output_schema: metadata.output_schema,
+        gpu_memory_mb: metadata.gpu_memory_mb,
+        max_batch_size: None,
+        max_sequence_length: None,
+        preferred_backend: None,
+        overwrite: false,
+    };
+
     let version = state
         .model_registry
-        .register_version(
-            model_id,
-            &metadata.version,
-            metadata.framework,
-            metadata.input_schema,
-            metadata.output_schema,
-            metadata.gpu_memory_mb,
-            &file_path,
-        )
-        .await?;
+        .register_model(params, &file_path)
+        .await?
+        .versions
+        .into_iter()
+        .find(|v| v.version == metadata.version)
+        .ok_or_else(|| AppError::Internal("Version not found after registration".to_string()))?;
 
     let _ = tokio::fs::remove_file(&file_path).await;
 
     info!(
         "Model version v{} registered successfully for model {} (id={})",
-        metadata.version, model_id, version.id
+        version.version, model_id, version.id
     );
 
     Ok(Json(version))
@@ -297,7 +351,7 @@ pub async fn upload_model_version(
 #[instrument(skip_all, fields(model_id = %model_id))]
 pub async fn list_versions(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Path(model_id): Path<Uuid>,
 ) -> Result<Json<Vec<ModelVersion>>, AppError> {
     info!("Listing versions for model: {}", model_id);
@@ -325,7 +379,7 @@ pub async fn list_versions(
 #[instrument(skip_all, fields(model_id = %model_id, version = %version_str))]
 pub async fn get_version(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Path((model_id, version_str)): Path<(Uuid, String)>,
 ) -> Result<Json<ModelVersion>, AppError> {
     let model = state.model_registry.get_model(&model_id.to_string()).await?;
@@ -357,7 +411,7 @@ pub async fn get_version(
 #[instrument(skip_all, fields(version_id = %version_id, status = ?request.status))]
 pub async fn update_version_status(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Path(version_id): Path<Uuid>,
     Json(request): Json<UpdateVersionStatusRequest>,
 ) -> Result<Json<ModelVersion>, AppError> {
@@ -366,10 +420,20 @@ pub async fn update_version_status(
         version_id, request.status
     );
 
-    let version = state
-        .model_registry
-        .update_version_status(version_id, request.status)
-        .await?;
+    let model = state.model_registry.get_model(&version_id.to_string()).await.ok();
+
+    let version = if let Some(m) = model {
+        if let Some(v) = m.versions.iter().find(|v| v.id == version_id) {
+            state
+                .model_registry
+                .update_version_status(&m.name, &v.version, request.status)
+                .await?
+        } else {
+            return Err(AppError::ModelVersionNotFound(format!("Version {} not found", version_id)));
+        }
+    } else {
+        return Err(AppError::ModelVersionNotFound(format!("Version {} not found", version_id)));
+    };
 
     info!("Version {} status updated successfully", version_id);
 
@@ -393,12 +457,25 @@ pub async fn update_version_status(
 #[instrument(skip_all, fields(version_id = %version_id))]
 pub async fn delete_version(
     State(state): State<AppState>,
-    _tenant: Tenant,
+    _tenant: AuthenticatedTenant,
     Path(version_id): Path<Uuid>,
 ) -> Result<(), AppError> {
     info!("Deleting version: {}", version_id);
 
-    state.model_registry.delete_version(version_id).await?;
+    let model = state.model_registry.get_model(&version_id.to_string()).await.ok();
+
+    if let Some(m) = model {
+        if let Some(v) = m.versions.iter().find(|v| v.id == version_id) {
+            state
+                .model_registry
+                .delete_model_version(&m.name, &v.version)
+                .await?;
+        } else {
+            return Err(AppError::ModelVersionNotFound(format!("Version {} not found", version_id)));
+        }
+    } else {
+        return Err(AppError::ModelVersionNotFound(format!("Version {} not found", version_id)));
+    }
 
     info!("Version {} deleted successfully", version_id);
 

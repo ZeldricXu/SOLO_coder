@@ -198,6 +198,7 @@ impl GpuLoadBalancer {
                 &self.model_affinity,
                 &self.round_robin_counter,
             ),
+            GpuSelectionStrategy::BinPacking => Self::select_least_loaded(&candidates),
         };
 
         debug!(
@@ -235,7 +236,7 @@ impl GpuLoadBalancer {
 
     fn select_round_robin(candidates: &[GpuLoad], counter: &AtomicUsize) -> usize {
         let idx = counter.fetch_add(1, Ordering::SeqCst) % candidates.len();
-        candidates[idx].gpu_id]
+        candidates[idx].gpu_id
     }
 
     fn select_affinity(
@@ -281,7 +282,7 @@ impl GpuLoadBalancer {
     }
 
     pub fn avg_utilization(&self) -> f64 {
-        let healthy: Vec<&GpuLoad> = self.gpus.iter().filter(|g| g.is_healthy).collect();
+        let healthy: Vec<GpuLoad> = self.gpus.iter().filter(|g| g.is_healthy).map(|g| g.clone()).collect();
         if healthy.is_empty() {
             return 0.0;
         }

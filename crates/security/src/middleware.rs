@@ -11,7 +11,7 @@ use axum::Json;
 use common::error::ErrorResponse;
 use db::{DatabasePool, RedisClient, Tenant};
 use pin_project_lite::pin_project;
-use tower::{Layer, Service, ServiceBuilder};
+use tower::{Layer, Service};
 use tracing::{debug, error, info, warn};
 
 use crate::auth::{ApiKeyAuthenticator, X_API_KEY_HEADER};
@@ -25,10 +25,16 @@ const X_RATELIMIT_PERMIN_LIMIT: &str = "X-RateLimit-PerMin-Limit";
 const X_REQUEST_ID: &str = "X-Request-Id";
 const X_PROCESS_TIME_MS: &str = "X-Process-Time-Ms";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthLayer {
     db_pool: DatabasePool,
     redis_client: RedisClient,
+}
+
+impl std::fmt::Debug for AuthLayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthLayer").finish()
+    }
 }
 
 impl AuthLayer {
@@ -52,11 +58,17 @@ impl<S> Layer<S> for AuthLayer {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct AuthService<S> {
     inner: S,
     db_pool: DatabasePool,
     redis_client: RedisClient,
+}
+
+impl<S> std::fmt::Debug for AuthService<S> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AuthService").finish()
+    }
 }
 
 impl<S, B> Service<Request<B>> for AuthService<S>
@@ -97,7 +109,7 @@ where
                 }
             };
 
-            let authenticator = ApiKeyAuthenticator::new(db_pool, redis_client);
+            let authenticator = ApiKeyAuthenticator::new(db_pool.clone(), redis_client.clone());
             let tenant = match authenticator.validate_api_key(&api_key).await {
                 Ok(t) => t,
                 Err(e) => {
@@ -238,7 +250,7 @@ where
                         tenant.id,
                         req.uri().path()
                     );
-                    let mut response = Response::builder()
+                    let response = Response::builder()
                         .status(StatusCode::TOO_MANY_REQUESTS)
                         .header(X_RATELIMIT_QPS_LIMIT, qps_limit.to_string())
                         .header(
@@ -457,7 +469,7 @@ where
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SecurityConfig {
     pub enable_auth: bool,
     pub enable_rate_limit: bool,
@@ -465,6 +477,12 @@ pub struct SecurityConfig {
     pub db_pool: DatabasePool,
     pub redis_client: RedisClient,
     pub rate_limit_config: RateLimitConfig,
+}
+
+impl std::fmt::Debug for SecurityConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecurityConfig").finish()
+    }
 }
 
 impl SecurityConfig {
@@ -500,9 +518,15 @@ impl SecurityConfig {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SecurityLayer {
     config: SecurityConfig,
+}
+
+impl std::fmt::Debug for SecurityLayer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("SecurityLayer").finish()
+    }
 }
 
 impl SecurityLayer {
@@ -522,29 +546,18 @@ where
     S: Service<Request<Body>, Response = Response> + Clone + Send + 'static,
     S::Future: Send + 'static,
 {
-    type Service = S;
+    type Service = AuthService<RateLimitService<RequestLogService<S>>>;
 
     fn layer(&self, inner: S) -> Self::Service {
-        let mut builder = ServiceBuilder::new();
-
-        if self.config.enable_logging {
-            builder = builder.layer(RequestLogLayer::new());
-        }
-
-        if self.config.enable_rate_limit {
-            builder = builder.layer(RateLimitLayer::new(
-                self.config.redis_client.clone(),
-                self.config.rate_limit_config.clone(),
-            ));
-        }
-
-        if self.config.enable_auth {
-            builder = builder.layer(AuthLayer::new(
-                self.config.db_pool.clone(),
-                self.config.redis_client.clone(),
-            ));
-        }
-
-        builder.service(inner)
+        let service = RequestLogLayer::new().layer(inner);
+        let service = RateLimitLayer::new(
+            self.config.redis_client.clone(),
+            self.config.rate_limit_config.clone(),
+        ).layer(service);
+        let service = AuthLayer::new(
+            self.config.db_pool.clone(),
+            self.config.redis_client.clone(),
+        ).layer(service);
+        service
     }
 }

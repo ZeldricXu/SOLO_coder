@@ -1,5 +1,3 @@
-use std::future::{ready, Ready};
-
 use async_trait::async_trait;
 use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
@@ -17,10 +15,16 @@ use uuid::Uuid;
 const API_KEY_CACHE_TTL: u64 = 300;
 pub const X_API_KEY_HEADER: &str = "X-API-Key";
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct ApiKeyAuthenticator {
     db_pool: DatabasePool,
     redis_client: RedisClient,
+}
+
+impl std::fmt::Debug for ApiKeyAuthenticator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ApiKeyAuthenticator").finish()
+    }
 }
 
 impl ApiKeyAuthenticator {

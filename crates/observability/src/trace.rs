@@ -352,7 +352,6 @@ pub async fn tracing_middleware(req: Request<Body>, next: Next) -> Response {
 pub mod otel {
     use super::*;
     use opentelemetry::trace::{SpanContext, SpanId as OtelSpanId, TraceId as OtelTraceId, TraceFlags, TraceState};
-    use std::str::FromStr;
 
     pub fn trace_context_to_otel(tc: &TraceContext) -> SpanContext {
         let trace_id_bytes = hex_to_bytes_16(&tc.trace_id);

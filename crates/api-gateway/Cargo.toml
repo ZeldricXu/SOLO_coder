@@ -4,9 +4,12 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+[[bin]]
+name = "model-serving-gateway"
+path = "src/main.rs"
+
 [features]
-default = ["onnxrt"]
-onnxrt = ["inference-runtime/onnxrt"]
+default = []
 tensorrt = ["inference-runtime/tensorrt"]
 
 [dependencies]
@@ -44,10 +47,15 @@ anyhow = { workspace = true }
 thiserror = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
+async-stream = "0.3"
 
 # Observability
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+# Security
+base64 = { workspace = true }
+redis = { workspace = true }
 
 # Web utils
 uuid = { workspace = true }
@@ -63,5 +71,5 @@ dotenvy = { workspace = true }
 config = { workspace = true }
 
 [build-dependencies]
-tonic-build = "0.11"
-prost-build = "0.12"
+tonic-build = "0.12"
+prost-build = "0.13"

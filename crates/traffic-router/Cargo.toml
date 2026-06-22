@@ -30,7 +30,7 @@ futures = { workspace = true }
 bytes = { workspace = true }
 sqlx = { workspace = true }
 tower = { workspace = true }
-http = "0.2"
+http = "1.0"
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-build = "0.12"

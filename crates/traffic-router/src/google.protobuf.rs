@@ -89,8 +89,7 @@
 /// <http://joda-time.sourceforge.net/apidocs/org/joda/time/format/ISODateTimeFormat.html#dateTime(>)
 /// ) to obtain a formatter capable of generating timestamps in this format.
 ///
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
+#[derive(Clone, Copy, PartialEq, ::prost::Message)]
 pub struct Timestamp {
     /// Represents seconds of UTC time since Unix epoch 1970-01-01T00:00:00Z. Must
     /// be between -62135596800 and 253402300799 inclusive (which corresponds to
@@ -118,7 +117,6 @@ pub struct Timestamp {
 ///
 /// If you do not intend to parse arbitrary JSON into your message, a custom
 /// typed message should be preferred instead of using this type.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Struct {
     /// Unordered map of dynamically typed values.
@@ -131,7 +129,6 @@ pub struct Struct {
 /// null, a number, a string, a boolean, a recursive struct value, or a
 /// list of values. A producer of value is expected to set one of these
 /// variants. Absence of any variant is an invalid state.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Value {
     /// The kind of value.
@@ -141,7 +138,6 @@ pub struct Value {
 /// Nested message and enum types in `Value`.
 pub mod value {
     /// The kind of value.
-    #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum Kind {
         /// Represents a JSON `null`.
@@ -168,7 +164,6 @@ pub mod value {
     }
 }
 /// Represents a JSON array.
-#[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListValue {
     /// Repeated field of dynamically typed values.
@@ -197,7 +192,7 @@ impl NullValue {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            NullValue::NullValue => "NULL_VALUE",
+            Self::NullValue => "NULL_VALUE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.

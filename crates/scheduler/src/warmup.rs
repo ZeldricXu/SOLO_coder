@@ -3,7 +3,6 @@ use common::types::{InferenceRequest, IOSchema, RouteTarget};
 use dashmap::DashMap;
 use serde_json::{json, Value};
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
@@ -96,7 +95,7 @@ impl ModelWarmer {
                 .execute(&target, &request, Some(&version.input_schema))
                 .await
             {
-                Ok(response) => {
+                Ok(_response) => {
                     let elapsed = start.elapsed().as_secs_f64() * 1000.0;
                     per_iteration_latency.push(elapsed);
 
@@ -477,7 +476,7 @@ impl ModelWarmer {
             self.default_batch_size,
         );
 
-        let mut reports = Vec::new();
+        let mut reports: Vec<WarmupReport> = Vec::new();
         let sample_gpu_count = old_gpus.len().min(2);
 
         for &gpu_id in old_gpus.iter().take(sample_gpu_count) {
@@ -496,7 +495,7 @@ impl ModelWarmer {
         }
 
         let new_gpus = self.model_manager.get_loaded_gpus(new_version_id);
-        let mut reports = Vec::new();
+        let mut reports: Vec<WarmupReport> = Vec::new();
         for &gpu_id in &new_gpus {
             match self
                 .warmup_model(

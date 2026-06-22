@@ -108,7 +108,7 @@ impl MetricsRegistry {
         &REGISTRY
     }
 
-    fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let latency_buckets = vec![
             1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 2500.0, 5000.0, 10000.0,
         ];

@@ -19,7 +19,7 @@ pub mod inference {
 }
 
 pub use minio::{MinioConfig, MinioStorage, ObjectInfo};
-pub use service::ModelRegistryService;
+pub use service::{ModelRegistryService, RegisterModelParams};
 
 pub mod pb {
     #![allow(clippy::all)]

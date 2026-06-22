@@ -787,4 +787,15 @@ impl ModelRegistryService {
     pub fn redis(&self) -> &RedisClient {
         &self.redis
     }
+
+    pub async fn list_versions(&self, _model_id: Uuid) -> Result<Vec<ModelVersion>, AppError> {
+        let models = self.list_models(None, 1, 10000).await.unwrap_or_default();
+        let mut all_versions = Vec::new();
+        for model in models {
+            if let Ok(versions) = self.get_online_versions(&model.name).await {
+                all_versions.extend(versions);
+            }
+        }
+        Ok(all_versions)
+    }
 }

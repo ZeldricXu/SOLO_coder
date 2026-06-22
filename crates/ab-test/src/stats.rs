@@ -1,4 +1,4 @@
-use statrs::distribution::{StudentsT, Normal, Continuous};
+use statrs::distribution::{ContinuousCDF, StudentsT};
 use statrs::function::erf;
 
 pub struct Statistics;

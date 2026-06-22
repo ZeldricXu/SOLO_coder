@@ -6,7 +6,7 @@ use db::{DatabasePool, RedisClient};
 use inference_runtime::InferenceRuntime;
 use model_registry::{MinioStorage, ModelRegistryService};
 use observability::metrics::MetricsRegistry;
-use scheduler::ResourceScheduler;
+use scheduler::SchedulerService;
 use security::{ApiKeyAuthenticator, DataMasker, RateLimiter};
 use traffic_router::TrafficRouter;
 
@@ -19,7 +19,7 @@ pub struct AppState {
     pub model_registry: Arc<ModelRegistryService>,
     pub inference_runtime: Arc<InferenceRuntime>,
     pub traffic_router: Arc<TrafficRouter>,
-    pub scheduler: Arc<ResourceScheduler>,
+    pub scheduler: Arc<SchedulerService>,
     pub experiment_service: Arc<ExperimentService>,
     pub experiment_recorder: Arc<ExperimentRecorder>,
     pub api_key_authenticator: Arc<ApiKeyAuthenticator>,
@@ -37,7 +37,7 @@ impl AppState {
         model_registry: ModelRegistryService,
         inference_runtime: InferenceRuntime,
         traffic_router: TrafficRouter,
-        scheduler: ResourceScheduler,
+        scheduler: SchedulerService,
         experiment_service: ExperimentService,
         experiment_recorder: ExperimentRecorder,
         api_key_authenticator: ApiKeyAuthenticator,

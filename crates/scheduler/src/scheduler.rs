@@ -26,7 +26,7 @@ pub struct ResourceScheduler {
     pub runtime_client: Arc<RuntimeClient>,
     pub model_registry: Arc<ModelRegistryService>,
     pub event_sender: broadcast::Sender<SchedulerEvent>,
-    event_receiver: Option<broadcast::Receiver<SchedulerEvent>>,
+    event_receiver: parking_lot::RwLock<Option<broadcast::Receiver<SchedulerEvent>>>,
     scheduled_tasks: parking_lot::RwLock<Vec<JoinHandle<()>>>,
     cycle_counter: parking_lot::RwLock<CycleId>,
 }
@@ -67,7 +67,7 @@ impl ResourceScheduler {
             runtime_client,
             model_registry,
             event_sender: tx,
-            event_receiver: Some(rx),
+            event_receiver: parking_lot::RwLock::new(Some(rx)),
             scheduled_tasks: parking_lot::RwLock::new(Vec::new()),
             cycle_counter: parking_lot::RwLock::new(0),
         }
@@ -75,8 +75,8 @@ impl ResourceScheduler {
 
     pub fn add_gpu(&self, gpu_id: usize, total_mb: u64, node_address: Option<String>) {
         self.balancer.add_gpu(gpu_id, total_mb, node_address.clone());
-        if let Some(addr) = node_address {
-            self.heartbeat.register_node(addr, vec![gpu_id]);
+        if let Some(ref addr) = node_address {
+            self.heartbeat.register_node(addr.clone(), vec![gpu_id]);
         }
         let _ = self.event_sender.send(SchedulerEvent::GpuAdded {
             gpu_id,
@@ -95,6 +95,7 @@ impl ResourceScheduler {
 
         let mut event_receiver = self
             .event_receiver
+            .write()
             .take()
             .expect("Event receiver already taken");
 
@@ -135,7 +136,7 @@ impl ResourceScheduler {
             runtime_client: self.runtime_client.clone(),
             model_registry: self.model_registry.clone(),
             event_sender: self.event_sender.clone(),
-            event_receiver: None,
+            event_receiver: parking_lot::RwLock::new(None),
             scheduled_tasks: parking_lot::RwLock::new(Vec::new()),
             cycle_counter: parking_lot::RwLock::new(*self.cycle_counter.read()),
         }
@@ -543,6 +544,21 @@ impl ResourceScheduler {
             }
             SchedulerEvent::InferenceRequested { version_id } => {
                 self.model_manager.record_access(version_id);
+            }
+            SchedulerEvent::ModelMigrated { version_id, from_gpu, to_gpu } => {
+                info!("Model {} migrated from GPU {} to GPU {}", version_id, from_gpu, to_gpu);
+            }
+            SchedulerEvent::GpuOverloaded { gpu_id, util_percent, memory_percent } => {
+                warn!("GPU {} overloaded: util={:.1}%, mem={:.1}%", gpu_id, util_percent, memory_percent);
+            }
+            SchedulerEvent::GpuRecovered { gpu_id } => {
+                info!("GPU {} recovered", gpu_id);
+            }
+            SchedulerEvent::NodeDead { node_id, address } => {
+                warn!("Node {} ({}) is dead", node_id, address);
+            }
+            SchedulerEvent::SchedulingCycleCompleted { cycle_id, decisions, duration_ms } => {
+                debug!("Scheduling cycle {} completed: {} decisions in {}ms", cycle_id, decisions, duration_ms);
             }
         }
     }
@@ -1072,7 +1088,7 @@ impl Clone for ResourceScheduler {
             runtime_client: self.runtime_client.clone(),
             model_registry: self.model_registry.clone(),
             event_sender: self.event_sender.clone(),
-            event_receiver: None,
+            event_receiver: parking_lot::RwLock::new(None),
             scheduled_tasks: parking_lot::RwLock::new(Vec::new()),
             cycle_counter: parking_lot::RwLock::new(*self.cycle_counter.read()),
         }

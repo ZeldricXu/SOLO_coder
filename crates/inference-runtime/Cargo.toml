@@ -6,7 +6,6 @@ license.workspace = true
 
 [features]
 default = []
-onnxrt = ["dep:ort"]
 tensorrt = []
 
 [dependencies]
@@ -28,7 +27,6 @@ parking_lot = { workspace = true }
 dashmap = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true }
-ort = { workspace = true, optional = true }
 dotenvy = { workspace = true }
 config = { workspace = true }
 histogram = { workspace = true }
@@ -36,4 +34,4 @@ s3 = { workspace = true }
 rand = { workspace = true }
 
 [build-dependencies]
-tonic-build = "0.11"
+tonic-build = "0.12"

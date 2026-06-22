@@ -376,7 +376,7 @@ impl ModelLifecycleManager {
         hot
     }
 
-    pub fn evict_lowest_heat_model(
+    pub async fn evict_lowest_heat_model(
         &self,
         gpu_id: usize,
         required_free_mb: u64,

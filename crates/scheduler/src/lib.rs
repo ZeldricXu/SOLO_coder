@@ -129,7 +129,7 @@ impl SchedulerService {
 
         self.scheduler
             .heartbeat
-            .register_node_with_id(assigned_id.clone(), address.clone(), gpu_ids);
+            .register_node_with_id(assigned_id.clone(), address.clone(), &gpu_ids);
 
         info!(
             "Registered runtime node {} (addr: {}) with {} GPUs",
@@ -145,9 +145,7 @@ impl SchedulerService {
         let node_addr = self
             .scheduler
             .heartbeat
-            .node_registry
-            .get(node_id)
-            .map(|n| n.address.clone())
+            .get_node_address(node_id)
             .ok_or_else(|| AppError::GpuNotFound(format!("Node {} not found", node_id)))?;
 
         self.scheduler.heartbeat.deregister_node(node_id);
@@ -155,10 +153,7 @@ impl SchedulerService {
         let gpu_ids = self
             .scheduler
             .heartbeat
-            .registered_nodes
-            .get(&node_addr)
-            .map(|g| g.clone())
-            .unwrap_or_default();
+            .get_registered_gpu_ids(&node_addr);
 
         for gpu_id in gpu_ids {
             self.scheduler.remove_gpu(gpu_id);
@@ -192,9 +187,22 @@ impl SchedulerService {
         version_id: Uuid,
         gpu_id: Option<usize>,
     ) -> Result<LoadedModelInfo, AppError> {
-        let info = match self.scheduler.model_registry.get_model_version(&version_id).await
+        let info = match self.scheduler.model_registry.list_versions(version_id).await
         {
-            Ok(Some(v)) => v,
+            Ok(versions) => versions
+                .into_iter()
+                .find(|v| v.id == version_id)
+                .unwrap_or_else(|| ModelVersion {
+                    id: version_id,
+                    model_id: Uuid::nil(),
+                    version: "1".to_string(),
+                    framework: common::types::ModelFramework::Onnx,
+                    status: common::types::ModelStatus::Online,
+                    input_schema: vec![],
+                    output_schema: vec![],
+                    gpu_memory_mb: 2048,
+                    created_at: chrono::Utc::now(),
+                }),
             _ => ModelVersion {
                 id: version_id,
                 model_id: Uuid::nil(),

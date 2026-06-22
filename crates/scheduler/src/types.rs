@@ -1,5 +1,5 @@
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::time::Instant;
 use uuid::Uuid;
 
@@ -263,7 +263,7 @@ impl GpuNodeState {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct LoadedModelInfo {
     pub version_id: Uuid,
     pub model_name: String,
@@ -325,7 +325,7 @@ impl LoadedModelInfo {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct DeploymentInfo {
     pub version_id: Uuid,
     pub model_name: String,
@@ -338,7 +338,7 @@ pub struct DeploymentInfo {
     pub access_count: u64,
     pub last_accessed_at: Instant,
     pub is_warmed_up: bool,
-    pub node_addresses: std::collections::HashMap<usize, String>,
+    pub node_addresses: HashMap<usize, String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -349,7 +349,7 @@ pub enum DeploymentStatus {
     Unloading,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct ModelHeatScore {
     pub version_id: Uuid,
     pub score: f32,
@@ -405,7 +405,7 @@ pub struct WarmupReport {
     pub per_iteration_latency_ms: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct WarmupProgress {
     pub version_id: Uuid,
     pub gpu_id: usize,

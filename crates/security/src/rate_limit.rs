@@ -79,10 +79,18 @@ pub enum RateLimitExceededType {
     PerMinute,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct RateLimiter {
     redis_client: RedisClient,
     default_config: RateLimitConfig,
+}
+
+impl std::fmt::Debug for RateLimiter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RateLimiter")
+            .field("default_config", &self.default_config)
+            .finish()
+    }
 }
 
 impl RateLimiter {

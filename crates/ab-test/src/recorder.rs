@@ -1,15 +1,15 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use common::error::AppError;
 use db::RedisClient;
 use parking_lot::Mutex;
+use redis::aio::ConnectionManager;
 use redis::AsyncCommands;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 use uuid::Uuid;
 
-use crate::stats::Statistics;
 use crate::types::{MetricValue, PendingObservation};
 
 const FLUSH_THRESHOLD: usize = 100;
@@ -87,6 +87,16 @@ pub struct ExperimentRecorder {
     handle: Option<tokio::task::JoinHandle<()>>,
 }
 
+impl Clone for ExperimentRecorder {
+    fn clone(&self) -> Self {
+        Self {
+            redis: self.redis.clone(),
+            pending: self.pending.clone(),
+            handle: None,
+        }
+    }
+}
+
 impl ExperimentRecorder {
     pub fn new(redis: RedisClient) -> Self {
         Self {
@@ -134,7 +144,7 @@ impl ExperimentRecorder {
         let stats_key = Self::stats_key(experiment_id, group_name, metric_name);
         let counter_key = Self::counter_key(experiment_id, group_name);
 
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
 
         redis_conn.incr::<_, _, ()>(&counter_key, 1).await
             .map_err(|e| AppError::Cache(e.to_string()))?;
@@ -170,7 +180,7 @@ impl ExperimentRecorder {
 
     async fn update_redis_stats(
         &self,
-        redis_conn: &mut RedisClient,
+        redis_conn: &mut ConnectionManager,
         stats_key: &str,
         value: f64,
     ) -> Result<(), AppError> {
@@ -232,7 +242,7 @@ impl ExperimentRecorder {
         metric_name: &str,
     ) -> Result<MetricValue, AppError> {
         let stats_key = Self::stats_key(experiment_id, group_name, metric_name);
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
 
         let stats: HashMap<String, String> = redis_conn
             .hgetall(&stats_key)
@@ -284,7 +294,7 @@ impl ExperimentRecorder {
         group_name: &str,
     ) -> Result<u64, AppError> {
         let counter_key = Self::counter_key(experiment_id, group_name);
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
 
         let count: Option<i64> = redis_conn
             .get(&counter_key)
@@ -354,7 +364,7 @@ impl ExperimentRecorder {
     }
 
     pub async fn clear_experiment_data(&self, experiment_id: Uuid) -> Result<(), AppError> {
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
         let pattern = format!("experiment:{}:*", experiment_id);
         let keys: Vec<String> = redis_conn
             .keys(&pattern)

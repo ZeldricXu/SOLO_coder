@@ -1,6 +1,7 @@
+pub mod google;
 pub mod state;
-pub mod router;
 pub mod handlers;
+pub mod router;
 
 pub mod inference {
     pub mod v1 {

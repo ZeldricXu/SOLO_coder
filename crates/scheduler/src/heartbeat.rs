@@ -60,16 +60,16 @@ impl HeartbeatManager {
 
     pub fn register_node(&self, node_address: String, gpu_ids: Vec<usize>) {
         let node_id = format!("node-{}", &node_address.replace(':', "-").replace('.', "-"));
-        self.register_node_with_id(node_id, node_address, gpu_ids);
+        self.register_node_with_id(node_id, node_address, &gpu_ids);
     }
 
-    pub fn register_node_with_id(&self, node_id: String, node_address: String, gpu_ids: Vec<usize>) {
+    pub fn register_node_with_id(&self, node_id: String, node_address: String, gpu_ids: &[usize]) {
         info!(
             "Registering heartbeat node {} (id: {}) with GPUs: {:?}",
             node_address, node_id, gpu_ids
         );
 
-        for &gpu_id in &gpu_ids {
+        for &gpu_id in gpu_ids {
             let key: HeartbeatKey = (node_address.clone(), gpu_id);
             if !self.heartbeats.contains_key(&key) {
                 self.heartbeats
@@ -78,12 +78,12 @@ impl HeartbeatManager {
         }
 
         self.registered_nodes
-            .insert(node_address.clone(), gpu_ids.clone());
+            .insert(node_address.clone(), gpu_ids.to_vec());
 
         let node = RegisteredNode {
             node_id: node_id.clone(),
             address: node_address.clone(),
-            gpu_ids: gpu_ids.clone(),
+            gpu_ids: gpu_ids.to_vec(),
             registered_at: Instant::now(),
         };
 
@@ -219,7 +219,7 @@ impl HeartbeatManager {
                     models_hosted,
                 });
 
-                dead_node_ids.insert(node_id);
+                dead_node_ids.insert(node_id.clone());
 
                 let _ = self.event_sender.send(SchedulerEvent::NodeDead {
                     node_id: node_id.clone(),
@@ -300,7 +300,7 @@ impl HeartbeatManager {
 
     pub fn get_node_by_address(&self, address: &str) -> Option<NodeInfo> {
         let node_id = self.address_to_node_id.get(address)?;
-        let node = self.node_registry.get(node_id.value())?;
+        let _node = self.node_registry.get(node_id.value())?;
 
         let alive = self.get_alive_nodes();
         alive.into_iter().find(|n| n.node_id == *node_id)
@@ -705,6 +705,17 @@ impl HeartbeatManager {
             .count();
 
         healthy as f64 / total as f64
+    }
+
+    pub fn get_node_address(&self, node_id: &str) -> Option<String> {
+        self.node_registry.get(node_id).map(|n| n.address.clone())
+    }
+
+    pub fn get_registered_gpu_ids(&self, node_addr: &str) -> Vec<usize> {
+        self.registered_nodes
+            .get(node_addr)
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 }
 

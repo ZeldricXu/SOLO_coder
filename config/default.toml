@@ -1,0 +1,70 @@
+environment = "development"
+
+[server]
+host = "0.0.0.0"
+port = 8080
+workers = 4
+request_timeout_secs = 60
+
+[database]
+url = "postgres://postgres:postgres@localhost:5432/model_serving"
+max_connections = 20
+min_connections = 5
+acquire_timeout_secs = 30
+idle_timeout_secs = 300
+
+[redis]
+url = "redis://localhost:6379"
+pool_size = 16
+retry_times = 3
+retry_delay_ms = 100
+
+[inference]
+default_timeout_ms = 30000
+max_batch_size = 32
+max_queue_size = 1024
+gpu_devices = ["0"]
+warmup_enabled = true
+model_cache_dir = "./data/models"
+
+[security]
+jwt_secret = "change-me-in-production"
+jwt_expiration_secs = 3600
+api_key_header = "X-API-Key"
+rate_limit_enabled = true
+encryption_key = "0123456789abcdef0123456789abcdef"
+
+[observability]
+tracing_enabled = true
+metrics_enabled = true
+otlp_endpoint = ""
+log_level = "info"
+log_format = "json"
+metrics_port = 9090
+
+[scheduler]
+enabled = true
+heartbeat_interval_secs = 5
+model_load_timeout_secs = 300
+auto_scale_enabled = true
+scale_up_threshold = 0.8
+scale_down_threshold = 0.2
+
+[routing]
+default_strategy = "round_robin"
+sticky_session_enabled = false
+fallback_enabled = true
+health_check_interval_secs = 10
+circuit_breaker_enabled = true
+
+[experiment]
+enabled = true
+min_traffic_percent = 1
+max_groups = 10
+assignment_cache_ttl_secs = 3600
+
+[storage]
+backend = "s3"
+s3_bucket = "models"
+s3_region = "us-east-1"
+s3_endpoint = "http://localhost:9000"

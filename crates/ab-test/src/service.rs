@@ -1,11 +1,11 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use common::error::AppError;
 use common::types::{Experiment, ExperimentGroup};
 use common::utils::hash_user_id_to_bucket;
 use db::RedisClient;
 use redis::AsyncCommands;
 use std::collections::HashMap;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 use uuid::Uuid;
 
 use crate::recorder::ExperimentRecorder;
@@ -13,7 +13,7 @@ use crate::report::ReportGenerator;
 use crate::types::{ExperimentExt, ExperimentReport, GroupResult};
 
 const USER_BUCKET_COUNT: u32 = 10000;
-const USER_ASSIGNMENT_TTL_SECS: usize = 3600 * 24 * 30;
+const USER_ASSIGNMENT_TTL_SECS: u64 = 3600 * 24 * 30;
 
 pub struct ExperimentService {
     redis: RedisClient,
@@ -88,7 +88,7 @@ impl ExperimentService {
         experiment: &Experiment,
     ) -> Result<String, AppError> {
         let assignment_key = format!("experiment:{}:assignment:{}", experiment_id, user_id);
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
 
         if let Ok(Some(cached)) = redis_conn
             .get::<_, Option<String>>(&assignment_key)
@@ -191,7 +191,7 @@ impl ExperimentService {
 
     pub async fn get_total_users(&self, experiment_id: Uuid) -> Result<u64, AppError> {
         let all_users_key = format!("experiment:{}:all_users", experiment_id);
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
 
         let count: Option<u64> = redis_conn
             .pfcount(&all_users_key)
@@ -207,7 +207,7 @@ impl ExperimentService {
         group_name: &str,
     ) -> Result<u64, AppError> {
         let users_key = format!("experiment:{}:{}:users", experiment_id, group_name);
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
 
         let count: Option<u64> = redis_conn
             .pfcount(&users_key)
@@ -220,7 +220,7 @@ impl ExperimentService {
     pub async fn clear_experiment_data(&self, experiment_id: Uuid) -> Result<(), AppError> {
         self.recorder.clear_experiment_data(experiment_id).await?;
 
-        let mut redis_conn = self.redis.clone();
+        let mut redis_conn = self.redis.manager.clone();
         let pattern = format!("experiment:{}:assignment:*", experiment_id);
         let keys: Vec<String> = redis_conn.keys(&pattern).await.unwrap_or_default();
         if !keys.is_empty() {
