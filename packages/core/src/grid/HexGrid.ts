@@ -31,6 +31,7 @@ export class HexGrid {
   private entityManager: MapEntityManager;
   private entities: Map<ID, MapEntity>;
   private _eventBus: EventBus;
+  cacheVersion: number;
 
   constructor(config: HexGridConfig, eventBus?: EventBus) {
     this.config = config;
@@ -39,6 +40,7 @@ export class HexGrid {
     this.entityManager = new MapEntityManager();
     this.entityManager.setGrid(this);
     this._eventBus = eventBus ?? new EventBus();
+    this.cacheVersion = 0;
     
     if (config.radius !== undefined) {
       this.initializeHexGrid(config.radius);
@@ -114,6 +116,7 @@ export class HexGrid {
     if (tile) {
       const oldTerrain = tile.terrain;
       tile.terrain = terrain;
+      this.cacheVersion++;
 
       this._eventBus.publish('TERRAIN_CHANGED', {
         coords,
@@ -131,6 +134,7 @@ export class HexGrid {
     const tile = this.getTile(coords);
     if (tile) {
       tile.height = height;
+      this.cacheVersion++;
     }
   }
 
@@ -146,13 +150,34 @@ export class HexGrid {
     const tile = this.getTile(coords);
     if (tile && !tile.units.includes(unitId)) {
       tile.units.push(unitId);
+      this.cacheVersion++;
     }
   }
 
   removeUnit(coords: CubeCoords, unitId: ID): void {
     const tile = this.getTile(coords);
     if (tile) {
+      const before = tile.units.length;
       tile.units = tile.units.filter(id => id !== unitId);
+      if (tile.units.length !== before) {
+        this.cacheVersion++;
+      }
+    }
+  }
+
+  setUnitsAt(coords: CubeCoords, unitIds: ID[]): void {
+    const tile = this.getTile(coords);
+    if (tile) {
+      tile.units = [...unitIds];
+      this.cacheVersion++;
+    }
+  }
+
+  clearUnitsAt(coords: CubeCoords): void {
+    const tile = this.getTile(coords);
+    if (tile && tile.units.length > 0) {
+      tile.units = [];
+      this.cacheVersion++;
     }
   }
 
@@ -378,6 +403,7 @@ export class HexGrid {
     if (tile && !tile.objects.includes(entity.id)) {
       tile.objects.push(entity.id);
     }
+    this.cacheVersion++;
 
     this._eventBus.publish('OBJECT_SPAWNED', {
       objectId: entity.id,
@@ -398,6 +424,7 @@ export class HexGrid {
     }
     
     this.entities.delete(entityId);
+    this.cacheVersion++;
 
     this._eventBus.publish('OBJECT_REMOVED', {
       objectId: entityId,

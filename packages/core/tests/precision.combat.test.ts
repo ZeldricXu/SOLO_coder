@@ -321,7 +321,8 @@ describe('Test 3: DOT/HOT触发时机（角色行动开始触发）', () => {
   let turnManager: TurnManager;
 
   beforeEach(() => {
-    statusEffectSystem = new StatusEffectSystem();
+    // 精密时序测试使用数组模式（与原实现100%一致），分桶存储在combat.test.ts中单独验证
+    statusEffectSystem = new StatusEffectSystem({}, { useBuckets: false });
   });
 
   function forceTickable(effect: StatusEffect): void {

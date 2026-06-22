@@ -14,6 +14,20 @@ import {
   chance,
   Serializable,
 } from '../utils';
+import { DamageChain, DamageContext, IDamageHandler } from './DamageChain';
+import {
+  ArmorPenetrationHandler,
+  BaseDamageHandler,
+  HitHandler,
+  ElementHandler,
+  TerrainHandler,
+  HeightHandler,
+  DirectionHandler,
+  CritHandler,
+  ResistanceHandler,
+  ShieldHandler,
+  DamageClampHandler,
+} from './handlers';
 
 export type DamageCalculatorEventMap = {
   onBeforeDamageCalculate?: (attacker: CombatUnit, target: CombatUnit, context: Record<string, unknown>) => void;
@@ -27,6 +41,7 @@ export class DamageCalculator implements Serializable {
   private config: DamageCalculationConfig;
   private elementChart: ElementChart;
   private events: DamageCalculatorEventMap;
+  private chain: DamageChain;
 
   constructor(
     config: DamageCalculationConfig,
@@ -36,6 +51,34 @@ export class DamageCalculator implements Serializable {
     this.config = config;
     this.elementChart = elementChart;
     this.events = events;
+    this.chain = this.createDefaultChain();
+  }
+
+  private createDefaultChain(): DamageChain {
+    const chain = new DamageChain(this.config, this.elementChart, this.events);
+    chain.addHandler(new ArmorPenetrationHandler());
+    chain.addHandler(new BaseDamageHandler());
+    chain.addHandler(new HitHandler());
+    chain.addHandler(new ElementHandler());
+    chain.addHandler(new TerrainHandler());
+    chain.addHandler(new HeightHandler());
+    chain.addHandler(new DirectionHandler());
+    chain.addHandler(new CritHandler());
+    chain.addHandler(new ResistanceHandler());
+    chain.addHandler(new ShieldHandler());
+    chain.addHandler(new DamageClampHandler());
+    return chain;
+  }
+
+  getChain(): DamageChain {
+    return this.chain;
+  }
+
+  setChain(chain: DamageChain): void {
+    this.chain = chain;
+    this.chain.setConfig(this.config);
+    this.chain.setElementChart(this.elementChart);
+    this.chain.setEvents(this.events);
   }
 
   calculateDamage(
@@ -56,97 +99,55 @@ export class DamageCalculator implements Serializable {
       baseDamageOverride,
     });
 
-    const timestamp = Date.now();
-    const isMagic = skillDamageType === 'magic';
-
-    const baseAttack = isMagic
-      ? attacker.stats.magicAttack
-      : attacker.stats.attack;
-    const baseDefense = isMagic
-      ? target.stats.magicDefense
-      : target.stats.defense;
-    const armorPen = armorPenetrationOverride ?? attacker.stats.armorPenetration;
-
-    let baseDamage = baseDamageOverride ?? evaluateFormula(this.config.baseFormula, {
-      attack: baseAttack,
-      defense: baseDefense,
-      armorPenetration: armorPen,
-      baseAttack,
-      targetDefense: baseDefense,
-    });
-
-    const elementMultiplier = calculateElementMultiplier(
-      skillElement,
-      this.getDominantElement(target),
-      this.elementChart,
-      this.config.elementAdvantageMultiplier,
-      this.config.elementDisadvantageMultiplier
-    );
-
-    const isCrit = this.calculateCrit(attacker, target);
-    const critMultiplier = isCrit ? attacker.stats.critDamage : 1;
-
-    const { resistanceMitigation, resistancePercent } = this.calculateResistance(
-      target,
-      skillDamageType
-    );
-
-    let finalDamage = baseDamage;
-    finalDamage *= elementMultiplier;
-    finalDamage *= (1 + terrainBonus);
-    finalDamage *= (1 + heightBonus);
-    finalDamage *= (1 + directionBonus);
-    finalDamage *= critMultiplier;
-    finalDamage *= (1 - resistancePercent);
-    finalDamage -= resistanceMitigation;
-
-    const hitResult = this.calculateHit(
+    const ctx: DamageContext = {
       attacker,
       target,
+      skillElement,
+      skillDamageType,
+      baseDamageOverride,
       terrainBonus,
       heightBonus,
-      directionBonus
-    );
-
-    const isDodged = !hitResult.hit;
-    const isBlocked = false;
-
-    if (isDodged) {
-      finalDamage = 0;
-    }
-
-    finalDamage = clamp(
-      finalDamage,
-      this.config.minDamage,
-      this.config.maxDamage
-    );
-
-    const instance: DamageInstance = {
-      sourceId: attacker.id,
-      targetId: target.id,
+      directionBonus,
       skillId,
-      baseDamage,
-      finalDamage: Math.floor(finalDamage),
-      damageType: skillDamageType,
-      element: skillElement,
-      isCrit: isCrit && !isDodged,
-      isBlocked,
-      isDodged,
-      armorMitigation: 0,
-      resistanceMitigation,
-      terrainBonus,
-      elementBonus: elementMultiplier - 1,
-      position: target.coords,
-      timestamp,
+      armorPenetrationOverride,
+      finalDamage: 0,
+      skipRemaining: false,
+      instance: {},
     };
 
-    if (isCrit && !isDodged) {
-      this.events.onCrit?.(attacker, target, critMultiplier);
+    this.chain.process(ctx);
+
+    let instance = ctx.instance as Partial<DamageInstance>;
+    if (!instance.sourceId) {
+      instance = {
+        sourceId: attacker.id,
+        targetId: target.id,
+        skillId,
+        baseDamage: ctx.baseDamage ?? 0,
+        finalDamage: Math.floor(clamp(ctx.finalDamage, this.config.minDamage, this.config.maxDamage)),
+        damageType: skillDamageType,
+        element: skillElement,
+        isCrit: (ctx.isCrit ?? false) && !(ctx.isDodged ?? false),
+        isBlocked: false,
+        isDodged: ctx.isDodged ?? false,
+        armorMitigation: 0,
+        resistanceMitigation: ctx.resistanceMitigation ?? 0,
+        terrainBonus,
+        elementBonus: (ctx.elementMultiplier ?? 1) - 1,
+        position: target.coords,
+        timestamp: Date.now(),
+      };
     }
 
-    this.events.onAfterDamageCalculate?.(instance);
+    const finalInstance = instance as DamageInstance;
 
-    return instance;
+    if (ctx.isCrit && !ctx.isDodged) {
+      this.events.onCrit?.(attacker, target, ctx.critMultiplier ?? 1);
+    }
+
+    this.events.onAfterDamageCalculate?.(finalInstance);
+
+    return finalInstance;
   }
 
   calculateHit(
@@ -306,6 +307,7 @@ export class DamageCalculator implements Serializable {
 
   setConfig(config: Partial<DamageCalculationConfig>): void {
     this.config = { ...this.config, ...config };
+    this.chain.setConfig(this.config);
   }
 
   getElementChart(): ElementChart {
@@ -314,10 +316,12 @@ export class DamageCalculator implements Serializable {
 
   setElementChart(chart: ElementChart): void {
     this.elementChart = { ...chart };
+    this.chain.setElementChart(this.elementChart);
   }
 
   setEvents(events: Partial<DamageCalculatorEventMap>): void {
     this.events = { ...this.events, ...events };
+    this.chain.setEvents(this.events);
   }
 
   toJSON(): Record<string, unknown> {
@@ -330,9 +334,11 @@ export class DamageCalculator implements Serializable {
   fromJSON(data: Record<string, unknown>): void {
     if (data.config) {
       this.config = data.config as DamageCalculationConfig;
+      this.chain.setConfig(this.config);
     }
     if (data.elementChart) {
       this.elementChart = data.elementChart as ElementChart;
+      this.chain.setElementChart(this.elementChart);
     }
   }
 }

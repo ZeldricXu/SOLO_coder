@@ -10,6 +10,7 @@ import {
   clamp,
   Serializable,
 } from '../utils';
+import { BucketedStatusStore } from './BucketedStatusStore';
 
 export type StatusEffectSystemEventMap = {
   onBeforeApplyEffect?: (unit: CombatUnit, effect: StatusEffect) => boolean | void;
@@ -39,11 +40,52 @@ export interface StatusEffectTickResult {
   expired: boolean;
 }
 
+export interface StatusEffectSystemOptions {
+  useBuckets?: boolean;
+}
+
 export class StatusEffectSystem implements Serializable {
   private events: StatusEffectSystemEventMap;
+  private useBuckets: boolean;
+  private currentGlobalTurn: number;
 
-  constructor(events: StatusEffectSystemEventMap = {}) {
+  constructor(
+    events: StatusEffectSystemEventMap = {},
+    options: StatusEffectSystemOptions = {}
+  ) {
     this.events = events;
+    this.useBuckets = options.useBuckets !== false;
+    this.currentGlobalTurn = 0;
+  }
+
+  setCurrentTurn(turn: number): void {
+    this.currentGlobalTurn = turn;
+  }
+
+  getCurrentTurn(): number {
+    return this.currentGlobalTurn;
+  }
+
+  advanceAllStoresTurn(turn: number): void {
+    this.currentGlobalTurn = turn;
+  }
+
+  private getStore(unit: CombatUnit): BucketedStatusStore | undefined {
+    if (!this.useBuckets) return undefined;
+
+    if (!unit.statusEffectStore || !(unit.statusEffectStore instanceof BucketedStatusStore)) {
+      const oldStore = unit.statusEffectStore;
+      unit.statusEffectStore = new BucketedStatusStore();
+      unit.statusEffectStore.importFromArray(unit.statusEffects, this.currentGlobalTurn);
+      if (oldStore && typeof oldStore === 'object') {
+        try {
+          unit.statusEffectStore.fromJSON(oldStore as Record<string, unknown>);
+        } catch (_e) {
+          // ignore invalid old store data
+        }
+      }
+    }
+    return unit.statusEffectStore;
   }
 
   applyEffect(unit: CombatUnit, effect: StatusEffect): StatusEffect | null {
@@ -71,6 +113,12 @@ export class StatusEffectSystem implements Serializable {
     this.applyEffectsToStats(unit, effect);
     unit.statusEffects.push(effect);
 
+    const store = this.getStore(unit);
+    if (store) {
+      store.advanceTurn(this.currentGlobalTurn);
+      store.add(effect);
+    }
+
     this.events.onAfterApplyEffect?.(unit, effect);
     return effect;
   }
@@ -88,13 +136,25 @@ export class StatusEffectSystem implements Serializable {
     this.removeEffectsFromStats(unit, effect);
     unit.statusEffects.splice(index, 1);
 
+    const store = this.getStore(unit);
+    if (store) {
+      store.remove(effectId);
+    }
+
     this.events.onAfterRemoveEffect?.(unit, effect);
     return effect;
   }
 
   removeEffectsByType(unit: CombatUnit, effectType: string): StatusEffect[] {
     const removed: StatusEffect[] = [];
-    const toRemove = unit.statusEffects.filter(e => e.type === effectType);
+    const store = this.getStore(unit);
+    let toRemove: StatusEffect[];
+
+    if (store) {
+      toRemove = store.getEffectsByType(effectType);
+    } else {
+      toRemove = unit.statusEffects.filter(e => e.type === effectType);
+    }
 
     for (const effect of toRemove) {
       const result = this.removeEffect(unit, effect.id);
@@ -140,101 +200,205 @@ export class StatusEffectSystem implements Serializable {
     const results: StatusEffectTickResult[] = [];
     const expiredEffects: ID[] = [];
     const timestamp = Date.now();
+    const store = this.getStore(unit);
 
-    for (let i = 0; i < unit.statusEffects.length; i++) {
-      const effect = unit.statusEffects[i];
-      const tickData: StatusEffectTickData = {};
+    if (store) {
+      const effectsToProcess = store.getAllEffects();
 
-      const shouldTickNow = this.shouldTickNow(effect);
-      let ticked = false;
+      for (const effect of effectsToProcess) {
+        const tickData: StatusEffectTickData = {};
+        const shouldTickNow = this.shouldTickNow(effect);
+        let ticked = false;
 
-      if (shouldTickNow) {
-        for (const effectData of effect.effects) {
-          if (effectData.damageType) {
-            const damage = effectData.value;
-            tickData.damage = (tickData.damage ?? 0) + damage;
-            unit.stats.hp = Math.max(0, unit.stats.hp - damage);
-            ticked = true;
-          } else if (effectData.stat) {
-            if (effectData.modifierType === 'add') {
-              tickData.statChanges = tickData.statChanges ?? {};
-              tickData.statChanges[effectData.stat] = (tickData.statChanges[effectData.stat] ?? 0) + effectData.value;
-            }
-          } else {
-            const isHeal = effect.type === 'regen' || effect.type === 'hot';
-            if (isHeal) {
-              const healAmount = effectData.value;
-              tickData.heal = (tickData.heal ?? 0) + healAmount;
-              unit.stats.hp = Math.min(unit.stats.maxHp, unit.stats.hp + healAmount);
+        if (shouldTickNow) {
+          for (const effectData of effect.effects) {
+            if (effectData.damageType) {
+              const damage = effectData.value;
+              tickData.damage = (tickData.damage ?? 0) + damage;
+              unit.stats.hp = Math.max(0, unit.stats.hp - damage);
               ticked = true;
+            } else if (effectData.stat) {
+              if (effectData.modifierType === 'add') {
+                tickData.statChanges = tickData.statChanges ?? {};
+                tickData.statChanges[effectData.stat] = (tickData.statChanges[effectData.stat] ?? 0) + effectData.value;
+              }
+            } else {
+              const isHeal = effect.type === 'regen' || effect.type === 'hot';
+              if (isHeal) {
+                const healAmount = effectData.value;
+                tickData.heal = (tickData.heal ?? 0) + healAmount;
+                unit.stats.hp = Math.min(unit.stats.maxHp, unit.stats.hp + healAmount);
+                ticked = true;
+              }
             }
           }
         }
-      }
 
-      if (effect.duration > 0) {
-        effect.duration -= 1;
-      }
-
-      if (shouldTickNow) {
-        effect.lastTick = timestamp;
-      }
-
-      const expired = effect.duration <= 0;
-      if (expired) {
-        expiredEffects.push(effect.id);
-      }
-
-      if (ticked || expired) {
-        let damageInstance: DamageInstance | undefined;
-        let healInstance: HealInstance | undefined;
-
-        if (tickData.damage !== undefined) {
-          damageInstance = {
-            sourceId: effect.source,
-            targetId: unit.id,
-            baseDamage: tickData.damage,
-            finalDamage: tickData.damage,
-            damageType: (effect.effects.find(e => e.damageType)?.damageType ?? 'physical') as DamageType,
-            element: (effect.effects.find(e => e.element)?.element ?? 'neutral') as ElementType,
-            isCrit: false,
-            isBlocked: false,
-            isDodged: false,
-            armorMitigation: 0,
-            resistanceMitigation: 0,
-            terrainBonus: 0,
-            elementBonus: 0,
-            position: unit.coords,
-            timestamp,
-          };
+        if (effect.duration > 0) {
+          effect.duration -= 1;
         }
 
-        if (tickData.heal !== undefined) {
-          healInstance = {
-            sourceId: effect.source,
-            targetId: unit.id,
-            baseHeal: tickData.heal,
-            finalHeal: tickData.heal,
-            isCrit: false,
-            isOverheal: false,
-            overhealAmount: 0,
-            position: unit.coords,
-            timestamp,
-          };
+        store.updateEffectExpiry(effect.id, effect.duration);
+
+        if (shouldTickNow) {
+          effect.lastTick = timestamp;
+          store.tickCompleted(effect.id, this.currentGlobalTurn + 2);
         }
 
-        results.push({
-          effectId: effect.id,
-          effectType: effect.type,
-          data: tickData,
-          damageInstance,
-          healInstance,
-          durationRemaining: effect.duration,
-          expired,
-        });
+        const expired = effect.duration <= 0;
+        if (expired) {
+          expiredEffects.push(effect.id);
+        }
 
-        if (ticked) {
-          this.events.onEffectTick?.(unit, effect, tickData);
+        if (ticked || expired) {
+          let damageInstance: DamageInstance | undefined;
+          let healInstance: HealInstance | undefined;
+
+          if (tickData.damage !== undefined) {
+            damageInstance = {
+              sourceId: effect.source,
+              targetId: unit.id,
+              baseDamage: tickData.damage,
+              finalDamage: tickData.damage,
+              damageType: (effect.effects.find(e => e.damageType)?.damageType ?? 'physical') as DamageType,
+              element: (effect.effects.find(e => e.element)?.element ?? 'neutral') as ElementType,
+              isCrit: false,
+              isBlocked: false,
+              isDodged: false,
+              armorMitigation: 0,
+              resistanceMitigation: 0,
+              terrainBonus: 0,
+              elementBonus: 0,
+              position: unit.coords,
+              timestamp,
+            };
+          }
+
+          if (tickData.heal !== undefined) {
+            healInstance = {
+              sourceId: effect.source,
+              targetId: unit.id,
+              baseHeal: tickData.heal,
+              finalHeal: tickData.heal,
+              isCrit: false,
+              isOverheal: false,
+              overhealAmount: 0,
+              position: unit.coords,
+              timestamp,
+            };
+          }
+
+          results.push({
+            effectId: effect.id,
+            effectType: effect.type,
+            data: tickData,
+            damageInstance,
+            healInstance,
+            durationRemaining: effect.duration,
+            expired,
+          });
+
+          if (ticked) {
+            this.events.onEffectTick?.(unit, effect, tickData);
+          }
+        }
+      }
+    } else {
+      for (let i = 0; i < unit.statusEffects.length; i++) {
+        const effect = unit.statusEffects[i];
+        const tickData: StatusEffectTickData = {};
+
+        const shouldTickNow = this.shouldTickNow(effect);
+        let ticked = false;
+
+        if (shouldTickNow) {
+          for (const effectData of effect.effects) {
+            if (effectData.damageType) {
+              const damage = effectData.value;
+              tickData.damage = (tickData.damage ?? 0) + damage;
+              unit.stats.hp = Math.max(0, unit.stats.hp - damage);
+              ticked = true;
+            } else if (effectData.stat) {
+              if (effectData.modifierType === 'add') {
+                tickData.statChanges = tickData.statChanges ?? {};
+                tickData.statChanges[effectData.stat] = (tickData.statChanges[effectData.stat] ?? 0) + effectData.value;
+              }
+            } else {
+              const isHeal = effect.type === 'regen' || effect.type === 'hot';
+              if (isHeal) {
+                const healAmount = effectData.value;
+                tickData.heal = (tickData.heal ?? 0) + healAmount;
+                unit.stats.hp = Math.min(unit.stats.maxHp, unit.stats.hp + healAmount);
+                ticked = true;
+              }
+            }
+          }
+        }
+
+        if (effect.duration > 0) {
+          effect.duration -= 1;
+        }
+
+        if (shouldTickNow) {
+          effect.lastTick = timestamp;
+        }
+
+        const expired = effect.duration <= 0;
+        if (expired) {
+          expiredEffects.push(effect.id);
+        }
+
+        if (ticked || expired) {
+          let damageInstance: DamageInstance | undefined;
+          let healInstance: HealInstance | undefined;
+
+          if (tickData.damage !== undefined) {
+            damageInstance = {
+              sourceId: effect.source,
+              targetId: unit.id,
+              baseDamage: tickData.damage,
+              finalDamage: tickData.damage,
+              damageType: (effect.effects.find(e => e.damageType)?.damageType ?? 'physical') as DamageType,
+              element: (effect.effects.find(e => e.element)?.element ?? 'neutral') as ElementType,
+              isCrit: false,
+              isBlocked: false,
+              isDodged: false,
+              armorMitigation: 0,
+              resistanceMitigation: 0,
+              terrainBonus: 0,
+              elementBonus: 0,
+              position: unit.coords,
+              timestamp,
+            };
+          }
+
+          if (tickData.heal !== undefined) {
+            healInstance = {
+              sourceId: effect.source,
+              targetId: unit.id,
+              baseHeal: tickData.heal,
+              finalHeal: tickData.heal,
+              isCrit: false,
+              isOverheal: false,
+              overhealAmount: 0,
+              position: unit.coords,
+              timestamp,
+            };
+          }
+
+          results.push({
+            effectId: effect.id,
+            effectType: effect.type,
+            data: tickData,
+            damageInstance,
+            healInstance,
+            durationRemaining: effect.duration,
+            expired,
+          });
+
+          if (ticked) {
+            this.events.onEffectTick?.(unit, effect, tickData);
+          }
         }
       }
     }
@@ -290,6 +454,11 @@ export class StatusEffectSystem implements Serializable {
       existing.duration = incoming.duration;
       existing.maxDuration = Math.max(existing.maxDuration, incoming.maxDuration);
       this.applyEffectsToStats(unit, existing);
+
+      const store = this.getStore(unit);
+      if (store) {
+        store.updateEffectExpiry(existing.id, existing.duration);
+      }
     }
 
     const stackMultiplier = 1 + (existing.stackCount - 1) * 0.1;
@@ -302,6 +471,10 @@ export class StatusEffectSystem implements Serializable {
   }
 
   getEffectsByType(unit: CombatUnit, effectType: string): StatusEffect[] {
+    const store = this.getStore(unit);
+    if (store) {
+      return store.getEffectsByType(effectType);
+    }
     return unit.statusEffects.filter(e => e.type === effectType);
   }
 
@@ -314,6 +487,10 @@ export class StatusEffectSystem implements Serializable {
   }
 
   hasEffectType(unit: CombatUnit, effectType: string): boolean {
+    const store = this.getStore(unit);
+    if (store) {
+      return store.getEffectsByType(effectType).length > 0;
+    }
     return unit.statusEffects.some(e => e.type === effectType);
   }
 
@@ -468,9 +645,18 @@ export class StatusEffectSystem implements Serializable {
   }
 
   toJSON(): Record<string, unknown> {
-    return {};
+    return {
+      useBuckets: this.useBuckets,
+      currentGlobalTurn: this.currentGlobalTurn,
+    };
   }
 
-  fromJSON(_data: Record<string, unknown>): void {
+  fromJSON(data: Record<string, unknown>): void {
+    if (data.useBuckets !== undefined) {
+      this.useBuckets = data.useBuckets as boolean;
+    }
+    if (data.currentGlobalTurn !== undefined) {
+      this.currentGlobalTurn = data.currentGlobalTurn as number;
+    }
   }
 }

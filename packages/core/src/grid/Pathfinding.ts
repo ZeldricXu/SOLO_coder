@@ -3,6 +3,7 @@ import { cubeDistance, cubeEquals, cubeKey, cubeNeighbors } from './coords';
 import type { HexGrid } from './HexGrid';
 import { terrainRegistry } from './TerrainConfig';
 import { serializeMap, deserializeMap } from '../utils/serialization';
+import { LRUCache } from '../utils/LRUCache';
 
 interface PathfindingOptions {
   ignoreTerrain?: string[];
@@ -43,6 +44,10 @@ class MinHeap {
     return top;
   }
 
+  clear(): void {
+    this.heap.length = 0;
+  }
+
   private bubbleUp(index: number): void {
     while (index > 0) {
       const parent = (index - 1) >> 1;
@@ -80,13 +85,15 @@ class MinHeap {
 
 export class Pathfinder {
   private grid: HexGrid;
-  private cache: Map<string, PathResult>;
+  private cache: LRUCache<string, PathResult>;
   private cacheMaxSize: number;
+  private gridVersion: number;
 
   constructor(grid: HexGrid, cacheMaxSize: number = 1000) {
     this.grid = grid;
-    this.cache = new Map();
     this.cacheMaxSize = cacheMaxSize;
+    this.cache = new LRUCache<string, PathResult>(cacheMaxSize);
+    this.gridVersion = (grid as any).cacheVersion || 0;
   }
 
   findPath(
@@ -95,6 +102,7 @@ export class Pathfinder {
     maxMovePoints: number = Infinity,
     options: PathfindingOptions = {}
   ): PathResult {
+    this.checkGridVersion();
     const cacheKey = this.getPathCacheKey(start, goal, maxMovePoints, options);
     const cached = this.cache.get(cacheKey);
     if (cached) {
@@ -426,6 +434,29 @@ export class Pathfinder {
     this.cache.clear();
   }
 
+  invalidateCache(coords?: CubeCoords | CubeCoords[]): void {
+    if (coords === undefined) {
+      this.cache.clear();
+      return;
+    }
+    const coordsList = Array.isArray(coords) ? coords : [coords];
+    const coordKeys = new Set(coordsList.map(c => cubeKey(c)));
+    this.cache.invalidate((cacheKey) => {
+      const parts = cacheKey.split(';');
+      const startKey = parts[0];
+      const goalKey = parts[1];
+      return coordKeys.has(startKey) || coordKeys.has(goalKey);
+    });
+  }
+
+  private checkGridVersion(): void {
+    const currentVersion = (this.grid as any).cacheVersion || 0;
+    if (currentVersion > this.gridVersion) {
+      this.cache.clear();
+      this.gridVersion = currentVersion;
+    }
+  }
+
   private reconstructPath(node: PathNode): PathResult {
     const path: CubeCoords[] = [];
     let current: PathNode | null = node;
@@ -471,36 +502,41 @@ export class Pathfinder {
       options.preferTerrain?.join('|') ?? '',
       options.avoidTerrain?.join('|') ?? '',
       String(options.terrainPreferenceWeight ?? 0.5),
+      String(this.gridVersion),
     ];
     return parts.join(';');
   }
 
   private addToCache(key: string, result: PathResult): void {
     this.cache.set(key, result);
-    if (this.cache.size > this.cacheMaxSize) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.delete(firstKey);
-      }
-    }
   }
 
   toJSON(): Record<string, unknown> {
+    const mapCache = new Map<string, PathResult>();
+    for (const [key, value] of this.cache.entries()) {
+      mapCache.set(key, value);
+    }
     return {
       cache: serializeMap(
-        this.cache,
+        mapCache,
         (key: string) => key
       ),
       cacheMaxSize: this.cacheMaxSize,
+      gridVersion: this.gridVersion,
     };
   }
 
   fromJSON(data: Record<string, unknown>): void {
-    this.cache = deserializeMap(
+    const mapCache = deserializeMap(
       data.cache as Array<{ key: string; value: PathResult }>,
       (key: string) => key
     );
     this.cacheMaxSize = (data.cacheMaxSize as number) ?? 1000;
+    this.cache = new LRUCache<string, PathResult>(this.cacheMaxSize);
+    for (const [key, value] of mapCache.entries()) {
+      this.cache.set(key, value);
+    }
+    this.gridVersion = (data.gridVersion as number) ?? 0;
   }
 
   static fromJSON(grid: HexGrid, data: Record<string, unknown>): Pathfinder {

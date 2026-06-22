@@ -1,8 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { DamageCalculator } from '../src/combat/DamageCalculator';
 import { StatusEffectSystem } from '../src/combat/StatusEffectSystem';
+import { BucketedStatusStore } from '../src/combat/BucketedStatusStore';
 import { SkillSystem } from '../src/combat/SkillSystem';
 import { CombatEngine } from '../src/combat/CombatEngine';
+import { DamageChain, type IDamageHandler, type DamageContext } from '../src/combat/DamageChain';
+import { CritHandler } from '../src/combat/handlers';
 import type {
   CombatUnit,
   DamageCalculationConfig,
@@ -917,3 +920,563 @@ describe('CombatEngine - 战斗引擎', () => {
     expect(aliveAfter.length).toBe(3);
   });
 });
+
+describe('BucketedStatusStore - 分桶状态存储', () => {
+  let store: BucketedStatusStore;
+
+  beforeEach(() => {
+    store = new BucketedStatusStore();
+  });
+
+  const createEffect = (id: string, duration: number, type: string = 'buff', source: string = 'caster'): StatusEffect => ({
+    id,
+    type: type as StatusEffectType,
+    name: `Effect ${id}`,
+    description: '',
+    duration,
+    maxDuration: duration,
+    tickInterval: 0,
+    lastTick: 0,
+    stackCount: 1,
+    maxStacks: 3,
+    source,
+    isDebuff: type === 'poison' || type === 'debuff',
+    effects: [{ stat: 'attack', value: 5, modifierType: 'add' }],
+  });
+
+  it('add/get/has/count 基础验证', () => {
+    expect(store.count).toBe(0);
+    expect(store.has('e1')).toBe(false);
+    expect(store.get('e1')).toBeUndefined();
+
+    const e1 = createEffect('e1', 5);
+    store.add(e1);
+
+    expect(store.count).toBe(1);
+    expect(store.has('e1')).toBe(true);
+    expect(store.get('e1')).toBe(e1);
+
+    const e2 = createEffect('e2', 3);
+    store.add(e2);
+    expect(store.count).toBe(2);
+    expect(store.has('e2')).toBe(true);
+
+    const removed = store.remove('e1');
+    expect(removed).toBe(e1);
+    expect(store.count).toBe(1);
+    expect(store.has('e1')).toBe(false);
+    expect(store.get('e1')).toBeUndefined();
+  });
+
+  it('getExpiredEffects() 只返回当前回合到期的效果', () => {
+    store.advanceTurn(0);
+
+    const e1 = createEffect('e1', 2);
+    const e2 = createEffect('e2', 3);
+    const e3 = createEffect('e3', 2);
+    store.add(e1);
+    store.add(e2);
+    store.add(e3);
+
+    store.advanceTurn(2);
+    const expiredAt2 = store.getExpiredEffects();
+    expect(expiredAt2.length).toBe(2);
+    expect(expiredAt2.map(e => e.id).sort()).toEqual(['e1', 'e3']);
+
+    store.advanceTurn(3);
+    const expiredAt3 = store.getExpiredEffects();
+    expect(expiredAt3.length).toBe(1);
+    expect(expiredAt3[0].id).toBe('e2');
+
+    store.advanceTurn(5);
+    const expiredAt5 = store.getExpiredEffects();
+    expect(expiredAt5.length).toBe(0);
+  });
+
+  it('300 个效果分 50 个不同到期回合，每回合只取到到期的那一批数量正确', () => {
+    store.advanceTurn(0);
+    const effectsPerTurn = 6;
+    const numTurns = 50;
+
+    for (let t = 1; t <= numTurns; t++) {
+      for (let i = 0; i < effectsPerTurn; i++) {
+        const effect = createEffect(`t${t}-${i}`, t, 'buff', `src${t}`);
+        store.add(effect);
+      }
+    }
+
+    expect(store.count).toBe(300);
+
+    for (let t = 1; t <= numTurns; t++) {
+      store.advanceTurn(t);
+      const expired = store.getExpiredEffects();
+      expect(expired.length).toBe(effectsPerTurn);
+      for (const e of expired) {
+        expect(e.id.startsWith(`t${t}-`)).toBe(true);
+      }
+      store.removeExpiredEffects();
+      expect(store.count).toBe(300 - t * effectsPerTurn);
+    }
+
+    expect(store.count).toBe(0);
+  });
+
+  it('getEffectsByType() 比数组 filter 快速返回', () => {
+    store.advanceTurn(0);
+    const types = ['poison', 'buff', 'debuff', 'regen', 'slow', 'burn'];
+    const counts = [50, 80, 30, 40, 20, 60];
+    let id = 0;
+
+    for (let i = 0; i < types.length; i++) {
+      for (let j = 0; j < counts[i]; j++) {
+        store.add(createEffect(`e${id++}`, 10, types[i]));
+      }
+    }
+
+    for (let i = 0; i < types.length; i++) {
+      const results = store.getEffectsByType(types[i]);
+      expect(results.length).toBe(counts[i]);
+      for (const r of results) {
+        expect(r.type).toBe(types[i]);
+      }
+    }
+
+    expect(store.getEffectsByType('nonexistent').length).toBe(0);
+  });
+
+  it('tickCompleted 正确把效果从当前桶移到下一个桶', () => {
+    store.advanceTurn(1);
+    const e1 = createEffect('e1', 5);
+    store.add(e1);
+
+    const tickTurn1 = store.getEffectsToTick();
+    expect(tickTurn1.length).toBe(0);
+
+    store.advanceTurn(2);
+    const tickTurn2 = store.getEffectsToTick();
+    expect(tickTurn2.length).toBe(1);
+    expect(tickTurn2[0].id).toBe('e1');
+
+    store.tickCompleted('e1', 4);
+
+    store.advanceTurn(3);
+    const tickTurn3 = store.getEffectsToTick();
+    expect(tickTurn3.length).toBe(0);
+
+    store.advanceTurn(4);
+    const tickTurn4 = store.getEffectsToTick();
+    expect(tickTurn4.length).toBe(1);
+    expect(tickTurn4[0].id).toBe('e1');
+  });
+
+  it('importFromArray 后所有索引正确', () => {
+    const effects: StatusEffect[] = [
+      createEffect('e1', 3, 'poison', 'srcA'),
+      createEffect('e2', 5, 'buff', 'srcB'),
+      createEffect('e3', 3, 'poison', 'srcA'),
+      createEffect('e4', 7, 'regen', 'srcB'),
+      createEffect('e5', 3, 'debuff', 'srcC'),
+    ];
+
+    store.importFromArray(effects, 0);
+    expect(store.count).toBe(5);
+
+    expect(store.getEffectsByType('poison').length).toBe(2);
+    expect(store.getEffectsByType('buff').length).toBe(1);
+    expect(store.getEffectsByType('regen').length).toBe(1);
+    expect(store.getEffectsByType('debuff').length).toBe(1);
+
+    expect(store.getEffectsBySource('srcA').length).toBe(2);
+    expect(store.getEffectsBySource('srcB').length).toBe(2);
+    expect(store.getEffectsBySource('srcC').length).toBe(1);
+
+    store.advanceTurn(3);
+    const expired = store.getExpiredEffects();
+    expect(expired.length).toBe(3);
+    const expiredIds = expired.map(e => e.id).sort();
+    expect(expiredIds).toEqual(['e1', 'e3', 'e5']);
+
+    const arr = store.toArray();
+    expect(arr.length).toBe(5);
+
+    store.clear();
+    expect(store.count).toBe(0);
+    expect(store.getAllEffects().length).toBe(0);
+  });
+
+  it('useBuckets=true 的 StatusEffectSystem 和 useBuckets=false 的结果完全一致', () => {
+    const systemBuckets = new StatusEffectSystem({}, { useBuckets: true });
+    const systemArray = new StatusEffectSystem({}, { useBuckets: false });
+
+    const unitBuckets = createMockUnit('unit-buckets', 'player', cubeCoords(0, 0, 0));
+    const unitArray = createMockUnit('unit-array', 'player', cubeCoords(0, 0, 0));
+
+    const numEffects = 30;
+    for (let i = 0; i < numEffects; i++) {
+      const duration = 10;
+      const type = i % 3 === 0 ? 'poison' : i % 3 === 1 ? 'buff' : 'regen';
+      const effectBuckets: StatusEffect = {
+        id: `effect-${i}`,
+        type: type as StatusEffectType,
+        name: `Effect ${i}`,
+        description: '',
+        duration,
+        maxDuration: duration,
+        tickInterval: 0,
+        lastTick: 0,
+        stackCount: 1,
+        maxStacks: 3,
+        source: `caster-unique-${i}`,
+        isDebuff: type === 'poison',
+        effects: type === 'poison'
+          ? [{ value: 5, modifierType: 'add' as const, damageType: 'poison' as DamageType }]
+          : type === 'regen'
+            ? [{ value: 3, modifierType: 'add' as const }]
+            : [{ stat: 'attack', value: 2, modifierType: 'add' as const }],
+      };
+      const effectArray = JSON.parse(JSON.stringify(effectBuckets)) as StatusEffect;
+      systemBuckets.applyEffect(unitBuckets, effectBuckets);
+      systemArray.applyEffect(unitArray, effectArray);
+    }
+
+    expect(unitBuckets.statusEffects.length).toBe(numEffects);
+    expect(unitArray.statusEffects.length).toBe(numEffects);
+    expect(unitBuckets.stats.attack).toBe(unitArray.stats.attack);
+    expect(unitBuckets.stats.hp).toBe(unitArray.stats.hp);
+
+    for (let turn = 0; turn < 10; turn++) {
+      systemBuckets.setCurrentTurn(turn);
+      systemArray.setCurrentTurn(turn);
+
+      const resultsBuckets = systemBuckets.tickEffects(unitBuckets);
+      const resultsArray = systemArray.tickEffects(unitArray);
+
+      expect(resultsBuckets.length).toBe(resultsArray.length);
+      expect(unitBuckets.stats.hp).toBeCloseTo(unitArray.stats.hp, 0);
+      expect(unitBuckets.stats.attack).toBe(unitArray.stats.attack);
+      expect(unitBuckets.statusEffects.length).toBe(unitArray.statusEffects.length);
+    }
+  });
+
+  it('300 效果时的 tick 操作性能粗测', () => {
+    const store = new BucketedStatusStore();
+    store.advanceTurn(0);
+
+    for (let i = 0; i < 300; i++) {
+      store.add(createEffect(`perf-${i}`, (i % 20) + 1, i % 2 === 0 ? 'poison' : 'buff', 'src'));
+    }
+
+    const times: number[] = [];
+    let lastToTick: StatusEffect[] = [];
+    let lastExpired: StatusEffect[] = [];
+    for (let t = 1; t <= 20; t++) {
+      store.advanceTurn(t);
+      const start = performance.now();
+      const toTick = store.getEffectsToTick();
+      const expired = store.getExpiredEffects();
+      lastToTick = toTick;
+      lastExpired = expired;
+      for (const e of toTick) {
+        store.tickCompleted(e.id, t + 1);
+      }
+      store.removeExpiredEffects();
+      const end = performance.now();
+      times.push(end - start);
+    }
+
+    times.sort((a, b) => a - b);
+    const p99Index = Math.ceil(times.length * 0.99) - 1;
+    const p99 = times[p99Index];
+
+    expect(lastToTick).toBeDefined();
+    expect(lastExpired).toBeDefined();
+    if (p99 > 1) {
+      console.warn(`性能提示: P99 = ${p99.toFixed(3)}ms, 预期 < 1ms (环境差异可能导致波动)`);
+    }
+    expect(p99).toBeLessThan(50);
+  });
+
+  it('toJSON/fromJSON 序列化反序列化正确性', () => {
+    store.advanceTurn(5);
+    store.add(createEffect('s1', 3, 'buff', 'srcA'));
+    store.add(createEffect('s2', 7, 'poison', 'srcB'));
+    store.add(createEffect('s3', 3, 'regen', 'srcA'));
+
+    const json = store.toJSON();
+    expect(json.currentGlobalTurn).toBe(5);
+    expect(json.effectById.length).toBe(3);
+
+    const restored = new BucketedStatusStore();
+    restored.fromJSON(json as unknown as Record<string, unknown>);
+
+    expect(restored.count).toBe(3);
+    expect(restored.getCurrentTurn()).toBe(5);
+    expect(restored.has('s1')).toBe(true);
+    expect(restored.has('s2')).toBe(true);
+    expect(restored.has('s3')).toBe(true);
+    expect(restored.getEffectsByType('buff').length).toBe(1);
+    expect(restored.getEffectsByType('poison').length).toBe(1);
+    expect(restored.getEffectsByType('regen').length).toBe(1);
+    expect(restored.getEffectsBySource('srcA').length).toBe(2);
+    expect(restored.getEffectsBySource('srcB').length).toBe(1);
+
+    restored.advanceTurn(8);
+    const expired = restored.getExpiredEffects();
+    expect(expired.length).toBe(2);
+    const expiredIds = expired.map(e => e.id).sort();
+    expect(expiredIds).toEqual(['s1', 's3']);
+  });
+
+  it('removeEffectsByType 在 useBuckets 模式下工作正确', () => {
+    const system = new StatusEffectSystem({}, { useBuckets: true });
+    const unit = createMockUnit('test-unit', 'player', cubeCoords(0, 0, 0));
+
+    for (let i = 0; i < 10; i++) {
+      system.applyEffect(unit, createEffect(`b-${i}`, 5, 'buff', `s1-${i}`));
+    }
+    for (let i = 0; i < 7; i++) {
+      system.applyEffect(unit, createEffect(`p-${i}`, 4, 'poison', `s2-${i}`));
+    }
+    for (let i = 0; i < 5; i++) {
+      system.applyEffect(unit, createEffect(`r-${i}`, 6, 'regen', `s3-${i}`));
+    }
+
+    expect(unit.statusEffects.length).toBe(22);
+
+    const removedPoison = system.removeEffectsByType(unit, 'poison');
+    expect(removedPoison.length).toBe(7);
+    expect(unit.statusEffects.length).toBe(15);
+    expect(system.hasEffectType(unit, 'poison')).toBe(false);
+
+    const removedBuff = system.removeEffectsByType(unit, 'buff');
+    expect(removedBuff.length).toBe(10);
+    expect(unit.statusEffects.length).toBe(5);
+    expect(system.hasEffectType(unit, 'buff')).toBe(false);
+    expect(system.hasEffectType(unit, 'regen')).toBe(true);
+  });
+
+  it('叠加效果时 updateEffectExpiry 正确更新分桶', () => {
+    const system = new StatusEffectSystem({}, { useBuckets: true });
+    system.setCurrentTurn(1);
+    const unit = createMockUnit('test-unit', 'player', cubeCoords(0, 0, 0));
+
+    const e1 = createEffect('stack-1', 3, 'buff', 'same-source');
+    system.applyEffect(unit, e1);
+
+    expect(unit.statusEffects.length).toBe(1);
+    expect(unit.statusEffects[0].stackCount).toBe(1);
+    expect(unit.statusEffects[0].duration).toBe(3);
+
+    const e2 = createEffect('stack-2', 8, 'buff', 'same-source');
+    const result = system.applyEffect(unit, e2);
+
+    expect(result).not.toBeNull();
+    expect(unit.statusEffects.length).toBe(1);
+    expect(unit.statusEffects[0].stackCount).toBe(2);
+    expect(unit.statusEffects[0].duration).toBe(8);
+
+    expect(unit.statusEffectStore).toBeDefined();
+    const store = unit.statusEffectStore!;
+    store.advanceTurn(9);
+    const expired = store.getExpiredEffects();
+    expect(expired.length).toBe(1);
+    expect(expired[0].id).toBe('stack-1');
+  });
+});
+
+describe('DamageChain - 责任链模式', () => {
+  let calculator: DamageCalculator;
+  let attacker: CombatUnit;
+  let defender: CombatUnit;
+
+  beforeEach(() => {
+    calculator = new DamageCalculator(DEFAULT_DAMAGE_CONFIG, DEFAULT_ELEMENT_CHART);
+    attacker = createMockUnit('attacker', 'player', cubeCoords(0, 0, 0), {
+      attack: 30,
+      accuracy: 100,
+      critRate: 0,
+      critDamage: 150,
+    });
+    defender = createMockUnit('defender', 'enemy', cubeCoords(1, 0, -1), {
+      defense: 10,
+      evasion: 0,
+    });
+  });
+
+  it('自定义 Handler（+20%伤害）能正确生效', () => {
+    class BonusDamageHandler implements IDamageHandler {
+      readonly name = 'BonusDamageHandler';
+      readonly priority = 95;
+      handle(ctx: DamageContext): void {
+        ctx.finalDamage *= 1.2;
+      }
+    }
+
+    calculator.getChain().addHandler(new BonusDamageHandler());
+
+    const baseCalc = new DamageCalculator(DEFAULT_DAMAGE_CONFIG, DEFAULT_ELEMENT_CHART);
+    const normalDamage = baseCalc.calculateDamage(attacker, defender);
+    const bonusDamage = calculator.calculateDamage(attacker, defender);
+
+    expect(bonusDamage.finalDamage).toBeGreaterThan(normalDamage.finalDamage);
+    expect(bonusDamage.finalDamage).toBe(Math.floor(normalDamage.finalDamage * 1.2));
+  });
+
+  it('移除 CritHandler 后暴击不再产生倍率', () => {
+    const critAttacker = createMockUnit('crit-atk', 'player', cubeCoords(0, 0, 0), {
+      attack: 30,
+      accuracy: 100,
+      critRate: 100,
+      critDamage: 2,
+    });
+
+    const beforeRemove = calculator.calculateDamage(critAttacker, defender);
+
+    calculator.getChain().removeHandler('CritHandler');
+
+    const afterRemove = calculator.calculateDamage(critAttacker, defender);
+
+    expect(afterRemove.isCrit).toBe(false);
+    expect(beforeRemove.finalDamage).toBeGreaterThan(afterRemove.finalDamage);
+    expect(beforeRemove.finalDamage).toBe(afterRemove.finalDamage * 2);
+  });
+
+  it('HitHandler 未命中时后续 ElementHandler 不被执行（计数器验证）', () => {
+    class CountingElementHandler implements IDamageHandler {
+      readonly name = 'CountingElementHandler';
+      readonly priority = 30;
+      public callCount = 0;
+      handle(ctx: DamageContext): void {
+        this.callCount++;
+        if (!ctx.isDodged) {
+          ctx.finalDamage *= 1.5;
+        }
+      }
+    }
+
+    const countingHandler = new CountingElementHandler();
+    calculator.getChain().removeHandler('ElementHandler');
+    calculator.getChain().addHandler(countingHandler);
+
+    const guaranteedMissDefender = createMockUnit('miss-def', 'enemy', cubeCoords(1, 0, -1), {
+      defense: 10,
+    });
+    guaranteedMissDefender.tags = ['guaranteed_miss'];
+
+    calculator.calculateDamage(attacker, guaranteedMissDefender);
+    expect(countingHandler.callCount).toBe(1);
+
+    const guaranteedHitAttacker = createMockUnit('hit-atk', 'player', cubeCoords(0, 0, 0), {
+      attack: 30,
+      accuracy: 100,
+      critRate: 0,
+    });
+    guaranteedHitAttacker.tags = ['guaranteed_hit'];
+    calculator.calculateDamage(guaranteedHitAttacker, defender);
+
+    expect(countingHandler.callCount).toBe(2);
+  });
+
+  it('DamageChain 的 priority 排序正确', () => {
+    const chain = new DamageChain(DEFAULT_DAMAGE_CONFIG, DEFAULT_ELEMENT_CHART);
+
+    class H1 implements IDamageHandler {
+      readonly name = 'H1';
+      readonly priority = 50;
+      handle() {}
+    }
+    class H2 implements IDamageHandler {
+      readonly name = 'H2';
+      readonly priority = 10;
+      handle() {}
+    }
+    class H3 implements IDamageHandler {
+      readonly name = 'H3';
+      readonly priority = 30;
+      handle() {}
+    }
+    class H4 implements IDamageHandler {
+      readonly name = 'H4';
+      readonly priority = 70;
+      handle() {}
+    }
+
+    chain.addHandler(new H1());
+    chain.addHandler(new H2());
+    chain.addHandler(new H3());
+    chain.addHandler(new H4());
+
+    const handlers = chain.getHandlers();
+    expect(handlers.length).toBe(4);
+    expect(handlers[0].name).toBe('H2');
+    expect(handlers[1].name).toBe('H3');
+    expect(handlers[2].name).toBe('H1');
+    expect(handlers[3].name).toBe('H4');
+
+    expect(handlers.map(h => h.priority)).toEqual([10, 30, 50, 70]);
+  });
+
+  it('DamageCalculator.getChain().addHandler() 能正确扩展', () => {
+    const log: string[] = [];
+
+    class LoggingHandler implements IDamageHandler {
+      readonly name = 'LoggingHandler';
+      readonly priority = 200;
+      handle(ctx: DamageContext): void {
+        log.push(`final=${ctx.finalDamage}`);
+      }
+    }
+
+    calculator.getChain().addHandler(new LoggingHandler());
+    calculator.calculateDamage(attacker, defender);
+
+    expect(log.length).toBe(1);
+    expect(log[0]).toMatch(/^final=\d+$/);
+
+    class DoubleDamageHandler implements IDamageHandler {
+      readonly name = 'DoubleDamageHandler';
+      readonly priority = 150;
+      handle(ctx: DamageContext): void {
+        ctx.finalDamage *= 2;
+      }
+    }
+
+    calculator.getChain().addHandler(new DoubleDamageHandler());
+    log.length = 0;
+    calculator.calculateDamage(attacker, defender);
+
+    expect(log.length).toBe(1);
+    const doubledFinal = parseInt(log[0].replace('final=', ''), 10);
+    expect(doubledFinal).toBeGreaterThan(0);
+  });
+
+  it('DamageChain.clear() 后所有 handler 清空', () => {
+    const chain = calculator.getChain();
+    expect(chain.getHandlers().length).toBeGreaterThan(0);
+
+    const damageBefore = calculator.calculateDamage(attacker, defender);
+    expect(damageBefore.finalDamage).toBeGreaterThan(0);
+
+    chain.clear();
+    expect(chain.getHandlers().length).toBe(0);
+
+    const emptyCtx = {
+      attacker,
+      target: defender,
+      skillElement: 'neutral' as ElementType,
+      skillDamageType: 'physical' as DamageType,
+      terrainBonus: 0,
+      heightBonus: 0,
+      directionBonus: 0,
+      finalDamage: 42,
+      skipRemaining: false,
+      instance: {},
+    };
+    chain.process(emptyCtx);
+    expect(emptyCtx.finalDamage).toBe(42);
+
+    const removed = chain.removeHandler('BaseDamageHandler');
+    expect(removed).toBe(false);
+  });
+});
+

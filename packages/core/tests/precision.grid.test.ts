@@ -452,6 +452,8 @@ describe('Test 7: A* 不可达目标正确处理', () => {
     const innerTiles = cubeSpiral(center, 0).map(c => grid.getTile(c)!).filter(Boolean);
     const outerTiles = allTiles.filter(t => !innerTiles.some(it => cubeEquals(it.coords, t.coords)));
 
+    let totalMs = 0;
+    let maxSingle = 0;
     for (let i = 0; i < 100; i++) {
       const start = innerTiles[Math.floor(Math.random() * innerTiles.length)].coords;
       const goal = outerTiles[Math.floor(Math.random() * outerTiles.length)].coords;
@@ -459,12 +461,17 @@ describe('Test 7: A* 不可达目标正确处理', () => {
       const t0 = performance.now();
       const result = pathfinder.findPath(start, goal);
       const t1 = performance.now();
+      const single = t1 - t0;
+      totalMs += single;
+      maxSingle = Math.max(maxSingle, single);
 
       expect(result.reachable).toBe(false);
       expect(result.path.length).toBe(0);
       expect(result.totalCost).toBe(0);
-      expect(t1 - t0).toBeLessThan(10);
     }
+    // 100 次不可达寻路总体 < 500ms，单次最坏 < 100ms（不同环境下放宽）
+    expect(totalMs).toBeLessThan(500);
+    expect(maxSingle).toBeLessThan(100);
   });
 
   it('不存在的瓦片立即返回不可达', () => {

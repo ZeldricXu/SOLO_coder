@@ -27,6 +27,8 @@ import {
   deepClone,
   createChecksum,
 } from '../src/utils/serialization';
+import { LRUCache } from '../src/utils/LRUCache';
+import { benchmark, compareBenchmarks } from '../src/utils/Benchmark';
 import type { DamageCalculationConfig, ElementChart, ElementType } from '../src/types';
 
 const DEFAULT_DAMAGE_CONFIG: DamageCalculationConfig = {
@@ -345,5 +347,162 @@ describe('serialization utils', () => {
 
     expect(cloned.map1).toBeInstanceOf(Map);
     expect(cloned.map2).toBeInstanceOf(Map);
+  });
+});
+
+describe('LRUCache', () => {
+  it('基本 set/get 操作', () => {
+    const cache = new LRUCache<string, number>(3);
+    cache.set('a', 1);
+    cache.set('b', 2);
+    expect(cache.get('a')).toBe(1);
+    expect(cache.get('b')).toBe(2);
+    expect(cache.get('c')).toBeUndefined();
+    expect(cache.size).toBe(2);
+  });
+
+  it('超出容量时淘汰最旧的', () => {
+    const cache = new LRUCache<string, number>(2);
+    cache.set('a', 1);
+    cache.set('b', 2);
+    cache.set('c', 3);
+    expect(cache.size).toBe(2);
+    expect(cache.has('a')).toBe(false);
+    expect(cache.get('b')).toBe(2);
+    expect(cache.get('c')).toBe(3);
+  });
+
+  it('get 后移到尾部（最近使用）', () => {
+    const cache = new LRUCache<string, number>(2);
+    cache.set('a', 1);
+    cache.set('b', 2);
+    cache.get('a');
+    cache.set('c', 3);
+    expect(cache.has('a')).toBe(true);
+    expect(cache.has('b')).toBe(false);
+    expect(cache.has('c')).toBe(true);
+  });
+
+  it('set 已存在键时更新值并移到尾部', () => {
+    const cache = new LRUCache<string, number>(2);
+    cache.set('a', 1);
+    cache.set('b', 2);
+    cache.set('a', 10);
+    cache.set('c', 3);
+    expect(cache.get('a')).toBe(10);
+    expect(cache.has('b')).toBe(false);
+    expect(cache.get('c')).toBe(3);
+  });
+
+  it('has / delete / clear 操作', () => {
+    const cache = new LRUCache<string, number>(5);
+    cache.set('x', 100);
+    expect(cache.has('x')).toBe(true);
+    expect(cache.delete('x')).toBe(true);
+    expect(cache.delete('x')).toBe(false);
+    expect(cache.has('x')).toBe(false);
+    cache.set('y', 200);
+    cache.set('z', 300);
+    expect(cache.size).toBe(2);
+    cache.clear();
+    expect(cache.size).toBe(0);
+    expect(cache.has('y')).toBe(false);
+  });
+
+  it('invalidate 按条件批量删除', () => {
+    const cache = new LRUCache<string, number>(10);
+    cache.set('a1', 1);
+    cache.set('a2', 2);
+    cache.set('b1', 3);
+    cache.set('b2', 4);
+    const removed = cache.invalidate((key) => key.startsWith('a'));
+    expect(removed).toBe(2);
+    expect(cache.size).toBe(2);
+    expect(cache.has('a1')).toBe(false);
+    expect(cache.has('a2')).toBe(false);
+    expect(cache.has('b1')).toBe(true);
+    expect(cache.has('b2')).toBe(true);
+  });
+
+  it('invalidate 结合 value 判断', () => {
+    const cache = new LRUCache<string, number>(10);
+    cache.set('a', 5);
+    cache.set('b', 15);
+    cache.set('c', 25);
+    const removed = cache.invalidate((_k, v) => v >= 15);
+    expect(removed).toBe(2);
+    expect(cache.get('a')).toBe(5);
+    expect(cache.has('b')).toBe(false);
+    expect(cache.has('c')).toBe(false);
+  });
+
+  it('entries / keys / values 遍历', () => {
+    const cache = new LRUCache<string, number>(3);
+    cache.set('a', 1);
+    cache.set('b', 2);
+    cache.set('c', 3);
+    const entries = Array.from(cache.entries());
+    expect(entries).toEqual([['a', 1], ['b', 2], ['c', 3]]);
+    expect(Array.from(cache.keys())).toEqual(['a', 'b', 'c']);
+    expect(Array.from(cache.values())).toEqual([1, 2, 3]);
+    cache.get('a');
+    expect(Array.from(cache.keys())).toEqual(['b', 'c', 'a']);
+  });
+
+  it('maxSize=1 边界情况', () => {
+    const cache = new LRUCache<string, string>(1);
+    cache.set('k1', 'v1');
+    expect(cache.get('k1')).toBe('v1');
+    cache.set('k2', 'v2');
+    expect(cache.has('k1')).toBe(false);
+    expect(cache.get('k2')).toBe('v2');
+    cache.get('k2');
+    cache.set('k3', 'v3');
+    expect(cache.size).toBe(1);
+    expect(cache.get('k3')).toBe('v3');
+  });
+});
+
+describe('Benchmark', () => {
+  it('benchmark 返回正确的结果结构', () => {
+    const result = benchmark('noop', () => {}, 10);
+    expect(result.name).toBe('noop');
+    expect(result.iterations).toBe(10);
+    expect(typeof result.totalMs).toBe('number');
+    expect(typeof result.avgMs).toBe('number');
+    expect(typeof result.minMs).toBe('number');
+    expect(typeof result.maxMs).toBe('number');
+    expect(typeof result.p50Ms).toBe('number');
+    expect(typeof result.p95Ms).toBe('number');
+    expect(typeof result.p99Ms).toBe('number');
+    expect(result.totalMs).toBeGreaterThanOrEqual(0);
+    expect(result.avgMs).toBeGreaterThanOrEqual(0);
+    expect(result.maxMs).toBeGreaterThanOrEqual(result.minMs);
+  });
+
+  it('benchmark 实际执行指定次数', () => {
+    let count = 0;
+    benchmark('counter', () => { count++; }, 25);
+    expect(count).toBe(25);
+  });
+
+  it('compareBenchmarks 对空数组返回提示', () => {
+    const output = compareBenchmarks([]);
+    expect(output).toContain('No benchmarks');
+  });
+
+  it('compareBenchmarks 生成比较表格', () => {
+    const r1 = benchmark('fast', () => { for (let i = 0; i < 10; i++); }, 5);
+    const r2 = benchmark('slow', () => { for (let i = 0; i < 1000; i++); }, 5);
+    const output = compareBenchmarks([r1, r2]);
+    expect(output).toContain('Benchmark Comparison');
+    expect(output).toContain('Name');
+    expect(output).toContain('Avg(ms)');
+    expect(output).toContain('P50(ms)');
+    expect(output).toContain('P95(ms)');
+    expect(output).toContain('P99(ms)');
+    expect(output).toContain('fast');
+    expect(output).toContain('slow');
+    expect(output).toMatch(/\d\.\d+x/);
   });
 });

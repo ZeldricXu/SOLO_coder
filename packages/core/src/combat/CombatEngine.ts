@@ -649,6 +649,7 @@ export class CombatEngine implements Serializable {
   startCombat(): void {
     this.isCombatActive = true;
     this.currentTurn = 1;
+    this.statusEffectSystem.setCurrentTurn(this.currentTurn);
     this.addCombatLog('turn', { turnNumber: this.currentTurn, phase: 'start' });
   }
 
@@ -658,6 +659,7 @@ export class CombatEngine implements Serializable {
 
   incrementTurn(): void {
     this.currentTurn += 1;
+    this.statusEffectSystem.advanceAllStoresTurn(this.currentTurn);
     this.addCombatLog('turn', { turnNumber: this.currentTurn, phase: 'start' });
   }
 

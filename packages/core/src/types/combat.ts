@@ -13,6 +13,7 @@ import type {
   Faction
 } from './common';
 import type { CubeCoords } from './grid';
+import type { BucketedStatusStore } from '../combat/BucketedStatusStore';
 
 export interface UnitStats {
   maxHp: number;
@@ -231,6 +232,7 @@ export interface CombatUnit {
   skills: Skill[];
   passiveSkills: PassiveSkill[];
   statusEffects: StatusEffect[];
+  statusEffectStore?: BucketedStatusStore;
   resistances: DamageResistance[];
   affinities: ElementAffinity[];
   equipment: ID[];
