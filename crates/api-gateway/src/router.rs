@@ -35,11 +35,39 @@ fn api_routes() -> Router<AppState> {
         .route(
             "/versions/{version_id}",
             delete(models::delete_version),
+        )
+        .route(
+            "/{model_name}/rollout",
+            post(models::start_rollout)
+                .delete(models::cancel_rollout)
+                .get(models::get_rollout_status),
+        )
+        .route(
+            "/{model_name}/rollout/pause",
+            post(models::pause_rollout),
+        )
+        .route(
+            "/{model_name}/rollout/resume",
+            post(models::resume_rollout),
         );
+
+    let pipeline_routes = Router::new()
+        .route("/", post(models::create_pipeline).get(models::list_pipelines))
+        .route("/{name}", delete(models::delete_pipeline))
+        .route(
+            "/{pipeline_name}/execute",
+            post(inference::execute_pipeline),
+        );
+
+    let scheduler_routes = Router::new()
+        .route("/heat", get(models::get_all_heat_scores))
+        .route("/heat/{version_id}", get(models::get_model_heat_score));
 
     Router::new()
         .nest("/inference", inference_routes)
         .nest("/models", model_routes)
+        .nest("/pipelines", pipeline_routes)
+        .nest("/scheduler", scheduler_routes)
 }
 
 pub fn build_app(state: AppState) -> Router {

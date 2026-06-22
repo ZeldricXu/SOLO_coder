@@ -68,3 +68,19 @@ backend = "s3"
 s3_bucket = "models"
 s3_region = "us-east-1"
 s3_endpoint = "http://localhost:9000"
+
+[rollout]
+enabled = true
+initial_percent = 5
+step_percent = 10
+window_secs = 3600
+max_error_rate_ratio = 1.2
+max_p99_latency_ratio = 1.5
+
+[dynamic_scheduler]
+enabled = true
+high_watermark_percent = 90.0
+low_watermark_percent = 70.0
+protection_period_secs = 600
+warmup_iterations = 5
+check_interval_secs = 15

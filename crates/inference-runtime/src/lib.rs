@@ -33,6 +33,7 @@ use common::error::AppError;
 use common::types::{ModelFramework, ModelVersion};
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::{mpsc, Semaphore};
 use tokio_stream::wrappers::ReceiverStream;
 use tonic::{Request, Response, Status, Streaming};
@@ -42,7 +43,7 @@ use uuid::Uuid;
 use crate::backend::{BackendFactory, BackendRegistry, ModelHandle, RuntimeBackend, Tensor};
 use crate::batch::{BatchConfig, DynamicBatcher, InferRequest as BatchInferRequest, LoadedModelRef, ModelKey};
 use crate::gpu::{GpuManager, GpuStats};
-use crate::pipeline::{InferencePipeline, PipelineBuilder, PipelineConfig};
+pub use crate::pipeline::{InferencePipeline, PipelineConfig, PipelineModelExecutor};
 use crate::pb::{inference_service_server, runtime_service_server, DataType, ModelStatus, Tensor as PbTensor};
 
 #[derive(Debug, Clone)]
@@ -267,7 +268,7 @@ impl InferenceRuntime {
         let handle_arc = Arc::new(handle);
 
         let pipeline = if let Some(pc) = pipeline_config {
-            Arc::new(PipelineBuilder::from_config(&pc)?.build())
+            Arc::new(InferencePipeline::from_config(pc, None)?)
         } else {
             Arc::new(InferencePipeline::empty())
         };
@@ -736,4 +737,89 @@ pub fn create_runtime_service(
     runtime: Arc<InferenceRuntime>,
 ) -> runtime_service_server::RuntimeServiceServer<RuntimeServiceImpl> {
     runtime_service_server::RuntimeServiceServer::new(RuntimeServiceImpl::new(runtime))
+}
+
+#[async_trait::async_trait]
+impl PipelineModelExecutor for InferenceRuntime {
+    async fn execute_model(
+        &self,
+        _node_id: &str,
+        model_name: &str,
+        model_version: Option<&str>,
+        inputs: Value,
+        request_id: &str,
+    ) -> Result<Value, AppError> {
+        let version = model_version.unwrap_or("latest").to_string();
+
+        let input_tensors = if let Some(obj) = inputs.as_object() {
+            obj.iter()
+                .map(|(k, v)| {
+                    if let Some(arr) = v.as_array() {
+                        let data: Vec<u8> = arr
+                            .iter()
+                            .filter_map(|x| x.as_u64().map(|n| n as u8))
+                            .collect();
+                        Tensor::new(k.clone(), "float32".to_string(), vec![1, arr.len() as i64], data)
+                    } else {
+                        let data = serde_json::to_vec(v).unwrap_or_default();
+                        Tensor::new(k.clone(), "float32".to_string(), vec![1], data)
+                    }
+                })
+                .collect()
+        } else {
+            vec![]
+        };
+
+        let req = pb::InferRequest {
+            request_id: request_id.to_string(),
+            model_name: model_name.to_string(),
+            version: version.clone(),
+            inputs: input_tensors.iter().map(tensor_to_pb_tensor).collect(),
+            params: std::collections::HashMap::new(),
+            timeout_ms: 30000,
+            trace_id: String::new(),
+            user_id: String::new(),
+            priority: 0,
+        };
+
+        let resp = self.infer(req).await?;
+
+        let mut output_map = serde_json::Map::new();
+        for output in &resp.outputs {
+            let values: Vec<f32> = if !output.data_bytes.is_empty() {
+                output
+                    .data_bytes
+                    .chunks(4)
+                    .map(|chunk| {
+                        if chunk.len() == 4 {
+                            f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]])
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+            output_map.insert(output.name.clone(), serde_json::to_value(values)?);
+        }
+
+        Ok(Value::Object(output_map))
+    }
+}
+
+impl InferenceRuntime {
+    pub async fn create_pipeline_from_yaml(
+        self: &Arc<Self>,
+        yaml_str: &str,
+    ) -> Result<InferencePipeline, AppError> {
+        InferencePipeline::from_yaml(yaml_str, self.clone())
+    }
+
+    pub async fn create_pipeline_from_config(
+        self: &Arc<Self>,
+        config: PipelineConfig,
+    ) -> Result<InferencePipeline, AppError> {
+        InferencePipeline::from_config(config, Some(self.clone()))
+    }
 }

@@ -94,6 +94,26 @@ pub struct StorageConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct RolloutConfig {
+    pub enabled: bool,
+    pub initial_percent: u8,
+    pub step_percent: u8,
+    pub window_secs: u64,
+    pub max_error_rate_ratio: f64,
+    pub max_p99_latency_ratio: f64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DynamicSchedulerConfig {
+    pub enabled: bool,
+    pub high_watermark_percent: f64,
+    pub low_watermark_percent: f64,
+    pub protection_period_secs: u64,
+    pub warmup_iterations: u32,
+    pub check_interval_secs: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
     pub environment: String,
     pub server: ServerConfig,
@@ -106,6 +126,8 @@ pub struct AppConfig {
     pub routing: RoutingConfig,
     pub experiment: ExperimentConfig,
     pub storage: StorageConfig,
+    pub rollout: RolloutConfig,
+    pub dynamic_scheduler: DynamicSchedulerConfig,
 }
 
 impl AppConfig {
@@ -225,6 +247,22 @@ impl Default for AppConfig {
                 s3_region: None,
                 s3_endpoint: None,
                 local_path: Some("./data/storage".to_string()),
+            },
+            rollout: RolloutConfig {
+                enabled: true,
+                initial_percent: 5,
+                step_percent: 10,
+                window_secs: 3600,
+                max_error_rate_ratio: 1.2,
+                max_p99_latency_ratio: 1.5,
+            },
+            dynamic_scheduler: DynamicSchedulerConfig {
+                enabled: true,
+                high_watermark_percent: 90.0,
+                low_watermark_percent: 70.0,
+                protection_period_secs: 600,
+                warmup_iterations: 5,
+                check_interval_secs: 15,
             },
         }
     }

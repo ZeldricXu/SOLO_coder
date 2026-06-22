@@ -2,13 +2,15 @@ use std::sync::Arc;
 
 use ab_test::{ExperimentRecorder, ExperimentService};
 use common::config::AppConfig;
+use dashmap::DashMap;
 use db::{DatabasePool, RedisClient};
+use inference_runtime::InferencePipeline;
 use inference_runtime::InferenceRuntime;
 use model_registry::{MinioStorage, ModelRegistryService};
 use observability::metrics::MetricsRegistry;
-use scheduler::SchedulerService;
+use scheduler::{DynamicModelScheduler, SchedulerService};
 use security::{ApiKeyAuthenticator, DataMasker, RateLimiter};
-use traffic_router::TrafficRouter;
+use traffic_router::{RolloutManager, TrafficRouter};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -26,6 +28,9 @@ pub struct AppState {
     pub rate_limiter: Arc<RateLimiter>,
     pub data_masker: Arc<DataMasker>,
     pub metrics_registry: Arc<MetricsRegistry>,
+    pub rollout_manager: RolloutManager,
+    pub dynamic_scheduler: DynamicModelScheduler,
+    pub pipelines: Arc<DashMap<String, InferencePipeline>>,
 }
 
 impl AppState {
@@ -44,6 +49,9 @@ impl AppState {
         rate_limiter: RateLimiter,
         data_masker: DataMasker,
         metrics_registry: MetricsRegistry,
+        rollout_manager: RolloutManager,
+        dynamic_scheduler: DynamicModelScheduler,
+        pipelines: Arc<DashMap<String, InferencePipeline>>,
     ) -> Self {
         Self {
             config: Arc::new(config),
@@ -60,6 +68,9 @@ impl AppState {
             rate_limiter: Arc::new(rate_limiter),
             data_masker: Arc::new(data_masker),
             metrics_registry: Arc::new(metrics_registry),
+            rollout_manager,
+            dynamic_scheduler,
+            pipelines,
         }
     }
 }

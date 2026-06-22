@@ -63,6 +63,10 @@ chrono = { workspace = true }
 utoipa = { workspace = true }
 utoipa-swagger-ui = { workspace = true }
 
+# Collections & random
+dashmap = { workspace = true }
+rand = { workspace = true }
+
 # CLI
 clap = { workspace = true }
 

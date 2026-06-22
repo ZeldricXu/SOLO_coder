@@ -2,11 +2,13 @@ pub mod router;
 pub mod strategy;
 pub mod cache;
 pub mod grpc;
+pub mod rollout;
 
 pub use router::*;
 pub use strategy::*;
 pub use cache::*;
 pub use grpc::*;
+pub use rollout::*;
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;

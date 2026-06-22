@@ -3,12 +3,13 @@ use std::sync::Arc;
 use api_gateway::AppState;
 use common::config::AppConfig;
 use common::types::RoutingStrategy;
-use inference_runtime::InferenceRuntime;
+use dashmap::DashMap;
+use inference_runtime::{InferencePipeline, InferenceRuntime};
 use model_registry::{MinioStorage, ModelRegistryService};
 use observability::metrics::MetricsRegistry;
-use scheduler::{SchedulerConfig, SchedulerService};
+use scheduler::{DynamicModelScheduler, SchedulerConfig, SchedulerService};
 use security::{ApiKeyAuthenticator, DataMasker, RateLimiter};
-use traffic_router::TrafficRouter;
+use traffic_router::{RolloutManager, TrafficRouter};
 use ab_test::{ExperimentRecorder, ExperimentService};
 use db::{init_database, init_redis};
 
@@ -110,6 +111,12 @@ async fn init_app(config: &AppConfig) -> anyhow::Result<AppState> {
 
     let metrics_registry = MetricsRegistry::new()?;
 
+    let rollout_manager = RolloutManager::new(redis_client.clone());
+    let dynamic_scheduler = DynamicModelScheduler::new(
+        scheduler::DynamicSchedulerConfig::default(),
+    );
+    let pipelines = Arc::new(DashMap::<String, InferencePipeline>::new());
+
     Ok(AppState::new(
         config.clone(),
         db_pool,
@@ -125,6 +132,9 @@ async fn init_app(config: &AppConfig) -> anyhow::Result<AppState> {
         rate_limiter,
         data_masker,
         metrics_registry,
+        rollout_manager,
+        dynamic_scheduler,
+        pipelines,
     ))
 }
 
@@ -155,6 +165,15 @@ async fn main() -> anyhow::Result<()> {
 
     state.inference_runtime.start().await?;
     state.scheduler.start();
+
+    let rm = state.rollout_manager.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(5));
+        loop {
+            interval.tick().await;
+            rm.tick();
+        }
+    });
 
     let app = api_gateway::build_app(state.clone());
 

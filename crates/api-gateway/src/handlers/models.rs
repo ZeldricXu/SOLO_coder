@@ -481,3 +481,329 @@ pub async fn delete_version(
 
     Ok(())
 }
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+pub struct StartRolloutRequest {
+    pub old_version_id: Uuid,
+    pub new_version_id: Uuid,
+    #[serde(default)]
+    pub config: Option<traffic_router::RolloutConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct RolloutStartResponse {
+    pub rollout_id: Uuid,
+    pub model_name: String,
+    pub status: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/models/{model_name}/rollout",
+    params(
+        ("model_name" = String, Path, description = "Model name"),
+    ),
+    request_body = StartRolloutRequest,
+    responses(
+        (status = 201, description = "Rollout started", body = RolloutStartResponse),
+        (status = 400, description = "Invalid request"),
+        (status = 401, description = "Unauthorized"),
+        (status = 409, description = "Rollout already exists"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all, fields(model_name = %model_name))]
+pub async fn start_rollout(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Path(model_name): Path<String>,
+    Json(request): Json<StartRolloutRequest>,
+) -> Result<Json<RolloutStartResponse>, AppError> {
+    info!("Starting rollout for model: {}", model_name);
+
+    let rollout_id = state.rollout_manager.start_rollout(
+        &model_name,
+        request.old_version_id,
+        request.new_version_id,
+        request.config,
+    )?;
+
+    Ok(Json(RolloutStartResponse {
+        rollout_id,
+        model_name,
+        status: "started".to_string(),
+    }))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/models/{model_name}/rollout",
+    params(
+        ("model_name" = String, Path, description = "Model name"),
+    ),
+    responses(
+        (status = 204, description = "Rollout cancelled"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Rollout not found"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all, fields(model_name = %model_name))]
+pub async fn cancel_rollout(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Path(model_name): Path<String>,
+) -> Result<(), AppError> {
+    info!("Cancelling rollout for model: {}", model_name);
+    state.rollout_manager.cancel_rollout(&model_name)?;
+    Ok(())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/models/{model_name}/rollout",
+    params(
+        ("model_name" = String, Path, description = "Model name"),
+    ),
+    responses(
+        (status = 200, description = "Rollout status", body = traffic_router::RolloutSnapshot),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Rollout not found"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all, fields(model_name = %model_name))]
+pub async fn get_rollout_status(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Path(model_name): Path<String>,
+) -> Result<Json<traffic_router::RolloutSnapshot>, AppError> {
+    info!("Getting rollout status for model: {}", model_name);
+    let snapshot = state
+        .rollout_manager
+        .get_rollout(&model_name)
+        .ok_or_else(|| AppError::Validation(format!("Rollout not found for model: {}", model_name)))?;
+    Ok(Json(snapshot))
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/models/{model_name}/rollout/pause",
+    params(
+        ("model_name" = String, Path, description = "Model name"),
+    ),
+    responses(
+        (status = 200, description = "Rollout paused"),
+        (status = 400, description = "Cannot pause rollout in terminal phase"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Rollout not found"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all, fields(model_name = %model_name))]
+pub async fn pause_rollout(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Path(model_name): Path<String>,
+) -> Result<(), AppError> {
+    info!("Pausing rollout for model: {}", model_name);
+    state.rollout_manager.pause_rollout(&model_name)?;
+    Ok(())
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/models/{model_name}/rollout/resume",
+    params(
+        ("model_name" = String, Path, description = "Model name"),
+    ),
+    responses(
+        (status = 200, description = "Rollout resumed"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Rollout not found"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all, fields(model_name = %model_name))]
+pub async fn resume_rollout(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Path(model_name): Path<String>,
+) -> Result<(), AppError> {
+    info!("Resuming rollout for model: {}", model_name);
+    state.rollout_manager.resume_rollout(&model_name)?;
+    Ok(())
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, ToSchema)]
+pub struct CreatePipelineRequest {
+    pub yaml: String,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct PipelineInfo {
+    pub name: String,
+    pub node_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, ToSchema)]
+pub struct ListPipelinesResponse {
+    pub items: Vec<PipelineInfo>,
+    pub total: usize,
+}
+
+#[utoipa::path(
+    post,
+    path = "/api/v1/pipelines",
+    request_body = CreatePipelineRequest,
+    responses(
+        (status = 201, description = "Pipeline created successfully", body = PipelineInfo),
+        (status = 400, description = "Invalid YAML or pipeline config"),
+        (status = 401, description = "Unauthorized"),
+        (status = 409, description = "Pipeline already exists"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all)]
+pub async fn create_pipeline(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Json(request): Json<CreatePipelineRequest>,
+) -> Result<Json<PipelineInfo>, AppError> {
+    info!("Creating pipeline from YAML");
+
+    let runtime_arc = state.inference_runtime.clone();
+    let pipeline = runtime_arc.create_pipeline_from_yaml(&request.yaml).await?;
+    let name = pipeline.name.clone();
+    let node_count = pipeline.node_count();
+
+    if state.pipelines.contains_key(&name) {
+        return Err(AppError::Validation(format!("Pipeline already exists: {}", name)));
+    }
+
+    state.pipelines.insert(name.clone(), pipeline);
+
+    info!("Pipeline '{}' created with {} nodes", name, node_count);
+
+    Ok(Json(PipelineInfo {
+        name,
+        node_count,
+    }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/pipelines",
+    responses(
+        (status = 200, description = "List of pipelines", body = ListPipelinesResponse),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all)]
+pub async fn list_pipelines(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+) -> Result<Json<ListPipelinesResponse>, AppError> {
+    info!("Listing all pipelines");
+
+    let items: Vec<PipelineInfo> = state
+        .pipelines
+        .iter()
+        .map(|entry| PipelineInfo {
+            name: entry.key().clone(),
+            node_count: entry.value().node_count(),
+        })
+        .collect();
+
+    let total = items.len();
+
+    Ok(Json(ListPipelinesResponse { items, total }))
+}
+
+#[utoipa::path(
+    delete,
+    path = "/api/v1/pipelines/{name}",
+    params(
+        ("name" = String, Path, description = "Pipeline name"),
+    ),
+    responses(
+        (status = 204, description = "Pipeline deleted successfully"),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Pipeline not found"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all, fields(pipeline_name = %name))]
+pub async fn delete_pipeline(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Path(name): Path<String>,
+) -> Result<(), AppError> {
+    info!("Deleting pipeline: {}", name);
+
+    if state.pipelines.remove(&name).is_none() {
+        return Err(AppError::Validation(format!("Pipeline not found: {}", name)));
+    }
+
+    info!("Pipeline '{}' deleted successfully", name);
+    Ok(())
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/scheduler/heat",
+    responses(
+        (status = 200, description = "All model heat snapshots", body = [scheduler::ModelHeatSnapshot]),
+        (status = 401, description = "Unauthorized"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all)]
+pub async fn get_all_heat_scores(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+) -> Result<Json<Vec<scheduler::ModelHeatSnapshot>>, AppError> {
+    info!("Getting all model heat scores");
+    let snapshots = state.dynamic_scheduler.get_snapshot();
+    Ok(Json(snapshots))
+}
+
+#[utoipa::path(
+    get,
+    path = "/api/v1/scheduler/heat/{version_id}",
+    params(
+        ("version_id" = Uuid, Path, description = "Model version UUID"),
+    ),
+    responses(
+        (status = 200, description = "Single model heat snapshot", body = scheduler::ModelHeatSnapshot),
+        (status = 401, description = "Unauthorized"),
+        (status = 404, description = "Model version not found"),
+    ),
+    tag = "models",
+    security(("api_key" = [])),
+)]
+#[instrument(skip_all, fields(version_id = %version_id))]
+pub async fn get_model_heat_score(
+    State(state): State<AppState>,
+    _tenant: AuthenticatedTenant,
+    Path(version_id): Path<Uuid>,
+) -> Result<Json<scheduler::ModelHeatSnapshot>, AppError> {
+    info!("Getting heat score for version: {}", version_id);
+    let snapshot = state
+        .dynamic_scheduler
+        .get_snapshot()
+        .into_iter()
+        .find(|s| s.version_id == version_id)
+        .ok_or_else(|| AppError::Validation(format!("Heat info not found for version: {}", version_id)))?;
+    Ok(Json(snapshot))
+}

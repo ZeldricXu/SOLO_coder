@@ -1,9 +1,443 @@
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use std::time::Instant;
+
+use async_trait::async_trait;
 use common::error::AppError;
+use common::types::InferenceRequest;
+use petgraph::algo::toposort;
+use petgraph::graph::{DiGraph, NodeIndex};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::fmt;
-use std::path::Path;
-use tracing::{debug, info};
+use tokio::sync::Mutex;
+use tracing::{debug, error, info, instrument, warn};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FieldMapping {
+    pub from: String,
+    pub to: String,
+    #[serde(default)]
+    pub source_node: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeConfig {
+    pub id: String,
+    pub model_name: String,
+    #[serde(default)]
+    pub model_version: Option<String>,
+    #[serde(default)]
+    pub dependencies: Vec<String>,
+    #[serde(default)]
+    pub input_mappings: Vec<FieldMapping>,
+    #[serde(default)]
+    pub output_field: Option<String>,
+    #[serde(default)]
+    pub parallel: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PipelineConfig {
+    pub name: String,
+    pub nodes: Vec<NodeConfig>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct NodeExecutionResult {
+    pub node_id: String,
+    pub outputs: Value,
+    pub latency_ms: u64,
+    pub success: bool,
+    pub error: Option<String>,
+}
+
+pub struct PipelineContext {
+    pub request_id: String,
+    pub original_input: Value,
+    pub node_outputs: Mutex<HashMap<String, Value>>,
+    pub start_time: Instant,
+    pub node_results: Mutex<Vec<NodeExecutionResult>>,
+}
+
+impl PipelineContext {
+    pub fn new(request_id: String, original_input: Value) -> Self {
+        Self {
+            request_id,
+            original_input,
+            node_outputs: Mutex::new(HashMap::new()),
+            start_time: Instant::now(),
+            node_results: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct PipelineExecutionPlan {
+    pub graph: DiGraph<String, ()>,
+    pub node_configs: HashMap<String, NodeConfig>,
+    pub topo_order: Vec<NodeIndex>,
+    pub levels: Vec<Vec<NodeIndex>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PipelineResult {
+    pub request_id: String,
+    pub final_output: Value,
+    pub total_latency_ms: u64,
+    pub node_results: Vec<NodeExecutionResult>,
+    pub success: bool,
+}
+
+#[async_trait]
+pub trait PipelineModelExecutor: Send + Sync {
+    async fn execute_model(
+        &self,
+        node_id: &str,
+        model_name: &str,
+        model_version: Option<&str>,
+        inputs: Value,
+        request_id: &str,
+    ) -> Result<Value, AppError>;
+}
+
+pub struct InferencePipeline {
+    pub name: String,
+    plan: PipelineExecutionPlan,
+    executor: Option<Arc<dyn PipelineModelExecutor>>,
+}
+
+impl std::fmt::Debug for InferencePipeline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InferencePipeline")
+            .field("name", &self.name)
+            .field("plan", &self.plan)
+            .finish()
+    }
+}
+
+impl InferencePipeline {
+    pub fn node_count(&self) -> usize {
+        self.plan.node_configs.len()
+    }
+
+    pub fn from_yaml(
+        yaml_str: &str,
+        executor: Arc<dyn PipelineModelExecutor>,
+    ) -> Result<Self, AppError> {
+        let config: PipelineConfig = serde_yaml::from_str(yaml_str)
+            .map_err(|e| AppError::Config(format!("Failed to parse YAML pipeline config: {}", e)))?;
+        Self::from_config(config, Some(executor))
+    }
+
+    pub fn from_config(
+        config: PipelineConfig,
+        executor: Option<Arc<dyn PipelineModelExecutor>>,
+    ) -> Result<Self, AppError> {
+        let plan = Self::compile_plan(&config)?;
+        Ok(Self {
+            name: config.name,
+            plan,
+            executor,
+        })
+    }
+
+    fn compile_plan(config: &PipelineConfig) -> Result<PipelineExecutionPlan, AppError> {
+        let mut graph = DiGraph::<String, ()>::new();
+        let mut node_indices: HashMap<String, NodeIndex> = HashMap::new();
+        let mut node_configs: HashMap<String, NodeConfig> = HashMap::new();
+
+        for node in &config.nodes {
+            if node_indices.contains_key(&node.id) {
+                return Err(AppError::Config(format!(
+                    "Duplicate node id: {}",
+                    node.id
+                )));
+            }
+            let idx = graph.add_node(node.id.clone());
+            node_indices.insert(node.id.clone(), idx);
+            node_configs.insert(node.id.clone(), node.clone());
+        }
+
+        for node in &config.nodes {
+            let current_idx = node_indices
+                .get(&node.id)
+                .ok_or_else(|| AppError::Config(format!("Node {} not found", node.id)))?;
+
+            for dep_id in &node.dependencies {
+                let dep_idx = node_indices.get(dep_id).ok_or_else(|| {
+                    AppError::Config(format!(
+                        "Dependency {} not found for node {}",
+                        dep_id, node.id
+                    ))
+                })?;
+                graph.add_edge(*dep_idx, *current_idx, ());
+            }
+        }
+
+        let topo_order = toposort(&graph, None)
+            .map_err(|cycle| AppError::Config(format!("Pipeline has a cycle: {:?}", cycle)))?;
+
+        let levels = Self::compute_levels(&graph, &topo_order);
+
+        Ok(PipelineExecutionPlan {
+            graph,
+            node_configs,
+            topo_order,
+            levels,
+        })
+    }
+
+    fn compute_levels(
+        graph: &DiGraph<String, ()>,
+        topo_order: &[NodeIndex],
+    ) -> Vec<Vec<NodeIndex>> {
+        let mut in_degree: HashMap<NodeIndex, usize> = HashMap::new();
+        for idx in topo_order {
+            in_degree.insert(*idx, graph.neighbors_directed(*idx, petgraph::Direction::Incoming).count());
+        }
+
+        let mut levels: Vec<Vec<NodeIndex>> = Vec::new();
+        let mut processed: HashSet<NodeIndex> = HashSet::new();
+        let mut remaining: HashMap<NodeIndex, usize> = in_degree.clone();
+
+        while processed.len() < topo_order.len() {
+            let mut current_level: Vec<NodeIndex> = Vec::new();
+
+            for idx in topo_order {
+                if !processed.contains(idx) && remaining.get(idx) == Some(&0) {
+                    current_level.push(*idx);
+                }
+            }
+
+            if current_level.is_empty() {
+                break;
+            }
+
+            for idx in &current_level {
+                processed.insert(*idx);
+                let neighbors: Vec<NodeIndex> = graph
+                    .neighbors_directed(*idx, petgraph::Direction::Outgoing)
+                    .collect();
+                for neighbor in neighbors {
+                    if let Some(deg) = remaining.get_mut(&neighbor) {
+                        *deg = deg.saturating_sub(1);
+                    }
+                }
+            }
+
+            levels.push(current_level);
+        }
+
+        levels
+    }
+
+    #[instrument(skip(self, request), fields(pipeline = %self.name, request_id = %request.request_id))]
+    pub async fn execute(&self, request: &InferenceRequest) -> Result<PipelineResult, AppError> {
+        let request_id = request.request_id.clone();
+        let context = Arc::new(PipelineContext::new(
+            request_id.clone(),
+            request.inputs.clone(),
+        ));
+
+        info!("Starting pipeline '{}' execution", self.name);
+
+        for (level_idx, level) in self.plan.levels.iter().enumerate() {
+            debug!("Executing pipeline level {} with {} nodes", level_idx, level.len());
+
+            let mut futures = Vec::with_capacity(level.len());
+            for node_idx in level {
+                let node_id = self.plan.graph[*node_idx].clone();
+                let node_config = self
+                    .plan
+                    .node_configs
+                    .get(&node_id)
+                    .ok_or_else(|| AppError::Config(format!("Node config not found for {}", node_id)))?
+                    .clone();
+                let ctx = context.clone();
+                let executor = self.executor.clone();
+
+                let fut = async move {
+                    let start = Instant::now();
+                    let result = Self::execute_node(&node_config, ctx.clone(), executor).await;
+                    let latency_ms = start.elapsed().as_millis() as u64;
+
+                    let (outputs, success, error) = match result {
+                        Ok(v) => (v, true, None),
+                        Err(e) => {
+                            error!(
+                                "Node '{}' execution failed after {}ms: {}",
+                                node_config.id,
+                                latency_ms,
+                                e
+                            );
+                            (Value::Null, false, Some(e.to_string()))
+                        }
+                    };
+
+                    let output_key = node_config
+                        .output_field
+                        .clone()
+                        .unwrap_or_else(|| node_config.id.clone());
+
+                    {
+                        let mut node_outputs = ctx.node_outputs.lock().await;
+                        node_outputs.insert(output_key, outputs.clone());
+                    }
+
+                    let node_result = NodeExecutionResult {
+                        node_id: node_config.id.clone(),
+                        outputs: outputs.clone(),
+                        latency_ms,
+                        success,
+                        error,
+                    };
+
+                    {
+                        let mut results = ctx.node_results.lock().await;
+                        results.push(node_result);
+                    }
+
+                    if !success {
+                        return Err(AppError::InferenceError(format!(
+                            "Node '{}' failed",
+                            node_config.id
+                        )));
+                    }
+
+                    debug!(
+                        "Node '{}' completed successfully in {}ms",
+                        node_config.id, latency_ms
+                    );
+                    Ok(())
+                };
+
+                futures.push(fut);
+            }
+
+            let results = futures::future::join_all(futures).await;
+            for r in results {
+                r?;
+            }
+        }
+
+        let total_latency_ms = context.start_time.elapsed().as_millis() as u64;
+        let node_results = context.node_results.lock().await.clone();
+
+        let final_output = self.extract_final_output(context.clone()).await;
+
+        info!(
+            "Pipeline '{}' completed in {}ms",
+            self.name, total_latency_ms
+        );
+
+        Ok(PipelineResult {
+            request_id,
+            final_output,
+            total_latency_ms,
+            node_results,
+            success: true,
+        })
+    }
+
+    async fn execute_node(
+        node_config: &NodeConfig,
+        context: Arc<PipelineContext>,
+        executor: Option<Arc<dyn PipelineModelExecutor>>,
+    ) -> Result<Value, AppError> {
+        let inputs = Self::build_node_inputs(node_config, context.clone()).await;
+
+        debug!(
+            "Executing node '{}' with model '{}' (inputs keys: {:?})",
+            node_config.id,
+            node_config.model_name,
+            inputs.as_object().map(|o| o.keys().cloned().collect::<Vec<_>>())
+        );
+
+        if let Some(exec) = executor {
+            exec.execute_model(
+                &node_config.id,
+                &node_config.model_name,
+                node_config.model_version.as_deref(),
+                inputs,
+                &context.request_id,
+            )
+            .await
+        } else {
+            warn!("No executor set, passing through inputs as outputs for node '{}'", node_config.id);
+            Ok(inputs)
+        }
+    }
+
+    async fn build_node_inputs(
+        node_config: &NodeConfig,
+        context: Arc<PipelineContext>,
+    ) -> Value {
+        let mut result = serde_json::Map::new();
+        let node_outputs = context.node_outputs.lock().await;
+
+        for mapping in &node_config.input_mappings {
+            let source_value = match &mapping.source_node {
+                Some(source_node_id) => {
+                    let output_key = node_outputs.keys()
+                        .find(|k| k == &source_node_id)
+                        .cloned()
+                        .unwrap_or_else(|| source_node_id.clone());
+                    node_outputs
+                        .get(&output_key)
+                        .and_then(|v| v.get(&mapping.from))
+                        .cloned()
+                        .unwrap_or(Value::Null)
+                }
+                None => context
+                    .original_input
+                    .get(&mapping.from)
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            };
+
+            result.insert(mapping.to.clone(), source_value);
+        }
+
+        Value::Object(result)
+    }
+
+    async fn extract_final_output(&self, context: Arc<PipelineContext>) -> Value {
+        let node_outputs = context.node_outputs.lock().await;
+
+        if node_outputs.is_empty() {
+            return context.original_input.clone();
+        }
+
+        if let Some(last_idx) = self.plan.topo_order.last() {
+            let last_node_id = &self.plan.graph[*last_idx];
+            if let Some(output) = node_outputs.get(last_node_id) {
+                return output.clone();
+            }
+        }
+
+        let mut all_outputs = serde_json::Map::new();
+        for (k, v) in node_outputs.iter() {
+            all_outputs.insert(k.clone(), v.clone());
+        }
+        Value::Object(all_outputs)
+    }
+
+    pub fn empty() -> Self {
+        let plan = PipelineExecutionPlan {
+            graph: DiGraph::new(),
+            node_configs: HashMap::new(),
+            topo_order: Vec::new(),
+            levels: Vec::new(),
+        };
+        Self {
+            name: "empty_passthrough".to_string(),
+            plan,
+            executor: None,
+        }
+    }
+}
 
 #[async_trait::async_trait]
 pub trait PipelineStep: Send + Sync {
@@ -465,26 +899,26 @@ pub enum StepConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PipelineConfig {
+pub struct LegacyPipelineConfig {
     pub preprocess: Option<Vec<StepConfig>>,
     pub postprocess: Option<Vec<StepConfig>>,
 }
 
-pub struct InferencePipeline {
+pub struct InferencePipelineLegacy {
     pub preprocess_steps: Vec<Box<dyn PipelineStep>>,
     pub postprocess_steps: Vec<Box<dyn PipelineStep>>,
 }
 
-impl fmt::Debug for InferencePipeline {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("InferencePipeline")
+impl std::fmt::Debug for InferencePipelineLegacy {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InferencePipelineLegacy")
             .field("preprocess_steps", &self.preprocess_steps.iter().map(|s| s.name()).collect::<Vec<_>>())
             .field("postprocess_steps", &self.postprocess_steps.iter().map(|s| s.name()).collect::<Vec<_>>())
             .finish()
     }
 }
 
-impl InferencePipeline {
+impl InferencePipelineLegacy {
     pub fn new(
         preprocess_steps: Vec<Box<dyn PipelineStep>>,
         postprocess_steps: Vec<Box<dyn PipelineStep>>,
@@ -546,7 +980,7 @@ impl PipelineBuilder {
         self
     }
 
-    pub fn from_config(config: &PipelineConfig) -> Result<Self, AppError> {
+    pub fn from_config(config: &LegacyPipelineConfig) -> Result<Self, AppError> {
         let mut builder = Self::new();
 
         if let Some(pre_steps) = &config.preprocess {
@@ -565,11 +999,11 @@ impl PipelineBuilder {
     }
 
     pub fn from_json(value: &Value) -> Result<Self, AppError> {
-        let config: PipelineConfig = serde_json::from_value(value.clone())?;
+        let config: LegacyPipelineConfig = serde_json::from_value(value.clone())?;
         Self::from_config(&config)
     }
 
-    pub fn from_file(path: impl AsRef<Path>) -> Result<Self, AppError> {
+    pub fn from_file(path: impl AsRef<std::path::Path>) -> Result<Self, AppError> {
         let content = std::fs::read_to_string(path)
             .map_err(|e| AppError::Config(format!("Failed to read pipeline config: {}", e)))?;
         let value: Value = serde_json::from_str(&content)?;
@@ -590,8 +1024,8 @@ impl PipelineBuilder {
         }
     }
 
-    pub fn build(self) -> InferencePipeline {
-        InferencePipeline::new(self.preprocess, self.postprocess)
+    pub fn build(self) -> InferencePipelineLegacy {
+        InferencePipelineLegacy::new(self.preprocess, self.postprocess)
     }
 }
 
@@ -604,6 +1038,208 @@ impl Default for PipelineBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    struct MockExecutor;
+
+    #[async_trait]
+    impl PipelineModelExecutor for MockExecutor {
+        async fn execute_model(
+            &self,
+            node_id: &str,
+            model_name: &str,
+            _model_version: Option<&str>,
+            inputs: Value,
+            _request_id: &str,
+        ) -> Result<Value, AppError> {
+            match model_name {
+                "user_recall" => Ok(serde_json::json!({
+                    "candidates": [1, 2, 3, 4, 5]
+                })),
+                "deepfm_rank" | "din_rank" => {
+                    let items = inputs.get("items").cloned().unwrap_or(Value::Null);
+                    Ok(serde_json::json!({
+                        "scores": items
+                    }))
+                }
+                "rank_merge" => {
+                    let scores_a = inputs.get("scores_a").cloned().unwrap_or(Value::Null);
+                    let scores_b = inputs.get("scores_b").cloned().unwrap_or(Value::Null);
+                    Ok(serde_json::json!({
+                        "ranked_items": vec![scores_a, scores_b]
+                    }))
+                }
+                "content_filter" => {
+                    let items = inputs.get("items").cloned().unwrap_or(Value::Null);
+                    Ok(serde_json::json!({
+                        "final_items": items
+                    }))
+                }
+                _ => Ok(serde_json::json!({
+                    "node_id": node_id,
+                    "inputs": inputs
+                })),
+            }
+        }
+    }
+
+    fn get_test_yaml() -> &'static str {
+        r#"
+name: recommendation_pipeline
+description: "推荐流程：召回→多路排序→过滤"
+nodes:
+  - id: recall
+    model_name: user_recall
+    dependencies: []
+    input_mappings:
+      - { from: "user_id", to: "user_id" }
+      - { from: "context", to: "context" }
+    output_field: candidates
+
+  - id: rank_a
+    model_name: deepfm_rank
+    dependencies: ["recall"]
+    input_mappings:
+      - { from: "user_id", to: "user_id" }
+      - { from: "candidates", source_node: "recall", to: "items" }
+
+  - id: rank_b
+    model_name: din_rank
+    dependencies: ["recall"]
+    input_mappings:
+      - { from: "user_id", to: "user_id" }
+      - { from: "candidates", source_node: "recall", to: "items" }
+
+  - id: merge_ranks
+    model_name: rank_merge
+    dependencies: ["rank_a", "rank_b"]
+    input_mappings:
+      - { from: "scores", source_node: "rank_a", to: "scores_a" }
+      - { from: "scores", source_node: "rank_b", to: "scores_b" }
+
+  - id: filter
+    model_name: content_filter
+    dependencies: ["merge_ranks"]
+    input_mappings:
+      - { from: "ranked_items", source_node: "merge_ranks", to: "items" }
+"#
+    }
+
+    #[tokio::test]
+    async fn test_from_yaml() {
+        let executor = Arc::new(MockExecutor);
+        let pipeline = InferencePipeline::from_yaml(get_test_yaml(), executor).unwrap();
+        assert_eq!(pipeline.name, "recommendation_pipeline");
+        assert_eq!(pipeline.plan.node_configs.len(), 5);
+        assert_eq!(pipeline.plan.topo_order.len(), 5);
+        assert_eq!(pipeline.plan.levels.len(), 4);
+    }
+
+    #[tokio::test]
+    async fn test_execute_pipeline() {
+        let executor = Arc::new(MockExecutor);
+        let pipeline = InferencePipeline::from_yaml(get_test_yaml(), executor).unwrap();
+
+        let request = InferenceRequest {
+            request_id: "test-123".to_string(),
+            model_name: "test".to_string(),
+            version: None,
+            inputs: serde_json::json!({
+                "user_id": "user_001",
+                "context": { "page": "home" }
+            }),
+            parameters: None,
+            user_id: None,
+            tenant_id: None,
+            trace_id: None,
+        };
+
+        let result = pipeline.execute(&request).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.node_results.len(), 5);
+        assert_eq!(result.request_id, "test-123");
+    }
+
+    #[tokio::test]
+    async fn test_empty_pipeline() {
+        let pipeline = InferencePipeline::empty();
+        let request = InferenceRequest {
+            request_id: "test-empty".to_string(),
+            model_name: "test".to_string(),
+            version: None,
+            inputs: serde_json::json!({ "key": "value" }),
+            parameters: None,
+            user_id: None,
+            tenant_id: None,
+            trace_id: None,
+        };
+
+        let result = pipeline.execute(&request).await.unwrap();
+        assert!(result.success);
+        assert_eq!(result.final_output, serde_json::json!({ "key": "value" }));
+    }
+
+    #[tokio::test]
+    async fn test_parallel_levels() {
+        let executor = Arc::new(MockExecutor);
+        let pipeline = InferencePipeline::from_yaml(get_test_yaml(), executor).unwrap();
+
+        assert_eq!(pipeline.plan.levels.len(), 4);
+        assert_eq!(pipeline.plan.levels[0].len(), 1);
+        assert_eq!(pipeline.plan.levels[1].len(), 2);
+        assert_eq!(pipeline.plan.levels[2].len(), 1);
+        assert_eq!(pipeline.plan.levels[3].len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_detect_cycle() {
+        let yaml_with_cycle = r#"
+name: cyclic_pipeline
+nodes:
+  - id: a
+    model_name: model_a
+    dependencies: ["b"]
+  - id: b
+    model_name: model_b
+    dependencies: ["a"]
+"#;
+        let executor = Arc::new(MockExecutor);
+        let result = InferencePipeline::from_yaml(yaml_with_cycle, executor);
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_field_mapping() {
+        let yaml_simple = r#"
+name: simple_mapping
+nodes:
+  - id: step1
+    model_name: test_model
+    dependencies: []
+    input_mappings:
+      - { from: "input_a", to: "x" }
+      - { from: "input_b", to: "y" }
+    output_field: step1_out
+"#;
+        let executor = Arc::new(MockExecutor);
+        let pipeline = InferencePipeline::from_yaml(yaml_simple, executor).unwrap();
+
+        let request = InferenceRequest {
+            request_id: "test-mapping".to_string(),
+            model_name: "test".to_string(),
+            version: None,
+            inputs: serde_json::json!({
+                "input_a": 123,
+                "input_b": "hello"
+            }),
+            parameters: None,
+            user_id: None,
+            tenant_id: None,
+            trace_id: None,
+        };
+
+        let result = pipeline.execute(&request).await.unwrap();
+        assert!(result.success);
+    }
 
     #[tokio::test]
     async fn test_softmax_step() {
@@ -623,7 +1259,8 @@ mod tests {
         let arr = result.as_array().unwrap();
         assert_eq!(arr.len(), 3);
         assert_eq!(arr[0]["class_id"], 1);
-        assert_eq!(arr[0]["score"], 0.9);
+        let score = arr[0]["score"].as_f64().unwrap();
+        assert!((score - 0.9).abs() < 0.0001);
     }
 
     #[tokio::test]
@@ -676,7 +1313,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_pipeline_execution() {
+    async fn test_legacy_pipeline_execution() {
         let pipeline = PipelineBuilder::new()
             .add_postprocess(SoftmaxStep::new())
             .add_postprocess(TopKStep::with_k(2))

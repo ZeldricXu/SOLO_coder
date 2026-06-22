@@ -4,6 +4,7 @@ pub mod model_manager;
 pub mod warmup;
 pub mod heartbeat;
 pub mod scheduler;
+pub mod dynamic_scheduler;
 
 pub use types::*;
 pub use balancer::GpuLoadBalancer;
@@ -11,6 +12,7 @@ pub use model_manager::ModelLifecycleManager;
 pub use warmup::ModelWarmer;
 pub use heartbeat::HeartbeatManager;
 pub use scheduler::ResourceScheduler;
+pub use dynamic_scheduler::*;
 
 use common::error::AppError;
 use common::types::ModelVersion;
