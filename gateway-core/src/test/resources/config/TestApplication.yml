@@ -1,0 +1,38 @@
+server:
+  port: 0
+
+spring:
+  application:
+    name: enterprise-api-gateway-test
+  cloud:
+    nacos:
+      discovery:
+        enabled: false
+      config:
+        enabled: false
+    gateway:
+      discovery:
+        locator:
+          enabled: false
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+  data:
+    redis:
+      timeout: 5000ms
+  elasticsearch:
+    uris: http://localhost:9200
+
+auth:
+  jwt:
+    secret: enterprise-gateway-super-secret-key-2024-abcdefghijklmnopqrstuvwxyz
+    expiration: 86400000
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
+
+logging:
+  level:
+    com.enterprise.gateway: DEBUG
