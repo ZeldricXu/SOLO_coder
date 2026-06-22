@@ -6,7 +6,9 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.deps import get_current_user, get_current_user_optional
 from app.core.config import settings
-from app.models.models import User, Snippet, Tag, SnippetTag, Favorite, Star, Team, TeamMember
+from app.core.highlight import highlight_code
+from app.core import search_fts
+from app.models.models import User, Snippet, Tag, SnippetTag, Favorite, Star, Team, TeamMember, TagAlias
 from app.schemas.schemas import (
     SnippetCreate,
     SnippetUpdate,
@@ -26,6 +28,12 @@ def get_or_create_tags(db: Session, tag_names: List[str]) -> List[Tag]:
         name = name.strip().lower()
         if not name:
             continue
+        alias_row = db.query(TagAlias).filter(TagAlias.alias == name).first()
+        if alias_row:
+            canonical = db.query(Tag).filter(Tag.id == alias_row.canonical_tag_id).first()
+            if canonical:
+                tags.append(canonical)
+                continue
         tag = db.query(Tag).filter(Tag.name == name).first()
         if not tag:
             tag = Tag(name=name)
@@ -86,6 +94,7 @@ def snippet_to_detail_response(db: Session, snippet: Snippet, current_user: Opti
         title=snippet.title,
         description=snippet.description,
         code=snippet.code,
+        rendered_html=snippet.rendered_html,
         language=snippet.language,
         visibility=snippet.visibility,
         stars_count=snippet.stars_count,
@@ -272,6 +281,7 @@ def create_snippet(
         title=snippet_data.title,
         description=snippet_data.description,
         code=snippet_data.code,
+        rendered_html=highlight_code(snippet_data.code, snippet_data.language),
         language=snippet_data.language,
         visibility=snippet_data.visibility,
         author_id=current_user.id,
@@ -291,6 +301,13 @@ def create_snippet(
 
     db.commit()
     db.refresh(snippet)
+
+    tags_str = " ".join(sorted({t.name for t in tags}))
+    search_fts.upsert_fts_entry(
+        db, snippet.id, snippet.title, snippet.description or "",
+        snippet.code, tags_str
+    )
+    db.commit()
 
     return snippet_to_detail_response(db, snippet, current_user)
 
@@ -335,11 +352,23 @@ def update_snippet(
         if "team_id" not in update_data:
             update_data["team_id"] = None
 
+    code_updated = False
+    lang_updated = False
+    tags_updated = False
+
     for key, value in update_data.items():
+        if key == "code":
+            code_updated = True
+        if key == "language":
+            lang_updated = True
         if key != "tags":
             setattr(snippet, key, value)
 
+    if code_updated or lang_updated:
+        snippet.rendered_html = highlight_code(snippet.code, snippet.language)
+
     if "tags" in update_data and update_data["tags"] is not None:
+        tags_updated = True
         db.query(SnippetTag).filter(SnippetTag.snippet_id == snippet.id).delete()
         tags = get_or_create_tags(db, update_data["tags"])
         for tag in tags:
@@ -348,6 +377,15 @@ def update_snippet(
 
     db.commit()
     db.refresh(snippet)
+
+    if code_updated or lang_updated or tags_updated or "title" in update_data or "description" in update_data:
+        tag_names = [st.tag.name for st in snippet.tags]
+        tags_str = " ".join(sorted(set(tag_names)))
+        search_fts.upsert_fts_entry(
+            db, snippet.id, snippet.title, snippet.description or "",
+            snippet.code, tags_str
+        )
+        db.commit()
 
     return snippet_to_detail_response(db, snippet, current_user)
 
@@ -379,6 +417,9 @@ def delete_snippet(
         db.delete(snippet)
         db.commit()
 
+    search_fts.delete_fts_entry(db, snippet_id)
+    db.commit()
+
     return None
 
 
@@ -398,6 +439,7 @@ def fork_snippet(
         title=original.title + " (fork)",
         description=original.description,
         code=original.code,
+        rendered_html=original.rendered_html,
         language=original.language,
         visibility="private",
         author_id=current_user.id,
@@ -406,14 +448,24 @@ def fork_snippet(
     db.add(forked)
     db.flush()
 
+    tag_names_list = []
     for st in original.tags:
         new_st = SnippetTag(snippet_id=forked.id, tag_id=st.tag_id)
         db.add(new_st)
+        if st.tag:
+            tag_names_list.append(st.tag.name)
 
     original.forks_count += 1
 
     db.commit()
     db.refresh(forked)
+
+    tags_str = " ".join(sorted(set(tag_names_list)))
+    search_fts.upsert_fts_entry(
+        db, forked.id, forked.title, forked.description or "",
+        forked.code, tags_str
+    )
+    db.commit()
 
     return snippet_to_detail_response(db, forked, current_user)
 

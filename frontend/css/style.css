@@ -826,3 +826,30 @@ pre code.hljs {
     border-radius: 0 0 8px 8px;
     font-size: 0.9rem;
 }
+
+div.hljs {
+    background: var(--code-bg);
+    color: var(--code-text);
+    padding: 20px;
+    font-family: 'SF Mono', Monaco, 'Cascadia Code', Consolas, monospace;
+    font-size: 0.9rem;
+    overflow-x: auto;
+    line-height: 1.5;
+}
+
+div.hljs pre {
+    margin: 0;
+    padding: 0;
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: inherit;
+    line-height: inherit;
+}
+
+div.hljs code {
+    font-family: inherit;
+    font-size: inherit;
+    background: transparent;
+    color: inherit;
+}

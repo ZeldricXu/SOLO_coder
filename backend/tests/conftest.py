@@ -11,6 +11,7 @@ from app.main import app
 from app.core.database import get_db, Base
 from app.core.config import settings
 from app.core.security import get_password_hash
+from app.core import search_fts
 from app.models.models import User, Team, TeamMember
 
 _test_db_fd, _test_db_path = tempfile.mkstemp(suffix=".db")
@@ -34,6 +35,18 @@ app.dependency_overrides[get_db] = override_get_db
 @pytest.fixture(scope="session", autouse=True)
 def setup_database():
     Base.metadata.create_all(bind=engine)
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("""
+        CREATE VIRTUAL TABLE IF NOT EXISTS snippets_fts USING fts5(
+            snippet_id UNINDEXED,
+            title,
+            description,
+            code,
+            tags UNINDEXED,
+            tokenize='unicode61 remove_diacritics 2'
+        )
+        """))
     yield
     Base.metadata.drop_all(bind=engine)
     os.close(_test_db_fd)

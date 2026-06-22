@@ -27,6 +27,8 @@
     isEdit: false,
     snippetId: null,
     parentId: null,
+    tagSuggestions: [],
+    tagDebounce: null,
     init() {
         this.checkAuth();
         if (!isLoggedIn()) {
@@ -84,6 +86,29 @@
         } finally {
             this.submitting = false;
         }
+    },
+    onTagInput() {
+        clearTimeout(this.tagDebounce);
+        this.tagDebounce = setTimeout(async () => {
+            const parts = this.form.tags.split(',');
+            const lastTag = parts[parts.length - 1].trim();
+            if (lastTag.length < 2) {
+                this.tagSuggestions = [];
+                return;
+            }
+            try {
+                const suggestions = await apiGet(`/search/tags/suggest?q=${encodeURIComponent(lastTag)}`);
+                this.tagSuggestions = suggestions.slice(0, 5);
+            } catch (e) {
+                this.tagSuggestions = [];
+            }
+        }, 300);
+    },
+    applyTagSuggestion(sug) {
+        const parts = this.form.tags.split(',');
+        parts[parts.length - 1] = sug.name;
+        this.form.tags = parts.join(', ') + ', ';
+        this.tagSuggestions = [];
     },
     logout() {
         removeToken();
@@ -173,8 +198,16 @@
 
                 <div class="form-group">
                     <label class="form-label">Tags</label>
-                    <input type="text" class="form-input" x-model="form.tags" placeholder="python, automation, utils (comma separated)">
+                    <input type="text" class="form-input" x-model="form.tags" @input="onTagInput()" placeholder="python, automation, utils (comma separated)">
                     <div class="form-help">Separate tags with commas</div>
+                    <div x-show="tagSuggestions.length > 0" style="margin-top: 6px; display: flex; flex-wrap: wrap; gap: 6px;">
+                        <template x-for="sug in tagSuggestions" :key="sug.name">
+                            <span class="tag" style="cursor: pointer; font-size: 0.75rem;" @click="applyTagSuggestion(sug)">
+                                <span x-text="sug.name"></span>
+                                <span x-show="sug.is_alias" style="opacity: 0.7;"> (alias)</span>
+                            </span>
+                        </template>
+                    </div>
                 </div>
 
                 <div class="form-group">

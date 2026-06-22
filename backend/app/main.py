@@ -1,11 +1,13 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 import os
 
 from app.core.database import engine, Base
 from app.core.config import settings
+from app.core import search_fts
+from app.core.highlight import get_highlight_css
 
 from app.api.auth import router as auth_router
 from app.api.snippets import router as snippets_router
@@ -15,6 +17,17 @@ from app.api.users import router as users_router
 from app.api.teams import router as teams_router
 
 Base.metadata.create_all(bind=engine)
+
+search_fts.ensure_fts5_table()
+
+from app.core.database import SessionLocal
+_init_db = SessionLocal()
+try:
+    search_fts.rebuild_fts_index(_init_db)
+except Exception:
+    pass
+finally:
+    _init_db.close()
 
 app = FastAPI(title=settings.app_name, version="1.0.0")
 
@@ -81,3 +94,8 @@ if os.path.exists(frontend_dir):
 @app.get("/api/health")
 async def health_check():
     return {"status": "ok", "app": settings.app_name}
+
+
+@app.get("/static/css/pygments.css")
+async def pygments_css():
+    return HTMLResponse(content=get_highlight_css(), media_type="text/css")

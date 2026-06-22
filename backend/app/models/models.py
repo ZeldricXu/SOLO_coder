@@ -58,6 +58,7 @@ class Snippet(Base):
     title = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)
     code = Column(Text, nullable=False)
+    rendered_html = Column(Text, nullable=True)
     language = Column(String(50), nullable=False, index=True)
     visibility = Column(String(20), nullable=False, default="private", index=True)
     stars_count = Column(Integer, default=0)
@@ -88,6 +89,20 @@ class Tag(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
     snippets = relationship("SnippetTag", back_populates="tag")
+    aliases = relationship("TagAlias", back_populates="canonical_tag", cascade="all, delete-orphan")
+
+
+class TagAlias(Base):
+    __tablename__ = "tag_aliases"
+
+    id = Column(Integer, primary_key=True, index=True)
+    alias = Column(String(50), unique=True, index=True, nullable=False)
+    canonical_tag_id = Column(Integer, ForeignKey("tags.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    canonical_tag = relationship("Tag", back_populates="aliases")
+
+    __table_args__ = (UniqueConstraint("alias", name="unique_tag_alias"),)
 
 
 class SnippetTag(Base):

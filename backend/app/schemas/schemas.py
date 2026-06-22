@@ -110,6 +110,7 @@ class SnippetResponse(BaseModel):
     title: str
     description: Optional[str] = None
     code: str
+    rendered_html: Optional[str] = None
     language: str
     visibility: str
     stars_count: int
