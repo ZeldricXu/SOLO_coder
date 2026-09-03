@@ -1,3 +1,3 @@
-# Solo Coder项目
+# Solo Coder
 ---
-## 切换对应分支查看
+## Switch branches to view
